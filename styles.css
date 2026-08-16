@@ -69,31 +69,33 @@ body.is-loading { overflow: hidden; }
   aspect-ratio: 1;
   background: radial-gradient(circle, rgba(224, 0, 0, 0.5), rgba(224, 0, 0, 0.16) 45%, transparent 72%);
   opacity: 0;
-  animation: preloader-fade-in 0.6s ease 0.33s forwards;
+  animation:
+    preloader-fade-in 0.6s ease 0.3s forwards,
+    preloader-fade-out 0.4s ease 2.3s forwards;
   pointer-events: none;
 }
 
-.preloader__logo {
+.preloader__logo-wrap {
   position: relative;
-  width: min(58%, 420px);
-  height: auto;
-  clip-path: inset(0 100% 0 0);
-  animation:
-    preloader-reveal 2s var(--ease) 0.33s forwards,
-    preloader-scaleup 0.83s var(--ease) 2.33s forwards,
-    preloader-dissolve 0.83s var(--ease) 3.17s forwards;
+  width: min(92%, 560px);
+  opacity: 0;
+  animation: preloader-fade-in 0.6s ease 0.3s forwards;
 }
 
-.preloader__sweep {
+.preloader__logo {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.preloader__x-pulse {
   position: absolute;
-  top: 50%;
-  left: -8%;
-  width: 42px;
-  height: 60px;
-  transform: translateY(-50%);
-  background: var(--red);
-  clip-path: polygon(100% 0%, 0% 50%, 100% 100%);
-  animation: preloader-sweep 2s var(--ease) 0.33s forwards;
+  left: 45.91%;
+  top: 3.76%;
+  width: 12.9%;
+  height: 91.94%;
+  opacity: 0;
+  animation: preloader-x-pulse 1.3s ease-in-out 0.3s infinite;
 }
 
 .preloader__caption {
@@ -115,7 +117,9 @@ body.is-loading { overflow: hidden; }
   text-shadow: 0 2px 20px rgba(0, 0, 0, 0.5);
   white-space: nowrap;
   opacity: 0;
-  animation: preloader-caption-in 0.5s var(--ease) 0.53s forwards;
+  animation:
+    preloader-caption-in 0.5s var(--ease) 0.4s forwards,
+    preloader-fade-out 0.4s ease 2.3s forwards;
 }
 
 .preloader__dots {
@@ -134,21 +138,13 @@ body.is-loading { overflow: hidden; }
 .preloader__dots span:nth-child(2) { animation-delay: 0.15s; }
 .preloader__dots span:nth-child(3) { animation-delay: 0.3s; }
 
-@keyframes preloader-reveal {
-  to { clip-path: inset(0 0 0 0); }
+@keyframes preloader-x-pulse {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
 }
 
-@keyframes preloader-scaleup {
-  to { transform: scale(1.8); }
-}
-
-@keyframes preloader-dissolve {
-  from { transform: scale(1.8); opacity: 1; filter: blur(0); }
-  to { transform: scale(2.15); opacity: 0; filter: blur(8px); }
-}
-
-@keyframes preloader-sweep {
-  to { left: 108%; }
+@keyframes preloader-fade-out {
+  to { opacity: 0; }
 }
 
 @keyframes preloader-fade-in {

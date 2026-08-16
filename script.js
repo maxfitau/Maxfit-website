@@ -15,7 +15,7 @@ document.addEventListener("DOMContentLoaded", function () {
         document.body.classList.remove("is-loading");
       };
 
-      var preloaderTimer = setTimeout(hidePreloader, 3170);
+      var preloaderTimer = setTimeout(hidePreloader, 2300);
 
       var skipPreloader = function () {
         clearTimeout(preloaderTimer);
