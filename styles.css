@@ -58,7 +58,21 @@ body.is-loading { overflow: hidden; }
 }
 
 /* The real hero logo sits above the preloader (z-index) and never moves.
-   Everything else on the page starts hidden and fades in around it. */
+   Everything else on the page starts hidden and fades in around it.
+   .hero__content normally sits at z-index:1 (just to clear .hero__shapes) —
+   that traps .hero__logo-wrap's z-index inside its own stacking context,
+   so it never actually wins against #preloader's z-index:300. Bump it past
+   300 while is-preloading so the logo can escape.
+   is-preloading (not is-loading) controls this on purpose: is-loading gets
+   removed the instant the overlay STARTS fading, but the overlay's opacity
+   transition still takes 0.5s to actually finish — dropping back to
+   z-index:1 that early would let the still-partly-opaque overlay cover the
+   logo again for that window (a visible flicker). is-preloading instead
+   stays on until the overlay's fade-out transition genuinely completes. */
+body.is-preloading .hero__content {
+  z-index: 301;
+}
+
 body.is-loading .site-header,
 body.is-loading .float-cta,
 body.is-loading .hero__shapes,

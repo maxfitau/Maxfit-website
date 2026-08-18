@@ -9,11 +9,21 @@ document.addEventListener("DOMContentLoaded", function () {
       preloader.remove();
     } else {
       document.body.classList.add("is-loading");
+      document.body.classList.add("is-preloading");
 
       var hidePreloader = function () {
         preloader.classList.add("is-hidden");
         document.body.classList.remove("is-loading");
       };
+
+      // Keep the logo's z-index escape active until the overlay has
+      // actually finished fading out, not just the instant it starts —
+      // see the is-preloading comment in styles.css for why.
+      preloader.addEventListener("transitionend", function (e) {
+        if (e.propertyName === "opacity") {
+          document.body.classList.remove("is-preloading");
+        }
+      });
 
       var preloaderTimer = setTimeout(hidePreloader, 2300);
 
