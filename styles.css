@@ -1,5 +1,5 @@
 /* ==========================================================================
-   MAX FIT — single-page stylesheet
+   MAX FIT · single-page stylesheet
    Palette: strictly black / white / red
    ========================================================================== */
 
@@ -46,9 +46,6 @@ body.is-loading { overflow: hidden; }
   inset: 0;
   z-index: 300;
   background: #000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   overflow: hidden;
   cursor: pointer;
   transition: opacity 0.5s ease, visibility 0.5s ease;
@@ -60,42 +57,29 @@ body.is-loading { overflow: hidden; }
   pointer-events: none;
 }
 
-.preloader__glow {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: min(85%, 680px);
-  aspect-ratio: 1;
-  background: radial-gradient(circle, rgba(224, 0, 0, 0.5), rgba(224, 0, 0, 0.16) 45%, transparent 72%);
+/* The real hero logo sits above the preloader (z-index) and never moves.
+   Everything else on the page starts hidden and fades in around it. */
+body.is-loading .site-header,
+body.is-loading .float-cta,
+body.is-loading .hero__shapes,
+body.is-loading .hero__label,
+body.is-loading .hero__tagline,
+body.is-loading .hero__sub,
+body.is-loading .hero__actions,
+body.is-loading .hero__scroll,
+body.is-loading main > *:not(.hero) {
   opacity: 0;
-  animation:
-    preloader-fade-in 0.6s ease 0.3s forwards,
-    preloader-fade-out 0.4s ease 2.3s forwards;
-  pointer-events: none;
 }
 
-.preloader__logo-wrap {
-  position: relative;
-  width: min(92%, 560px);
-  opacity: 0;
-  animation: preloader-fade-in 0.6s ease 0.3s forwards;
-}
-
-.preloader__logo {
-  display: block;
-  width: 100%;
-  height: auto;
-}
-
-.preloader__x-pulse {
-  position: absolute;
-  left: 45.91%;
-  top: 3.76%;
-  width: 12.9%;
-  height: 91.94%;
-  opacity: 0;
-  animation: preloader-x-pulse 1.3s ease-in-out 0.3s infinite;
+.float-cta,
+.hero__shapes,
+.hero__label,
+.hero__tagline,
+.hero__sub,
+.hero__actions,
+.hero__scroll,
+main > *:not(.hero) {
+  transition: opacity 0.6s ease;
 }
 
 .preloader__caption {
@@ -162,6 +146,7 @@ body.is-loading { overflow: hidden; }
 
 @media (prefers-reduced-motion: reduce) {
   #preloader { display: none; }
+  .hero__logo-glow, .hero__logo-x-pulse { display: none; }
 }
 
 a { color: inherit; text-decoration: none; }
@@ -297,7 +282,7 @@ section {
   background: rgba(6, 6, 6, 0.72);
   backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--line);
-  transition: transform 0.4s var(--ease);
+  transition: transform 0.4s var(--ease), opacity 0.6s ease;
 }
 
 .site-header.is-hidden {
@@ -526,10 +511,47 @@ section {
   margin-bottom: 20px;
 }
 
-.hero__logo {
+.hero__logo-wrap {
+  position: relative;
+  z-index: 301;
   width: min(92%, 560px);
-  height: auto;
   margin-bottom: 20px;
+}
+
+.hero__logo {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.hero__logo-glow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 150%;
+  aspect-ratio: 1;
+  background: radial-gradient(circle, rgba(224, 0, 0, 0.5), rgba(224, 0, 0, 0.16) 45%, transparent 72%);
+  opacity: 0;
+  z-index: -1;
+  animation:
+    preloader-fade-in 0.6s ease 0.3s forwards,
+    preloader-fade-out 0.4s ease 2.3s forwards;
+  pointer-events: none;
+}
+
+.hero__logo-x-pulse {
+  position: absolute;
+  left: 45.91%;
+  top: 3.76%;
+  width: 12.9%;
+  height: 91.94%;
+  opacity: 0;
+  animation:
+    preloader-x-pulse 1.3s ease-in-out 0.3s infinite,
+    preloader-fade-out 0.4s ease 2.3s forwards;
+  pointer-events: none;
 }
 
 .hero__tagline {
