@@ -1045,6 +1045,23 @@ section {
 
 .program__desc { max-width: 460px; margin: 0; }
 
+.program__sub {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px dashed var(--line);
+}
+
+.program__sub-title {
+  font-family: var(--font-head);
+  font-size: 0.85rem;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--red);
+  margin: 0 0 10px;
+}
+
+.program__sub .program__desc { margin-bottom: 20px; }
+
 .class-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
