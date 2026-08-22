@@ -539,6 +539,18 @@ section {
   height: auto;
 }
 
+.hero__logo-underglow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 65%;
+  aspect-ratio: 1;
+  background: radial-gradient(circle, rgba(224, 0, 0, 0.4), rgba(224, 0, 0, 0.12) 45%, transparent 72%);
+  z-index: -1;
+  pointer-events: none;
+}
+
 .hero__logo-glow {
   position: absolute;
   top: 50%;
