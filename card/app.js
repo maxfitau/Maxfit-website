@@ -217,32 +217,41 @@ function parseCSV(text) {
  * changes needed. Falls back to a demo card if the id isn't found or the
  * sheet can't be reached (e.g. sharing got switched back to private).
  */
+/** Case/whitespace-insensitive header lookup — sheet column naming won't always match exactly. */
+function findColumn(header, name) {
+  return header.findIndex((h) => h.trim().toLowerCase() === name.toLowerCase());
+}
+
 async function fetchMemberData(id) {
   const res = await fetch(SHEET_CSV_URL, { cache: "no-store" });
   if (!res.ok) throw new Error("sheet fetch failed");
 
   const [header, ...rows] = parseCSV(await res.text());
   const col = {
-    name: header.indexOf("Name"),
-    package: header.indexOf("Package Type"),
-    sessions: header.indexOf("Sessions Remaining"),
-    programType: header.indexOf("Program Type"),
-    class: header.indexOf("Class"),
-    programDoc: header.indexOf("Program Doc"),
+    name: findColumn(header, "Name"),
+    package: findColumn(header, "Package Type"),
+    sessions: findColumn(header, "Sessions Remaining"),
+    programType: findColumn(header, "Program Type"),
+    class: findColumn(header, "Class"),
+    programDoc: findColumn(header, "Program Doc"),
   };
 
-  const match = id ? rows.find((r) => r[col.name] && slugify(r[col.name]) === id) : undefined;
+  const wantedSlug = id ? slugify(id) : undefined;
+  const match = wantedSlug
+    ? rows.find((r) => r[col.name] && slugify(r[col.name]) === wantedSlug)
+    : undefined;
   if (!match) {
     return { ...DEMO_MEMBER, checkInCode: id || "DEMO-0000" };
   }
 
-  const sessions = Number(match[col.sessions]);
+  const sessionsRaw = (match[col.sessions] || "").trim();
+  const sessions = Number(sessionsRaw);
   const programType = ((col.programType >= 0 && match[col.programType]) || "").trim().toLowerCase();
 
   return {
     memberName: match[col.name],
     tier: match[col.package] || "Member",
-    sessionsRemaining: Number.isFinite(sessions) ? sessions : "N/A",
+    sessionsRemaining: Number.isFinite(sessions) ? sessions : sessionsRaw || "N/A",
     checkInCode: id,
     programType: programType === "self-guided" ? "self-guided" : "group",
     classLabel: col.class >= 0 ? match[col.class] : undefined,
