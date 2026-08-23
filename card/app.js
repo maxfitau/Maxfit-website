@@ -13,6 +13,35 @@
  */
 
 /*
+ * iOS "Add to Home Screen" reads manifest.json and uses its start_url as
+ * the icon's permanent launch URL — it ignores the actual page you were on
+ * when you tapped Add. Since manifest.json's start_url is a fixed "./"
+ * (no ?id=), every member's icon would otherwise open the same
+ * unpersonalized card. This rewrites the manifest in-memory on every load
+ * so start_url matches whoever's viewing it, before they get a chance to
+ * add it to their home screen.
+ */
+(function personalizeManifest() {
+  const link = document.querySelector('link[rel="manifest"]');
+  if (!link) return;
+  fetch(link.href)
+    .then((res) => res.json())
+    .then((manifest) => {
+      manifest.start_url = window.location.href;
+      manifest.scope = new URL("./", document.baseURI).href;
+      manifest.icons = (manifest.icons || []).map((icon) => ({
+        ...icon,
+        src: new URL(icon.src, document.baseURI).href,
+      }));
+      const blob = new Blob([JSON.stringify(manifest)], { type: "application/manifest+json" });
+      link.href = URL.createObjectURL(blob);
+    })
+    .catch(() => {
+      // If this fails, the static manifest.json is still linked as a fallback.
+    });
+})();
+
+/*
  * Weekly class schedule — mirrors the timetable on maxfit.now/#programs
  * (index.html, "Group Classes" section). Keep these two in sync until the
  * schedule has a single real source (CRM/booking system). Matched against
