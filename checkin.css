@@ -1,0 +1,104 @@
+/* ==========================================================================
+   MAX FIT · check-in confirmation screen
+   Loads on top of card/styles.css — shares its :root palette/fonts/.card shell
+   ========================================================================== */
+
+.checkin {
+  gap: 22px;
+}
+
+.checkin__state {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.checkin__state[hidden] {
+  display: none;
+}
+
+.checkin__loading-text {
+  font-family: var(--font-body);
+  color: var(--dim);
+  font-size: 15px;
+  text-align: center;
+  padding: 20px 0;
+}
+
+.checkin__error-title {
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  font-size: 26px;
+  color: var(--red);
+  margin: 0;
+}
+
+.checkin__error-text {
+  font-family: var(--font-body);
+  color: var(--grey);
+  font-size: 15px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.checkin__owing {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--red);
+  background: rgba(224, 0, 0, 0.1);
+  border: 1px solid rgba(224, 0, 0, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  margin: 0;
+}
+
+.checkin__confirm {
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 18px;
+  color: var(--on-red);
+  background: var(--red);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 20px;
+  cursor: pointer;
+}
+
+.checkin__confirm:active {
+  background: var(--red-dim);
+}
+
+.checkin__confirm:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.checkin__error {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--red);
+  text-align: center;
+  margin: 0;
+}
+
+.checkin__success-title {
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  font-size: 30px;
+  color: var(--white);
+  margin: 0;
+  text-align: center;
+}
+
+.checkin__success-text {
+  font-family: var(--font-body);
+  color: var(--grey);
+  font-size: 16px;
+  margin: 0;
+  text-align: center;
+}

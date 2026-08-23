@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+<title>MaxFit — Check In</title>
+<meta name="theme-color" content="#111111" />
+<meta name="robots" content="noindex" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="card/styles.css" />
+<link rel="stylesheet" href="checkin.css" />
+</head>
+<body>
+
+<main class="card checkin" id="checkin">
+  <div class="card__top">
+    <img class="card__wordmark" src="assets/images/maxfit-logo.png" alt="MaxFit" />
+    <span class="card__tag">Check-In</span>
+  </div>
+
+  <div class="checkin__state" id="checkinLoading">
+    <p class="checkin__loading-text">Loading…</p>
+  </div>
+
+  <div class="checkin__state" id="checkinInvalid" hidden>
+    <p class="checkin__error-title">Invalid Code</p>
+    <p class="checkin__error-text">This check-in link isn't recognized. Ask the front desk for help.</p>
+  </div>
+
+  <div class="checkin__state" id="checkinConfirm" hidden>
+    <div class="card__meta-item">
+      <span class="card__label">Member</span>
+      <span class="card__meta-value" id="checkinName">—</span>
+    </div>
+
+    <div class="card__sessions">
+      <span class="card__label card__label--red">Sessions Remaining</span>
+      <span class="card__sessions-num" id="checkinSessions">—</span>
+    </div>
+
+    <p class="checkin__owing" id="checkinOwing" hidden></p>
+
+    <button class="checkin__confirm" id="checkinButton" type="button">Confirm Check-In</button>
+    <p class="checkin__error" id="checkinSubmitError" hidden></p>
+  </div>
+
+  <div class="checkin__state" id="checkinSuccess" hidden>
+    <p class="checkin__success-title" id="checkinSuccessTitle">Checked In</p>
+    <p class="checkin__success-text" id="checkinSuccessText"></p>
+  </div>
+</main>
+
+<script src="card/sheet.js"></script>
+<script src="checkin.js"></script>
+</body>
+</html>

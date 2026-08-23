@@ -195,7 +195,7 @@ async function render(data) {
   els.sessions.textContent = data.sessionsRemaining;
   els.name.textContent = data.memberName;
   els.tier.textContent = data.tier;
-  renderQR(data.checkInCode);
+  renderQR(data.checkInUrl);
 
   if (data.programType === "self-guided" && data.programDoc) {
     els.upcomingLabel.textContent = "Today's Workout";
@@ -221,91 +221,14 @@ const DEMO_MEMBER = {
   classLabel: "Mission: Slimpossible",
 };
 
-const SHEET_ID = "1dGQyIoJ2_XrkbvvPvM2JAY0xdeYQfsCnYHal8WZojUg";
-const SHEET_GID = "1169726169"; // "Sessions Remaining" tab
-const SHEET_CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${SHEET_GID}`;
-
-function slugify(name) {
-  return name.toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-
-/** Minimal RFC4180 CSV parser — handles quoted fields with commas inside. */
-function parseCSV(text) {
-  const rows = [];
-  let row = [];
-  let field = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (inQuotes) {
-      if (c === '"' && text[i + 1] === '"') {
-        field += '"';
-        i++;
-      } else if (c === '"') {
-        inQuotes = false;
-      } else {
-        field += c;
-      }
-    } else if (c === '"') {
-      inQuotes = true;
-    } else if (c === ",") {
-      row.push(field);
-      field = "";
-    } else if (c === "\n") {
-      row.push(field);
-      rows.push(row);
-      row = [];
-      field = "";
-    } else if (c !== "\r") {
-      field += c;
-    }
-  }
-  if (field.length || row.length) {
-    row.push(field);
-    rows.push(row);
-  }
-  return rows;
-}
-
 /**
  * Looks the member up by name-slug in the "Sessions Remaining" tab of the
- * Google Sheet CRM. The sheet is the whole database — update a session
- * count or package there and the card reflects it on next open, no code
- * changes needed. Falls back to a demo card if the id isn't found or the
- * sheet can't be reached (e.g. sharing got switched back to private).
+ * Google Sheet CRM (fetchSheet(), shared with checkin.html — see sheet.js).
+ * The sheet is the whole database — update a session count or package
+ * there and the card reflects it on next open, no code changes needed.
+ * Falls back to a demo card if the id isn't found or the sheet can't be
+ * reached (e.g. sharing got switched back to private).
  */
-/** Case/whitespace-insensitive header lookup — sheet column naming won't always match exactly. */
-function findColumn(header, name) {
-  return header.findIndex((h) => h.trim().toLowerCase() === name.toLowerCase());
-}
-
-let sheetPromise;
-
-/** Fetches + parses the sheet once per page load; every caller shares the same result. */
-function fetchSheet() {
-  if (!sheetPromise) {
-    sheetPromise = fetch(SHEET_CSV_URL, { cache: "no-store" })
-      .then((res) => {
-        if (!res.ok) throw new Error("sheet fetch failed");
-        return res.text();
-      })
-      .then((text) => {
-        const [header, ...rows] = parseCSV(text);
-        const col = {
-          name: findColumn(header, "Name"),
-          package: findColumn(header, "Package Type"),
-          sessions: findColumn(header, "Sessions Remaining"),
-          programType: findColumn(header, "Program Type"),
-          class: findColumn(header, "Class"),
-          programDoc: findColumn(header, "Program Doc"),
-        };
-        return { rows, col };
-      });
-  }
-  return sheetPromise;
-}
-
 async function fetchMemberData(id) {
   const { rows, col } = await fetchSheet();
 
@@ -314,18 +237,19 @@ async function fetchMemberData(id) {
     ? rows.find((r) => r[col.name] && slugify(r[col.name]) === wantedSlug)
     : undefined;
   if (!match) {
-    return { ...DEMO_MEMBER, checkInCode: id || "DEMO-0000" };
+    return { ...DEMO_MEMBER, checkInUrl: `https://maxfit.now/checkin.html?token=${id || "DEMO-0000"}` };
   }
 
   const sessionsRaw = (match[col.sessions] || "").trim();
   const sessions = Number(sessionsRaw);
   const programType = ((col.programType >= 0 && match[col.programType]) || "").trim().toLowerCase();
+  const token = (col.checkInToken >= 0 && match[col.checkInToken]) || id || "";
 
   return {
     memberName: match[col.name],
     tier: match[col.package] || "Member",
     sessionsRemaining: Number.isFinite(sessions) ? sessions : sessionsRaw || "N/A",
-    checkInCode: id,
+    checkInUrl: `https://maxfit.now/checkin.html?token=${encodeURIComponent(token)}`,
     programType: programType === "self-guided" ? "self-guided" : "group",
     classLabel: col.class >= 0 ? match[col.class] : undefined,
     programDoc: col.programDoc >= 0 ? match[col.programDoc] : undefined,
