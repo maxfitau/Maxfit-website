@@ -11,6 +11,8 @@
   --grey: #cccccc;
   --dim: #999999;
   --red: #e00000;
+  --red-dim: #a80000;
+  --on-red: #ffffff;
   --radius: 18px;
   --radius-sm: 10px;
   --font-head: "Barlow Condensed", "Arial Narrow", sans-serif;
@@ -224,6 +226,10 @@ body {
   z-index: 10;
 }
 
+.picker[hidden] {
+  display: none;
+}
+
 .picker__inner {
   width: 100%;
   max-width: 400px;
@@ -249,15 +255,13 @@ body {
   margin: 0 0 20px;
 }
 
-.picker__list {
+#pickerForm {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  max-height: 60vh;
-  overflow-y: auto;
+  gap: 12px;
 }
 
-.picker__option {
+.picker__input {
   font-family: var(--font-body);
   font-weight: 600;
   font-size: 16px;
@@ -266,19 +270,37 @@ body {
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   padding: 14px 16px;
-  text-align: left;
+  width: 100%;
+}
+
+.picker__input:focus {
+  outline: none;
+  border-color: var(--red);
+}
+
+.picker__submit {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 15px;
+  color: var(--on-red);
+  background: var(--red);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
   cursor: pointer;
 }
 
-.picker__option:active {
-  border-color: var(--red);
-  background: rgba(224, 0, 0, 0.1);
+.picker__submit:active {
+  background: var(--red-dim);
 }
 
-.picker__empty {
+.picker__error {
   font-family: var(--font-body);
   font-size: 14px;
-  color: var(--dim);
+  color: var(--red);
+  margin: 0;
 }
 
 @media (max-width: 360px) {

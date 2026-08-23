@@ -65,9 +65,13 @@
 <div class="picker" id="picker" hidden>
   <div class="picker__inner">
     <span class="card__tag">MaxFit</span>
-    <h1 class="picker__title">Who's this card for?</h1>
+    <h1 class="picker__title">What's your name?</h1>
     <p class="picker__hint">Only needs to happen once on this phone.</p>
-    <div class="picker__list" id="pickerList"></div>
+    <form id="pickerForm" autocomplete="off">
+      <input class="picker__input" id="pickerInput" type="text" placeholder="Full name" autocapitalize="words" />
+      <button class="picker__submit" type="submit">Continue</button>
+      <p class="picker__error" id="pickerError" hidden></p>
+    </form>
   </div>
 </div>
 

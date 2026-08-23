@@ -172,7 +172,9 @@ const els = {
   upcomingValue: document.getElementById("upcomingValue"),
   upcomingLink: document.getElementById("upcomingLink"),
   picker: document.getElementById("picker"),
-  pickerList: document.getElementById("pickerList"),
+  pickerForm: document.getElementById("pickerForm"),
+  pickerInput: document.getElementById("pickerInput"),
+  pickerError: document.getElementById("pickerError"),
 };
 
 function showStatus(message, isError) {
@@ -347,39 +349,48 @@ async function loadCard(id) {
  * container's storage either), ask once, right here, and save the answer
  * in *this* storage container so it's available on every future open of
  * this exact icon — no dependency on how iOS handles the URL or manifest.
+ *
+ * Deliberately a type-your-name field, not a list of every member — a
+ * scrollable roster of everyone's real name behind an unlabeled link would
+ * leak who trains here to anyone who opened it, which isn't worth avoiding
+ * one storage quirk for.
  */
-async function showPicker() {
-  try {
-    const { rows, col } = await fetchSheet();
-    const names = rows.map((r) => r[col.name]).filter(Boolean);
-
-    if (!names.length) {
-      els.pickerList.innerHTML = '<p class="picker__empty">Couldn\'t load the member list. Check your connection and reopen.</p>';
-    } else {
-      els.pickerList.innerHTML = "";
-      for (const name of names) {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "picker__option";
-        button.textContent = name;
-        button.addEventListener("click", () => {
-          const id = slugify(name);
-          try {
-            localStorage.setItem(MEMBER_ID_STORAGE_KEY, id);
-          } catch (err) {
-            // Storage unavailable — card still works for this session.
-          }
-          els.picker.hidden = true;
-          loadCard(id);
-        });
-        els.pickerList.appendChild(button);
-      }
-    }
-  } catch (err) {
-    els.pickerList.innerHTML = '<p class="picker__empty">Couldn\'t load the member list. Check your connection and reopen.</p>';
-  }
-
+function showPicker() {
   els.picker.hidden = false;
+  els.pickerInput.focus();
+
+  els.pickerForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const typed = els.pickerInput.value.trim();
+    if (!typed) return;
+
+    const id = slugify(typed);
+    els.pickerError.hidden = true;
+
+    let found = false;
+    try {
+      const { rows, col } = await fetchSheet();
+      found = rows.some((r) => r[col.name] && slugify(r[col.name]) === id);
+    } catch (err) {
+      els.pickerError.textContent = "Couldn't check that — check your connection and try again.";
+      els.pickerError.hidden = false;
+      return;
+    }
+
+    if (!found) {
+      els.pickerError.textContent = "Couldn't find that name — check the spelling and try again.";
+      els.pickerError.hidden = false;
+      return;
+    }
+
+    try {
+      localStorage.setItem(MEMBER_ID_STORAGE_KEY, id);
+    } catch (err) {
+      // Storage unavailable — card still works for this session.
+    }
+    els.picker.hidden = true;
+    loadCard(id);
+  });
 }
 
 if (memberId) {
