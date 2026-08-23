@@ -1124,76 +1124,109 @@ section {
   margin: 0;
 }
 
-/* ---------- Weekly timetable ---------- */
+/* ---------- Weekly timetable (calendar view) ---------- */
 
-.timetable {
+.wk-cal {
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  overflow: hidden;
+  overflow-x: auto;
   margin: 22px 0 12px;
-}
-
-.timetable__row {
-  display: grid;
-  grid-template-columns: 1.1fr 2fr 1fr;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 18px;
-}
-
-.timetable__row + .timetable__row { border-top: 1px solid var(--line); }
-
-.timetable__row--head {
-  font-family: var(--font-head);
-  font-size: 0.72rem;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  color: var(--red);
   background: var(--bg-card);
 }
 
-.timetable__row > span:last-child { text-align: right; }
+.wk-cal__head {
+  display: grid;
+  grid-template-columns: 52px repeat(7, minmax(76px, 1fr));
+  min-width: 620px;
+  border-bottom: 1px solid var(--line);
+}
 
-.timetable__day {
+.wk-cal__day {
+  padding: 10px 4px;
+  text-align: center;
   font-family: var(--font-head);
+  font-size: 0.75rem;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--dim);
+  border-left: 1px solid var(--line);
+}
+
+.wk-cal__body {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  min-width: 620px;
+}
+
+.wk-cal__hours {
+  position: relative;
+  height: 320px;
+}
+
+.wk-cal__hours span {
+  position: absolute;
+  left: 0;
+  right: 8px;
+  transform: translateY(-50%);
+  text-align: right;
+  font-size: 0.7rem;
+  color: var(--dim);
+}
+
+.wk-cal__hours span:nth-child(1) { top: 0%; }
+.wk-cal__hours span:nth-child(2) { top: 25%; }
+.wk-cal__hours span:nth-child(3) { top: 50%; }
+.wk-cal__hours span:nth-child(4) { top: 75%; }
+.wk-cal__hours span:nth-child(5) { top: 100%; }
+
+.wk-cal__grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  height: 320px;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    var(--line) 0,
+    var(--line) 1px,
+    transparent 1px,
+    transparent 25%
+  );
+}
+
+.wk-cal__track {
+  position: relative;
+  border-left: 1px solid var(--line);
+}
+
+.wk-cal__event {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  background: rgba(224, 0, 0, 0.16);
+  border-left: 3px solid var(--red);
+  border-radius: 0 4px 4px 0;
+  padding: 4px 6px;
+  overflow: hidden;
+}
+
+.wk-cal__event-time {
+  display: block;
+  font-size: 0.62rem;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.wk-cal__event-name {
+  display: block;
+  font-size: 0.72rem;
   font-weight: 700;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  font-size: 0.9rem;
-}
-
-.timetable__class { font-size: 0.9rem; }
-
-.timetable__class--rest { color: var(--dim); }
-
-.timetable__tag {
-  display: inline-block;
-  font-family: var(--font-head);
-  font-size: 0.65rem;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  color: var(--dim);
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  padding: 2px 9px;
-  margin-left: 8px;
-}
-
-.timetable__time {
-  font-size: 0.85rem;
-  color: var(--dim);
+  color: var(--white);
+  line-height: 1.2;
 }
 
 .timetable__note {
   font-size: 0.78rem;
   color: var(--dim);
   margin: 0 0 22px;
-}
-
-@media (max-width: 560px) {
-  .timetable__row { grid-template-columns: 1fr; gap: 4px; }
-  .timetable__row--head { display: none; }
-  .timetable__time { text-align: left; }
 }
 
 /* ---------- Wall of Fame ---------- */

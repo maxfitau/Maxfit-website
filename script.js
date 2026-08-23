@@ -301,7 +301,7 @@ document.addEventListener("DOMContentLoaded", function () {
                           "no video yet" notice instead of trying to play one
   ---------------------------------------------------- */
   var videoTestimonials = [
-    { name: "J.H", caption: "", thumbnail: null, video: { type: "local", src: "assets/videos/client-testimonial-1.mov" } },
+    { name: "J.H", caption: "", thumbnail: "assets/images/jh-testimonial-thumb.jpg", video: { type: "local", src: "assets/videos/client-testimonial-1.mov" } },
     { name: "Client Name 2", caption: "Add a short result or caption here", thumbnail: null, video: { type: "placeholder", src: "" } },
     { name: "Client Name 3", caption: "Add a short result or caption here", thumbnail: null, video: { type: "placeholder", src: "" } },
     { name: "Client Name 4", caption: "Add a short result or caption here", thumbnail: null, video: { type: "placeholder", src: "" } },
