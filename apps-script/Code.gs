@@ -69,6 +69,16 @@ function doGet(e) {
   return jsonResponse_({ status: "ok", message: "MaxFit check-in API is running." });
 }
 
+// Which sheet column each check-in "sessionType" decrements.
+const SESSION_TYPE_COLUMNS = {
+  "group": "Group Sessions Remaining",
+  "one-on-one": "1 on 1 Remaining",
+};
+const SESSION_TYPE_NOTES = {
+  "group": "Group",
+  "one-on-one": "1-on-1",
+};
+
 function doPost(e) {
   let payload;
   try {
@@ -78,8 +88,12 @@ function doPost(e) {
   }
 
   const token = String(payload.token || "").trim();
+  const sessionType = String(payload.sessionType || "").trim();
   if (!token) {
     return jsonResponse_({ status: "error", message: "Missing token." });
+  }
+  if (!SESSION_TYPE_COLUMNS[sessionType]) {
+    return jsonResponse_({ status: "error", message: "Missing or invalid sessionType." });
   }
 
   const sheet = getSheetByGid_(SESSIONS_SHEET_GID);
@@ -88,13 +102,16 @@ function doPost(e) {
   const col = {
     name: findColumn_(header, "Name"),
     package: findColumn_(header, "Package Type"),
-    sessions: findColumn_(header, "Sessions Remaining"),
+    sessions: findColumn_(header, SESSION_TYPE_COLUMNS[sessionType]),
     lastAttended: findColumn_(header, "Last Attended"),
     checkInToken: findColumn_(header, "Check-in Token"),
   };
 
   if (col.checkInToken < 0) {
     return jsonResponse_({ status: "error", message: 'Sheet has no "Check-in Token" column.' });
+  }
+  if (col.sessions < 0) {
+    return jsonResponse_({ status: "error", message: 'Sheet has no "' + SESSION_TYPE_COLUMNS[sessionType] + '" column.' });
   }
 
   let rowIndex = -1;
@@ -112,6 +129,11 @@ function doPost(e) {
   const row = data[rowIndex];
   const today = Utilities.formatDate(new Date(), TIMEZONE, "yyyy-MM-dd");
 
+  // Guards once per day, not once per session type — a member checking in
+  // for both a group class and a 1-on-1 on the same day would incorrectly
+  // get blocked on the second one. Simpler tradeoff accepted for now;
+  // revisit with a per-type guard (e.g. scanning the attendance log
+  // instead of this single cell) if that turns out to matter in practice.
   const lastAttendedRaw = col.lastAttended >= 0 ? row[col.lastAttended] : "";
   const lastAttendedStr = lastAttendedRaw instanceof Date
     ? Utilities.formatDate(lastAttendedRaw, TIMEZONE, "yyyy-MM-dd")
@@ -135,7 +157,8 @@ function doPost(e) {
     newSessions = sessionsNum - 1;
     sheet.getRange(rowIndex + 1, col.sessions + 1).setValue(newSessions);
   }
-  // Unlimited plan or blank Sessions Remaining: skip the decrement, still log the visit below.
+  // Unlimited plan or blank for this session type: skip the decrement,
+  // still log the visit below.
 
   if (col.lastAttended >= 0) {
     sheet.getRange(rowIndex + 1, col.lastAttended + 1).setValue(today);
@@ -147,6 +170,7 @@ function doPost(e) {
     date: findColumn_(attendanceHeader, "Date"),
     clientName: findColumn_(attendanceHeader, "Client Name"),
     attended: findColumn_(attendanceHeader, "Attended (Y/N)"),
+    notes: findColumn_(attendanceHeader, "Notes"),
   };
   // Class Time and Location are deliberately left blank — this is a walk-in
   // scan check-in, not tied to a scheduled class slot. Flagged back to Max
@@ -155,6 +179,7 @@ function doPost(e) {
   if (aCol.date >= 0) newRow[aCol.date] = today;
   if (aCol.clientName >= 0) newRow[aCol.clientName] = row[col.name];
   if (aCol.attended >= 0) newRow[aCol.attended] = "Y";
+  if (aCol.notes >= 0) newRow[aCol.notes] = SESSION_TYPE_NOTES[sessionType];
   attendanceSheet.appendRow(newRow);
 
   return jsonResponse_({ status: "success", sessionsRemaining: newSessions });

@@ -5,9 +5,14 @@
  * ?token=<their Check-in Token from the sheet>). Read-only on load — it
  * only looks the member up and shows a confirmation screen. The actual
  * write (decrement sessions, log attendance) only happens if someone taps
- * "Confirm Check-In", via a POST to the Apps Script Web App below. Nothing
- * here holds credentials — the script runs under the sheet owner's own
- * Apps Script authorization, which is the entire point of this approach.
+ * one of the two check-in buttons, via a POST to the Apps Script Web App
+ * below. Nothing here holds credentials — the script runs under the sheet
+ * owner's own Apps Script authorization, which is the entire point of
+ * this approach.
+ *
+ * Two buttons, not one, because Group and 1-on-1 sessions are tracked (and
+ * priced) separately — the front desk picks which type this visit is, and
+ * only that column gets decremented.
  *
  * *** PASTE YOUR DEPLOYED APPS SCRIPT WEB APP URL BELOW ***
  * (Extensions > Apps Script > Deploy > Web app > copy the /exec URL.)
@@ -26,10 +31,16 @@ const els = {
   groupSessions: document.getElementById("checkinGroupSessions"),
   oneOnOneSessions: document.getElementById("checkinOneOnOneSessions"),
   owing: document.getElementById("checkinOwing"),
-  button: document.getElementById("checkinButton"),
+  groupButton: document.getElementById("checkinGroupButton"),
+  oneOnOneButton: document.getElementById("checkinOneOnOneButton"),
   submitError: document.getElementById("checkinSubmitError"),
   successTitle: document.getElementById("checkinSuccessTitle"),
   successText: document.getElementById("checkinSuccessText"),
+};
+
+const BUTTON_LABELS = {
+  group: "Check In — Group",
+  "one-on-one": "Check In — 1-on-1",
 };
 
 function showState(state) {
@@ -66,8 +77,15 @@ async function init() {
   }
 
   els.name.textContent = match[col.name];
-  els.groupSessions.textContent = parseSessions(match[col.groupSessions], "N/A");
-  els.oneOnOneSessions.textContent = parseSessions(match[col.oneOnOneSessions], "N/A");
+  const groupSessions = parseSessions(match[col.groupSessions], "N/A");
+  const oneOnOneSessions = parseSessions(match[col.oneOnOneSessions], "N/A");
+  els.groupSessions.textContent = groupSessions;
+  els.oneOnOneSessions.textContent = oneOnOneSessions;
+
+  // Nothing sensible to decrement for a session type this member doesn't
+  // have tracked at all — disable that button rather than let it fire.
+  els.groupButton.disabled = groupSessions === "N/A";
+  els.oneOnOneButton.disabled = oneOnOneSessions === "N/A";
 
   const owing = Number((match[col.amountOwing] || "").trim());
   if (Number.isFinite(owing) && owing > 0) {
@@ -77,12 +95,16 @@ async function init() {
 
   showState(els.confirm);
 
-  els.button.addEventListener("click", () => submitCheckIn(token));
+  els.groupButton.addEventListener("click", () => submitCheckIn("group"));
+  els.oneOnOneButton.addEventListener("click", () => submitCheckIn("one-on-one"));
 }
 
-async function submitCheckIn(token) {
-  els.button.disabled = true;
-  els.button.textContent = "Checking In…";
+async function submitCheckIn(sessionType) {
+  // Disable both — a tap on either should block the other, not just itself.
+  els.groupButton.disabled = true;
+  els.oneOnOneButton.disabled = true;
+  const tappedButton = sessionType === "group" ? els.groupButton : els.oneOnOneButton;
+  tappedButton.textContent = "Checking In…";
   els.submitError.hidden = true;
 
   let result;
@@ -90,14 +112,11 @@ async function submitCheckIn(token) {
     const res = await fetch(APPS_SCRIPT_URL, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" }, // avoids a CORS preflight
-      body: JSON.stringify({ token }),
+      body: JSON.stringify({ token, sessionType }),
     });
     result = await res.json();
   } catch (err) {
-    els.submitError.textContent = "Couldn't reach the check-in system. Check your connection and try again.";
-    els.submitError.hidden = false;
-    els.button.disabled = false;
-    els.button.textContent = "Confirm Check-In";
+    showRetry(tappedButton, sessionType, "Couldn't reach the check-in system. Check your connection and try again.");
     return;
   }
 
@@ -124,10 +143,15 @@ async function submitCheckIn(token) {
     return;
   }
 
-  els.submitError.textContent = "Something went wrong — try again or check in manually.";
+  showRetry(tappedButton, sessionType, "Something went wrong — try again or check in manually.");
+}
+
+function showRetry(button, sessionType, message) {
+  els.submitError.textContent = message;
   els.submitError.hidden = false;
-  els.button.disabled = false;
-  els.button.textContent = "Confirm Check-In";
+  els.groupButton.disabled = els.groupSessions.textContent === "N/A";
+  els.oneOnOneButton.disabled = els.oneOnOneSessions.textContent === "N/A";
+  button.textContent = BUTTON_LABELS[sessionType];
 }
 
 init();

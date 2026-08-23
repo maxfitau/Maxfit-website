@@ -54,6 +54,12 @@
   margin: 0;
 }
 
+.checkin__buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .checkin__confirm {
   font-family: var(--font-head);
   font-weight: 800;
