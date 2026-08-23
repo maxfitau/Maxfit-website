@@ -17,7 +17,7 @@
  * *** PASTE YOUR DEPLOYED APPS SCRIPT WEB APP URL BELOW ***
  * (Extensions > Apps Script > Deploy > Web app > copy the /exec URL.)
  */
-const APPS_SCRIPT_URL = "PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbya8dm8g5eC4ldAbNYmMCccDCZ6K7encj_q4IzXtKMOpd007RMYhnR3_PJ2eL2gjVDQ/exec";
 
 const params = new URLSearchParams(window.location.search);
 const token = params.get("token");
