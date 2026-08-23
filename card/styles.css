@@ -1,0 +1,184 @@
+/* ==========================================================================
+   MAX FIT · membership card
+   Shares the site's black / white / red palette
+   ========================================================================== */
+
+:root {
+  --bg: #111111;
+  --bg-card: #1c1c1c;
+  --line: rgba(255, 255, 255, 0.12);
+  --white: #ffffff;
+  --grey: #cccccc;
+  --dim: #999999;
+  --red: #e00000;
+  --radius: 18px;
+  --radius-sm: 10px;
+  --font-head: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --font-body: "Barlow", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--white);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(24px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 22px 22px 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.card__wordmark {
+  height: 22px;
+  width: auto;
+  display: block;
+}
+
+.card__tag {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.card__label {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 11px;
+  color: var(--grey);
+}
+
+.card__label--red {
+  color: var(--red);
+}
+
+.card__sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.card__sessions-num {
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 84px;
+  line-height: 1;
+  color: var(--white);
+  letter-spacing: -0.01em;
+}
+
+.card__meta {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
+}
+
+.card__meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.card__meta-item--right {
+  align-items: flex-end;
+  text-align: right;
+}
+
+.card__meta-value {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--white);
+}
+
+.card__scan {
+  background: var(--white);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.card__qr {
+  width: 160px;
+  height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card__qr img,
+.card__qr canvas,
+.card__qr table {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.card__scan-caption {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 10px;
+  color: #666666;
+}
+
+.status {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--dim);
+  text-align: center;
+  padding: 0 20px;
+}
+
+.status--error {
+  color: var(--red);
+}
+
+@media (max-width: 360px) {
+  .card__sessions-num {
+    font-size: 68px;
+  }
+}

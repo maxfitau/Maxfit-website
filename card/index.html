@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+<title>MaxFit — Membership Card</title>
+
+<!-- PWA / installability -->
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#111111" />
+<meta name="mobile-web-app-capable" content="yes" />
+
+<!-- iOS home screen behavior -->
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="MaxFit" />
+<link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png" />
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<main class="card" id="card">
+  <div class="card__top">
+    <img class="card__wordmark" src="../assets/images/maxfit-logo.png" alt="MaxFit" />
+    <span class="card__tag">Membership</span>
+  </div>
+
+  <div class="card__sessions">
+    <span class="card__label card__label--red">Sessions Left</span>
+    <span class="card__sessions-num" id="sessionsNum">—</span>
+  </div>
+
+  <div class="card__meta">
+    <div class="card__meta-item">
+      <span class="card__label">Member</span>
+      <span class="card__meta-value" id="memberName">—</span>
+    </div>
+    <div class="card__meta-item card__meta-item--right">
+      <span class="card__label">Tier</span>
+      <span class="card__meta-value" id="memberTier">—</span>
+    </div>
+  </div>
+
+  <a class="card__upcoming" id="upcomingLink" href="https://www.maxfit.now/#programs" target="_blank" rel="noopener">
+    <div class="card__upcoming-text">
+      <span class="card__label">Upcoming Session</span>
+      <span class="card__upcoming-value" id="upcomingValue">—</span>
+    </div>
+    <svg class="card__upcoming-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 17L17 7M17 7H8M17 7V16"/></svg>
+  </a>
+
+  <div class="card__scan">
+    <div class="card__qr" id="qrCode"></div>
+    <span class="card__scan-caption">Scan at Front Desk</span>
+  </div>
+</main>
+
+<div class="status" id="status" hidden></div>
+
+<script src="vendor/qrcode.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

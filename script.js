@@ -286,4 +286,150 @@ document.addEventListener("DOMContentLoaded", function () {
       });
     }, { passive: true });
   }
+
+  /* ---------- Client video testimonials ----------
+     Edit this list to swap in real client videos. For each entry:
+       - name / caption: shown on the card and in the lightbox
+       - thumbnail: path to a poster image, or null to keep the
+         dashed "video placeholder" card until you add one
+       - video.type: "local" | "youtube" | "vimeo" | "placeholder"
+       - video.src:
+           local    -> path to the video file, e.g. "assets/videos/jordan.mp4"
+           youtube  -> the video ID only (the part after "v=" or after "youtu.be/")
+           vimeo    -> the numeric video ID only
+           placeholder -> leave src empty; the lightbox will show a
+                          "no video yet" notice instead of trying to play one
+  ---------------------------------------------------- */
+  var videoTestimonials = [
+    { name: "J.H", caption: "", thumbnail: null, video: { type: "local", src: "assets/videos/client-testimonial-1.mov" } },
+    { name: "Client Name 2", caption: "Add a short result or caption here", thumbnail: null, video: { type: "placeholder", src: "" } },
+    { name: "Client Name 3", caption: "Add a short result or caption here", thumbnail: null, video: { type: "placeholder", src: "" } },
+    { name: "Client Name 4", caption: "Add a short result or caption here", thumbnail: null, video: { type: "placeholder", src: "" } },
+    { name: "Client Name 5", caption: "Add a short result or caption here", thumbnail: null, video: { type: "placeholder", src: "" } },
+    { name: "Client Name 6", caption: "Add a short result or caption here", thumbnail: null, video: { type: "placeholder", src: "" } }
+  ];
+
+  var vtTrack = document.querySelector(".vt__track");
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, function (ch) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch];
+    });
+  }
+
+  function buildVideoCard(item, isDuplicate) {
+    var card = document.createElement("button");
+    card.type = "button";
+    card.className = "vt-card";
+
+    var thumbHtml = item.thumbnail
+      ? '<img class="vt-card__thumb" src="' + item.thumbnail + '" alt="Video testimonial from ' + escapeHtml(item.name) + '" />'
+      : '<span class="vt-card__thumb media-placeholder media-placeholder--video">' +
+          '<span class="media-placeholder__inner">' +
+            '<span class="media-placeholder__label">Video placeholder</span>' +
+            '<span class="media-placeholder__hint">Add ' + escapeHtml(item.name) + '&rsquo;s video</span>' +
+          '</span>' +
+        '</span>';
+
+    card.innerHTML =
+      thumbHtml +
+      '<span class="vt-card__play" aria-hidden="true">' +
+        '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>' +
+      '</span>' +
+      '<span class="vt-card__who">' +
+        '<span class="vt-card__name">' + escapeHtml(item.name) + '</span>' +
+        (item.caption ? '<span class="vt-card__caption">' + escapeHtml(item.caption) + '</span>' : '') +
+      '</span>';
+
+    if (isDuplicate) {
+      card.setAttribute("aria-hidden", "true");
+      card.tabIndex = -1;
+    } else {
+      card.setAttribute("aria-label", "Play video testimonial from " + item.name);
+      card.addEventListener("click", function () {
+        openVideoLightbox(item);
+      });
+    }
+
+    return card;
+  }
+
+  if (vtTrack) {
+    /* Rendered twice back-to-back so the marquee animation (translateX
+       to -50%) loops seamlessly; the second set is inert/aria-hidden. */
+    videoTestimonials.forEach(function (item) {
+      vtTrack.appendChild(buildVideoCard(item, false));
+    });
+    videoTestimonials.forEach(function (item) {
+      vtTrack.appendChild(buildVideoCard(item, true));
+    });
+  }
+
+  /* ---------- Video lightbox ---------- */
+  var vtLightbox = document.getElementById("vt-lightbox");
+  var vtLightboxBody = vtLightbox ? vtLightbox.querySelector(".vt-lightbox__body") : null;
+  var vtLightboxTitle = vtLightbox ? vtLightbox.querySelector(".vt-lightbox__title") : null;
+  var vtLightboxClose = vtLightbox ? vtLightbox.querySelector(".vt-lightbox__close") : null;
+  var vtLastFocused = null;
+
+  function openVideoLightbox(item) {
+    if (!vtLightbox || !vtLightboxBody) return;
+
+    var media;
+    if (item.video.type === "youtube") {
+      media = document.createElement("iframe");
+      media.className = "vt-lightbox__frame";
+      media.src = "https://www.youtube-nocookie.com/embed/" + item.video.src + "?autoplay=1&rel=0";
+      media.setAttribute("allow", "autoplay; encrypted-media; picture-in-picture");
+      media.setAttribute("allowfullscreen", "");
+    } else if (item.video.type === "vimeo") {
+      media = document.createElement("iframe");
+      media.className = "vt-lightbox__frame";
+      media.src = "https://player.vimeo.com/video/" + item.video.src + "?autoplay=1";
+      media.setAttribute("allow", "autoplay; fullscreen; picture-in-picture");
+      media.setAttribute("allowfullscreen", "");
+    } else if (item.video.type === "local") {
+      media = document.createElement("video");
+      media.className = "vt-lightbox__frame";
+      media.src = item.video.src;
+      media.controls = true;
+      media.autoplay = true;
+      media.playsInline = true;
+    } else {
+      media = document.createElement("div");
+      media.className = "vt-lightbox__placeholder";
+      media.innerHTML =
+        '<div class="media-placeholder__label">No video yet</div>' +
+        '<div class="media-placeholder__hint">Add ' + escapeHtml(item.name) + '&rsquo;s testimonial video in script.js (videoTestimonials list)</div>';
+    }
+
+    vtLightboxBody.innerHTML = "";
+    vtLightboxBody.appendChild(media);
+    if (vtLightboxTitle) vtLightboxTitle.textContent = item.name;
+
+    vtLightbox.classList.add("is-open");
+    document.body.classList.add("vt-lightbox-open");
+    vtLastFocused = document.activeElement;
+    if (vtLightboxClose) vtLightboxClose.focus();
+  }
+
+  function closeVideoLightbox() {
+    if (!vtLightbox || !vtLightboxBody) return;
+    vtLightbox.classList.remove("is-open");
+    document.body.classList.remove("vt-lightbox-open");
+    vtLightboxBody.innerHTML = "";
+    if (vtLastFocused && typeof vtLastFocused.focus === "function") vtLastFocused.focus();
+  }
+
+  if (vtLightbox) {
+    if (vtLightboxClose) vtLightboxClose.addEventListener("click", closeVideoLightbox);
+
+    vtLightbox.addEventListener("click", function (e) {
+      if (e.target === vtLightbox) closeVideoLightbox();
+    });
+
+    window.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && vtLightbox.classList.contains("is-open")) closeVideoLightbox();
+    });
+  }
 });
