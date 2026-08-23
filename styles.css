@@ -57,48 +57,18 @@ body.is-loading { overflow: hidden; }
   pointer-events: none;
 }
 
-/* The real hero logo sits above the preloader (z-index) and never moves.
-   Everything else on the page starts hidden and fades in around it.
-   .hero__content normally sits at z-index:1 (just to clear .hero__shapes) —
-   that traps .hero__logo-wrap's z-index inside its own stacking context,
-   so it never actually wins against #preloader's z-index:300. Bump it past
-   300 while is-preloading so the logo can escape.
-   is-preloading (not is-loading) controls this on purpose: is-loading gets
-   removed the instant the overlay STARTS fading, but the overlay's opacity
-   transition still takes 0.5s to actually finish — dropping back to
-   z-index:1 that early would let the still-partly-opaque overlay cover the
-   logo again for that window (a visible flicker). is-preloading instead
-   stays on until the overlay's fade-out transition genuinely completes. */
-body.is-preloading .hero__content {
-  z-index: 301;
-}
-
-body.is-loading .site-header,
-body.is-loading .float-cta,
-body.is-loading .hero__shapes,
-body.is-loading .hero__label,
-body.is-loading .hero__tagline,
-body.is-loading .hero__sub,
-body.is-loading .hero__actions,
-body.is-loading .hero__scroll,
-body.is-loading main > *:not(.hero) {
-  opacity: 0;
-}
-
-.float-cta,
-.hero__shapes,
-.hero__label,
-.hero__tagline,
-.hero__sub,
-.hero__actions,
-.hero__scroll,
-main > *:not(.hero) {
-  transition: opacity 0.6s ease;
+.preloader__video {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(90vw, 640px);
+  height: auto;
 }
 
 .preloader__caption {
   position: absolute;
-  bottom: 22%;
+  bottom: 18%;
   left: 0;
   right: 0;
   transform: translateY(6px);
@@ -115,9 +85,7 @@ main > *:not(.hero) {
   text-shadow: 0 2px 20px rgba(0, 0, 0, 0.5);
   white-space: nowrap;
   opacity: 0;
-  animation:
-    preloader-caption-in 0.5s var(--ease) 0.4s forwards,
-    preloader-fade-out 0.4s ease 2.3s forwards;
+  animation: preloader-caption-in 0.5s var(--ease) 0.3s forwards;
 }
 
 .preloader__dots {
@@ -136,19 +104,6 @@ main > *:not(.hero) {
 .preloader__dots span:nth-child(2) { animation-delay: 0.15s; }
 .preloader__dots span:nth-child(3) { animation-delay: 0.3s; }
 
-@keyframes preloader-x-pulse {
-  0%, 100% { opacity: 0; }
-  50% { opacity: 1; }
-}
-
-@keyframes preloader-fade-out {
-  to { opacity: 0; }
-}
-
-@keyframes preloader-fade-in {
-  to { opacity: 1; }
-}
-
 @keyframes preloader-caption-in {
   to { opacity: 1; transform: translateY(0); }
 }
@@ -158,9 +113,33 @@ main > *:not(.hero) {
   40% { opacity: 1; transform: scale(1.15); }
 }
 
+body.is-loading .site-header,
+body.is-loading .float-cta,
+body.is-loading .hero__shapes,
+body.is-loading .hero__label,
+body.is-loading .hero__logo-wrap,
+body.is-loading .hero__tagline,
+body.is-loading .hero__sub,
+body.is-loading .hero__actions,
+body.is-loading .hero__scroll,
+body.is-loading main > *:not(.hero) {
+  opacity: 0;
+}
+
+.float-cta,
+.hero__shapes,
+.hero__label,
+.hero__logo-wrap,
+.hero__tagline,
+.hero__sub,
+.hero__actions,
+.hero__scroll,
+main > *:not(.hero) {
+  transition: opacity 0.6s ease;
+}
+
 @media (prefers-reduced-motion: reduce) {
   #preloader { display: none; }
-  .hero__logo-glow, .hero__logo-x-pulse { display: none; }
 }
 
 a { color: inherit; text-decoration: none; }
@@ -527,7 +506,6 @@ section {
 
 .hero__logo-wrap {
   position: relative;
-  z-index: 301;
   width: min(92%, 560px);
   margin-bottom: 20px;
 }
@@ -548,35 +526,6 @@ section {
   aspect-ratio: 1;
   background: radial-gradient(circle, rgba(224, 0, 0, 0.4), rgba(224, 0, 0, 0.12) 45%, transparent 72%);
   z-index: -1;
-  pointer-events: none;
-}
-
-.hero__logo-glow {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 150%;
-  aspect-ratio: 1;
-  background: radial-gradient(circle, rgba(224, 0, 0, 0.5), rgba(224, 0, 0, 0.16) 45%, transparent 72%);
-  opacity: 0;
-  z-index: -1;
-  animation:
-    preloader-fade-in 0.6s ease 0.3s forwards,
-    preloader-fade-out 0.4s ease 2.3s forwards;
-  pointer-events: none;
-}
-
-.hero__logo-x-pulse {
-  position: absolute;
-  left: 45.91%;
-  top: 3.76%;
-  width: 12.9%;
-  height: 91.94%;
-  opacity: 0;
-  animation:
-    preloader-x-pulse 1.3s ease-in-out 0.3s infinite,
-    preloader-fade-out 0.4s ease 2.3s forwards;
   pointer-events: none;
 }
 

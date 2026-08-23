@@ -1,36 +1,33 @@
 document.addEventListener("DOMContentLoaded", function () {
   var prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  /* ---------- Preloader: logo resolve ---------- */
+  /* ---------- Preloader: intro video ---------- */
   var preloader = document.getElementById("preloader");
+  var preloaderVideo = preloader ? preloader.querySelector(".preloader__video") : null;
 
   if (preloader) {
     if (prefersReducedMotion) {
       preloader.remove();
     } else {
       document.body.classList.add("is-loading");
-      document.body.classList.add("is-preloading");
 
       var hidePreloader = function () {
         preloader.classList.add("is-hidden");
         document.body.classList.remove("is-loading");
       };
 
-      // Keep the logo's z-index escape active until the overlay has
-      // actually finished fading out, not just the instant it starts —
-      // see the is-preloading comment in styles.css for why.
-      preloader.addEventListener("transitionend", function (e) {
-        if (e.propertyName === "opacity") {
-          document.body.classList.remove("is-preloading");
-        }
-      });
-
-      var preloaderTimer = setTimeout(hidePreloader, 2300);
+      // The video ends the moment it's done, but keep a fallback timer in
+      // case autoplay is blocked or the "ended" event never fires.
+      var preloaderTimer = setTimeout(hidePreloader, 2600);
 
       var skipPreloader = function () {
         clearTimeout(preloaderTimer);
         hidePreloader();
       };
+
+      if (preloaderVideo) {
+        preloaderVideo.addEventListener("ended", skipPreloader);
+      }
 
       preloader.addEventListener("click", skipPreloader);
       window.addEventListener("keydown", skipPreloader, { once: true });
