@@ -171,6 +171,8 @@ const els = {
   upcomingLabel: document.getElementById("upcomingLabel"),
   upcomingValue: document.getElementById("upcomingValue"),
   upcomingLink: document.getElementById("upcomingLink"),
+  picker: document.getElementById("picker"),
+  pickerList: document.getElementById("pickerList"),
 };
 
 function showStatus(message, isError) {
@@ -276,19 +278,34 @@ function findColumn(header, name) {
   return header.findIndex((h) => h.trim().toLowerCase() === name.toLowerCase());
 }
 
-async function fetchMemberData(id) {
-  const res = await fetch(SHEET_CSV_URL, { cache: "no-store" });
-  if (!res.ok) throw new Error("sheet fetch failed");
+let sheetPromise;
 
-  const [header, ...rows] = parseCSV(await res.text());
-  const col = {
-    name: findColumn(header, "Name"),
-    package: findColumn(header, "Package Type"),
-    sessions: findColumn(header, "Sessions Remaining"),
-    programType: findColumn(header, "Program Type"),
-    class: findColumn(header, "Class"),
-    programDoc: findColumn(header, "Program Doc"),
-  };
+/** Fetches + parses the sheet once per page load; every caller shares the same result. */
+function fetchSheet() {
+  if (!sheetPromise) {
+    sheetPromise = fetch(SHEET_CSV_URL, { cache: "no-store" })
+      .then((res) => {
+        if (!res.ok) throw new Error("sheet fetch failed");
+        return res.text();
+      })
+      .then((text) => {
+        const [header, ...rows] = parseCSV(text);
+        const col = {
+          name: findColumn(header, "Name"),
+          package: findColumn(header, "Package Type"),
+          sessions: findColumn(header, "Sessions Remaining"),
+          programType: findColumn(header, "Program Type"),
+          class: findColumn(header, "Class"),
+          programDoc: findColumn(header, "Program Doc"),
+        };
+        return { rows, col };
+      });
+  }
+  return sheetPromise;
+}
+
+async function fetchMemberData(id) {
+  const { rows, col } = await fetchSheet();
 
   const wantedSlug = id ? slugify(id) : undefined;
   const match = wantedSlug
@@ -313,17 +330,60 @@ async function fetchMemberData(id) {
   };
 }
 
-async function init() {
-  if (!memberId) {
-    showStatus("No member link detected — showing demo card.");
-  }
-
+async function loadCard(id) {
   try {
-    const data = await fetchMemberData(memberId);
+    const data = await fetchMemberData(id);
     await render(data);
   } catch (err) {
     showStatus("Couldn't load your card. Check your connection and reopen.", true);
   }
 }
 
-init();
+/**
+ * Standalone home screen apps on iOS can run in a storage container that's
+ * isolated from the Safari tab the id was originally saved from — so
+ * localStorage set while browsing normally doesn't always carry over to the
+ * installed icon. When that happens (no id in the URL, none in this
+ * container's storage either), ask once, right here, and save the answer
+ * in *this* storage container so it's available on every future open of
+ * this exact icon — no dependency on how iOS handles the URL or manifest.
+ */
+async function showPicker() {
+  try {
+    const { rows, col } = await fetchSheet();
+    const names = rows.map((r) => r[col.name]).filter(Boolean);
+
+    if (!names.length) {
+      els.pickerList.innerHTML = '<p class="picker__empty">Couldn\'t load the member list. Check your connection and reopen.</p>';
+    } else {
+      els.pickerList.innerHTML = "";
+      for (const name of names) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "picker__option";
+        button.textContent = name;
+        button.addEventListener("click", () => {
+          const id = slugify(name);
+          try {
+            localStorage.setItem(MEMBER_ID_STORAGE_KEY, id);
+          } catch (err) {
+            // Storage unavailable — card still works for this session.
+          }
+          els.picker.hidden = true;
+          loadCard(id);
+        });
+        els.pickerList.appendChild(button);
+      }
+    }
+  } catch (err) {
+    els.pickerList.innerHTML = '<p class="picker__empty">Couldn\'t load the member list. Check your connection and reopen.</p>';
+  }
+
+  els.picker.hidden = false;
+}
+
+if (memberId) {
+  loadCard(memberId);
+} else {
+  showPicker();
+}
