@@ -92,6 +92,11 @@ body {
   gap: 6px;
 }
 
+.card__sessions-row {
+  display: flex;
+  gap: 28px;
+}
+
 .card__sessions-num {
   font-family: var(--font-head);
   font-weight: 800;
@@ -99,6 +104,10 @@ body {
   line-height: 1;
   color: var(--white);
   letter-spacing: -0.01em;
+}
+
+.card__sessions-num--split {
+  font-size: 52px;
 }
 
 .card__meta {
@@ -306,5 +315,13 @@ body {
 @media (max-width: 360px) {
   .card__sessions-num {
     font-size: 68px;
+  }
+
+  .card__sessions-row {
+    gap: 16px;
+  }
+
+  .card__sessions-num--split {
+    font-size: 40px;
   }
 }

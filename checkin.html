@@ -36,9 +36,15 @@
       <span class="card__meta-value" id="checkinName">—</span>
     </div>
 
-    <div class="card__sessions">
-      <span class="card__label card__label--red">Sessions Remaining</span>
-      <span class="card__sessions-num" id="checkinSessions">—</span>
+    <div class="card__sessions-row">
+      <div class="card__sessions">
+        <span class="card__label card__label--red">Group Left</span>
+        <span class="card__sessions-num card__sessions-num--split" id="checkinGroupSessions">—</span>
+      </div>
+      <div class="card__sessions">
+        <span class="card__label card__label--red">1-on-1 Left</span>
+        <span class="card__sessions-num card__sessions-num--split" id="checkinOneOnOneSessions">—</span>
+      </div>
     </div>
 
     <p class="checkin__owing" id="checkinOwing" hidden></p>

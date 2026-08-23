@@ -163,7 +163,8 @@ if (memberId) {
 }
 
 const els = {
-  sessions: document.getElementById("sessionsNum"),
+  groupSessions: document.getElementById("groupSessionsNum"),
+  oneOnOneSessions: document.getElementById("oneOnOneSessionsNum"),
   name: document.getElementById("memberName"),
   tier: document.getElementById("memberTier"),
   qr: document.getElementById("qrCode"),
@@ -192,7 +193,8 @@ function renderQR(value) {
 }
 
 async function render(data) {
-  els.sessions.textContent = data.sessionsRemaining;
+  els.groupSessions.textContent = data.groupSessionsRemaining;
+  els.oneOnOneSessions.textContent = data.oneOnOneSessionsRemaining;
   els.name.textContent = data.memberName;
   els.tier.textContent = data.tier;
   renderQR(data.checkInUrl);
@@ -216,7 +218,8 @@ async function render(data) {
 const DEMO_MEMBER = {
   memberName: "Alex Morgan",
   tier: "Founding Member",
-  sessionsRemaining: 12,
+  groupSessionsRemaining: 8,
+  oneOnOneSessionsRemaining: 4,
   programType: "group",
   classLabel: "Mission: Slimpossible",
 };
@@ -240,15 +243,14 @@ async function fetchMemberData(id) {
     return { ...DEMO_MEMBER, checkInUrl: `https://maxfit.now/checkin.html?token=${id || "DEMO-0000"}` };
   }
 
-  const sessionsRaw = (match[col.sessions] || "").trim();
-  const sessions = Number(sessionsRaw);
   const programType = ((col.programType >= 0 && match[col.programType]) || "").trim().toLowerCase();
   const token = (col.checkInToken >= 0 && match[col.checkInToken]) || id || "";
 
   return {
     memberName: match[col.name],
     tier: match[col.package] || "Member",
-    sessionsRemaining: Number.isFinite(sessions) ? sessions : sessionsRaw || "N/A",
+    groupSessionsRemaining: parseSessions(match[col.groupSessions], "N/A"),
+    oneOnOneSessionsRemaining: parseSessions(match[col.oneOnOneSessions], "N/A"),
     checkInUrl: `https://maxfit.now/checkin.html?token=${encodeURIComponent(token)}`,
     programType: programType === "self-guided" ? "self-guided" : "group",
     classLabel: col.class >= 0 ? match[col.class] : undefined,

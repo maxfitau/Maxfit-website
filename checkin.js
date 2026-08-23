@@ -23,7 +23,8 @@ const els = {
   confirm: document.getElementById("checkinConfirm"),
   success: document.getElementById("checkinSuccess"),
   name: document.getElementById("checkinName"),
-  sessions: document.getElementById("checkinSessions"),
+  groupSessions: document.getElementById("checkinGroupSessions"),
+  oneOnOneSessions: document.getElementById("checkinOneOnOneSessions"),
   owing: document.getElementById("checkinOwing"),
   button: document.getElementById("checkinButton"),
   submitError: document.getElementById("checkinSubmitError"),
@@ -64,11 +65,9 @@ async function init() {
     return;
   }
 
-  const sessionsRaw = (match[col.sessions] || "").trim();
-  const sessionsNum = Number(sessionsRaw);
-  const hasNumericSessions = sessionsRaw !== "" && Number.isFinite(sessionsNum);
   els.name.textContent = match[col.name];
-  els.sessions.textContent = hasNumericSessions ? sessionsNum : "Unlimited";
+  els.groupSessions.textContent = parseSessions(match[col.groupSessions], "N/A");
+  els.oneOnOneSessions.textContent = parseSessions(match[col.oneOnOneSessions], "N/A");
 
   const owing = Number((match[col.amountOwing] || "").trim());
   if (Number.isFinite(owing) && owing > 0) {

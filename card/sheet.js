@@ -61,6 +61,18 @@ function findColumn(header, name) {
   return header.findIndex((h) => h.trim().toLowerCase() === name.toLowerCase());
 }
 
+/**
+ * Parses a "sessions remaining" cell: a plain number stays a number: blank
+ * or non-numeric text (e.g. "unlimited") falls back to fallback instead —
+ * Number("") is 0 in JS, not NaN, so that blank-vs-zero distinction has to
+ * be checked explicitly rather than trusting Number.isFinite() alone.
+ */
+function parseSessions(raw, fallback) {
+  const trimmed = (raw || "").trim();
+  const num = Number(trimmed);
+  return trimmed !== "" && Number.isFinite(num) ? num : fallback;
+}
+
 let sheetPromise;
 
 /** Fetches + parses the sheet once per page load; every caller shares the same result. */
@@ -76,7 +88,8 @@ function fetchSheet() {
         const col = {
           name: findColumn(header, "Name"),
           package: findColumn(header, "Package Type"),
-          sessions: findColumn(header, "Sessions Remaining"),
+          groupSessions: findColumn(header, "Group Sessions Remaining"),
+          oneOnOneSessions: findColumn(header, "1 on 1 Remaining"),
           amountOwing: findColumn(header, "Amount Owing"),
           programType: findColumn(header, "Program Type"),
           class: findColumn(header, "Class"),
