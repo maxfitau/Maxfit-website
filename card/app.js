@@ -91,27 +91,37 @@ function render(data) {
   }
 }
 
+const DEMO_MEMBER = {
+  memberName: "Alex Morgan",
+  tier: "Founding Member",
+  sessionsRemaining: 12,
+  classId: "slimpossible-wed",
+};
+
 /**
- * Replace this with a real CRM lookup, e.g.:
+ * Looks the member up in members.json by their URL id. That file is the
+ * whole "database" for now — edit it (e.g. via GitHub's web editor) and
+ * push to update anyone's sessions/tier/class, no code changes needed.
+ *
+ * To replace this with a live CRM lookup instead, swap the fetch below for
+ * a call to a backend/proxy endpoint, e.g.:
  *   const res = await fetch(`https://api.maxfit.now/members/${id}`);
  *   if (!res.ok) throw new Error("lookup failed");
  *   return res.json();
  *
- * The CRM call must go through a backend/proxy endpoint, not a client-side
- * request straight to monday.com (or any CRM) with an embedded API key —
- * that key would be readable by anyone who opens dev tools on the card.
+ * The CRM call must go through a backend/proxy, not a client-side request
+ * straight to monday.com (or any CRM) with an embedded API key — that key
+ * would be readable by anyone who opens dev tools on the card.
  */
 async function fetchMemberData(id) {
-  await new Promise((resolve) => setTimeout(resolve, 300));
-  return {
-    memberName: "Alex Morgan",
-    tier: "Founding Member",
-    sessionsRemaining: 12,
-    checkInCode: id || "DEMO-0000",
-    // Key into WEEKLY_SCHEDULE above — whichever class this member is
-    // enrolled in. Falls back to a generic "See full schedule" link.
-    classId: "slimpossible-wed",
-  };
+  const res = await fetch("members.json", { cache: "no-store" });
+  const members = res.ok ? await res.json() : {};
+  const member = id ? members[id] : undefined;
+
+  if (!member) {
+    return { ...DEMO_MEMBER, checkInCode: id || "DEMO-0000" };
+  }
+  return { ...member, checkInCode: id };
 }
 
 async function init() {
