@@ -15,15 +15,17 @@
 /*
  * Weekly class schedule — mirrors the timetable on maxfit.now/#programs
  * (index.html, "Group Classes" section). Keep these two in sync until the
- * schedule has a single real source (CRM/booking system).
+ * schedule has a single real source (CRM/booking system). Matched against
+ * the sheet's "Class" column by label text, case-insensitive, so the sheet
+ * can hold the same names shown on the timetable rather than internal ids.
  */
-const WEEKLY_SCHEDULE = {
-  "heart-hustle": { day: "Monday", time: "06:00", label: "Heart & Hustle", tag: "Circuit" },
-  "slimpossible-wed": { day: "Wednesday", time: "06:00", label: "Mission: Slimpossible", tag: "EMOM" },
-  "strong-sculpted": { day: "Thursday", time: "06:00", label: "Strong & Sculpted", tag: "Tabata" },
-  "heart-hustle-fri": { day: "Friday", time: "06:00", label: "Heart & Hustle", tag: "Circuit" },
-  "slimpossible-sat": { day: "Saturday", time: "08:00", label: "Mission: Slimpossible", tag: "EMOM" },
-};
+const WEEKLY_SCHEDULE = [
+  { day: "Monday", time: "06:00", label: "Heart & Hustle", tag: "Circuit" },
+  { day: "Wednesday", time: "06:00", label: "Mission: Slimpossible", tag: "EMOM" },
+  { day: "Thursday", time: "06:00", label: "Strong & Sculpted", tag: "Tabata" },
+  { day: "Friday", time: "06:00", label: "Heart & Hustle", tag: "Circuit" },
+  { day: "Saturday", time: "08:00", label: "Mission: Slimpossible", tag: "EMOM" },
+];
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -41,15 +43,66 @@ function nextOccurrence(dayName, timeStr) {
   return result;
 }
 
-function formatUpcoming(session) {
-  const when = nextOccurrence(session.day, session.time);
+/** Earliest upcoming occurrence of a class, matched by label (case-insensitive). */
+function findNextGroupSession(classLabel) {
+  if (!classLabel) return undefined;
+  const matches = WEEKLY_SCHEDULE.filter(
+    (entry) => entry.label.toLowerCase() === classLabel.trim().toLowerCase()
+  );
+  if (!matches.length) return undefined;
+
+  let best;
+  for (const entry of matches) {
+    const when = nextOccurrence(entry.day, entry.time);
+    if (!best || when < best.when) best = { entry, when };
+  }
+  return best;
+}
+
+function formatUpcoming(when, label) {
   const dayLabel = when.getDate() === new Date().getDate() && when.getMonth() === new Date().getMonth()
     ? "Today"
     : DAY_SHORT[when.getDay()];
   const time = when
     .toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", hour12: true })
     .toUpperCase();
-  return `${dayLabel} · ${time} — ${session.label}`;
+  return `${dayLabel} · ${time} — ${label}`;
+}
+
+/** Extracts a Google Doc id from any of its share/edit URL forms. */
+function extractDocId(url) {
+  const match = /\/document\/d\/([a-zA-Z0-9_-]+)/.exec(url || "");
+  return match ? match[1] : undefined;
+}
+
+/**
+ * Reads a self-guided client's personal program doc and pulls out today's
+ * workout name. Expects a line starting with the day name, e.g.
+ * "Wednesday: Push Day" or "Wednesday — Push Day". If that line has no
+ * label after the day name, the next non-blank line is used instead.
+ * Returns undefined if the doc can't be read or no line matches today.
+ */
+async function fetchTodaysWorkout(docUrl) {
+  const docId = extractDocId(docUrl);
+  if (!docId) return undefined;
+
+  const res = await fetch(`https://docs.google.com/document/d/${docId}/export?format=txt`, {
+    cache: "no-store",
+  });
+  if (!res.ok) return undefined;
+
+  const lines = (await res.text()).split("\n").map((l) => l.trim());
+  const today = DAY_NAMES[new Date().getDay()];
+  const dayLine = new RegExp(`^${today}\\s*[:\\-–—]?\\s*(.*)$`, "i");
+
+  for (let i = 0; i < lines.length; i++) {
+    const match = dayLine.exec(lines[i]);
+    if (!match) continue;
+    if (match[1]) return match[1];
+    const next = lines.slice(i + 1).find((l) => l.length > 0);
+    return next;
+  }
+  return undefined;
 }
 
 const params = new URLSearchParams(window.location.search);
@@ -61,6 +114,7 @@ const els = {
   tier: document.getElementById("memberTier"),
   qr: document.getElementById("qrCode"),
   status: document.getElementById("status"),
+  upcomingLabel: document.getElementById("upcomingLabel"),
   upcomingValue: document.getElementById("upcomingValue"),
   upcomingLink: document.getElementById("upcomingLink"),
 };
@@ -79,25 +133,34 @@ function renderQR(value) {
   els.qr.innerHTML = qr.createSvgTag({ scalable: true });
 }
 
-function render(data) {
+async function render(data) {
   els.sessions.textContent = data.sessionsRemaining;
   els.name.textContent = data.memberName;
   els.tier.textContent = data.tier;
   renderQR(data.checkInCode);
 
-  const session = WEEKLY_SCHEDULE[data.classId];
-  if (session) {
-    els.upcomingValue.textContent = formatUpcoming(session);
-  } else {
-    els.upcomingValue.textContent = "See full schedule";
+  if (data.programType === "self-guided" && data.programDoc) {
+    els.upcomingLabel.textContent = "Today's Workout";
+    els.upcomingLink.href = data.programDoc;
+    const workout = await fetchTodaysWorkout(data.programDoc);
+    els.upcomingValue.textContent = workout || "View your program";
+    return;
   }
+
+  els.upcomingLabel.textContent = "Upcoming Session";
+  els.upcomingLink.href = "https://www.maxfit.now/#programs";
+  const next = findNextGroupSession(data.classLabel);
+  els.upcomingValue.textContent = next
+    ? formatUpcoming(next.when, next.entry.label)
+    : "See full schedule";
 }
 
 const DEMO_MEMBER = {
   memberName: "Alex Morgan",
   tier: "Founding Member",
   sessionsRemaining: 12,
-  classId: "slimpossible-wed",
+  programType: "group",
+  classLabel: "Mission: Slimpossible",
 };
 
 const SHEET_ID = "1dGQyIoJ2_XrkbvvPvM2JAY0xdeYQfsCnYHal8WZojUg";
@@ -163,6 +226,9 @@ async function fetchMemberData(id) {
     name: header.indexOf("Name"),
     package: header.indexOf("Package Type"),
     sessions: header.indexOf("Sessions Remaining"),
+    programType: header.indexOf("Program Type"),
+    class: header.indexOf("Class"),
+    programDoc: header.indexOf("Program Doc"),
   };
 
   const match = id ? rows.find((r) => r[col.name] && slugify(r[col.name]) === id) : undefined;
@@ -171,13 +237,16 @@ async function fetchMemberData(id) {
   }
 
   const sessions = Number(match[col.sessions]);
+  const programType = ((col.programType >= 0 && match[col.programType]) || "").trim().toLowerCase();
+
   return {
     memberName: match[col.name],
     tier: match[col.package] || "Member",
     sessionsRemaining: Number.isFinite(sessions) ? sessions : "N/A",
     checkInCode: id,
-    // Not tracked in the sheet yet — falls back to "See full schedule".
-    classId: undefined,
+    programType: programType === "self-guided" ? "self-guided" : "group",
+    classLabel: col.class >= 0 ? match[col.class] : undefined,
+    programDoc: col.programDoc >= 0 ? match[col.programDoc] : undefined,
   };
 }
 
@@ -188,7 +257,7 @@ async function init() {
 
   try {
     const data = await fetchMemberData(memberId);
-    render(data);
+    await render(data);
   } catch (err) {
     showStatus("Couldn't load your card. Check your connection and reopen.", true);
   }
