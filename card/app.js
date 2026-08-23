@@ -2,12 +2,14 @@
  * MaxFit membership card.
  *
  * Identity: the member's id comes from the URL — each member gets a unique
- * link like maxfit.now/card/?id=abc123, opens it once, and adds it to their
- * home screen. No login.
+ * link like maxfit.now/card/?id=jordansmith, opens it once, and adds it to
+ * their home screen. No login. The id is the member's name, lowercased and
+ * stripped of spaces/punctuation (see slugify()).
  *
- * Data: fetchMemberData() is the one function to rewire once a CRM endpoint
- * exists. Today it returns placeholder data so the screen is fully
- * demoable before that wiring lands.
+ * Data: fetchMemberData() reads live from the "Sessions Remaining" tab of
+ * the Google Sheet CRM (docs.google.com/spreadsheets/d/1dGQyIoJ2_XrkbvvPvM2JAY0xdeYQfsCnYHal8WZojUg,
+ * gid 1169726169). The sheet must stay shared as "Anyone with the link —
+ * Viewer" for this fetch to work (no login, no API key involved).
  */
 
 /*
@@ -98,30 +100,85 @@ const DEMO_MEMBER = {
   classId: "slimpossible-wed",
 };
 
+const SHEET_ID = "1dGQyIoJ2_XrkbvvPvM2JAY0xdeYQfsCnYHal8WZojUg";
+const SHEET_GID = "1169726169"; // "Sessions Remaining" tab
+const SHEET_CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${SHEET_GID}`;
+
+function slugify(name) {
+  return name.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/** Minimal RFC4180 CSV parser — handles quoted fields with commas inside. */
+function parseCSV(text) {
+  const rows = [];
+  let row = [];
+  let field = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"' && text[i + 1] === '"') {
+        field += '"';
+        i++;
+      } else if (c === '"') {
+        inQuotes = false;
+      } else {
+        field += c;
+      }
+    } else if (c === '"') {
+      inQuotes = true;
+    } else if (c === ",") {
+      row.push(field);
+      field = "";
+    } else if (c === "\n") {
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = "";
+    } else if (c !== "\r") {
+      field += c;
+    }
+  }
+  if (field.length || row.length) {
+    row.push(field);
+    rows.push(row);
+  }
+  return rows;
+}
+
 /**
- * Looks the member up in members.json by their URL id. That file is the
- * whole "database" for now — edit it (e.g. via GitHub's web editor) and
- * push to update anyone's sessions/tier/class, no code changes needed.
- *
- * To replace this with a live CRM lookup instead, swap the fetch below for
- * a call to a backend/proxy endpoint, e.g.:
- *   const res = await fetch(`https://api.maxfit.now/members/${id}`);
- *   if (!res.ok) throw new Error("lookup failed");
- *   return res.json();
- *
- * The CRM call must go through a backend/proxy, not a client-side request
- * straight to monday.com (or any CRM) with an embedded API key — that key
- * would be readable by anyone who opens dev tools on the card.
+ * Looks the member up by name-slug in the "Sessions Remaining" tab of the
+ * Google Sheet CRM. The sheet is the whole database — update a session
+ * count or package there and the card reflects it on next open, no code
+ * changes needed. Falls back to a demo card if the id isn't found or the
+ * sheet can't be reached (e.g. sharing got switched back to private).
  */
 async function fetchMemberData(id) {
-  const res = await fetch("members.json", { cache: "no-store" });
-  const members = res.ok ? await res.json() : {};
-  const member = id ? members[id] : undefined;
+  const res = await fetch(SHEET_CSV_URL, { cache: "no-store" });
+  if (!res.ok) throw new Error("sheet fetch failed");
 
-  if (!member) {
+  const [header, ...rows] = parseCSV(await res.text());
+  const col = {
+    name: header.indexOf("Name"),
+    package: header.indexOf("Package Type"),
+    sessions: header.indexOf("Sessions Remaining"),
+  };
+
+  const match = id ? rows.find((r) => r[col.name] && slugify(r[col.name]) === id) : undefined;
+  if (!match) {
     return { ...DEMO_MEMBER, checkInCode: id || "DEMO-0000" };
   }
-  return { ...member, checkInCode: id };
+
+  const sessions = Number(match[col.sessions]);
+  return {
+    memberName: match[col.name],
+    tier: match[col.package] || "Member",
+    sessionsRemaining: Number.isFinite(sessions) ? sessions : "N/A",
+    checkInCode: id,
+    // Not tracked in the sheet yet — falls back to "See full schedule".
+    classId: undefined,
+  };
 }
 
 async function init() {
