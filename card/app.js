@@ -10,6 +10,46 @@
  * demoable before that wiring lands.
  */
 
+/*
+ * Weekly class schedule — mirrors the timetable on maxfit.now/#programs
+ * (index.html, "Group Classes" section). Keep these two in sync until the
+ * schedule has a single real source (CRM/booking system).
+ */
+const WEEKLY_SCHEDULE = {
+  "heart-hustle": { day: "Monday", time: "06:00", label: "Heart & Hustle", tag: "Circuit" },
+  "slimpossible-wed": { day: "Wednesday", time: "06:00", label: "Mission: Slimpossible", tag: "EMOM" },
+  "strong-sculpted": { day: "Thursday", time: "06:00", label: "Strong & Sculpted", tag: "Tabata" },
+  "heart-hustle-fri": { day: "Friday", time: "06:00", label: "Heart & Hustle", tag: "Circuit" },
+  "slimpossible-sat": { day: "Saturday", time: "08:00", label: "Mission: Slimpossible", tag: "EMOM" },
+};
+
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** Next Date/time this class occurs, given day name + 24h "HH:MM". */
+function nextOccurrence(dayName, timeStr) {
+  const targetDow = DAY_NAMES.indexOf(dayName);
+  const [hours, minutes] = timeStr.split(":").map(Number);
+  const now = new Date();
+  const result = new Date(now);
+  result.setHours(hours, minutes, 0, 0);
+  let daysAhead = (targetDow - now.getDay() + 7) % 7;
+  if (daysAhead === 0 && result <= now) daysAhead = 7;
+  result.setDate(now.getDate() + daysAhead);
+  return result;
+}
+
+function formatUpcoming(session) {
+  const when = nextOccurrence(session.day, session.time);
+  const dayLabel = when.getDate() === new Date().getDate() && when.getMonth() === new Date().getMonth()
+    ? "Today"
+    : DAY_SHORT[when.getDay()];
+  const time = when
+    .toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", hour12: true })
+    .toUpperCase();
+  return `${dayLabel} · ${time} — ${session.label}`;
+}
+
 const params = new URLSearchParams(window.location.search);
 const memberId = params.get("id");
 
@@ -19,6 +59,8 @@ const els = {
   tier: document.getElementById("memberTier"),
   qr: document.getElementById("qrCode"),
   status: document.getElementById("status"),
+  upcomingValue: document.getElementById("upcomingValue"),
+  upcomingLink: document.getElementById("upcomingLink"),
 };
 
 function showStatus(message, isError) {
@@ -40,6 +82,13 @@ function render(data) {
   els.name.textContent = data.memberName;
   els.tier.textContent = data.tier;
   renderQR(data.checkInCode);
+
+  const session = WEEKLY_SCHEDULE[data.classId];
+  if (session) {
+    els.upcomingValue.textContent = formatUpcoming(session);
+  } else {
+    els.upcomingValue.textContent = "See full schedule";
+  }
 }
 
 /**
@@ -59,6 +108,9 @@ async function fetchMemberData(id) {
     tier: "Founding Member",
     sessionsRemaining: 12,
     checkInCode: id || "DEMO-0000",
+    // Key into WEEKLY_SCHEDULE above — whichever class this member is
+    // enrolled in. Falls back to a generic "See full schedule" link.
+    classId: "slimpossible-wed",
   };
 }
 

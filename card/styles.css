@@ -127,6 +127,42 @@ body {
   color: var(--white);
 }
 
+.card__upcoming {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: rgba(224, 0, 0, 0.08);
+  border: 1px solid rgba(224, 0, 0, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  text-decoration: none;
+  transition: background 0.15s var(--ease, ease), border-color 0.15s var(--ease, ease);
+}
+
+.card__upcoming:active {
+  background: rgba(224, 0, 0, 0.16);
+  border-color: rgba(224, 0, 0, 0.5);
+}
+
+.card__upcoming-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.card__upcoming-value {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--white);
+}
+
+.card__upcoming-arrow {
+  color: var(--red);
+  flex-shrink: 0;
+}
+
 .card__scan {
   background: var(--white);
   border-radius: var(--radius-sm);

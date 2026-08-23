@@ -795,6 +795,13 @@ section {
   .about__grid { grid-template-columns: 1fr; }
 }
 
+.coach-photo {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-bottom: 24px;
+}
+
 .bio-card {
   background: var(--bg-card);
   border: 1px solid var(--line);
