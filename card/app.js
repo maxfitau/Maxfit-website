@@ -134,8 +134,33 @@ async function fetchTodaysWorkout(docUrl) {
   return undefined;
 }
 
+/*
+ * iOS's Add to Home Screen behavior around manifest start_url is unreliable
+ * in practice across versions — some builds save the personalized ?id= URL,
+ * others fall back to a generic one. To not depend on that: remember the id
+ * locally the first time someone opens their real link, then fall back to
+ * it whenever the URL doesn't carry one (e.g. an icon that saved the bare
+ * URL). Each phone only ever holds one member's id, matching how these
+ * links are actually used — one phone, one card.
+ */
+const MEMBER_ID_STORAGE_KEY = "maxfitMemberId";
+
 const params = new URLSearchParams(window.location.search);
-const memberId = params.get("id");
+let memberId = params.get("id");
+
+if (memberId) {
+  try {
+    localStorage.setItem(MEMBER_ID_STORAGE_KEY, memberId);
+  } catch (err) {
+    // Private browsing or storage disabled — nothing to fall back on later.
+  }
+} else {
+  try {
+    memberId = localStorage.getItem(MEMBER_ID_STORAGE_KEY);
+  } catch (err) {
+    // Ignore — memberId stays null, demo card shows as before.
+  }
+}
 
 const els = {
   sessions: document.getElementById("sessionsNum"),
