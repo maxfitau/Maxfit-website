@@ -311,3 +311,109 @@ function handleSignup_(payload) {
 
   return jsonResponse_({ status: "success", referrerName: referrerName });
 }
+
+/**
+ * Referral payout — runs automatically as a Google Sheets "simple trigger"
+ * (any function literally named onEdit is auto-installed by Sheets itself,
+ * no separate deployment or authorization step needed). Fires on every
+ * manual edit to the Sessions Remaining sheet; only acts when the edit
+ * touches Payment Status and sets it to "Paid".
+ *
+ * One-time per referred client, guarded by "Referral Bonus Applied" (Y once
+ * paid out) so re-saving the same cell, or editing something else on the
+ * row later, doesn't pay a friend twice for the same referral.
+ *
+ * - Referrer is an existing client (their name matches a row in this same
+ *   sheet) -> +1 Group Session on their own row (a free class, redeemed
+ *   whenever/whichever they like via the normal check-in flow).
+ * - Referrer isn't a client -> +$5 added to their "Bonus Owed" in the
+ *   Referrals tab.
+ */
+function onEdit(e) {
+  try {
+    const sheet = e.range.getSheet();
+    if (sheet.getSheetId() !== SESSIONS_SHEET_GID) return;
+
+    const lastCol = sheet.getLastColumn();
+    const header = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    const col = {
+      name: findColumn_(header, "Name"),
+      paymentStatus: findColumn_(header, "Payment Status"),
+      referredBy: findColumn_(header, "Referred By"),
+      bonusApplied: findColumn_(header, "Referral Bonus Applied"),
+      groupSessions: findColumn_(header, "Group Sessions Remaining"),
+    };
+    if (col.paymentStatus < 0) return;
+
+    const paymentStatusCol1 = col.paymentStatus + 1; // 1-indexed for Range APIs
+    const editedFirstCol = e.range.getColumn();
+    const editedLastCol = editedFirstCol + e.range.getNumColumns() - 1;
+    if (paymentStatusCol1 < editedFirstCol || paymentStatusCol1 > editedLastCol) return;
+
+    const firstRow = e.range.getRow();
+    const numRows = e.range.getNumRows();
+    for (let row = firstRow; row < firstRow + numRows; row++) {
+      if (row === 1) continue; // header
+      maybeApplyReferralBonus_(sheet, col, row);
+    }
+  } catch (err) {
+    // Never let a trigger error block the actual edit someone just made.
+  }
+}
+
+function maybeApplyReferralBonus_(sheet, col, row) {
+  const status = String(sheet.getRange(row, col.paymentStatus + 1).getValue() || "").trim().toLowerCase();
+  if (status !== "paid") return;
+
+  if (col.bonusApplied >= 0) {
+    const already = sheet.getRange(row, col.bonusApplied + 1).getValue();
+    if (already) return;
+  }
+
+  const referredBy = col.referredBy >= 0
+    ? String(sheet.getRange(row, col.referredBy + 1).getValue() || "").trim()
+    : "";
+  if (!referredBy) return;
+
+  const lastRow = sheet.getLastRow();
+  const names = col.name >= 0 && lastRow >= 2
+    ? sheet.getRange(2, col.name + 1, lastRow - 1, 1).getValues().flat()
+    : [];
+  const referrerRowOffset = names.findIndex(
+    (n) => String(n || "").trim().toLowerCase() === referredBy.toLowerCase()
+  );
+
+  if (referrerRowOffset >= 0 && col.groupSessions >= 0) {
+    // Referrer is an existing client — give them one free group class.
+    const cell = sheet.getRange(referrerRowOffset + 2, col.groupSessions + 1);
+    const current = Number(cell.getValue()) || 0;
+    cell.setValue(current + 1);
+  } else if (referrerRowOffset < 0 && REFERRALS_SHEET_GID) {
+    // Referrer isn't a client — credit a one-off $5 in the Referrals tab.
+    creditReferralCash_(referredBy);
+  }
+
+  if (col.bonusApplied >= 0) {
+    sheet.getRange(row, col.bonusApplied + 1).setValue("Y");
+  }
+}
+
+function creditReferralCash_(friendName) {
+  const refSheet = getSheetByGid_(REFERRALS_SHEET_GID);
+  const refHeader = refSheet.getRange(1, 1, 1, refSheet.getLastColumn()).getValues()[0];
+  const rCol = {
+    friendName: findColumn_(refHeader, "Friend Name"),
+    bonusOwed: findColumn_(refHeader, "Bonus Owed"),
+  };
+  if (rCol.friendName < 0 || rCol.bonusOwed < 0) return;
+
+  const lastRow = refSheet.getLastRow();
+  if (lastRow < 2) return;
+  const names = refSheet.getRange(2, rCol.friendName + 1, lastRow - 1, 1).getValues().flat();
+  const idx = names.findIndex((n) => String(n || "").trim().toLowerCase() === friendName.toLowerCase());
+  if (idx < 0) return;
+
+  const cell = refSheet.getRange(idx + 2, rCol.bonusOwed + 1);
+  const current = Number(String(cell.getValue() || "").replace(/[^0-9.]/g, "")) || 0;
+  cell.setValue("$" + (current + 5));
+}
