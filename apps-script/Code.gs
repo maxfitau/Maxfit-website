@@ -79,12 +79,29 @@ const SESSION_TYPE_NOTES = {
   "one-on-one": "1-on-1",
 };
 
+/**
+ * The real PIN value is never in this file — this repo is public on
+ * GitHub, so anything written here is world-readable. It's stored instead
+ * as a Script Property, set via Project Settings > Script Properties in
+ * the Apps Script editor (key: STAFF_PIN), which lives only in your
+ * Google account, not in git.
+ */
+function checkPin_(pin) {
+  const expected = PropertiesService.getScriptProperties().getProperty("STAFF_PIN");
+  if (!expected) return true; // no PIN configured yet — don't lock everyone out by accident
+  return String(pin || "").trim() === expected;
+}
+
 function doPost(e) {
   let payload;
   try {
     payload = JSON.parse(e.postData.contents);
   } catch (err) {
     return jsonResponse_({ status: "error", message: "Bad request." });
+  }
+
+  if (!checkPin_(payload.pin)) {
+    return jsonResponse_({ status: "unauthorized" });
   }
 
   const token = String(payload.token || "").trim();

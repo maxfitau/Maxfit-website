@@ -54,6 +54,21 @@
   margin: 0;
 }
 
+.checkin__pin {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.checkin__pin[hidden] {
+  display: none;
+}
+
+.checkin__pin .picker__input {
+  letter-spacing: 0.3em;
+  text-align: center;
+}
+
 .checkin__buttons {
   display: flex;
   flex-direction: column;

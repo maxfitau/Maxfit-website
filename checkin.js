@@ -19,6 +19,17 @@
  */
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbya8dm8g5eC4ldAbNYmMCccDCZ6K7encj_q4IzXtKMOpd007RMYhnR3_PJ2eL2gjVDQ/exec";
 
+/*
+ * Staff PIN: gates who can actually confirm a check-in, since the page
+ * itself is public (anyone with a member's QR could otherwise tap the
+ * button). The correct PIN lives only in the Apps Script's Script
+ * Properties, checked server-side — this page never knows whether a PIN
+ * it sends is right until the server says so. Once a device enters a PIN
+ * that works, it's remembered here so staff don't retype it every scan;
+ * a member's own phone, which has never entered it, still gets asked.
+ */
+const STAFF_PIN_STORAGE_KEY = "maxfitStaffPin";
+
 const params = new URLSearchParams(window.location.search);
 const token = params.get("token");
 
@@ -31,6 +42,8 @@ const els = {
   groupSessions: document.getElementById("checkinGroupSessions"),
   oneOnOneSessions: document.getElementById("checkinOneOnOneSessions"),
   owing: document.getElementById("checkinOwing"),
+  pinRow: document.getElementById("checkinPinRow"),
+  pinInput: document.getElementById("checkinPinInput"),
   groupButton: document.getElementById("checkinGroupButton"),
   oneOnOneButton: document.getElementById("checkinOneOnOneButton"),
   submitError: document.getElementById("checkinSubmitError"),
@@ -93,10 +106,32 @@ async function init() {
     els.owing.hidden = false;
   }
 
+  let rememberedPin = "";
+  try {
+    rememberedPin = localStorage.getItem(STAFF_PIN_STORAGE_KEY) || "";
+  } catch (err) {
+    // Ignore — just means this device will need the PIN typed each time.
+  }
+  if (rememberedPin) {
+    els.pinRow.hidden = true;
+  } else {
+    els.pinInput.focus();
+  }
+
   showState(els.confirm);
 
   els.groupButton.addEventListener("click", () => submitCheckIn("group"));
   els.oneOnOneButton.addEventListener("click", () => submitCheckIn("one-on-one"));
+}
+
+function currentPin() {
+  try {
+    const remembered = localStorage.getItem(STAFF_PIN_STORAGE_KEY);
+    if (remembered) return remembered;
+  } catch (err) {
+    // Fall through to whatever's typed in the field.
+  }
+  return els.pinInput.value.trim();
 }
 
 async function submitCheckIn(sessionType) {
@@ -107,17 +142,42 @@ async function submitCheckIn(sessionType) {
   tappedButton.textContent = "Checking In…";
   els.submitError.hidden = true;
 
+  const pin = currentPin();
+
   let result;
   try {
     const res = await fetch(APPS_SCRIPT_URL, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" }, // avoids a CORS preflight
-      body: JSON.stringify({ token, sessionType }),
+      body: JSON.stringify({ token, sessionType, pin }),
     });
     result = await res.json();
   } catch (err) {
     showRetry(tappedButton, sessionType, "Couldn't reach the check-in system. Check your connection and try again.");
     return;
+  }
+
+  if (result.status === "unauthorized") {
+    try {
+      localStorage.removeItem(STAFF_PIN_STORAGE_KEY);
+    } catch (err) {
+      // Ignore — worst case they retype an already-wrong PIN once more.
+    }
+    els.pinRow.hidden = false;
+    els.pinInput.value = "";
+    els.pinInput.focus();
+    showRetry(tappedButton, sessionType, "Incorrect PIN — check with the gym owner.");
+    return;
+  }
+
+  // Reaching any of these three means the PIN was accepted server-side,
+  // regardless of the outcome — worth remembering it for next time either way.
+  if (["success", "already-checked-in", "no-sessions"].includes(result.status) && pin) {
+    try {
+      localStorage.setItem(STAFF_PIN_STORAGE_KEY, pin);
+    } catch (err) {
+      // Ignore — this device just asks for the PIN again next time.
+    }
   }
 
   if (result.status === "success") {
