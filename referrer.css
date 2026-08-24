@@ -1,0 +1,36 @@
+/* ==========================================================================
+   MAX FIT · referral partner card
+   Loads on top of card/styles.css — same shell/fonts, inverted palette:
+   black card becomes red, red labels become black for contrast.
+   ========================================================================== */
+
+.referrer {
+  --bg-card: var(--red);
+  --line: rgba(0, 0, 0, 0.25);
+  --line-strong: rgba(0, 0, 0, 0.4);
+}
+
+.referrer .card__label,
+.referrer .card__label--red {
+  color: #111111;
+}
+
+.referrer .card__tag {
+  color: rgba(17, 17, 17, 0.7);
+}
+
+.referrer .card__scan-caption {
+  color: #111111;
+}
+
+.referrer__discount {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--white);
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(0, 0, 0, 0.35);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  margin: 0;
+}

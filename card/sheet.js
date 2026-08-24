@@ -108,7 +108,7 @@ function fetchSheet() {
 
 let referralsPromise;
 
-/** Fetches + parses the "Referrals" tab once per page load, for join.html. */
+/** Fetches + parses the "Referrals" tab once per page load, for join.html and referrer.html. */
 function fetchReferrals() {
   if (!referralsPromise) {
     referralsPromise = fetch(REFERRALS_CSV_URL, { cache: "no-store" })
@@ -122,6 +122,8 @@ function fetchReferrals() {
           friendName: findColumn(header, "Friend Name"),
           code: findColumn(header, "Referral Code"),
           discount: findColumn(header, "Discount"),
+          clientsReferred: findColumn(header, "Clients Referred"),
+          bonusOwed: findColumn(header, "Bonus Owed"),
         };
         return { rows, col };
       });

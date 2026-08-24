@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+<title>MaxFit — Referral Card</title>
+<meta name="theme-color" content="#e00000" />
+<meta name="robots" content="noindex" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="card/styles.css" />
+<link rel="stylesheet" href="referrer.css" />
+</head>
+<body>
+
+<main class="card referrer" id="referrer">
+  <div class="card__top">
+    <img class="card__wordmark" src="assets/images/maxfit-logo.png" alt="MaxFit" />
+    <span class="card__tag">Referral Partner</span>
+  </div>
+
+  <div class="card__meta-item">
+    <span class="card__label">Referrer</span>
+    <span class="card__meta-value" id="referrerName">—</span>
+  </div>
+
+  <div class="card__sessions-row">
+    <div class="card__sessions">
+      <span class="card__label">Clients Referred</span>
+      <span class="card__sessions-num card__sessions-num--split" id="referrerCount">—</span>
+    </div>
+    <div class="card__sessions">
+      <span class="card__label">Bonus Owed</span>
+      <span class="card__sessions-num card__sessions-num--split" id="referrerBonus">—</span>
+    </div>
+  </div>
+
+  <p class="referrer__discount" id="referrerDiscount" hidden></p>
+
+  <div class="card__scan">
+    <div class="card__qr" id="qrCode"></div>
+    <span class="card__scan-caption">Scan to Sign Up</span>
+  </div>
+</main>
+
+<div class="status" id="status" hidden></div>
+
+<div class="picker" id="picker" hidden>
+  <div class="picker__inner">
+    <span class="card__tag">MaxFit</span>
+    <h1 class="picker__title">What's your name?</h1>
+    <p class="picker__hint">Only needs to happen once on this phone.</p>
+    <form id="pickerForm" autocomplete="off">
+      <input class="picker__input" id="pickerInput" type="text" placeholder="Full name" autocapitalize="words" />
+      <button class="picker__submit" type="submit">Continue</button>
+      <p class="picker__error" id="pickerError" hidden></p>
+    </form>
+  </div>
+</div>
+
+<script src="card/vendor/qrcode.js"></script>
+<script src="card/sheet.js"></script>
+<script src="referrer.js"></script>
+</body>
+</html>
