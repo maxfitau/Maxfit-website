@@ -14,6 +14,7 @@
 const SESSIONS_SHEET_GID = 1169726169; // "Sessions Remaining"
 const ATTENDANCE_SHEET_GID = 902061668; // attendance log
 const REFERRALS_SHEET_GID = 1148655449; // "Refferals"
+const LEADS_SHEET_GID = 0; // *** PASTE THE "Leads" TAB'S GID HERE ***
 const TIMEZONE = "Australia/Sydney";
 
 function getSheetByGid_(gid) {
@@ -236,12 +237,13 @@ function handleCheckIn_(payload) {
 }
 
 /**
- * Public sign-up form submission (join.html). Adds a new row to Sessions
- * Remaining with just the basics — Name/Phone/Email, today's date, and
- * "Enquiry" as the Payment Status — so it lands as a lead in the same
- * sheet Max already reviews, not a separate list to reconcile later. Max
- * still finishes onboarding by hand (Package Type, sessions, etc.) same
- * as any other new member.
+ * Public sign-up form submission (join.html). Adds a new row to a
+ * dedicated "Leads" tab — Name/Phone/Email, today's date, and Referred By
+ * — kept entirely separate from Sessions Remaining, which stays paying
+ * clients only. A lead with Referred By filled in is owed a free 1-on-1
+ * in person; Max delivers that, then manually creates their real row in
+ * Sessions Remaining afterward (typing Referred By in himself at that
+ * point), same as any other new member.
  */
 function handleSignup_(payload) {
   // Honeypot: a real visitor never fills this (it's not a visible field
@@ -260,23 +262,28 @@ function handleSignup_(payload) {
     return jsonResponse_({ status: "error", message: "Missing name and contact details." });
   }
 
-  const sheet = getSheetByGid_(SESSIONS_SHEET_GID);
-  const data = sheet.getDataRange().getValues();
-  const header = data[0];
+  const leadsSheet = getSheetByGid_(LEADS_SHEET_GID);
+  const leadsHeader = leadsSheet.getRange(1, 1, 1, leadsSheet.getLastColumn()).getValues()[0];
   const col = {
-    name: findColumn_(header, "Name"),
-    phone: findColumn_(header, "Phone"),
-    email: findColumn_(header, "Email"),
-    signupDate: findColumn_(header, "Sign-up Date"),
-    paymentStatus: findColumn_(header, "Payment Status"),
-    referredBy: findColumn_(header, "Referred By"),
+    name: findColumn_(leadsHeader, "Name"),
+    phone: findColumn_(leadsHeader, "Phone"),
+    email: findColumn_(leadsHeader, "Email"),
+    signupDate: findColumn_(leadsHeader, "Sign-up Date"),
+    referredBy: findColumn_(leadsHeader, "Referred By"),
   };
 
-  if (email && col.email >= 0) {
-    for (let i = 1; i < data.length; i++) {
-      if (String(data[i][col.email] || "").trim().toLowerCase() === email.toLowerCase()) {
-        return jsonResponse_({ status: "duplicate" });
-      }
+  // Duplicate check spans both Leads and Sessions Remaining, so someone
+  // who's already a client (or already enquired) doesn't get a second
+  // lead entry just because a friend sent them the link too.
+  if (email && isEmailAlreadyPresent_(leadsSheet, col.email, email)) {
+    return jsonResponse_({ status: "duplicate" });
+  }
+  if (email) {
+    const sessionsSheet = getSheetByGid_(SESSIONS_SHEET_GID);
+    const sessionsHeader = sessionsSheet.getRange(1, 1, 1, sessionsSheet.getLastColumn()).getValues()[0];
+    const sessionsEmailCol = findColumn_(sessionsHeader, "Email");
+    if (isEmailAlreadyPresent_(sessionsSheet, sessionsEmailCol, email)) {
+      return jsonResponse_({ status: "duplicate" });
     }
   }
 
@@ -300,16 +307,23 @@ function handleSignup_(payload) {
   }
 
   const today = Utilities.formatDate(new Date(), TIMEZONE, "yyyy-MM-dd");
-  const newRow = new Array(header.length).fill("");
+  const newRow = new Array(leadsHeader.length).fill("");
   if (col.name >= 0) newRow[col.name] = name;
   if (col.phone >= 0) newRow[col.phone] = phone;
   if (col.email >= 0) newRow[col.email] = email;
   if (col.signupDate >= 0) newRow[col.signupDate] = today;
-  if (col.paymentStatus >= 0) newRow[col.paymentStatus] = "Enquiry";
   if (col.referredBy >= 0) newRow[col.referredBy] = referrerName;
-  sheet.appendRow(newRow);
+  leadsSheet.appendRow(newRow);
 
   return jsonResponse_({ status: "success", referrerName: referrerName });
+}
+
+function isEmailAlreadyPresent_(sheet, emailCol, email) {
+  if (emailCol < 0) return false;
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return false;
+  const values = sheet.getRange(2, emailCol + 1, lastRow - 1, 1).getValues().flat();
+  return values.some((v) => String(v || "").trim().toLowerCase() === email.toLowerCase());
 }
 
 /**
@@ -393,27 +407,46 @@ function maybeApplyReferralBonus_(sheet, col, row) {
     creditReferralCash_(referredBy);
   }
 
+  // Clients Referred counts every conversion regardless of whether the
+  // referrer is also a client — it's a separate stat from the bonus type.
+  if (REFERRALS_SHEET_GID) incrementClientsReferred_(referredBy);
+
   if (col.bonusApplied >= 0) {
     sheet.getRange(row, col.bonusApplied + 1).setValue("Y");
   }
 }
 
-function creditReferralCash_(friendName) {
+/** Finds a friend's row in the Referrals tab. Returns null if the tab, the friend, or a needed column isn't there. */
+function findReferralsRow_(friendName, columnNames) {
   const refSheet = getSheetByGid_(REFERRALS_SHEET_GID);
   const refHeader = refSheet.getRange(1, 1, 1, refSheet.getLastColumn()).getValues()[0];
-  const rCol = {
-    friendName: findColumn_(refHeader, "Friend Name"),
-    bonusOwed: findColumn_(refHeader, "Bonus Owed"),
-  };
-  if (rCol.friendName < 0 || rCol.bonusOwed < 0) return;
+  const rCol = { friendName: findColumn_(refHeader, "Friend Name") };
+  for (const name of columnNames) rCol[name] = findColumn_(refHeader, name);
+  if (rCol.friendName < 0) return null;
 
   const lastRow = refSheet.getLastRow();
-  if (lastRow < 2) return;
+  if (lastRow < 2) return null;
   const names = refSheet.getRange(2, rCol.friendName + 1, lastRow - 1, 1).getValues().flat();
   const idx = names.findIndex((n) => String(n || "").trim().toLowerCase() === friendName.toLowerCase());
-  if (idx < 0) return;
+  if (idx < 0) return null;
 
-  const cell = refSheet.getRange(idx + 2, rCol.bonusOwed + 1);
+  return { sheet: refSheet, col: rCol, row: idx + 2 };
+}
+
+function creditReferralCash_(friendName) {
+  const found = findReferralsRow_(friendName, ["Bonus Owed"]);
+  if (!found || found.col["Bonus Owed"] < 0) return;
+
+  const cell = found.sheet.getRange(found.row, found.col["Bonus Owed"] + 1);
   const current = Number(String(cell.getValue() || "").replace(/[^0-9.]/g, "")) || 0;
   cell.setValue("$" + (current + 5));
+}
+
+function incrementClientsReferred_(friendName) {
+  const found = findReferralsRow_(friendName, ["Clients Referred"]);
+  if (!found || found.col["Clients Referred"] < 0) return;
+
+  const cell = found.sheet.getRange(found.row, found.col["Clients Referred"] + 1);
+  const current = Number(cell.getValue()) || 0;
+  cell.setValue(current + 1);
 }
