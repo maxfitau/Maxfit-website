@@ -1771,6 +1771,31 @@ body.vt-lightbox-open { overflow: hidden; }
   margin: 20px 0 0;
 }
 
+.location__callout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-top: 28px;
+  padding: 24px 28px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--red);
+  border-radius: var(--radius-sm);
+}
+
+.location__callout h3 {
+  font-size: 1.1rem;
+  margin: 0 0 6px;
+}
+
+.location__callout p {
+  font-size: 0.9rem;
+  margin: 0;
+  max-width: 480px;
+}
+
 .book {
   text-align: center;
 }
