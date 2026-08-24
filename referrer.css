@@ -19,6 +19,15 @@
   color: rgba(17, 17, 17, 0.7);
 }
 
+/* The wordmark's "FIT" tag is red-on-transparent — invisible against a
+   red card. A black backdrop restores the contrast it has on the black
+   membership card. */
+.referrer .card__wordmark {
+  background: #111111;
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+
 .referrer .card__scan-caption {
   color: #111111;
 }
