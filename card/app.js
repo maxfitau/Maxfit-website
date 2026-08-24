@@ -179,6 +179,7 @@ const els = {
   pickerInput: document.getElementById("pickerInput"),
   pickerError: document.getElementById("pickerError"),
   completeButton: document.getElementById("completeButton"),
+  completeBox: document.getElementById("completeBox"),
   celebrate: document.getElementById("celebrate"),
   confetti: document.getElementById("confetti"),
 };
@@ -210,7 +211,43 @@ function celebrate() {
   }, 2200);
 }
 
-els.completeButton.addEventListener("click", celebrate);
+/**
+ * "Workout Completed" is a checkbox in disguise — ticked state persists in
+ * localStorage against today's date, so it stays checked through the rest
+ * of the day but starts blank again tomorrow with no explicit reset logic
+ * needed. Confetti only fires on the tick, not the untick.
+ */
+const WORKOUT_COMPLETE_STORAGE_KEY = "maxfitWorkoutCompleteDate";
+
+function todayString() {
+  const now = new Date();
+  return `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
+}
+
+function setCompleteChecked(checked) {
+  els.completeButton.classList.toggle("card__complete--checked", checked);
+  try {
+    if (checked) {
+      localStorage.setItem(WORKOUT_COMPLETE_STORAGE_KEY, todayString());
+    } else {
+      localStorage.removeItem(WORKOUT_COMPLETE_STORAGE_KEY);
+    }
+  } catch (err) {
+    // Storage unavailable — the checked state just won't survive a reload.
+  }
+}
+
+try {
+  setCompleteChecked(localStorage.getItem(WORKOUT_COMPLETE_STORAGE_KEY) === todayString());
+} catch (err) {
+  // Ignore — starts unchecked.
+}
+
+els.completeButton.addEventListener("click", () => {
+  const nowChecked = !els.completeButton.classList.contains("card__complete--checked");
+  setCompleteChecked(nowChecked);
+  if (nowChecked) celebrate();
+});
 
 function showStatus(message, isError) {
   els.status.textContent = message;

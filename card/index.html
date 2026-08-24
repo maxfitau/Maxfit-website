@@ -68,7 +68,12 @@
     <div class="card__loyalty-bar" id="loyaltyBar"></div>
   </div>
 
-  <button class="card__complete" id="completeButton" type="button">Workout Completed</button>
+  <button class="card__complete" id="completeButton" type="button">
+    <span class="card__complete-box" id="completeBox" aria-hidden="true">
+      <svg class="card__complete-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+    </span>
+    Workout Completed
+  </button>
 
   <div class="card__scan">
     <div class="card__qr" id="qrCode"></div>

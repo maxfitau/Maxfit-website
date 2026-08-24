@@ -356,6 +356,10 @@ body {
 }
 
 .card__complete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   font-family: var(--font-head);
   font-weight: 700;
   text-transform: uppercase;
@@ -371,6 +375,22 @@ body {
 
 .card__complete:active {
   border-color: var(--red);
+}
+
+.card__complete-box {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  background: var(--white);
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: transparent;
+  transition: color 0.1s var(--ease, ease);
+}
+
+.card__complete--checked .card__complete-box {
   color: var(--red);
 }
 
