@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+<title>MaxFit — Join</title>
+<meta name="theme-color" content="#111111" />
+<meta name="description" content="Sign up for Max Fit — Inner West Sydney personal training." />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="card/styles.css" />
+<link rel="stylesheet" href="checkin.css" />
+<link rel="stylesheet" href="join.css" />
+</head>
+<body>
+
+<main class="card join" id="join">
+  <div class="card__top">
+    <img class="card__wordmark" src="assets/images/maxfit-logo.png" alt="MaxFit" />
+    <span class="card__tag">Join</span>
+  </div>
+
+  <h1 class="join__title">Let's Get Started</h1>
+  <p class="join__hint">Fill this in and I'll be in touch to set you up.</p>
+
+  <p class="join__referral" id="joinReferral" hidden></p>
+
+  <form id="joinForm" autocomplete="off">
+    <div class="join__field">
+      <span class="card__label">Name</span>
+      <input class="picker__input" id="joinName" name="name" type="text" autocapitalize="words" required />
+    </div>
+    <div class="join__field">
+      <span class="card__label">Phone</span>
+      <input class="picker__input" id="joinPhone" name="phone" type="tel" inputmode="tel" />
+    </div>
+    <div class="join__field">
+      <span class="card__label">Email</span>
+      <input class="picker__input" id="joinEmail" name="email" type="email" inputmode="email" />
+    </div>
+
+    <!-- Honeypot: invisible to real visitors, often auto-filled by bots. -->
+    <div class="join__honeypot" aria-hidden="true">
+      <label for="joinWebsite">Leave this field blank</label>
+      <input id="joinWebsite" name="website" type="text" tabindex="-1" autocomplete="off" />
+    </div>
+
+    <button class="checkin__confirm" id="joinSubmit" type="submit">Sign Me Up</button>
+    <p class="checkin__error" id="joinError" hidden></p>
+  </form>
+
+  <div class="join__success" id="joinSuccess" hidden>
+    <p class="checkin__success-title">You're In</p>
+    <p class="checkin__success-text" id="joinSuccessText">I'll be in touch shortly.</p>
+  </div>
+</main>
+
+<script src="card/sheet.js"></script>
+<script src="join.js"></script>
+</body>
+</html>

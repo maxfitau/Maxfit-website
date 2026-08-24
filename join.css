@@ -1,0 +1,70 @@
+/* ==========================================================================
+   MAX FIT · public sign-up page
+   Loads on top of card/styles.css — shares its :root palette/fonts/.card shell
+   ========================================================================== */
+
+.join {
+  gap: 18px;
+}
+
+.join__title {
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  font-size: 28px;
+  color: var(--white);
+  margin: 0;
+}
+
+.join__hint {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--dim);
+  margin: -12px 0 0;
+}
+
+.join__referral {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--white);
+  background: rgba(224, 0, 0, 0.1);
+  border: 1px solid rgba(224, 0, 0, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  margin: 0;
+}
+
+#joinForm {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+#joinForm[hidden] {
+  display: none;
+}
+
+.join__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.join__honeypot {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.join__success {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.join__success[hidden] {
+  display: none;
+}

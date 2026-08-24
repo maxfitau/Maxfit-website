@@ -13,6 +13,7 @@
 
 const SESSIONS_SHEET_GID = 1169726169; // "Sessions Remaining"
 const ATTENDANCE_SHEET_GID = 902061668; // attendance log
+const REFERRALS_SHEET_GID = 0; // *** PASTE THE "Referrals" TAB'S GID HERE ***
 const TIMEZONE = "Australia/Sydney";
 
 function getSheetByGid_(gid) {
@@ -92,6 +93,11 @@ function checkPin_(pin) {
   return String(pin || "").trim() === expected;
 }
 
+/**
+ * Single POST endpoint, dispatched by payload.action. checkin.js doesn't
+ * send an action (predates this), so "checkin" is the default — anything
+ * else (currently just "signup") must say so explicitly.
+ */
 function doPost(e) {
   let payload;
   try {
@@ -100,6 +106,14 @@ function doPost(e) {
     return jsonResponse_({ status: "error", message: "Bad request." });
   }
 
+  const action = payload.action || "checkin";
+  if (action === "signup") {
+    return handleSignup_(payload);
+  }
+  return handleCheckIn_(payload);
+}
+
+function handleCheckIn_(payload) {
   if (!checkPin_(payload.pin)) {
     return jsonResponse_({ status: "unauthorized" });
   }
@@ -219,4 +233,81 @@ function doPost(e) {
     totalAttended: totalAttended,
     freeSession: freeSession,
   });
+}
+
+/**
+ * Public sign-up form submission (join.html). Adds a new row to Sessions
+ * Remaining with just the basics — Name/Phone/Email, today's date, and
+ * "Enquiry" as the Payment Status — so it lands as a lead in the same
+ * sheet Max already reviews, not a separate list to reconcile later. Max
+ * still finishes onboarding by hand (Package Type, sessions, etc.) same
+ * as any other new member.
+ */
+function handleSignup_(payload) {
+  // Honeypot: a real visitor never fills this (it's not a visible field
+  // in join.html). A bot filling every field blind will. Pretend success
+  // so it doesn't learn to try something else.
+  if (payload.website) {
+    return jsonResponse_({ status: "success" });
+  }
+
+  const name = String(payload.name || "").trim();
+  const phone = String(payload.phone || "").trim();
+  const email = String(payload.email || "").trim();
+  const referralCode = String(payload.referralCode || "").trim();
+
+  if (!name || (!phone && !email)) {
+    return jsonResponse_({ status: "error", message: "Missing name and contact details." });
+  }
+
+  const sheet = getSheetByGid_(SESSIONS_SHEET_GID);
+  const data = sheet.getDataRange().getValues();
+  const header = data[0];
+  const col = {
+    name: findColumn_(header, "Name"),
+    phone: findColumn_(header, "Phone"),
+    email: findColumn_(header, "Email"),
+    signupDate: findColumn_(header, "Sign-up Date"),
+    paymentStatus: findColumn_(header, "Payment Status"),
+    referredBy: findColumn_(header, "Referred By"),
+  };
+
+  if (email && col.email >= 0) {
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][col.email] || "").trim().toLowerCase() === email.toLowerCase()) {
+        return jsonResponse_({ status: "duplicate" });
+      }
+    }
+  }
+
+  let referrerName = "";
+  if (referralCode && REFERRALS_SHEET_GID) {
+    const refSheet = getSheetByGid_(REFERRALS_SHEET_GID);
+    const refData = refSheet.getDataRange().getValues();
+    const refHeader = refData[0];
+    const rCol = {
+      friendName: findColumn_(refHeader, "Friend Name"),
+      code: findColumn_(refHeader, "Referral Code"),
+    };
+    if (rCol.code >= 0) {
+      for (let i = 1; i < refData.length; i++) {
+        if (String(refData[i][rCol.code] || "").trim().toLowerCase() === referralCode.toLowerCase()) {
+          referrerName = String(refData[i][rCol.friendName] || "").trim();
+          break;
+        }
+      }
+    }
+  }
+
+  const today = Utilities.formatDate(new Date(), TIMEZONE, "yyyy-MM-dd");
+  const newRow = new Array(header.length).fill("");
+  if (col.name >= 0) newRow[col.name] = name;
+  if (col.phone >= 0) newRow[col.phone] = phone;
+  if (col.email >= 0) newRow[col.email] = email;
+  if (col.signupDate >= 0) newRow[col.signupDate] = today;
+  if (col.paymentStatus >= 0) newRow[col.paymentStatus] = "Enquiry";
+  if (col.referredBy >= 0) newRow[col.referredBy] = referrerName;
+  sheet.appendRow(newRow);
+
+  return jsonResponse_({ status: "success", referrerName: referrerName });
 }

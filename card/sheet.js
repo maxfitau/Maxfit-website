@@ -13,6 +13,9 @@ const SHEET_ID = "1dGQyIoJ2_XrkbvvPvM2JAY0xdeYQfsCnYHal8WZojUg";
 const SHEET_GID = "1169726169"; // "Sessions Remaining" tab
 const SHEET_CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${SHEET_GID}`;
 
+const REFERRALS_GID = "0"; // *** PASTE THE "Referrals" TAB'S GID HERE ***
+const REFERRALS_CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${REFERRALS_GID}`;
+
 function slugify(name) {
   return name.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
@@ -101,4 +104,27 @@ function fetchSheet() {
       });
   }
   return sheetPromise;
+}
+
+let referralsPromise;
+
+/** Fetches + parses the "Referrals" tab once per page load, for join.html. */
+function fetchReferrals() {
+  if (!referralsPromise) {
+    referralsPromise = fetch(REFERRALS_CSV_URL, { cache: "no-store" })
+      .then((res) => {
+        if (!res.ok) throw new Error("referrals fetch failed");
+        return res.text();
+      })
+      .then((text) => {
+        const [header, ...rows] = parseCSV(text);
+        const col = {
+          friendName: findColumn(header, "Friend Name"),
+          code: findColumn(header, "Referral Code"),
+          discount: findColumn(header, "Discount"),
+        };
+        return { rows, col };
+      });
+  }
+  return referralsPromise;
 }
