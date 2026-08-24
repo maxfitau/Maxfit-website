@@ -1360,24 +1360,13 @@ section {
 
 .vt__viewport {
   position: relative;
-  overflow: hidden;
 }
 
 .vt__track {
   display: flex;
-  width: max-content;
+  justify-content: center;
+  flex-wrap: wrap;
   gap: 16px;
-  animation: vt-marquee 55s linear infinite;
-}
-
-.vt__viewport:hover .vt__track,
-.vt__track:focus-within {
-  animation-play-state: paused;
-}
-
-@keyframes vt-marquee {
-  from { transform: translateX(0); }
-  to { transform: translateX(-50%); }
 }
 
 .vt-card {
@@ -1896,13 +1885,6 @@ body.vt-lightbox-open { overflow: hidden; }
   .shape { transition: none; }
 
   .cursor-dot { display: none !important; }
-
-  .vt__track {
-    animation: none !important;
-    transform: none !important;
-  }
-
-  .vt__track .vt-card[aria-hidden="true"] { display: none; }
 
   .tv2__track {
     animation: none !important;

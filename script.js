@@ -299,7 +299,7 @@ document.addEventListener("DOMContentLoaded", function () {
   ---------------------------------------------------- */
   var videoTestimonials = [
     { name: "J.H", caption: "", thumbnail: "assets/images/jh-testimonial-thumb.jpg", video: { type: "local", src: "assets/videos/client-testimonial-1.mov" } },
-    { name: "Client Name 2", caption: "", thumbnail: "assets/images/client2-testimonial-thumb.jpg", video: { type: "local", src: "assets/videos/client-testimonial-2.mp4" } }
+    { name: "J.F", caption: "", thumbnail: "assets/images/client2-testimonial-thumb.jpg", video: { type: "local", src: "assets/videos/client-testimonial-2.mp4" } }
   ];
 
   var vtTrack = document.querySelector(".vt__track");
@@ -348,13 +348,8 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   if (vtTrack) {
-    /* Rendered twice back-to-back so the marquee animation (translateX
-       to -50%) loops seamlessly; the second set is inert/aria-hidden. */
     videoTestimonials.forEach(function (item) {
       vtTrack.appendChild(buildVideoCard(item, false));
-    });
-    videoTestimonials.forEach(function (item) {
-      vtTrack.appendChild(buildVideoCard(item, true));
     });
   }
 
