@@ -312,6 +312,49 @@ body {
   margin: 0;
 }
 
+.card__loyalty {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.card__loyalty-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.card__loyalty-count {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--grey);
+  letter-spacing: 0.02em;
+}
+
+.card__loyalty-bar {
+  display: flex;
+  gap: 5px;
+}
+
+.card__loyalty-peg {
+  flex: 1;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+}
+
+.card__loyalty-peg--filled {
+  background: var(--red);
+  border-color: var(--red);
+}
+
+.card__loyalty-peg--next {
+  border-color: var(--red);
+  border-style: dashed;
+}
+
 .card__complete {
   font-family: var(--font-head);
   font-weight: 700;

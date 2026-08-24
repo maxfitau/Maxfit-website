@@ -172,6 +172,8 @@ const els = {
   upcomingLabel: document.getElementById("upcomingLabel"),
   upcomingValue: document.getElementById("upcomingValue"),
   upcomingLink: document.getElementById("upcomingLink"),
+  loyaltyCount: document.getElementById("loyaltyCount"),
+  loyaltyBar: document.getElementById("loyaltyBar"),
   picker: document.getElementById("picker"),
   pickerForm: document.getElementById("pickerForm"),
   pickerInput: document.getElementById("pickerInput"),
@@ -224,12 +226,27 @@ function renderQR(value) {
   els.qr.innerHTML = qr.createSvgTag({ scalable: true });
 }
 
+/** 1-in-10 loyalty punchcard — mirrors the auto-tick logic on checkin.html. */
+function renderLoyalty(totalAttended) {
+  const progress = totalAttended % 10;
+  els.loyaltyCount.textContent = `${progress}/10`;
+  els.loyaltyBar.innerHTML = "";
+  for (let i = 0; i < 10; i++) {
+    const peg = document.createElement("div");
+    peg.className = "card__loyalty-peg";
+    if (i < progress) peg.classList.add("card__loyalty-peg--filled");
+    else if (i === 9) peg.classList.add("card__loyalty-peg--next");
+    els.loyaltyBar.appendChild(peg);
+  }
+}
+
 async function render(data) {
   els.groupSessions.textContent = data.groupSessionsRemaining;
   els.oneOnOneSessions.textContent = data.oneOnOneSessionsRemaining;
   els.name.textContent = data.memberName;
   els.tier.textContent = data.tier;
   renderQR(data.checkInUrl);
+  renderLoyalty(data.totalAttended);
 
   if (data.programType === "self-guided" && data.programDoc) {
     els.upcomingLabel.textContent = "Today's Workout";
@@ -252,6 +269,7 @@ const DEMO_MEMBER = {
   tier: "Founding Member",
   groupSessionsRemaining: 8,
   oneOnOneSessionsRemaining: 4,
+  totalAttended: 6,
   programType: "group",
   classLabel: "Mission: Slimpossible",
 };
@@ -283,6 +301,7 @@ async function fetchMemberData(id) {
     tier: match[col.package] || "Member",
     groupSessionsRemaining: parseSessions(match[col.groupSessions], "N/A"),
     oneOnOneSessionsRemaining: parseSessions(match[col.oneOnOneSessions], "N/A"),
+    totalAttended: parseSessions(match[col.totalAttended], 0),
     checkInUrl: `https://maxfit.now/checkin.html?token=${encodeURIComponent(token)}`,
     programType: programType === "self-guided" ? "self-guided" : "group",
     classLabel: col.class >= 0 ? match[col.class] : undefined,
