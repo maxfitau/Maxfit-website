@@ -13,7 +13,7 @@ const SHEET_ID = "1dGQyIoJ2_XrkbvvPvM2JAY0xdeYQfsCnYHal8WZojUg";
 const SHEET_GID = "1169726169"; // "Sessions Remaining" tab
 const SHEET_CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${SHEET_GID}`;
 
-const REFERRALS_GID = "0"; // *** PASTE THE "Referrals" TAB'S GID HERE ***
+const REFERRALS_GID = "1148655449"; // "Refferals"
 const REFERRALS_CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${REFERRALS_GID}`;
 
 function slugify(name) {
