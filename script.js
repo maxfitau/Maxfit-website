@@ -299,11 +299,7 @@ document.addEventListener("DOMContentLoaded", function () {
   ---------------------------------------------------- */
   var videoTestimonials = [
     { name: "J.H", caption: "", thumbnail: "assets/images/jh-testimonial-thumb.jpg", video: { type: "local", src: "assets/videos/client-testimonial-1.mov" } },
-    { name: "Client Name 2", caption: "Add a short result or caption here", thumbnail: null, video: { type: "placeholder", src: "" } },
-    { name: "Client Name 3", caption: "Add a short result or caption here", thumbnail: null, video: { type: "placeholder", src: "" } },
-    { name: "Client Name 4", caption: "Add a short result or caption here", thumbnail: null, video: { type: "placeholder", src: "" } },
-    { name: "Client Name 5", caption: "Add a short result or caption here", thumbnail: null, video: { type: "placeholder", src: "" } },
-    { name: "Client Name 6", caption: "Add a short result or caption here", thumbnail: null, video: { type: "placeholder", src: "" } }
+    { name: "Client Name 2", caption: "", thumbnail: "assets/images/client2-testimonial-thumb.jpg", video: { type: "local", src: "assets/videos/client-testimonial-2.mp4" } }
   ];
 
   var vtTrack = document.querySelector(".vt__track");

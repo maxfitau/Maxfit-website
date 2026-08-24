@@ -120,6 +120,7 @@ body.is-loading .hero__label,
 body.is-loading .hero__logo-wrap,
 body.is-loading .hero__tagline,
 body.is-loading .hero__sub,
+body.is-loading .hero__free-badge,
 body.is-loading .hero__actions,
 body.is-loading .hero__scroll,
 body.is-loading main > *:not(.hero) {
@@ -132,6 +133,7 @@ body.is-loading main > *:not(.hero) {
 .hero__logo-wrap,
 .hero__tagline,
 .hero__sub,
+.hero__free-badge,
 .hero__actions,
 .hero__scroll,
 main > *:not(.hero) {
@@ -544,6 +546,21 @@ section {
   max-width: 480px;
   margin-bottom: 36px;
 }
+
+.hero__free-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 1.15rem;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--red);
+  margin-bottom: 28px;
+}
+
+.hero__free-badge svg { width: 22px; height: 22px; flex: none; }
 
 .hero__actions {
   display: flex;
@@ -1022,11 +1039,11 @@ section {
 
 .program__sub-title {
   font-family: var(--font-head);
-  font-size: 0.85rem;
-  letter-spacing: 2px;
-  text-transform: uppercase;
+  font-weight: 700;
+  font-size: clamp(1.15rem, 2.4vw, 1.5rem);
+  letter-spacing: 0.5px;
   color: var(--red);
-  margin: 0 0 10px;
+  margin: 0 0 12px;
 }
 
 .program__sub .program__desc { margin-bottom: 20px; }
@@ -1583,61 +1600,44 @@ body.vt-lightbox-open { overflow: hidden; }
   margin-bottom: 32px;
 }
 
-.tv2__cards {
+.tv2__viewport {
   position: relative;
   z-index: 3;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 24px;
   max-width: var(--max-w);
   margin: 0 auto;
   padding: 0 24px;
-  height: 560px;
-}
-
-.tv2__col {
-  height: 100%;
   overflow: hidden;
-  -webkit-mask-image: linear-gradient(to bottom, transparent, black 12%, black 88%, transparent);
-  mask-image: linear-gradient(to bottom, transparent, black 12%, black 88%, transparent);
 }
 
-.tv2__col-track {
+.tv2__track {
   display: flex;
-  flex-direction: column;
-  gap: 22px;
-  animation: tv2-scroll-up 32s linear infinite;
+  width: max-content;
+  gap: 24px;
+  animation: tv2-marquee 38s linear infinite;
 }
 
-.tv2__col:hover .tv2__col-track {
+.tv2__viewport:hover .tv2__track,
+.tv2__track:focus-within {
   animation-play-state: paused;
 }
 
-.tv2__col--2 .tv2__col-track {
-  animation-duration: 42s;
-  margin-top: 70px;
-}
-
-.tv2__col--3 .tv2__col-track {
-  animation-duration: 24s;
-  animation-direction: reverse;
-  margin-top: -50px;
+@keyframes tv2-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
 }
 
 .tv2-card {
   flex: none;
+  width: 340px;
   background: #141414;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   padding: 24px;
 }
 
-.tv2__col--1 .tv2-card:nth-child(odd) { transform: rotate(-1deg); }
-.tv2__col--1 .tv2-card:nth-child(even) { transform: rotate(1deg); }
-.tv2__col--2 .tv2-card:nth-child(odd) { transform: rotate(1deg); }
-.tv2__col--2 .tv2-card:nth-child(even) { transform: rotate(-1deg); }
-.tv2__col--3 .tv2-card:nth-child(odd) { transform: rotate(-1deg); }
-.tv2__col--3 .tv2-card:nth-child(even) { transform: rotate(1deg); }
+@media (max-width: 600px) {
+  .tv2-card { width: 84vw; }
+}
 
 .tv2-card__quote {
   font-size: 0.92rem;
@@ -1674,20 +1674,6 @@ body.vt-lightbox-open { overflow: hidden; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-}
-
-@keyframes tv2-scroll-up {
-  from { transform: translateY(0); }
-  to { transform: translateY(-50%); }
-}
-
-@media (max-width: 900px) {
-  .tv2__cards {
-    grid-template-columns: 1fr;
-    height: 640px;
-  }
-
-  .tv2__col--2, .tv2__col--3 { display: none; }
 }
 
 /* ---------- Stats ---------- */
@@ -1911,17 +1897,17 @@ body.vt-lightbox-open { overflow: hidden; }
 
   .cursor-dot { display: none !important; }
 
-  .tv2__col-track {
-    animation: none !important;
-    margin-top: 0 !important;
-  }
-
-  .tv2__col-track .tv2-card[aria-hidden="true"] { display: none; }
-
   .vt__track {
     animation: none !important;
     transform: none !important;
   }
 
   .vt__track .vt-card[aria-hidden="true"] { display: none; }
+
+  .tv2__track {
+    animation: none !important;
+    transform: none !important;
+  }
+
+  .tv2__track .tv2-card[aria-hidden="true"] { display: none; }
 }
