@@ -14,7 +14,7 @@
 const SESSIONS_SHEET_GID = 1169726169; // "Sessions Remaining"
 const ATTENDANCE_SHEET_GID = 902061668; // attendance log
 const REFERRALS_SHEET_GID = 1148655449; // "Refferals"
-const LEADS_SHEET_GID = 0; // *** PASTE THE "Leads" TAB'S GID HERE ***
+const LEADS_SHEET_GID = 846176456; // "Leads"
 const TIMEZONE = "Australia/Sydney";
 
 function getSheetByGid_(gid) {
