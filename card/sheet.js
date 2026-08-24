@@ -95,6 +95,7 @@ function fetchSheet() {
           class: findColumn(header, "Class"),
           programDoc: findColumn(header, "Program Doc"),
           checkInToken: findColumn(header, "Check-in Token"),
+          totalAttended: findColumn(header, "Total Classes Attended"),
         };
         return { rows, col };
       });

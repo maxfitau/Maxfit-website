@@ -106,6 +106,7 @@ function doPost(e) {
 
   const token = String(payload.token || "").trim();
   const sessionType = String(payload.sessionType || "").trim();
+  const freeSession = Boolean(payload.freeSession);
   if (!token) {
     return jsonResponse_({ status: "error", message: "Missing token." });
   }
@@ -122,6 +123,7 @@ function doPost(e) {
     sessions: findColumn_(header, SESSION_TYPE_COLUMNS[sessionType]),
     lastAttended: findColumn_(header, "Last Attended"),
     checkInToken: findColumn_(header, "Check-in Token"),
+    totalAttended: findColumn_(header, "Total Classes Attended"),
   };
 
   if (col.checkInToken < 0) {
@@ -167,18 +169,28 @@ function doPost(e) {
   const hasNumericSessions = sessionsRaw !== "" && Number.isFinite(sessionsNum);
 
   let newSessions = null;
-  if (!isUnlimited && hasNumericSessions) {
+  if (!freeSession && !isUnlimited && hasNumericSessions) {
     if (sessionsNum <= 0) {
       return jsonResponse_({ status: "no-sessions" });
     }
     newSessions = sessionsNum - 1;
     sheet.getRange(rowIndex + 1, col.sessions + 1).setValue(newSessions);
+  } else if (hasNumericSessions) {
+    newSessions = sessionsNum; // free session, or unlimited — count stays as-is
   }
-  // Unlimited plan or blank for this session type: skip the decrement,
-  // still log the visit below.
+  // Unlimited plan, free session, or blank for this session type: skip the
+  // decrement, still log the visit below.
 
   if (col.lastAttended >= 0) {
     sheet.getRange(rowIndex + 1, col.lastAttended + 1).setValue(today);
+  }
+
+  let totalAttended = null;
+  if (col.totalAttended >= 0) {
+    const totalRaw = String(row[col.totalAttended] || "").trim();
+    const totalNum = Number(totalRaw);
+    totalAttended = (totalRaw !== "" && Number.isFinite(totalNum) ? totalNum : 0) + 1;
+    sheet.getRange(rowIndex + 1, col.totalAttended + 1).setValue(totalAttended);
   }
 
   const attendanceSheet = getSheetByGid_(ATTENDANCE_SHEET_GID);
@@ -196,8 +208,15 @@ function doPost(e) {
   if (aCol.date >= 0) newRow[aCol.date] = today;
   if (aCol.clientName >= 0) newRow[aCol.clientName] = row[col.name];
   if (aCol.attended >= 0) newRow[aCol.attended] = "Y";
-  if (aCol.notes >= 0) newRow[aCol.notes] = SESSION_TYPE_NOTES[sessionType];
+  if (aCol.notes >= 0) {
+    newRow[aCol.notes] = SESSION_TYPE_NOTES[sessionType] + (freeSession ? " — Free Session" : "");
+  }
   attendanceSheet.appendRow(newRow);
 
-  return jsonResponse_({ status: "success", sessionsRemaining: newSessions });
+  return jsonResponse_({
+    status: "success",
+    sessionsRemaining: newSessions,
+    totalAttended: totalAttended,
+    freeSession: freeSession,
+  });
 }

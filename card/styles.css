@@ -312,6 +312,79 @@ body {
   margin: 0;
 }
 
+.card__complete {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 14px;
+  color: var(--white);
+  background: transparent;
+  border: 1px solid var(--line-strong, var(--line));
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  cursor: pointer;
+}
+
+.card__complete:active {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.celebrate {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.celebrate[hidden] {
+  display: none;
+}
+
+.celebrate__text {
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 44px;
+  color: var(--white);
+  text-shadow: 0 2px 24px rgba(0, 0, 0, 0.6);
+  animation: celebrate-pop 1.8s var(--ease, ease) forwards;
+}
+
+@keyframes celebrate-pop {
+  0% { opacity: 0; transform: scale(0.7); }
+  15% { opacity: 1; transform: scale(1.08); }
+  25% { transform: scale(1); }
+  75% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.celebrate__confetti {
+  position: absolute;
+  inset: 0;
+}
+
+.confetti-piece {
+  position: absolute;
+  top: -20px;
+  width: 8px;
+  height: 14px;
+  animation-name: confetti-fall;
+  animation-timing-function: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  animation-fill-mode: forwards;
+}
+
+@keyframes confetti-fall {
+  0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(110vh) rotate(540deg); opacity: 0.9; }
+}
+
 @media (max-width: 360px) {
   .card__sessions-num {
     font-size: 68px;

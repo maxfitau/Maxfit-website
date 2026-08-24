@@ -44,6 +44,9 @@ const els = {
   owing: document.getElementById("checkinOwing"),
   pinRow: document.getElementById("checkinPinRow"),
   pinInput: document.getElementById("checkinPinInput"),
+  freeRow: document.getElementById("checkinFreeRow"),
+  freeCheckbox: document.getElementById("checkinFreeCheckbox"),
+  freeLabel: document.getElementById("checkinFreeLabel"),
   groupButton: document.getElementById("checkinGroupButton"),
   oneOnOneButton: document.getElementById("checkinOneOnOneButton"),
   submitError: document.getElementById("checkinSubmitError"),
@@ -106,6 +109,21 @@ async function init() {
     els.owing.hidden = false;
   }
 
+  // Loyalty punchcard: every 10th visit (their 10th, 20th, 30th...) is free,
+  // and so is their very first ever visit. Pre-tick the box either way —
+  // staff can still untick it, or tick it manually for any other reason
+  // (e.g. a one-off comp).
+  const totalBefore = parseSessions(col.totalAttended >= 0 ? match[col.totalAttended] : "", 0);
+  const isFirstVisit = totalBefore === 0;
+  const isMilestoneVisit = !isFirstVisit && (totalBefore + 1) % 10 === 0;
+  if (isFirstVisit || isMilestoneVisit) {
+    els.freeCheckbox.checked = true;
+    els.freeRow.classList.add("checkin__free--suggested");
+    els.freeLabel.textContent = isFirstVisit
+      ? "Free Session (first visit!)"
+      : `Free Session (visit #${totalBefore + 1}!)`;
+  }
+
   let rememberedPin = "";
   try {
     rememberedPin = localStorage.getItem(STAFF_PIN_STORAGE_KEY) || "";
@@ -143,13 +161,14 @@ async function submitCheckIn(sessionType) {
   els.submitError.hidden = true;
 
   const pin = currentPin();
+  const freeSession = els.freeCheckbox.checked;
 
   let result;
   try {
     const res = await fetch(APPS_SCRIPT_URL, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" }, // avoids a CORS preflight
-      body: JSON.stringify({ token, sessionType, pin }),
+      body: JSON.stringify({ token, sessionType, pin, freeSession }),
     });
     result = await res.json();
   } catch (err) {
@@ -181,10 +200,12 @@ async function submitCheckIn(sessionType) {
   }
 
   if (result.status === "success") {
-    els.successTitle.textContent = "Checked In";
-    els.successText.textContent = Number.isFinite(result.sessionsRemaining)
-      ? `${result.sessionsRemaining} session${result.sessionsRemaining === 1 ? "" : "s"} left.`
-      : "Enjoy your session.";
+    els.successTitle.textContent = result.freeSession ? "Checked In — Free Session!" : "Checked In";
+    els.successText.textContent = result.freeSession
+      ? "On the house. Enjoy!"
+      : Number.isFinite(result.sessionsRemaining)
+        ? `${result.sessionsRemaining} session${result.sessionsRemaining === 1 ? "" : "s"} left.`
+        : "Enjoy your session.";
     showState(els.success);
     return;
   }

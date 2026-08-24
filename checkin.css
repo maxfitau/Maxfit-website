@@ -69,6 +69,34 @@
   text-align: center;
 }
 
+.checkin__free {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.checkin__free input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--red);
+}
+
+.checkin__free span {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--white);
+}
+
+.checkin__free--suggested {
+  border-color: var(--red);
+  background: rgba(224, 0, 0, 0.08);
+}
+
 .checkin__buttons {
   display: flex;
   flex-direction: column;

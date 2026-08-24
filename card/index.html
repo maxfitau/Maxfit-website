@@ -60,6 +60,8 @@
     <svg class="card__upcoming-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 17L17 7M17 7H8M17 7V16"/></svg>
   </a>
 
+  <button class="card__complete" id="completeButton" type="button">Workout Completed</button>
+
   <div class="card__scan">
     <div class="card__qr" id="qrCode"></div>
     <span class="card__scan-caption">Scan at Front Desk</span>
@@ -67,6 +69,11 @@
 </main>
 
 <div class="status" id="status" hidden></div>
+
+<div class="celebrate" id="celebrate" hidden>
+  <div class="celebrate__confetti" id="confetti"></div>
+  <span class="celebrate__text">Nice Work</span>
+</div>
 
 <div class="picker" id="picker" hidden>
   <div class="picker__inner">

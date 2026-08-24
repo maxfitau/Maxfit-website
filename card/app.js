@@ -176,7 +176,39 @@ const els = {
   pickerForm: document.getElementById("pickerForm"),
   pickerInput: document.getElementById("pickerInput"),
   pickerError: document.getElementById("pickerError"),
+  completeButton: document.getElementById("completeButton"),
+  celebrate: document.getElementById("celebrate"),
+  confetti: document.getElementById("confetti"),
 };
+
+/**
+ * Pure client-side celebration for the "Workout Completed" button — no
+ * sheet write, nothing tracked. Just a dopamine hit for tapping through
+ * after a session.
+ */
+const CONFETTI_COLORS = ["#e00000", "#ffffff", "#cccccc", "#a80000"];
+
+function celebrate() {
+  els.confetti.innerHTML = "";
+  const pieceCount = 60;
+  for (let i = 0; i < pieceCount; i++) {
+    const piece = document.createElement("div");
+    piece.className = "confetti-piece";
+    piece.style.left = `${Math.random() * 100}%`;
+    piece.style.background = CONFETTI_COLORS[i % CONFETTI_COLORS.length];
+    piece.style.animationDuration = `${1.4 + Math.random() * 1.2}s`;
+    piece.style.animationDelay = `${Math.random() * 0.3}s`;
+    piece.style.transform = `rotate(${Math.random() * 360}deg)`;
+    els.confetti.appendChild(piece);
+  }
+
+  els.celebrate.hidden = false;
+  setTimeout(() => {
+    els.celebrate.hidden = true;
+  }, 2200);
+}
+
+els.completeButton.addEventListener("click", celebrate);
 
 function showStatus(message, isError) {
   els.status.textContent = message;
