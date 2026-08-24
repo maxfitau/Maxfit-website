@@ -36,6 +36,7 @@ const els = {
   name: document.getElementById("referrerName"),
   count: document.getElementById("referrerCount"),
   bonus: document.getElementById("referrerBonus"),
+  bonusWrap: document.getElementById("referrerBonusWrap"),
   discount: document.getElementById("referrerDiscount"),
   qr: document.getElementById("qrCode"),
   status: document.getElementById("status"),
@@ -94,6 +95,10 @@ async function loadCard(code) {
 
   renderQR(`${JOIN_URL_BASE}?ref=${encodeURIComponent(code)}`);
 }
+
+els.bonusWrap.addEventListener("click", () => {
+  els.bonusWrap.classList.toggle("card__sessions--revealed");
+});
 
 /**
  * Same self-contained fallback as the membership card: if no code is in

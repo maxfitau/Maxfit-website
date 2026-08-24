@@ -37,10 +37,11 @@
       <span class="card__label">Clients Referred</span>
       <span class="card__sessions-num card__sessions-num--split" id="referrerCount">—</span>
     </div>
-    <div class="card__sessions">
+    <button type="button" class="card__sessions card__sessions--reveal" id="referrerBonusWrap" aria-label="Tap to reveal bonus owed">
       <span class="card__label">Bonus Owed</span>
-      <span class="card__sessions-num card__sessions-num--split" id="referrerBonus">—</span>
-    </div>
+      <span class="card__sessions-num card__sessions-num--split card__bonus-value" id="referrerBonus">—</span>
+      <span class="card__reveal-hint" id="referrerBonusHint">Tap to reveal</span>
+    </button>
   </div>
 
   <p class="referrer__discount" id="referrerDiscount" hidden></p>
