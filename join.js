@@ -23,6 +23,7 @@ const els = {
   name: document.getElementById("joinName"),
   phone: document.getElementById("joinPhone"),
   email: document.getElementById("joinEmail"),
+  goals: document.getElementById("joinGoals"),
   website: document.getElementById("joinWebsite"),
   submit: document.getElementById("joinSubmit"),
   error: document.getElementById("joinError"),
@@ -58,6 +59,7 @@ els.form.addEventListener("submit", async (event) => {
   const name = els.name.value.trim();
   const phone = els.phone.value.trim();
   const email = els.email.value.trim();
+  const goals = els.goals.value.trim();
   els.error.hidden = true;
 
   if (!name || (!phone && !email)) {
@@ -79,6 +81,7 @@ els.form.addEventListener("submit", async (event) => {
         name,
         phone,
         email,
+        goals,
         referralCode,
         website: els.website.value, // honeypot — real visitors never fill this
       }),

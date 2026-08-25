@@ -51,6 +51,12 @@
   gap: 6px;
 }
 
+.join__textarea {
+  resize: vertical;
+  font-family: var(--font-body);
+  line-height: 1.4;
+}
+
 .join__honeypot {
   position: absolute;
   left: -9999px;

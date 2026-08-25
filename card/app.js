@@ -20,25 +20,33 @@
  * unpersonalized card. This rewrites the manifest in-memory on every load
  * so start_url matches whoever's viewing it, before they get a chance to
  * add it to their home screen.
+ *
+ * Built inline (no fetch) so this runs synchronously on page load — a
+ * fetch-then-swap version left a race window where "Add to Home Screen"
+ * could grab the original un-personalized manifest.json if tapped before
+ * the network round-trip finished, which is why the icon has been silently
+ * reverting to the generic/demo card for some people.
  */
 (function personalizeManifest() {
   const link = document.querySelector('link[rel="manifest"]');
-  if (!link) return;
-  fetch(link.href)
-    .then((res) => res.json())
-    .then((manifest) => {
-      manifest.start_url = window.location.href;
-      manifest.scope = new URL("./", document.baseURI).href;
-      manifest.icons = (manifest.icons || []).map((icon) => ({
-        ...icon,
-        src: new URL(icon.src, document.baseURI).href,
-      }));
-      const blob = new Blob([JSON.stringify(manifest)], { type: "application/manifest+json" });
-      link.href = URL.createObjectURL(blob);
-    })
-    .catch(() => {
-      // If this fails, the static manifest.json is still linked as a fallback.
-    });
+  if (!link || !window.location.search) return;
+  const manifest = {
+    name: "MaxFit",
+    short_name: "MaxFit",
+    start_url: window.location.href,
+    scope: new URL("./", document.baseURI).href,
+    display: "standalone",
+    orientation: "portrait",
+    background_color: "#111111",
+    theme_color: "#111111",
+    icons: [
+      { src: new URL("icons/icon-192.png", document.baseURI).href, sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: new URL("icons/icon-512.png", document.baseURI).href, sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: new URL("icons/icon-512-maskable.png", document.baseURI).href, sizes: "512x512", type: "image/png", purpose: "maskable" },
+    ],
+  };
+  const blob = new Blob([JSON.stringify(manifest)], { type: "application/manifest+json" });
+  link.href = URL.createObjectURL(blob);
 })();
 
 /*

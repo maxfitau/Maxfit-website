@@ -15,6 +15,39 @@
 const REFERRER_CODE_STORAGE_KEY = "maxfitReferrerCode";
 const JOIN_URL_BASE = "https://maxfit.now/join.html";
 
+/*
+ * iOS "Add to Home Screen" reads the manifest's start_url and uses it as
+ * the icon's permanent launch URL, ignoring the page you were actually on.
+ * Built inline (no fetch) so this runs synchronously before the browser's
+ * share sheet can read the manifest — a fetch-then-swap version left a race
+ * window where "Add to Home Screen" could grab the un-personalized manifest
+ * if tapped before the network round-trip finished (see card/app.js, which
+ * had this bug). This is the single source of truth for who this icon
+ * belongs to going forward; localStorage (below) is only a same-session
+ * fallback for browsers that don't carry query params into standalone mode.
+ */
+(function personalizeManifest() {
+  const link = document.querySelector('link[rel="manifest"]');
+  if (!link || !window.location.search) return;
+  const manifest = {
+    name: "MaxFit Referral",
+    short_name: "MaxFit",
+    start_url: window.location.href,
+    scope: new URL("./", document.baseURI).href,
+    display: "standalone",
+    orientation: "portrait",
+    background_color: "#e00000",
+    theme_color: "#e00000",
+    icons: [
+      { src: new URL("referrer-icons/icon-192.png", document.baseURI).href, sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: new URL("referrer-icons/icon-512.png", document.baseURI).href, sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: new URL("referrer-icons/icon-512-maskable.png", document.baseURI).href, sizes: "512x512", type: "image/png", purpose: "maskable" },
+    ],
+  };
+  const blob = new Blob([JSON.stringify(manifest)], { type: "application/manifest+json" });
+  link.href = URL.createObjectURL(blob);
+})();
+
 const params = new URLSearchParams(window.location.search);
 let referralCode = params.get("code");
 

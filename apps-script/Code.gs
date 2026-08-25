@@ -256,6 +256,7 @@ function handleSignup_(payload) {
   const name = String(payload.name || "").trim();
   const phone = String(payload.phone || "").trim();
   const email = String(payload.email || "").trim();
+  const goals = String(payload.goals || "").trim();
   const referralCode = String(payload.referralCode || "").trim();
 
   if (!name || (!phone && !email)) {
@@ -270,6 +271,7 @@ function handleSignup_(payload) {
     email: findColumn_(leadsHeader, "Email"),
     signupDate: findColumn_(leadsHeader, "Sign-up Date"),
     referredBy: findColumn_(leadsHeader, "Referred By"),
+    goals: findColumn_(leadsHeader, "Goals / Notes"),
   };
 
   // Duplicate check spans both Leads and Sessions Remaining, so someone
@@ -313,6 +315,7 @@ function handleSignup_(payload) {
   if (col.email >= 0) newRow[col.email] = email;
   if (col.signupDate >= 0) newRow[col.signupDate] = today;
   if (col.referredBy >= 0) newRow[col.referredBy] = referrerName;
+  if (col.goals >= 0) newRow[col.goals] = goals;
   leadsSheet.appendRow(newRow);
 
   return jsonResponse_({ status: "success", referrerName: referrerName });
