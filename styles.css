@@ -37,24 +37,35 @@ body {
 
 img { max-width: 100%; display: block; }
 
-/* ---------- Preloader: logo resolve ---------- */
+/* ---------- Intro: scroll-scrubbed preloader ---------- */
 
-body.is-loading { overflow: hidden; }
-
-#preloader {
-  position: fixed;
-  inset: 0;
-  z-index: 300;
-  background: #000;
-  overflow: hidden;
-  cursor: pointer;
-  transition: opacity 0.5s ease, visibility 0.5s ease;
+#intro-spacer {
+  position: relative;
+  height: 230vh;
 }
 
-#preloader.is-hidden {
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
+@media (max-width: 700px) {
+  #intro-spacer { height: 160vh; }
+}
+
+#hero-pin {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+/* Applied by JS on reduced-motion or if the intro fails to set up
+   (missing video, script error) so the page falls back to a plain,
+   non-pinned hero instead of a broken/stuck scroll section. */
+#intro-spacer.is-static { height: auto; }
+#hero-pin.is-static { position: relative; }
+
+#preloader {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: #000;
+  overflow: hidden;
 }
 
 .preloader__video {
@@ -64,6 +75,8 @@ body.is-loading { overflow: hidden; }
   transform: translate(-50%, -50%);
   width: min(90vw, 640px);
   height: auto;
+  object-fit: contain;
+  background: #000;
 }
 
 .preloader__caption {
@@ -71,7 +84,6 @@ body.is-loading { overflow: hidden; }
   bottom: 18%;
   left: 0;
   right: 0;
-  transform: translateY(6px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -85,7 +97,6 @@ body.is-loading { overflow: hidden; }
   text-shadow: 0 2px 20px rgba(0, 0, 0, 0.5);
   white-space: nowrap;
   opacity: 0;
-  animation: preloader-caption-in 0.5s var(--ease) 0.3s forwards;
 }
 
 .preloader__dots {
@@ -104,44 +115,35 @@ body.is-loading { overflow: hidden; }
 .preloader__dots span:nth-child(2) { animation-delay: 0.15s; }
 .preloader__dots span:nth-child(3) { animation-delay: 0.3s; }
 
-@keyframes preloader-caption-in {
-  to { opacity: 1; transform: translateY(0); }
-}
-
 @keyframes preloader-dot-pulse {
   0%, 80%, 100% { opacity: 0.25; transform: scale(0.8); }
   40% { opacity: 1; transform: scale(1.15); }
 }
 
-body.is-loading .site-header,
-body.is-loading .float-cta,
-body.is-loading .hero__shapes,
-body.is-loading .hero__label,
-body.is-loading .hero__logo-wrap,
-body.is-loading .hero__tagline,
-body.is-loading .hero__sub,
-body.is-loading .hero__free-badge,
-body.is-loading .hero__actions,
-body.is-loading .hero__scroll,
-body.is-loading main > *:not(.hero) {
-  opacity: 0;
+.preloader__hint {
+  position: absolute;
+  bottom: 28px;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.75rem;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--dim);
 }
 
-.float-cta,
-.hero__shapes,
-.hero__label,
-.hero__logo-wrap,
-.hero__tagline,
-.hero__sub,
-.hero__free-badge,
-.hero__actions,
-.hero__scroll,
-main > *:not(.hero) {
-  transition: opacity 0.6s ease;
+.preloader__hint-line {
+  width: 1px;
+  height: 36px;
+  background: linear-gradient(var(--red), transparent);
+  animation: scrollpulse 2s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #preloader { display: none; }
+  .preloader__hint-line { animation: none; }
 }
 
 a { color: inherit; text-decoration: none; }

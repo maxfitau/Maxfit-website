@@ -1,36 +1,190 @@
 document.addEventListener("DOMContentLoaded", function () {
   var prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  /* ---------- Preloader: intro video ---------- */
+  /* ---------- Intro: scroll-scrubbed preloader ----------
+     #hero-pin (the .hero section) sticks to the top of the viewport while
+     #intro-spacer scrolls underneath it. Scroll position within that
+     spacer drives a 0-1 progress value that scrubs the intro video's
+     currentTime and stages the hero content in — so scrolling back up
+     rewinds the whole thing, since nothing here is a one-shot animation. */
+  var introSpacer = document.getElementById("intro-spacer");
+  var heroPin = document.getElementById("hero-pin");
   var preloader = document.getElementById("preloader");
   var preloaderVideo = preloader ? preloader.querySelector(".preloader__video") : null;
+  var preloaderCaption = preloader ? preloader.querySelector(".preloader__caption") : null;
+  var preloaderHint = preloader ? preloader.querySelector(".preloader__hint") : null;
 
-  if (preloader) {
-    if (prefersReducedMotion) {
-      preloader.remove();
-    } else {
-      document.body.classList.add("is-loading");
+  var introEls = {
+    label: document.querySelector(".hero__label"),
+    logo: document.querySelector(".hero__logo-wrap"),
+    tagline: document.querySelector(".hero__tagline"),
+    sub: document.querySelector(".hero__sub"),
+    badge: document.querySelector(".hero__free-badge"),
+    actions: document.querySelector(".hero__actions"),
+    scrollHint: document.querySelector(".hero__scroll")
+  };
 
-      var hidePreloader = function () {
-        preloader.classList.add("is-hidden");
-        document.body.classList.remove("is-loading");
-      };
-
-      // The video ends the moment it's done, but keep a fallback timer in
-      // case autoplay is blocked or the "ended" event never fires.
-      var preloaderTimer = setTimeout(hidePreloader, 2600);
-
-      var skipPreloader = function () {
-        clearTimeout(preloaderTimer);
-        hidePreloader();
-      };
-
-      if (preloaderVideo) {
-        preloaderVideo.addEventListener("ended", skipPreloader);
+  // Falls back to a plain, non-pinned hero with everything simply visible —
+  // used for reduced-motion, missing markup, a video load error, or any
+  // unexpected error in the setup below, so the page never gets stuck.
+  function fallbackToStaticHero() {
+    if (introSpacer) introSpacer.classList.add("is-static");
+    if (heroPin) heroPin.classList.add("is-static");
+    if (preloader) preloader.remove();
+    Object.keys(introEls).forEach(function (key) {
+      var el = introEls[key];
+      if (el) {
+        el.style.opacity = "";
+        el.style.transform = "";
       }
+    });
+  }
 
-      preloader.addEventListener("click", skipPreloader);
-      window.addEventListener("keydown", skipPreloader, { once: true });
+  if (!introSpacer || !heroPin || !preloader || !preloaderVideo) {
+    fallbackToStaticHero();
+  } else if (prefersReducedMotion) {
+    fallbackToStaticHero();
+  } else {
+    try {
+      var videoReady = false;
+      preloaderVideo.addEventListener("loadedmetadata", function () {
+        videoReady = true;
+      });
+      preloaderVideo.addEventListener("error", fallbackToStaticHero);
+
+      // The video's logo needs to land exactly where the real
+      // .hero__logo-wrap sits, so the swap from video to live logo at the
+      // end of the intro doesn't visibly jump. Measured against the logo's
+      // resting position (transform cleared) since it's mid-reveal
+      // (translateY-animating) most of the time this runs.
+      var heroLogoWrap = document.querySelector(".hero__logo-wrap");
+      var alignPreloaderVideo = function () {
+        if (!heroLogoWrap) return;
+        var prevTransform = heroLogoWrap.style.transform;
+        heroLogoWrap.style.transform = "none";
+        var containerRect = preloader.getBoundingClientRect();
+        var logoRect = heroLogoWrap.getBoundingClientRect();
+        heroLogoWrap.style.transform = prevTransform;
+
+        if (!logoRect.width || !containerRect.width) return;
+        preloaderVideo.style.left = (logoRect.left - containerRect.left + logoRect.width / 2) + "px";
+        preloaderVideo.style.top = (logoRect.top - containerRect.top + logoRect.height / 2) + "px";
+        preloaderVideo.style.width = logoRect.width + "px";
+      };
+
+      // Progress ranges each hero element reveals across, staggered so
+      // they cascade in one after another as the intro finishes.
+      var bands = {
+        label: [0.70, 0.80],
+        logo: [0.75, 0.88],
+        tagline: [0.80, 0.92],
+        sub: [0.85, 1.00],
+        badge: [0.85, 1.00],
+        actions: [0.85, 1.00],
+        scrollHint: [0.90, 1.00]
+      };
+
+      var bandProgress = function (range, p) {
+        var t = (p - range[0]) / (range[1] - range[0]);
+        return Math.max(0, Math.min(1, t));
+      };
+
+      // Cheap ease-out so each reveal decelerates into place instead of
+      // moving at a constant linear rate — reads as noticeably smoother
+      // even though the underlying scroll math is unchanged.
+      var easeOutCubic = function (t) {
+        return 1 - Math.pow(1 - t, 3);
+      };
+
+      var applyReveal = function (el, t) {
+        if (!el) return;
+        var eased = easeOutCubic(t);
+        el.style.opacity = eased.toFixed(3);
+        el.style.transform = "translateY(" + ((1 - eased) * 16).toFixed(2) + "px)";
+      };
+
+      Object.keys(introEls).forEach(function (key) {
+        applyReveal(introEls[key], 0);
+      });
+
+      var lastVideoTime = -1;
+
+      // The raw scroll position (targetProgress) updates instantly, but
+      // everything on screen tracks a lagged, lerped currentProgress
+      // instead — same damping technique as the cursor-dot follower above.
+      // That turns choppy trackpad/wheel deltas into one continuous glide.
+      var targetProgress = 0;
+      var currentProgress = 0;
+      var introSmoothing = 0.16;
+      var introRafRunning = false;
+
+      var readTargetProgress = function () {
+        var rect = introSpacer.getBoundingClientRect();
+        var vh = window.innerHeight;
+        var total = rect.height - vh;
+        var p = total > 0 ? -rect.top / total : 1;
+        targetProgress = Math.max(0, Math.min(1, p));
+      };
+
+      var applyIntroFrame = function (progress) {
+        if (videoReady && preloaderVideo.duration) {
+          var t = progress * preloaderVideo.duration;
+          if (Math.abs(t - lastVideoTime) > 0.005) {
+            preloaderVideo.currentTime = t;
+            lastVideoTime = t;
+          }
+        }
+
+        if (preloaderCaption) {
+          var captionOut = bandProgress([0.80, 1.00], progress);
+          preloaderCaption.style.opacity = (1 - easeOutCubic(captionOut)).toFixed(3);
+        }
+
+        if (preloaderHint) {
+          var hintOut = bandProgress([0.02, 0.12], progress);
+          preloaderHint.style.opacity = (1 - easeOutCubic(hintOut)).toFixed(3);
+        }
+
+        var overlayOut = bandProgress([0.72, 0.96], progress);
+        preloader.style.opacity = (1 - easeOutCubic(overlayOut)).toFixed(3);
+        preloader.style.pointerEvents = progress >= 0.96 ? "none" : "";
+
+        Object.keys(bands).forEach(function (key) {
+          applyReveal(introEls[key], bandProgress(bands[key], progress));
+        });
+      };
+
+      var introTick = function () {
+        currentProgress += (targetProgress - currentProgress) * introSmoothing;
+        if (Math.abs(targetProgress - currentProgress) < 0.0008) {
+          currentProgress = targetProgress;
+        }
+        applyIntroFrame(currentProgress);
+
+        if (currentProgress !== targetProgress) {
+          requestAnimationFrame(introTick);
+        } else {
+          introRafRunning = false;
+        }
+      };
+
+      var scheduleIntroUpdate = function () {
+        readTargetProgress();
+        if (!introRafRunning) {
+          introRafRunning = true;
+          requestAnimationFrame(introTick);
+        }
+      };
+
+      window.addEventListener("scroll", scheduleIntroUpdate, { passive: true });
+      window.addEventListener("resize", function () {
+        alignPreloaderVideo();
+        scheduleIntroUpdate();
+      });
+      alignPreloaderVideo();
+      scheduleIntroUpdate();
+    } catch (err) {
+      fallbackToStaticHero();
     }
   }
 
@@ -275,8 +429,14 @@ document.addEventListener("DOMContentLoaded", function () {
   /* ---------- Hero shapes: scroll parallax ---------- */
   if (!prefersReducedMotion) {
     var scrollShapes = document.querySelectorAll(".hero .shape");
+    var heroForParallax = document.querySelector(".hero");
     window.addEventListener("scroll", function () {
-      var offset = window.scrollY;
+      // .hero is pinned (position: sticky) during the intro scrub, so its
+      // own rect.top stays at 0 the whole time the intro is running and
+      // only goes negative once it un-pins and scrolls with the page —
+      // using that instead of window.scrollY keeps the shapes still while
+      // pinned instead of flinging them off-screen from the spacer scroll.
+      var offset = heroForParallax ? -heroForParallax.getBoundingClientRect().top : 0;
       scrollShapes.forEach(function (shape, i) {
         var speed = 0.06 + i * 0.02;
         shape.style.marginTop = -(offset * speed) + "px";

@@ -30,14 +30,6 @@
 </head>
 <body>
 
-<div id="preloader" aria-hidden="true">
-<video class="preloader__video" src="assets/videos/intro.mp4" autoplay muted playsinline></video>
-<div class="preloader__caption">
-Loading your fitness dreams
-<span class="preloader__dots"><span></span><span></span><span></span></span>
-</div>
-</div>
-
 <header class="site-header">
 <nav class="nav">
 <a href="#top" class="nav__logo" aria-label="Max Fit, home">
@@ -59,8 +51,9 @@ Loading your fitness dreams
 
 <main id="top">
 
-<!-- Hero -->
-<section class="hero">
+<!-- Hero (doubles as the scroll-scrubbed intro stage) -->
+<div id="intro-spacer">
+<section class="hero" id="hero-pin">
 <div class="hero__shapes" aria-hidden="true">
 <div class="shape shape--ring"></div>
 <div class="shape shape--dot"></div>
@@ -89,7 +82,20 @@ Your first session is free
 <span>Scroll</span>
 <span class="hero__scroll-line"></span>
 </div>
+
+<div id="preloader" aria-hidden="true">
+<video class="preloader__video" src="assets/videos/intro.mp4" poster="assets/images/intro-poster.jpg" muted playsinline preload="auto"></video>
+<div class="preloader__caption">
+Loading your fitness dreams
+<span class="preloader__dots"><span></span><span></span><span></span></span>
+</div>
+<div class="preloader__hint">
+<span>Scroll to begin</span>
+<span class="preloader__hint-line"></span>
+</div>
+</div>
 </section>
+</div>
 
 <!-- Marquee: motto -->
 <div class="marquee">
