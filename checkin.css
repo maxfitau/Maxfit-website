@@ -42,18 +42,6 @@
   margin: 0;
 }
 
-.checkin__owing {
-  font-family: var(--font-body);
-  font-weight: 600;
-  font-size: 14px;
-  color: var(--red);
-  background: rgba(224, 0, 0, 0.1);
-  border: 1px solid rgba(224, 0, 0, 0.3);
-  border-radius: var(--radius-sm);
-  padding: 12px 14px;
-  margin: 0;
-}
-
 .checkin__pin {
   display: flex;
   flex-direction: column;

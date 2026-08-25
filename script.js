@@ -29,7 +29,10 @@ document.addEventListener("DOMContentLoaded", function () {
   // unexpected error in the setup below, so the page never gets stuck.
   function fallbackToStaticHero() {
     if (introSpacer) introSpacer.classList.add("is-static");
-    if (heroPin) heroPin.classList.add("is-static");
+    if (heroPin) {
+      heroPin.classList.remove("is-pinned", "is-released");
+      heroPin.classList.add("is-static");
+    }
     if (preloader) preloader.remove();
     Object.keys(introEls).forEach(function (key) {
       var el = introEls[key];
@@ -53,10 +56,19 @@ document.addEventListener("DOMContentLoaded", function () {
       preloaderVideo.addEventListener("error", fallbackToStaticHero);
 
       // The video's logo needs to land exactly where the real
-      // .hero__logo-wrap sits, so the swap from video to live logo at the
-      // end of the intro doesn't visibly jump. Measured against the logo's
-      // resting position (transform cleared) since it's mid-reveal
-      // (translateY-animating) most of the time this runs.
+      // .hero__logo-wrap sits, at the same visible size, so the swap from
+      // video to live logo at the end of the intro doesn't jump or resize.
+      // Measured against the logo's resting position (transform cleared)
+      // since it's mid-reveal (translateY-animating) most of the time this
+      // runs. intro.mp4's frame has padding baked in around the drawn
+      // logo — it only fills ~66% of the frame width, vs. ~98% for the
+      // flush-cropped hero__logo.png — so matching the elements' outer
+      // box widths alone leaves the *visible* logos different sizes.
+      // VIDEO_CONTENT_SCALE corrects for that (measured directly from the
+      // two assets' pixel content, not a guess): scale the video element
+      // up so its actual drawn logo — not its padded frame — matches the
+      // real logo's size.
+      var VIDEO_CONTENT_SCALE = 1.496;
       var heroLogoWrap = document.querySelector(".hero__logo-wrap");
       var alignPreloaderVideo = function () {
         if (!heroLogoWrap) return;
@@ -69,7 +81,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (!logoRect.width || !containerRect.width) return;
         preloaderVideo.style.left = (logoRect.left - containerRect.left + logoRect.width / 2) + "px";
         preloaderVideo.style.top = (logoRect.top - containerRect.top + logoRect.height / 2) + "px";
-        preloaderVideo.style.width = logoRect.width + "px";
+        preloaderVideo.style.width = (logoRect.width * VIDEO_CONTENT_SCALE) + "px";
       };
 
       // Progress ranges each hero element reveals across, staggered so
@@ -124,6 +136,26 @@ document.addEventListener("DOMContentLoaded", function () {
         var total = rect.height - vh;
         var p = total > 0 ? -rect.top / total : 1;
         targetProgress = Math.max(0, Math.min(1, p));
+
+        // Pin .hero to the viewport with position: fixed while we're
+        // still inside the spacer's scroll range, then let it settle at
+        // the bottom of the spacer (position: absolute) once scrolled
+        // past — a manual stand-in for position: sticky that works the
+        // same everywhere instead of depending on it.
+        var stillWithinSpacer = rect.bottom > vh;
+        if (total > 0 && rect.top <= 0 && stillWithinSpacer) {
+          if (!heroPin.classList.contains("is-pinned")) {
+            heroPin.classList.add("is-pinned");
+            heroPin.classList.remove("is-released");
+          }
+        } else if (total > 0 && !stillWithinSpacer) {
+          if (!heroPin.classList.contains("is-released")) {
+            heroPin.classList.add("is-released");
+            heroPin.classList.remove("is-pinned");
+          }
+        } else {
+          heroPin.classList.remove("is-pinned", "is-released");
+        }
       };
 
       var applyIntroFrame = function (progress) {
@@ -178,11 +210,22 @@ document.addEventListener("DOMContentLoaded", function () {
 
       window.addEventListener("scroll", scheduleIntroUpdate, { passive: true });
       window.addEventListener("resize", function () {
-        alignPreloaderVideo();
         scheduleIntroUpdate();
+        alignPreloaderVideo();
       });
-      alignPreloaderVideo();
-      scheduleIntroUpdate();
+
+      // Wait a couple of frames before the very first read — right at
+      // DOMContentLoaded, mobile browsers (iOS Safari especially) haven't
+      // always finished settling layout/viewport size yet, and a
+      // getBoundingClientRect()/innerHeight read that's too early can come
+      // back with the wrong numbers, leaving the intro stuck un-pinned
+      // with the black overlay just sitting there until the next scroll.
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          scheduleIntroUpdate();
+          alignPreloaderVideo();
+        });
+      });
     } catch (err) {
       fallbackToStaticHero();
     }

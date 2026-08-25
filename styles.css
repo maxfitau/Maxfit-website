@@ -32,7 +32,12 @@ body {
   font-family: var(--font-body);
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
-  overflow-x: hidden;
+  /* Not overflow-x: hidden here on purpose — Safari (notably iOS) refuses
+     to run position: sticky on any descendant when an ancestor (even just
+     body) has a non-visible overflow set, which silently broke the pinned
+     intro on phones. Horizontal clipping is handled per-section instead
+     (.hero, .marquee, .wof, .tv2, etc. already set their own
+     overflow: hidden), so this isn't needed at the body level. */
 }
 
 img { max-width: 100%; display: block; }
@@ -48,10 +53,32 @@ img { max-width: 100%; display: block; }
   #intro-spacer { height: 160vh; }
 }
 
+/* position: sticky (CSS-only) as a baseline default — mainly for the
+   instant before JS takes over. JS immediately replaces this with an
+   explicit fixed/absolute toggle below (.is-pinned / .is-released),
+   because Safari (especially iOS) silently refuses to run sticky at all
+   on a descendant when practically any ancestor has a non-visible
+   overflow, is inside a transformed element, etc. — too many ways for
+   that to break silently on a phone we can't test on. Doing the pin
+   ourselves with fixed positioning sidesteps that whole class of bugs. */
 #hero-pin {
   position: sticky;
   top: 0;
   z-index: 50;
+}
+
+#hero-pin.is-pinned {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
+#hero-pin.is-released {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
 }
 
 /* Applied by JS on reduced-motion or if the intro fails to set up
@@ -411,6 +438,7 @@ section {
 /* ---------- Hero ---------- */
 
 .hero {
+  min-height: 100vh;
   min-height: 100svh;
   display: flex;
   flex-direction: column;

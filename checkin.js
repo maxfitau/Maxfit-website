@@ -41,7 +41,6 @@ const els = {
   name: document.getElementById("checkinName"),
   groupSessions: document.getElementById("checkinGroupSessions"),
   oneOnOneSessions: document.getElementById("checkinOneOnOneSessions"),
-  owing: document.getElementById("checkinOwing"),
   pinRow: document.getElementById("checkinPinRow"),
   pinInput: document.getElementById("checkinPinInput"),
   freeRow: document.getElementById("checkinFreeRow"),
@@ -102,12 +101,6 @@ async function init() {
   // have tracked at all — disable that button rather than let it fire.
   els.groupButton.disabled = groupSessions === "N/A";
   els.oneOnOneButton.disabled = oneOnOneSessions === "N/A";
-
-  const owing = Number((match[col.amountOwing] || "").trim());
-  if (Number.isFinite(owing) && owing > 0) {
-    els.owing.textContent = `Outstanding balance: $${owing}`;
-    els.owing.hidden = false;
-  }
 
   // Loyalty punchcard: every 10th visit (their 10th, 20th, 30th...) is free,
   // and so is their very first ever visit. Pre-tick the box either way —

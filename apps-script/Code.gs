@@ -139,6 +139,10 @@ function handleCheckIn_(payload) {
     lastAttended: findColumn_(header, "Last Attended"),
     checkInToken: findColumn_(header, "Check-in Token"),
     totalAttended: findColumn_(header, "Total Classes Attended"),
+    paidSessions: findColumn_(header, "Paid Sessions"),
+    referredBy: findColumn_(header, "Referred By"),
+    bonusApplied: findColumn_(header, "Referral Bonus Applied"),
+    groupSessions: findColumn_(header, "Group Sessions Remaining"),
   };
 
   if (col.checkInToken < 0) {
@@ -227,6 +231,20 @@ function handleCheckIn_(payload) {
     newRow[aCol.notes] = SESSION_TYPE_NOTES[sessionType] + (freeSession ? " — Free Session" : "");
   }
   attendanceSheet.appendRow(newRow);
+
+  // "Paid Sessions" only counts real, paid attendance — a free bonus
+  // session (freeSession) doesn't move a referred client any closer to
+  // their referrer's payout. Once it hits 3, the referrer gets paid
+  // automatically, right here — no more manually flipping a Payment
+  // Status cell by hand for every client.
+  let paidSessionsCount = null;
+  if (!freeSession && col.paidSessions >= 0) {
+    const paidRaw = String(row[col.paidSessions] || "").trim();
+    const paidNum = Number(paidRaw);
+    paidSessionsCount = (paidRaw !== "" && Number.isFinite(paidNum) ? paidNum : 0) + 1;
+    sheet.getRange(rowIndex + 1, col.paidSessions + 1).setValue(paidSessionsCount);
+    maybeApplyReferralBonus_(sheet, col, rowIndex + 1, paidSessionsCount);
+  }
 
   return jsonResponse_({
     status: "success",
@@ -330,57 +348,23 @@ function isEmailAlreadyPresent_(sheet, emailCol, email) {
 }
 
 /**
- * Referral payout — runs automatically as a Google Sheets "simple trigger"
- * (any function literally named onEdit is auto-installed by Sheets itself,
- * no separate deployment or authorization step needed). Fires on every
- * manual edit to the Sessions Remaining sheet; only acts when the edit
- * touches Payment Status and sets it to "Paid".
+ * Referral payout — runs as part of check-in itself (handleCheckIn_ calls
+ * this after bumping "Paid Sessions"), not as a separate manual step. Once
+ * a referred client's Paid Sessions hits 3, their referrer gets paid
+ * automatically — no more flipping a Payment Status cell by hand per client.
  *
  * One-time per referred client, guarded by "Referral Bonus Applied" (Y once
- * paid out) so re-saving the same cell, or editing something else on the
- * row later, doesn't pay a friend twice for the same referral.
+ * paid out) so a later check-in on the same row doesn't pay a friend twice
+ * for the same referral.
  *
  * - Referrer is an existing client (their name matches a row in this same
  *   sheet) -> +1 Group Session on their own row (a free class, redeemed
  *   whenever/whichever they like via the normal check-in flow).
- * - Referrer isn't a client -> +$5 added to their "Bonus Owed" in the
+ * - Referrer isn't a client -> +$20 added to their "Bonus Owed" in the
  *   Referrals tab.
  */
-function onEdit(e) {
-  try {
-    const sheet = e.range.getSheet();
-    if (sheet.getSheetId() !== SESSIONS_SHEET_GID) return;
-
-    const lastCol = sheet.getLastColumn();
-    const header = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-    const col = {
-      name: findColumn_(header, "Name"),
-      paymentStatus: findColumn_(header, "Payment Status"),
-      referredBy: findColumn_(header, "Referred By"),
-      bonusApplied: findColumn_(header, "Referral Bonus Applied"),
-      groupSessions: findColumn_(header, "Group Sessions Remaining"),
-    };
-    if (col.paymentStatus < 0) return;
-
-    const paymentStatusCol1 = col.paymentStatus + 1; // 1-indexed for Range APIs
-    const editedFirstCol = e.range.getColumn();
-    const editedLastCol = editedFirstCol + e.range.getNumColumns() - 1;
-    if (paymentStatusCol1 < editedFirstCol || paymentStatusCol1 > editedLastCol) return;
-
-    const firstRow = e.range.getRow();
-    const numRows = e.range.getNumRows();
-    for (let row = firstRow; row < firstRow + numRows; row++) {
-      if (row === 1) continue; // header
-      maybeApplyReferralBonus_(sheet, col, row);
-    }
-  } catch (err) {
-    // Never let a trigger error block the actual edit someone just made.
-  }
-}
-
-function maybeApplyReferralBonus_(sheet, col, row) {
-  const status = String(sheet.getRange(row, col.paymentStatus + 1).getValue() || "").trim().toLowerCase();
-  if (status !== "paid") return;
+function maybeApplyReferralBonus_(sheet, col, row, paidSessionsCount) {
+  if (paidSessionsCount < 3) return;
 
   if (col.bonusApplied >= 0) {
     const already = sheet.getRange(row, col.bonusApplied + 1).getValue();
@@ -406,7 +390,7 @@ function maybeApplyReferralBonus_(sheet, col, row) {
     const current = Number(cell.getValue()) || 0;
     cell.setValue(current + 1);
   } else if (referrerRowOffset < 0 && REFERRALS_SHEET_GID) {
-    // Referrer isn't a client — credit a one-off $5 in the Referrals tab.
+    // Referrer isn't a client — credit a one-off $20 in the Referrals tab.
     creditReferralCash_(referredBy);
   }
 
@@ -442,7 +426,7 @@ function creditReferralCash_(friendName) {
 
   const cell = found.sheet.getRange(found.row, found.col["Bonus Owed"] + 1);
   const current = Number(String(cell.getValue() || "").replace(/[^0-9.]/g, "")) || 0;
-  cell.setValue("$" + (current + 5));
+  cell.setValue("$" + (current + 20));
 }
 
 function incrementClientsReferred_(friendName) {
