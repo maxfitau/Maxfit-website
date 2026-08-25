@@ -1,5 +1,9 @@
 {
- "name": "App",
+ "name": "Max Fit",
+ "short_name": "Max Fit",
+ "theme_color": "#e00000",
+ "background_color": "#111111",
+ "display": "standalone",
  "icons": [
   {
    "src": "\/android-icon-36x36.png",
