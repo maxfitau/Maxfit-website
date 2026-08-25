@@ -51,7 +51,24 @@ document.addEventListener("DOMContentLoaded", function () {
     try {
       var videoReady = false;
       preloaderVideo.addEventListener("loadedmetadata", function () {
-        videoReady = true;
+        // iOS Safari won't actually paint a frame from a programmatic
+        // currentTime seek on a video that has never played — it just
+        // stays black no matter what you set currentTime to. Priming it
+        // with an immediate play-then-pause (muted, so it's allowed
+        // without a user gesture) gets the decoder going once, after
+        // which our own scroll-driven seeks render normally.
+        var primeResult = preloaderVideo.play();
+        if (primeResult && typeof primeResult.then === "function") {
+          primeResult.then(function () {
+            preloaderVideo.pause();
+            videoReady = true;
+          }).catch(function () {
+            videoReady = true;
+          });
+        } else {
+          preloaderVideo.pause();
+          videoReady = true;
+        }
       });
       preloaderVideo.addEventListener("error", fallbackToStaticHero);
 
@@ -87,13 +104,13 @@ document.addEventListener("DOMContentLoaded", function () {
       // Progress ranges each hero element reveals across, staggered so
       // they cascade in one after another as the intro finishes.
       var bands = {
-        label: [0.70, 0.80],
-        logo: [0.75, 0.88],
-        tagline: [0.80, 0.92],
-        sub: [0.85, 1.00],
-        badge: [0.85, 1.00],
-        actions: [0.85, 1.00],
-        scrollHint: [0.90, 1.00]
+        label: [0.52, 0.66],
+        logo: [0.58, 0.74],
+        tagline: [0.66, 0.82],
+        sub: [0.74, 0.90],
+        badge: [0.74, 0.90],
+        actions: [0.74, 0.90],
+        scrollHint: [0.84, 1.00]
       };
 
       var bandProgress = function (range, p) {
@@ -168,7 +185,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         if (preloaderCaption) {
-          var captionOut = bandProgress([0.80, 1.00], progress);
+          var captionOut = bandProgress([0.60, 0.85], progress);
           preloaderCaption.style.opacity = (1 - easeOutCubic(captionOut)).toFixed(3);
         }
 
@@ -177,9 +194,9 @@ document.addEventListener("DOMContentLoaded", function () {
           preloaderHint.style.opacity = (1 - easeOutCubic(hintOut)).toFixed(3);
         }
 
-        var overlayOut = bandProgress([0.72, 0.96], progress);
+        var overlayOut = bandProgress([0.55, 0.88], progress);
         preloader.style.opacity = (1 - easeOutCubic(overlayOut)).toFixed(3);
-        preloader.style.pointerEvents = progress >= 0.96 ? "none" : "";
+        preloader.style.pointerEvents = progress >= 0.88 ? "none" : "";
 
         Object.keys(bands).forEach(function (key) {
           applyReveal(introEls[key], bandProgress(bands[key], progress));
