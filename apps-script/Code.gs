@@ -140,9 +140,11 @@ function handleCheckIn_(payload) {
     checkInToken: findColumn_(header, "Check-in Token"),
     totalAttended: findColumn_(header, "Total Classes Attended"),
     paidSessions: findColumn_(header, "Paid Sessions"),
+    hasPaidOneOnOne: findColumn_(header, "Has Paid 1-on-1"),
     referredBy: findColumn_(header, "Referred By"),
-    bonusApplied: findColumn_(header, "Referral Bonus Applied"),
     groupSessions: findColumn_(header, "Group Sessions Remaining"),
+    paidInClasses: findColumn_(header, "Paid In Classes"),
+    tokensOwed: findColumn_(header, "Tokens Owed"),
   };
 
   if (col.checkInToken < 0) {
@@ -234,16 +236,28 @@ function handleCheckIn_(payload) {
 
   // "Paid Sessions" only counts real, paid attendance — a free bonus
   // session (freeSession) doesn't move a referred client any closer to
-  // their referrer's payout. Once it hits 3, the referrer gets paid
-  // automatically, right here — no more manually flipping a Payment
-  // Status cell by hand for every client.
+  // their referrer's payout. The referral payout itself runs right here,
+  // driven entirely off this count and today's session type — no more
+  // manually flipping a Payment Status cell by hand for every client.
   let paidSessionsCount = null;
   if (!freeSession && col.paidSessions >= 0) {
     const paidRaw = String(row[col.paidSessions] || "").trim();
     const paidNum = Number(paidRaw);
     paidSessionsCount = (paidRaw !== "" && Number.isFinite(paidNum) ? paidNum : 0) + 1;
     sheet.getRange(rowIndex + 1, col.paidSessions + 1).setValue(paidSessionsCount);
-    maybeApplyReferralBonus_(sheet, col, rowIndex + 1, paidSessionsCount);
+
+    // Gates the starred/free-classes reward below — the very first free
+    // class a starred referrer earns requires their friend to have paid
+    // for a 1-on-1 specifically, not just any session.
+    let hasPaidOneOnOne = col.hasPaidOneOnOne >= 0
+      ? String(row[col.hasPaidOneOnOne] || "").trim().toLowerCase() === "y"
+      : false;
+    if (sessionType === "one-on-one" && col.hasPaidOneOnOne >= 0 && !hasPaidOneOnOne) {
+      sheet.getRange(rowIndex + 1, col.hasPaidOneOnOne + 1).setValue("Y");
+      hasPaidOneOnOne = true;
+    }
+
+    maybeApplyReferralBonus_(sheet, col, rowIndex + 1, paidSessionsCount, sessionType, hasPaidOneOnOne);
   }
 
   return jsonResponse_({
@@ -349,28 +363,30 @@ function isEmailAlreadyPresent_(sheet, emailCol, email) {
 
 /**
  * Referral payout — runs as part of check-in itself (handleCheckIn_ calls
- * this after bumping "Paid Sessions"), not as a separate manual step. Once
- * a referred client's Paid Sessions hits 3, their referrer gets paid
- * automatically — no more flipping a Payment Status cell by hand per client.
+ * this after bumping "Paid Sessions" and "Has Paid 1-on-1"), not as a
+ * separate manual step. Every qualifying check-in re-evaluates the payout;
+ * nothing here needs a one-time "already applied" guard because it keys
+ * off paidSessionsCount, which only ever increases by exactly 1 per real
+ * check-in, so each threshold below is only ever crossed once.
  *
- * One-time per referred client, guarded by "Referral Bonus Applied" (Y once
- * paid out) so a later check-in on the same row doesn't pay a friend twice
- * for the same referral.
+ * "Clients Referred" ticks up once, the moment the referred client hits
+ * their 3rd paid session — regardless of which reward type below applies.
  *
- * - Referrer is an existing client (their name matches a row in this same
- *   sheet) -> +1 Group Session on their own row (a free class, redeemed
- *   whenever/whichever they like via the normal check-in flow).
- * - Referrer isn't a client -> +$20 added to their "Bonus Owed" in the
- *   Referrals tab.
+ * Two reward types, depending on the referrer:
+ *
+ * - Referrer is a client marked "Paid In Classes" (Y) — paid in free group
+ *   classes instead of tokens. The first class requires their friend to
+ *   have paid for a 1-on-1 specifically (not just any session type); after
+ *   that, every 2 more paid sessions of any type earns 1 more free class
+ *   (3 paid -> 2 classes, 5 paid -> 3 classes, ...).
+ * - Any other referrer (a client not marked "Paid In Classes", or a friend
+ *   who isn't a client at all) — paid in tokens: 20 the moment their
+ *   friend hits 3 paid sessions, then +5 for every paid 1-on-1 after that
+ *   (group sessions after the milestone don't earn anything further).
+ *   Stored on the referrer's own "Tokens Owed" cell if they're a client,
+ *   or in the Referrals tab if they're not.
  */
-function maybeApplyReferralBonus_(sheet, col, row, paidSessionsCount) {
-  if (paidSessionsCount < 3) return;
-
-  if (col.bonusApplied >= 0) {
-    const already = sheet.getRange(row, col.bonusApplied + 1).getValue();
-    if (already) return;
-  }
-
+function maybeApplyReferralBonus_(sheet, col, row, paidSessionsCount, sessionType, hasPaidOneOnOne) {
   const referredBy = col.referredBy >= 0
     ? String(sheet.getRange(row, col.referredBy + 1).getValue() || "").trim()
     : "";
@@ -383,23 +399,35 @@ function maybeApplyReferralBonus_(sheet, col, row, paidSessionsCount) {
   const referrerRowOffset = names.findIndex(
     (n) => String(n || "").trim().toLowerCase() === referredBy.toLowerCase()
   );
+  const referrerIsClient = referrerRowOffset >= 0;
+  const referrerRow = referrerIsClient ? referrerRowOffset + 2 : -1;
 
-  if (referrerRowOffset >= 0 && col.groupSessions >= 0) {
-    // Referrer is an existing client — give them one free group class.
-    const cell = sheet.getRange(referrerRowOffset + 2, col.groupSessions + 1);
-    const current = Number(cell.getValue()) || 0;
-    cell.setValue(current + 1);
-  } else if (referrerRowOffset < 0 && REFERRALS_SHEET_GID) {
-    // Referrer isn't a client — credit a one-off $20 in the Referrals tab.
-    creditReferralCash_(referredBy);
+  if (paidSessionsCount === 3 && REFERRALS_SHEET_GID) {
+    incrementClientsReferred_(referredBy);
   }
 
-  // Clients Referred counts every conversion regardless of whether the
-  // referrer is also a client — it's a separate stat from the bonus type.
-  if (REFERRALS_SHEET_GID) incrementClientsReferred_(referredBy);
+  const starred = referrerIsClient && col.paidInClasses >= 0
+    ? String(sheet.getRange(referrerRow, col.paidInClasses + 1).getValue() || "").trim().toLowerCase() === "y"
+    : false;
 
-  if (col.bonusApplied >= 0) {
-    sheet.getRange(row, col.bonusApplied + 1).setValue("Y");
+  if (starred) {
+    if (hasPaidOneOnOne && paidSessionsCount % 2 === 1 && col.groupSessions >= 0) {
+      const cell = sheet.getRange(referrerRow, col.groupSessions + 1);
+      cell.setValue((Number(cell.getValue()) || 0) + 1);
+    }
+    return;
+  }
+
+  let tokensEarned = 0;
+  if (paidSessionsCount === 3) tokensEarned = 20;
+  else if (paidSessionsCount > 3 && sessionType === "one-on-one") tokensEarned = 5;
+  if (tokensEarned <= 0) return;
+
+  if (referrerIsClient && col.tokensOwed >= 0) {
+    const cell = sheet.getRange(referrerRow, col.tokensOwed + 1);
+    cell.setValue((Number(cell.getValue()) || 0) + tokensEarned);
+  } else if (!referrerIsClient && REFERRALS_SHEET_GID) {
+    creditReferralTokens_(referredBy, tokensEarned);
   }
 }
 
@@ -420,13 +448,13 @@ function findReferralsRow_(friendName, columnNames) {
   return { sheet: refSheet, col: rCol, row: idx + 2 };
 }
 
-function creditReferralCash_(friendName) {
-  const found = findReferralsRow_(friendName, ["Bonus Owed"]);
-  if (!found || found.col["Bonus Owed"] < 0) return;
+function creditReferralTokens_(friendName, amount) {
+  const found = findReferralsRow_(friendName, ["Tokens Owed"]);
+  if (!found || found.col["Tokens Owed"] < 0) return;
 
-  const cell = found.sheet.getRange(found.row, found.col["Bonus Owed"] + 1);
+  const cell = found.sheet.getRange(found.row, found.col["Tokens Owed"] + 1);
   const current = Number(String(cell.getValue() || "").replace(/[^0-9.]/g, "")) || 0;
-  cell.setValue("$" + (current + 20));
+  cell.setValue(current + amount);
 }
 
 function incrementClientsReferred_(friendName) {

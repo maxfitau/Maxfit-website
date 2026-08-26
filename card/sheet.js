@@ -122,7 +122,7 @@ function fetchReferrals() {
           code: findColumn(header, "Referral Code"),
           discount: findColumn(header, "Discount"),
           clientsReferred: findColumn(header, "Clients Referred"),
-          bonusOwed: findColumn(header, "Bonus Owed"),
+          tokensOwed: findColumn(header, "Tokens Owed"),
         };
         return { rows, col };
       });

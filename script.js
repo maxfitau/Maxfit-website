@@ -2,11 +2,14 @@ document.addEventListener("DOMContentLoaded", function () {
   var prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   /* ---------- Intro: scroll-scrubbed preloader ----------
-     #hero-pin (the .hero section) sticks to the top of the viewport while
-     #intro-spacer scrolls underneath it. Scroll position within that
-     spacer drives a 0-1 progress value that scrubs the intro video's
-     currentTime and stages the hero content in — so scrolling back up
-     rewinds the whole thing, since nothing here is a one-shot animation. */
+     #hero-pin (the .hero section) sticks to the top of the viewport via
+     native CSS position: sticky while #intro-spacer scrolls underneath
+     it — the browser handles the pin/release itself, so there's no JS
+     state to keep in sync with scroll position. All this code does is
+     read scroll position within the spacer as a 0-1 progress value and
+     use it to scrub the intro video's currentTime and stage the hero
+     content in — so scrolling back up rewinds the whole thing, since
+     nothing here is a one-shot animation. */
   var introSpacer = document.getElementById("intro-spacer");
   var heroPin = document.getElementById("hero-pin");
   var preloader = document.getElementById("preloader");
@@ -29,10 +32,7 @@ document.addEventListener("DOMContentLoaded", function () {
   // unexpected error in the setup below, so the page never gets stuck.
   function fallbackToStaticHero() {
     if (introSpacer) introSpacer.classList.add("is-static");
-    if (heroPin) {
-      heroPin.classList.remove("is-pinned", "is-released");
-      heroPin.classList.add("is-static");
-    }
+    if (heroPin) heroPin.classList.add("is-static");
     if (preloader) preloader.remove();
     Object.keys(introEls).forEach(function (key) {
       var el = introEls[key];
@@ -153,26 +153,6 @@ document.addEventListener("DOMContentLoaded", function () {
         var total = rect.height - vh;
         var p = total > 0 ? -rect.top / total : 1;
         targetProgress = Math.max(0, Math.min(1, p));
-
-        // Pin .hero to the viewport with position: fixed while we're
-        // still inside the spacer's scroll range, then let it settle at
-        // the bottom of the spacer (position: absolute) once scrolled
-        // past — a manual stand-in for position: sticky that works the
-        // same everywhere instead of depending on it.
-        var stillWithinSpacer = rect.bottom > vh;
-        if (total > 0 && rect.top <= 0 && stillWithinSpacer) {
-          if (!heroPin.classList.contains("is-pinned")) {
-            heroPin.classList.add("is-pinned");
-            heroPin.classList.remove("is-released");
-          }
-        } else if (total > 0 && !stillWithinSpacer) {
-          if (!heroPin.classList.contains("is-released")) {
-            heroPin.classList.add("is-released");
-            heroPin.classList.remove("is-pinned");
-          }
-        } else {
-          heroPin.classList.remove("is-pinned", "is-released");
-        }
       };
 
       var applyIntroFrame = function (progress) {
@@ -509,6 +489,7 @@ document.addEventListener("DOMContentLoaded", function () {
        - name / caption: shown on the card and in the lightbox
        - thumbnail: path to a poster image, or null to keep the
          dashed "video placeholder" card until you add one
+       - duration: optional short "m:ss" label shown top-right of the card
        - video.type: "local" | "youtube" | "vimeo" | "placeholder"
        - video.src:
            local    -> path to the video file, e.g. "assets/videos/jordan.mp4"
@@ -516,10 +497,12 @@ document.addEventListener("DOMContentLoaded", function () {
            vimeo    -> the numeric video ID only
            placeholder -> leave src empty; the lightbox will show a
                           "no video yet" notice instead of trying to play one
+     Cards with a real thumbnail also get a muted hover/focus preview loop
+     (local videos only) and a "Verified" badge next to the name.
   ---------------------------------------------------- */
   var videoTestimonials = [
-    { name: "J.H", caption: "", thumbnail: "assets/images/jh-testimonial-thumb.jpg", video: { type: "local", src: "assets/videos/client-testimonial-1.mov" } },
-    { name: "J.F", caption: "", thumbnail: "assets/images/client2-testimonial-thumb.jpg", video: { type: "local", src: "assets/videos/client-testimonial-2.mp4" } }
+    { name: "J.H", caption: "", thumbnail: "assets/images/jh-testimonial-thumb.jpg", duration: "0:17", video: { type: "local", src: "assets/videos/client-testimonial-1.mov" } },
+    { name: "J.F", caption: "", thumbnail: "assets/images/client2-testimonial-thumb.jpg", duration: "0:19", video: { type: "local", src: "assets/videos/client-testimonial-2.mp4" } }
   ];
 
   var vtTrack = document.querySelector(".vt__track");
@@ -535,6 +518,8 @@ document.addEventListener("DOMContentLoaded", function () {
     card.type = "button";
     card.className = "vt-card";
 
+    var isRealCard = !!item.thumbnail;
+
     var thumbHtml = item.thumbnail
       ? '<img class="vt-card__thumb" src="' + item.thumbnail + '" alt="Video testimonial from ' + escapeHtml(item.name) + '" />'
       : '<span class="vt-card__thumb media-placeholder media-placeholder--video">' +
@@ -544,13 +529,34 @@ document.addEventListener("DOMContentLoaded", function () {
           '</span>' +
         '</span>';
 
+    // Muted hover/focus preview loop - only for real, locally-hosted videos.
+    var canPreview = !isDuplicate && isRealCard && item.video && item.video.type === "local" && item.video.src;
+    var previewHtml = canPreview
+      ? '<video class="vt-card__preview" muted loop playsinline preload="metadata" tabindex="-1" aria-hidden="true" src="' + item.video.src + '"></video>'
+      : '';
+
+    var durationHtml = isRealCard && item.duration
+      ? '<span class="vt-card__duration">' + escapeHtml(item.duration) + '</span>'
+      : '';
+
+    var badgeHtml = isRealCard
+      ? '<span class="vt-card__badge" title="Verified" aria-hidden="true">' +
+          '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>' +
+        '</span>'
+      : '';
+
     card.innerHTML =
       thumbHtml +
+      previewHtml +
+      durationHtml +
       '<span class="vt-card__play" aria-hidden="true">' +
         '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>' +
       '</span>' +
       '<span class="vt-card__who">' +
-        '<span class="vt-card__name">' + escapeHtml(item.name) + '</span>' +
+        '<span class="vt-card__name-row">' +
+          '<span class="vt-card__name">' + escapeHtml(item.name) + '</span>' +
+          badgeHtml +
+        '</span>' +
         (item.caption ? '<span class="vt-card__caption">' + escapeHtml(item.caption) + '</span>' : '') +
       '</span>';
 
@@ -562,6 +568,32 @@ document.addEventListener("DOMContentLoaded", function () {
       card.addEventListener("click", function () {
         openVideoLightbox(item);
       });
+
+      if (canPreview) {
+        var previewEl = card.querySelector(".vt-card__preview");
+        var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+        if (previewEl && !reduceMotion) {
+          var startPreview = function () {
+            card.classList.add("is-previewing");
+            try {
+              previewEl.currentTime = 0;
+              var playPromise = previewEl.play();
+              if (playPromise && playPromise.catch) playPromise.catch(function () {});
+            } catch (e) {}
+          };
+
+          var stopPreview = function () {
+            card.classList.remove("is-previewing");
+            previewEl.pause();
+          };
+
+          card.addEventListener("mouseenter", startPreview);
+          card.addEventListener("mouseleave", stopPreview);
+          card.addEventListener("focus", startPreview);
+          card.addEventListener("blur", stopPreview);
+        }
+      }
     }
 
     return card;

@@ -117,8 +117,8 @@ async function loadCard(code) {
   const count = col.clientsReferred >= 0 ? String(match[col.clientsReferred] || "").trim() : "";
   els.count.textContent = count || "0";
 
-  const bonus = col.bonusOwed >= 0 ? String(match[col.bonusOwed] || "").trim() : "";
-  els.bonus.textContent = bonus || "$0";
+  const tokens = col.tokensOwed >= 0 ? String(match[col.tokensOwed] || "").trim() : "";
+  els.bonus.textContent = tokens || "0";
 
   const discount = col.discount >= 0 ? String(match[col.discount] || "").trim() : "";
   if (discount) {
