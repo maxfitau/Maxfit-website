@@ -502,7 +502,8 @@ document.addEventListener("DOMContentLoaded", function () {
   ---------------------------------------------------- */
   var videoTestimonials = [
     { name: "J.H", caption: "", thumbnail: "assets/images/jh-testimonial-thumb.jpg", duration: "0:17", video: { type: "local", src: "assets/videos/client-testimonial-1.mov" } },
-    { name: "J.F", caption: "", thumbnail: "assets/images/client2-testimonial-thumb.jpg", duration: "0:19", video: { type: "local", src: "assets/videos/client-testimonial-2.mp4" } }
+    { name: "J.F", caption: "", thumbnail: "assets/images/client2-testimonial-thumb.jpg", duration: "0:19", video: { type: "local", src: "assets/videos/client-testimonial-2.mp4" } },
+    { name: "Kathy", caption: "Online client, Thailand", thumbnail: "assets/images/kathy-testimonial-thumb.jpg", duration: "0:11", video: { type: "local", src: "assets/videos/client-testimonial-3.mov" } }
   ];
 
   var vtTrack = document.querySelector(".vt__track");
