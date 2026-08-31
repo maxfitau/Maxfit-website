@@ -118,28 +118,39 @@ function extractDocId(url) {
  * "Wednesday: Push Day" or "Wednesday — Push Day". If that line has no
  * label after the day name, the next non-blank line is used instead.
  * Returns undefined if the doc can't be read or no line matches today.
+ *
+ * Wrapped in its own try/catch — a doc that isn't shared publicly, a
+ * network hiccup, or a redirect to a Google sign-in page (which fetch()
+ * can throw on due to CORS) used to blow up the whole render() call
+ * partway through, leaving "Today's Workout" as a label with a stale "—"
+ * for a value. Any failure here just falls back to undefined instead, same
+ * as a doc that simply doesn't mention today.
  */
 async function fetchTodaysWorkout(docUrl) {
   const docId = extractDocId(docUrl);
   if (!docId) return undefined;
 
-  const res = await fetch(`https://docs.google.com/document/d/${docId}/export?format=txt`, {
-    cache: "no-store",
-  });
-  if (!res.ok) return undefined;
+  try {
+    const res = await fetch(`https://docs.google.com/document/d/${docId}/export?format=txt`, {
+      cache: "no-store",
+    });
+    if (!res.ok) return undefined;
 
-  const lines = (await res.text()).split("\n").map((l) => l.trim());
-  const today = DAY_NAMES[new Date().getDay()];
-  const dayLine = new RegExp(`^${today}\\s*[:\\-–—]?\\s*(.*)$`, "i");
+    const lines = (await res.text()).split("\n").map((l) => l.trim());
+    const today = DAY_NAMES[new Date().getDay()];
+    const dayLine = new RegExp(`^${today}\\s*[:\\-–—]?\\s*(.*)$`, "i");
 
-  for (let i = 0; i < lines.length; i++) {
-    const match = dayLine.exec(lines[i]);
-    if (!match) continue;
-    if (match[1]) return match[1];
-    const next = lines.slice(i + 1).find((l) => l.length > 0);
-    return next;
+    for (let i = 0; i < lines.length; i++) {
+      const match = dayLine.exec(lines[i]);
+      if (!match) continue;
+      if (match[1]) return match[1];
+      const next = lines.slice(i + 1).find((l) => l.length > 0);
+      return next;
+    }
+    return undefined;
+  } catch (err) {
+    return undefined;
   }
-  return undefined;
 }
 
 /*
@@ -296,6 +307,7 @@ async function render(data) {
   if (data.programType === "self-guided" && data.programDoc) {
     els.upcomingLabel.textContent = "Today's Workout";
     els.upcomingLink.href = data.programDoc;
+    els.upcomingValue.textContent = "Loading…"; // never leave the old placeholder showing while this fetch is in flight
     const workout = await fetchTodaysWorkout(data.programDoc);
     els.upcomingValue.textContent = workout || "View your program";
     return;
