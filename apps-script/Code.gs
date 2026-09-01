@@ -276,6 +276,10 @@ function handleCheckIn_(payload) {
  * in person; Max delivers that, then manually creates their real row in
  * Sessions Remaining afterward (typing Referred By in himself at that
  * point), same as any other new member.
+ *
+ * Also accepts Program and Preferred Time, written only if the Leads tab
+ * has matching column headers — add "Program" and "Preferred Time" columns
+ * there whenever you want them captured; until then they're skipped.
  */
 function handleSignup_(payload) {
   // Honeypot: a real visitor never fills this (it's not a visible field
@@ -288,6 +292,8 @@ function handleSignup_(payload) {
   const name = String(payload.name || "").trim();
   const phone = String(payload.phone || "").trim();
   const email = String(payload.email || "").trim();
+  const program = String(payload.program || "").trim();
+  const preferredTime = String(payload.preferredTime || "").trim();
   const goals = String(payload.goals || "").trim();
   const referralCode = String(payload.referralCode || "").trim();
 
@@ -304,6 +310,10 @@ function handleSignup_(payload) {
     signupDate: findColumn_(leadsHeader, "Sign-up Date"),
     referredBy: findColumn_(leadsHeader, "Referred By"),
     goals: findColumn_(leadsHeader, "Goals / Notes"),
+    // Optional — only written if you add matching columns to the Leads tab.
+    // Until then these are silently skipped, same as any other missing column.
+    program: findColumn_(leadsHeader, "Program"),
+    preferredTime: findColumn_(leadsHeader, "Preferred Time"),
   };
 
   // Duplicate check spans both Leads and Sessions Remaining, so someone
@@ -348,6 +358,8 @@ function handleSignup_(payload) {
   if (col.signupDate >= 0) newRow[col.signupDate] = today;
   if (col.referredBy >= 0) newRow[col.referredBy] = referrerName;
   if (col.goals >= 0) newRow[col.goals] = goals;
+  if (col.program >= 0) newRow[col.program] = program;
+  if (col.preferredTime >= 0) newRow[col.preferredTime] = preferredTime;
   leadsSheet.appendRow(newRow);
 
   return jsonResponse_({ status: "success", referrerName: referrerName });

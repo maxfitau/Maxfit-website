@@ -19,11 +19,13 @@ document.addEventListener("DOMContentLoaded", function () {
 
   var introEls = {
     label: document.querySelector(".hero__label"),
+    problem: document.querySelector(".hero__problem"),
     logo: document.querySelector(".hero__logo-wrap"),
     tagline: document.querySelector(".hero__tagline"),
     sub: document.querySelector(".hero__sub"),
     badge: document.querySelector(".hero__free-badge"),
     actions: document.querySelector(".hero__actions"),
+    steps: document.querySelector(".hero__steps"),
     scrollHint: document.querySelector(".hero__scroll")
   };
 
@@ -104,13 +106,15 @@ document.addEventListener("DOMContentLoaded", function () {
       // Progress ranges each hero element reveals across, staggered so
       // they cascade in one after another as the intro finishes.
       var bands = {
-        label: [0.52, 0.66],
-        logo: [0.58, 0.74],
-        tagline: [0.66, 0.82],
-        sub: [0.74, 0.90],
-        badge: [0.74, 0.90],
-        actions: [0.74, 0.90],
-        scrollHint: [0.84, 1.00]
+        label: [0.50, 0.62],
+        problem: [0.56, 0.70],
+        logo: [0.62, 0.76],
+        tagline: [0.68, 0.80],
+        sub: [0.74, 0.86],
+        badge: [0.78, 0.90],
+        actions: [0.82, 0.92],
+        steps: [0.86, 0.96],
+        scrollHint: [0.92, 1.00]
       };
 
       var bandProgress = function (range, p) {

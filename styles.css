@@ -44,13 +44,18 @@ img { max-width: 100%; display: block; }
 
 /* ---------- Intro: scroll-scrubbed preloader ---------- */
 
+/* Total scroll-through distance to fully release the hero is this height
+   minus one viewport (the hero stays pinned for that difference) — kept
+   short so real content (About/Programs) arrives within roughly one
+   normal scroll gesture, instead of forcing visitors through a long
+   locked intro before they reach anything they can act on. */
 #intro-spacer {
   position: relative;
-  height: 230vh;
+  height: 160vh;
 }
 
 @media (max-width: 700px) {
-  #intro-spacer { height: 160vh; }
+  #intro-spacer { height: 145vh; }
 }
 
 /* Native position: sticky pins #hero-pin to the top of the viewport while
@@ -524,6 +529,17 @@ section {
   margin-bottom: 20px;
 }
 
+.hero__problem {
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: clamp(1.9rem, 5vw, 3.1rem);
+  line-height: 1.1;
+  letter-spacing: 0.5px;
+  color: var(--white);
+  max-width: 720px;
+  margin: 0 0 24px;
+}
+
 .hero__logo-wrap {
   position: relative;
   width: min(92%, 560px);
@@ -588,6 +604,53 @@ section {
   flex-wrap: wrap;
 }
 
+.hero__steps {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 32px;
+}
+
+.hero__step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hero__step-num {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--red);
+  color: var(--on-red);
+  font-family: var(--font-head);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.hero__step-text {
+  font-size: 0.82rem;
+  letter-spacing: 0.3px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.hero__step-arrow {
+  color: var(--line-strong);
+  font-size: 0.9rem;
+}
+
+@media (max-width: 560px) {
+  .hero__steps { flex-direction: column; gap: 12px; }
+  .hero__step-arrow { display: none; }
+}
+
 .hero__scroll {
   position: absolute;
   bottom: 28px;
@@ -611,6 +674,16 @@ section {
 @keyframes scrollpulse {
   0%, 100% { transform: scaleY(1); opacity: 0.6; }
   50% { transform: scaleY(0.5); opacity: 1; }
+}
+
+.stakes-line {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 0 24px 28px;
+  text-align: center;
+  color: var(--dim);
+  font-size: 0.95rem;
+  line-height: 1.5;
 }
 
 /* ---------- Marquee ---------- */
@@ -2036,12 +2109,12 @@ body.vt-lightbox-open { overflow: hidden; }
 
 .stats__grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 24px;
 }
 
-@media (max-width: 900px) {
-  .stats__grid { grid-template-columns: repeat(2, 1fr); }
+@media (max-width: 700px) {
+  .stats__grid { grid-template-columns: 1fr; }
 }
 
 .stat {
