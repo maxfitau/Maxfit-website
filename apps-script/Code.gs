@@ -277,9 +277,6 @@ function handleCheckIn_(payload) {
  * Sessions Remaining afterward (typing Referred By in himself at that
  * point), same as any other new member.
  *
- * Also accepts Program and Preferred Time, written only if the Leads tab
- * has matching column headers — add "Program" and "Preferred Time" columns
- * there whenever you want them captured; until then they're skipped.
  */
 function handleSignup_(payload) {
   // Honeypot: a real visitor never fills this (it's not a visible field
@@ -292,8 +289,6 @@ function handleSignup_(payload) {
   const name = String(payload.name || "").trim();
   const phone = String(payload.phone || "").trim();
   const email = String(payload.email || "").trim();
-  const program = String(payload.program || "").trim();
-  const preferredTime = String(payload.preferredTime || "").trim();
   const goals = String(payload.goals || "").trim();
   const referralCode = String(payload.referralCode || "").trim();
 
@@ -310,10 +305,6 @@ function handleSignup_(payload) {
     signupDate: findColumn_(leadsHeader, "Sign-up Date"),
     referredBy: findColumn_(leadsHeader, "Referred By"),
     goals: findColumn_(leadsHeader, "Goals / Notes"),
-    // Optional — only written if you add matching columns to the Leads tab.
-    // Until then these are silently skipped, same as any other missing column.
-    program: findColumn_(leadsHeader, "Program"),
-    preferredTime: findColumn_(leadsHeader, "Preferred Time"),
   };
 
   // Duplicate check spans both Leads and Sessions Remaining, so someone
@@ -358,11 +349,44 @@ function handleSignup_(payload) {
   if (col.signupDate >= 0) newRow[col.signupDate] = today;
   if (col.referredBy >= 0) newRow[col.referredBy] = referrerName;
   if (col.goals >= 0) newRow[col.goals] = goals;
-  if (col.program >= 0) newRow[col.program] = program;
-  if (col.preferredTime >= 0) newRow[col.preferredTime] = preferredTime;
   leadsSheet.appendRow(newRow);
 
+  notifyNewLead_({ name, phone, email, goals, referrerName });
+
   return jsonResponse_({ status: "success", referrerName: referrerName });
+}
+
+/**
+ * Emails Max the moment someone signs up, so a new lead shows up as a phone
+ * notification instead of something he only discovers next time he happens
+ * to open the sheet. Uses MailApp (no setup, no API keys — it's just his own
+ * Google account sending itself mail) rather than a paid SMS service.
+ *
+ * Wrapped so a failure here (quota, transient error) never blocks the
+ * actual sign-up from succeeding — worst case, he misses the notification
+ * but the lead is still safely in the sheet.
+ */
+function notifyNewLead_(lead) {
+  const NOTIFY_EMAIL = "max.french28@gmail.com";
+  try {
+    const lines = [
+      "New sign-up on maxfit.now:",
+      "",
+      "Name: " + lead.name,
+    ];
+    if (lead.phone) lines.push("Phone: " + lead.phone);
+    if (lead.email) lines.push("Email: " + lead.email);
+    if (lead.referrerName) lines.push("Referred by: " + lead.referrerName);
+    if (lead.goals) lines.push("Goals: " + lead.goals);
+
+    MailApp.sendEmail({
+      to: NOTIFY_EMAIL,
+      subject: "New MaxFit lead: " + lead.name,
+      body: lines.join("\n"),
+    });
+  } catch (err) {
+    // Never let a notification failure break the actual sign-up.
+  }
 }
 
 function isEmailAlreadyPresent_(sheet, emailCol, email) {

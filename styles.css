@@ -442,6 +442,17 @@ section {
   border-top: none;
 }
 
+/* Below this width the full hero content (problem headline, logo, motto,
+   sub, badge, actions, 3-step plan) can end up taller than the viewport.
+   justify-content: center then centers that overflow, pushing the top of
+   the headline above the visible area — cut off instead of just scrolled
+   past, since the hero sits inside a pinned/sticky spacer rather than a
+   normal scrollable block. Tightening sizes/spacing here keeps everything
+   inside one viewport on real phones instead of relying on scroll. */
+@media (max-width: 600px) {
+  .hero { padding: calc(var(--nav-h) + 20px) 0 40px; justify-content: flex-start; }
+}
+
 .hero__shapes {
   position: absolute;
   inset: 0;
@@ -649,6 +660,18 @@ section {
 @media (max-width: 560px) {
   .hero__steps { flex-direction: column; gap: 12px; }
   .hero__step-arrow { display: none; }
+}
+
+@media (max-width: 600px) {
+  .hero__label { margin-bottom: 10px; }
+  .hero__problem { font-size: clamp(1.4rem, 7vw, 2rem); margin-bottom: 12px; }
+  .hero__logo-wrap { width: min(72%, 320px); margin-bottom: 10px; }
+  .hero__tagline { font-size: clamp(1rem, 4.2vw, 1.4rem); letter-spacing: 2px; margin-bottom: 12px; }
+  .hero__sub { font-size: 0.98rem; margin-bottom: 18px; }
+  .hero__free-badge { font-size: 0.95rem; margin-bottom: 16px; }
+  .hero__actions { gap: 12px; }
+  .hero__actions .btn { padding: 14px 26px; }
+  .hero__steps { margin-top: 18px; }
 }
 
 .hero__scroll {

@@ -16,16 +16,12 @@ const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbya8dm8g5eC4ldA
 
 const params = new URLSearchParams(window.location.search);
 const referralCode = (params.get("ref") || "").trim();
-const prefillProgram = (params.get("program") || "").trim();
 
 const els = {
   referral: document.getElementById("joinReferral"),
   form: document.getElementById("joinForm"),
   name: document.getElementById("joinName"),
-  phone: document.getElementById("joinPhone"),
-  email: document.getElementById("joinEmail"),
-  program: document.getElementById("joinProgram"),
-  time: document.getElementById("joinTime"),
+  contact: document.getElementById("joinContact"),
   goals: document.getElementById("joinGoals"),
   website: document.getElementById("joinWebsite"),
   submit: document.getElementById("joinSubmit"),
@@ -34,11 +30,11 @@ const els = {
   successText: document.getElementById("joinSuccessText"),
 };
 
-// A CTA on the main site can link here with ?program=Group%20Classes to
-// arrive with the right option already selected, one less field to fill in.
-if (prefillProgram && els.program) {
-  const hasOption = Array.from(els.program.options).some((o) => o.value === prefillProgram);
-  if (hasOption) els.program.value = prefillProgram;
+// One free-text field covers phone or email — this decides which the
+// sheet's separate Phone/Email columns (and the email duplicate check) get.
+const EMAIL_PATTERN = /\S+@\S+\.\S+/;
+function splitContact(value) {
+  return EMAIL_PATTERN.test(value) ? { phone: "", email: value } : { phone: value, email: "" };
 }
 
 async function showReferralBanner() {
@@ -67,18 +63,17 @@ els.form.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   const name = els.name.value.trim();
-  const phone = els.phone.value.trim();
-  const email = els.email.value.trim();
-  const program = els.program.value.trim();
-  const preferredTime = els.time.value.trim();
+  const contact = els.contact.value.trim();
   const goals = els.goals.value.trim();
   els.error.hidden = true;
 
-  if (!name || (!phone && !email)) {
-    els.error.textContent = "Add your name and at least a phone number or email.";
+  if (!name || !contact) {
+    els.error.textContent = "Add your name and a phone number or email.";
     els.error.hidden = false;
     return;
   }
+
+  const { phone, email } = splitContact(contact);
 
   els.submit.disabled = true;
   els.submit.textContent = "Signing Up…";
@@ -93,8 +88,6 @@ els.form.addEventListener("submit", async (event) => {
         name,
         phone,
         email,
-        program,
-        preferredTime,
         goals,
         referralCode,
         website: els.website.value, // honeypot — real visitors never fill this
