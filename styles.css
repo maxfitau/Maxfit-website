@@ -615,6 +615,16 @@ section {
   flex-wrap: wrap;
 }
 
+/* Kept out of the pinned hero (see index.html comment) so mobile's first
+   screen is just the headline, logo, and one CTA — this motto/pitch/steps
+   band arrives once you scroll, like any other section. */
+.hero-followup { text-align: center; }
+
+.hero-followup .hero__tagline,
+.hero-followup .hero__sub { margin-left: auto; margin-right: auto; }
+
+.hero-followup__cta { margin-top: 8px; }
+
 .hero__steps {
   display: flex;
   align-items: center;
