@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+<title>MaxFit — Build Workout</title>
+<meta name="theme-color" content="#111111" />
+<meta name="robots" content="noindex" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="../card/styles.css" />
+<link rel="stylesheet" href="../checkin.css" />
+<link rel="stylesheet" href="builder.css" />
+</head>
+<body>
+
+<main class="card builder" id="builder">
+  <div class="card__top">
+    <img class="card__wordmark" src="../assets/images/maxfit-logo.png" alt="MaxFit" />
+    <span class="card__tag">Build Workout</span>
+  </div>
+
+  <div class="builder__field">
+    <span class="card__label">Client</span>
+    <select class="picker__input builder__select" id="clientSelect">
+      <option value="">Loading clients…</option>
+    </select>
+  </div>
+
+  <div class="builder__exercises" id="exerciseRows"></div>
+
+  <button class="builder__add" id="addExerciseButton" type="button">+ Add Exercise</button>
+
+  <div class="checkin__pin" id="pinRow">
+    <span class="card__label">Staff PIN</span>
+    <input class="picker__input" id="pinInput" type="tel" inputmode="numeric" autocomplete="off" placeholder="····" />
+  </div>
+
+  <button class="builder__save" id="saveButton" type="button">Save Workout</button>
+  <p class="picker__error" id="builderError" hidden></p>
+  <p class="builder__success" id="builderSuccess" hidden>Saved — it'll show up on their card next time they open it.</p>
+</main>
+
+<datalist id="exerciseOptions"></datalist>
+
+<script src="../card/sheet.js"></script>
+<script src="builder.js"></script>
+</body>
+</html>

@@ -296,6 +296,26 @@ function renderLoyalty(totalAttended) {
   }
 }
 
+/**
+ * How many exercises are in this client's currently assigned workout, if
+ * any — this is what decides whether "Today's Workout" points at the new
+ * interactive logger or falls back to the legacy self-guided Doc link.
+ * Same defensive pattern as fetchTodaysWorkout: a client with no assigned
+ * workout yet (or the "Workout Exercises" tab not existing yet) is a normal
+ * outcome, not an error, so this never throws — it just returns 0 and lets
+ * render() fall through to whatever came before this feature existed.
+ */
+async function countAssignedExercises_(clientSlug) {
+  if (!clientSlug) return 0;
+  try {
+    const { rows, col } = await fetchWorkoutExercises();
+    if (col.client < 0) return 0;
+    return rows.filter((r) => String(r[col.client] || "").trim().toLowerCase() === clientSlug).length;
+  } catch (err) {
+    return 0;
+  }
+}
+
 async function render(data) {
   els.groupSessions.textContent = data.groupSessionsRemaining;
   els.oneOnOneSessions.textContent = data.oneOnOneSessionsRemaining;
@@ -303,6 +323,15 @@ async function render(data) {
   els.tier.textContent = data.tier;
   renderQR(data.checkInUrl);
   renderLoyalty(data.totalAttended);
+
+  const assignedCount = await countAssignedExercises_(data.clientSlug);
+  if (assignedCount > 0) {
+    els.upcomingLabel.textContent = "Today's Workout";
+    els.upcomingLink.href = `../workout/?id=${encodeURIComponent(data.clientSlug)}`;
+    els.upcomingLink.target = "_self"; // this is our own page, not an external doc — no reason to leave a tab behind
+    els.upcomingValue.textContent = `${assignedCount} exercise${assignedCount === 1 ? "" : "s"} — tap to start`;
+    return;
+  }
 
   if (data.programType === "self-guided" && data.programDoc) {
     els.upcomingLabel.textContent = "Today's Workout";
@@ -347,7 +376,11 @@ async function fetchMemberData(id) {
     ? rows.find((r) => r[col.name] && slugify(r[col.name]) === wantedSlug)
     : undefined;
   if (!match) {
-    return { ...DEMO_MEMBER, checkInUrl: `https://maxfit.now/checkin.html?token=${id || "DEMO-0000"}` };
+    return {
+      ...DEMO_MEMBER,
+      clientSlug: wantedSlug || "demo",
+      checkInUrl: `https://maxfit.now/checkin.html?token=${id || "DEMO-0000"}`,
+    };
   }
 
   const programType = ((col.programType >= 0 && match[col.programType]) || "").trim().toLowerCase();
@@ -355,6 +388,7 @@ async function fetchMemberData(id) {
 
   return {
     memberName: match[col.name],
+    clientSlug: wantedSlug || slugify(match[col.name]),
     tier: match[col.package] || "Member",
     groupSessionsRemaining: parseSessions(match[col.groupSessions], "N/A"),
     oneOnOneSessionsRemaining: parseSessions(match[col.oneOnOneSessions], "N/A"),

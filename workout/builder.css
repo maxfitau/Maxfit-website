@@ -1,0 +1,131 @@
+/* ==========================================================================
+   MAX FIT · coach workout builder
+   Loads on top of card/styles.css + checkin.css — same shell/fonts/palette,
+   reuses checkin's PIN row styling.
+   ========================================================================== */
+
+.builder {
+  gap: 20px;
+}
+
+.builder__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.builder__select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23cccccc' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  padding-right: 38px;
+}
+
+.builder__exercises {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.builder__row {
+  display: grid;
+  grid-template-columns: 1fr 52px 76px 30px;
+  gap: 8px;
+  align-items: center;
+}
+
+.builder__row input {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--white);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 11px 10px;
+  width: 100%;
+  min-width: 0;
+}
+
+.builder__row input:focus {
+  outline: none;
+  border-color: var(--red);
+}
+
+.builder__row input[type="number"] {
+  text-align: center;
+  padding: 11px 4px;
+}
+
+.builder__row-remove {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--dim);
+  background: transparent;
+  border: none;
+  width: 30px;
+  height: 40px;
+  cursor: pointer;
+}
+
+.builder__row-remove:active {
+  color: var(--red);
+}
+
+.builder__add {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 13px;
+  color: var(--grey-light);
+  background: transparent;
+  border: 1px dashed var(--line-strong, var(--line));
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  cursor: pointer;
+}
+
+.builder__add:active {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.builder__save {
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 16px;
+  color: var(--on-red);
+  background: var(--red);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 18px;
+  cursor: pointer;
+}
+
+.builder__save:active {
+  background: var(--red-dim);
+}
+
+.builder__save:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.builder__success {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--grey-light);
+  text-align: center;
+  margin: 0;
+}
+
+@media (max-width: 360px) {
+  .builder__row {
+    grid-template-columns: 1fr 44px 64px 26px;
+  }
+}

@@ -16,6 +16,15 @@ const SHEET_CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export
 const REFERRALS_GID = "1148655449"; // "Refferals"
 const REFERRALS_CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${REFERRALS_GID}`;
 
+// The workout tabs don't have a fixed gid the way the tabs above do — they
+// only exist once setupWorkoutSheets() creates them in Apps Script, so
+// there's no id to hardcode ahead of time. The gviz endpoint below reads a
+// tab by its NAME instead of its gid, which is the one export URL Google
+// Sheets offers that works that way.
+function gvizCsvUrl_(sheetName) {
+  return `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
+}
+
 function slugify(name) {
   return name.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
@@ -128,4 +137,78 @@ function fetchReferrals() {
       });
   }
   return referralsPromise;
+}
+
+let exercisesPromise;
+
+/** Fetches + parses the "Exercises" tab — the coach builder's autocomplete list, and the fallback starting weight when a client has no logged history yet. */
+function fetchExercises() {
+  if (!exercisesPromise) {
+    exercisesPromise = fetch(gvizCsvUrl_("Exercises"), { cache: "no-store" })
+      .then((res) => {
+        if (!res.ok) throw new Error("exercises fetch failed");
+        return res.text();
+      })
+      .then((text) => {
+        const [header, ...rows] = parseCSV(text);
+        const col = {
+          name: findColumn(header, "Name"),
+          startingWeight: findColumn(header, "Default Starting Weight (kg)"),
+        };
+        return { rows, col };
+      });
+  }
+  return exercisesPromise;
+}
+
+let workoutExercisesPromise;
+
+/** Fetches + parses the "Workout Exercises" tab — every client's currently assigned workout lives in here, one row per exercise. */
+function fetchWorkoutExercises() {
+  if (!workoutExercisesPromise) {
+    workoutExercisesPromise = fetch(gvizCsvUrl_("Workout Exercises"), { cache: "no-store" })
+      .then((res) => {
+        if (!res.ok) throw new Error("workout exercises fetch failed");
+        return res.text();
+      })
+      .then((text) => {
+        const [header, ...rows] = parseCSV(text);
+        const col = {
+          client: findColumn(header, "Client"),
+          order: findColumn(header, "Order"),
+          exercise: findColumn(header, "Exercise"),
+          sets: findColumn(header, "Target Sets"),
+          reps: findColumn(header, "Target Reps"),
+        };
+        return { rows, col };
+      });
+  }
+  return workoutExercisesPromise;
+}
+
+let loggedSetsPromise;
+
+/** Fetches + parses the "Logged Sets" tab — full history, every set every client has ever logged. This is what the weight-prefill logic looks back through. */
+function fetchLoggedSets() {
+  if (!loggedSetsPromise) {
+    loggedSetsPromise = fetch(gvizCsvUrl_("Logged Sets"), { cache: "no-store" })
+      .then((res) => {
+        if (!res.ok) throw new Error("logged sets fetch failed");
+        return res.text();
+      })
+      .then((text) => {
+        const [header, ...rows] = parseCSV(text);
+        const col = {
+          client: findColumn(header, "Client"),
+          exercise: findColumn(header, "Exercise"),
+          setNumber: findColumn(header, "Set Number"),
+          weight: findColumn(header, "Weight (kg)"),
+          reps: findColumn(header, "Reps"),
+          date: findColumn(header, "Date"),
+          timestamp: findColumn(header, "Timestamp"),
+        };
+        return { rows, col };
+      });
+  }
+  return loggedSetsPromise;
 }

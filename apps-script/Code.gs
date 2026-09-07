@@ -17,6 +17,15 @@ const REFERRALS_SHEET_GID = 1148655449; // "Refferals"
 const LEADS_SHEET_GID = 846176456; // "Leads"
 const TIMEZONE = "Australia/Sydney";
 
+// Workout builder/logger tabs — looked up by NAME rather than gid, unlike
+// everything above. They don't exist until setupWorkoutSheets() creates
+// them (see below), so there's no gid to hardcode ahead of time the way the
+// other tabs do — and since nothing else in the sheet references these by
+// gid either, a name lookup is fine here specifically.
+const EXERCISES_SHEET_NAME = "Exercises";
+const WORKOUT_EXERCISES_SHEET_NAME = "Workout Exercises";
+const LOGGED_SETS_SHEET_NAME = "Logged Sets";
+
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheets().find((s) => s.getSheetId() === gid);
@@ -66,6 +75,30 @@ function backfillTokens() {
   Logger.log("Backfilled " + filled + " token(s).");
 }
 
+/**
+ * One-time helper — run manually from the Apps Script editor (pick this
+ * function in the toolbar dropdown, then Run) to create the three tabs the
+ * workout builder/logger needs, headers already in place. Safe to re-run —
+ * it only creates a tab if one by that exact name doesn't already exist yet.
+ */
+function setupWorkoutSheets() {
+  getOrCreateSheetByName_(EXERCISES_SHEET_NAME, ["Name", "Default Starting Weight (kg)"]);
+  getOrCreateSheetByName_(WORKOUT_EXERCISES_SHEET_NAME, ["Client", "Order", "Exercise", "Target Sets", "Target Reps"]);
+  getOrCreateSheetByName_(LOGGED_SETS_SHEET_NAME, ["Client", "Exercise", "Set Number", "Weight (kg)", "Reps", "Date", "Timestamp"]);
+  Logger.log("Workout sheets ready.");
+}
+
+function getOrCreateSheetByName_(name, headers) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
 /** Visiting the deployed URL directly in a browser hits this — confirms the deployment is live. */
 function doGet(e) {
   return jsonResponse_({ status: "ok", message: "MaxFit check-in API is running." });
@@ -110,6 +143,12 @@ function doPost(e) {
   const action = payload.action || "checkin";
   if (action === "signup") {
     return handleSignup_(payload);
+  }
+  if (action === "assignWorkout") {
+    return handleAssignWorkout_(payload);
+  }
+  if (action === "logSet") {
+    return handleLogSet_(payload);
   }
   return handleCheckIn_(payload);
 }
@@ -482,6 +521,119 @@ function findReferralsRow_(friendName, columnNames) {
   if (idx < 0) return null;
 
   return { sheet: refSheet, col: rCol, row: idx + 2 };
+}
+
+/**
+ * Coach builder (workout/builder.html) saving a client's workout. PIN-gated
+ * — this is the one write path in the whole workout feature that isn't
+ * link-only, since it can rewrite any client's assigned exercises.
+ *
+ * There's only ever one "current" workout per client, matching the card's
+ * single "Today's Workout" tile — assigning a new one replaces the old one
+ * outright rather than scheduling a future date, which keeps both the data
+ * model and the builder UI simple for a single-coach business.
+ */
+function handleAssignWorkout_(payload) {
+  if (!checkPin_(payload.pin)) {
+    return jsonResponse_({ status: "unauthorized" });
+  }
+
+  const clientSlug = String(payload.clientSlug || "").trim().toLowerCase();
+  const exercises = Array.isArray(payload.exercises) ? payload.exercises : [];
+  if (!clientSlug || !exercises.length) {
+    return jsonResponse_({ status: "error", message: "Missing client or exercises." });
+  }
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(WORKOUT_EXERCISES_SHEET_NAME);
+  if (!sheet) {
+    return jsonResponse_({ status: "error", message: "Run setupWorkoutSheets first." });
+  }
+
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  const header = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const col = {
+    client: findColumn_(header, "Client"),
+    order: findColumn_(header, "Order"),
+    exercise: findColumn_(header, "Exercise"),
+    sets: findColumn_(header, "Target Sets"),
+    reps: findColumn_(header, "Target Reps"),
+  };
+
+  // Clear this client's existing workout rows (top to bottom so a deleted
+  // row doesn't shift the index of the next one still to check).
+  if (lastRow >= 2) {
+    const clientValues = sheet.getRange(2, col.client + 1, lastRow - 1, 1).getValues();
+    for (let i = clientValues.length - 1; i >= 0; i--) {
+      if (String(clientValues[i][0] || "").trim().toLowerCase() === clientSlug) {
+        sheet.deleteRow(i + 2);
+      }
+    }
+  }
+
+  const newRows = exercises.map((ex, i) => {
+    const row = new Array(header.length).fill("");
+    row[col.client] = clientSlug;
+    row[col.order] = i + 1;
+    row[col.exercise] = String((ex && ex.name) || "").trim();
+    row[col.sets] = Number(ex && ex.sets) || 0;
+    row[col.reps] = String((ex && ex.reps) || "").trim();
+    return row;
+  });
+  sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, header.length).setValues(newRows);
+
+  return jsonResponse_({ status: "success" });
+}
+
+/**
+ * Client logging a single set from workout/index.html. Deliberately no PIN
+ * — same link-only trust model as the rest of the client-facing card, where
+ * anyone with the client's own link can already tick "Workout Completed"
+ * with no login. This only ever appends, never overwrites, so there's
+ * nothing destructive a stray request could do here.
+ */
+function handleLogSet_(payload) {
+  const clientSlug = String(payload.clientSlug || "").trim().toLowerCase();
+  const exercise = String(payload.exercise || "").trim();
+  const setNumber = Number(payload.setNumber);
+  const weight = Number(payload.weight);
+  const reps = Number(payload.reps);
+
+  if (!clientSlug || !exercise || !Number.isFinite(setNumber) || setNumber < 1) {
+    return jsonResponse_({ status: "error", message: "Missing client, exercise, or set number." });
+  }
+  if (!Number.isFinite(weight) || !Number.isFinite(reps)) {
+    return jsonResponse_({ status: "error", message: "Missing or invalid weight/reps." });
+  }
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LOGGED_SETS_SHEET_NAME);
+  if (!sheet) {
+    return jsonResponse_({ status: "error", message: "Run setupWorkoutSheets first." });
+  }
+
+  const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const col = {
+    client: findColumn_(header, "Client"),
+    exercise: findColumn_(header, "Exercise"),
+    setNumber: findColumn_(header, "Set Number"),
+    weight: findColumn_(header, "Weight (kg)"),
+    reps: findColumn_(header, "Reps"),
+    date: findColumn_(header, "Date"),
+    timestamp: findColumn_(header, "Timestamp"),
+  };
+
+  const now = new Date();
+  const newRow = new Array(header.length).fill("");
+  if (col.client >= 0) newRow[col.client] = clientSlug;
+  if (col.exercise >= 0) newRow[col.exercise] = exercise;
+  if (col.setNumber >= 0) newRow[col.setNumber] = setNumber;
+  if (col.weight >= 0) newRow[col.weight] = weight;
+  if (col.reps >= 0) newRow[col.reps] = reps;
+  if (col.date >= 0) newRow[col.date] = Utilities.formatDate(now, TIMEZONE, "yyyy-MM-dd");
+  if (col.timestamp >= 0) newRow[col.timestamp] = now;
+  sheet.appendRow(newRow);
+
+  return jsonResponse_({ status: "success" });
 }
 
 function creditReferralTokens_(friendName, amount) {
