@@ -29,6 +29,12 @@
     </select>
   </div>
 
+  <div class="builder__field">
+    <span class="card__label">Workout Name</span>
+    <input class="picker__input" id="workoutNameInput" type="text" placeholder="e.g. Push, Pull, Legs" list="workoutNameOptions" autocomplete="off" />
+    <div class="builder__chips" id="existingWorkoutChips"></div>
+  </div>
+
   <div class="builder__exercises" id="exerciseRows"></div>
 
   <button class="builder__add" id="addExerciseButton" type="button">+ Add Exercise</button>
@@ -39,11 +45,13 @@
   </div>
 
   <button class="builder__save" id="saveButton" type="button">Save Workout</button>
+  <button class="builder__delete" id="deleteButton" type="button" hidden>Delete This Workout</button>
   <p class="picker__error" id="builderError" hidden></p>
   <p class="builder__success" id="builderSuccess" hidden>Saved — it'll show up on their card next time they open it.</p>
 </main>
 
 <datalist id="exerciseOptions"></datalist>
+<datalist id="workoutNameOptions"></datalist>
 
 <script src="../card/sheet.js"></script>
 <script src="builder.js"></script>

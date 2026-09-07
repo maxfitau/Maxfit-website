@@ -4,31 +4,39 @@
  * PIN-gated the same way checkin.html is — same Script Property, same
  * localStorage key even, so a PIN typed on either page is remembered for
  * both. The PIN is only actually verified server-side (see checkPin_ in
- * Code.gs) when Save is tapped; there's nothing sensitive to protect just
- * by loading this page, only by writing to it.
+ * Code.gs) when Save or Delete is tapped; there's nothing sensitive to
+ * protect just by loading this page, only by writing to it.
  *
- * Picking a client loads their current assigned workout (if any) straight
- * into the rows below, so adjusting an existing plan is just editing what's
- * already there rather than rebuilding it from scratch every time.
- *
- * Saving replaces that client's entire workout outright — there's only
- * ever one "current" one, matching the single "Today's Workout" tile on
- * their card.
+ * A client can have several named workouts (a push/pull/legs split, say),
+ * each edited independently — picking a client shows chips for their
+ * existing workout names; picking one loads its exercises for editing,
+ * typing a brand-new name starts a new one from blank. Saving only ever
+ * replaces the one named workout being edited, never a client's other ones.
  */
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbya8dm8g5eC4ldAbNYmMCccDCZ6K7encj_q4IzXtKMOpd007RMYhnR3_PJ2eL2gjVDQ/exec";
 const STAFF_PIN_STORAGE_KEY = "maxfitStaffPin"; // shared with checkin.js
 
 const els = {
   clientSelect: document.getElementById("clientSelect"),
+  workoutNameInput: document.getElementById("workoutNameInput"),
+  workoutNameOptions: document.getElementById("workoutNameOptions"),
+  chips: document.getElementById("existingWorkoutChips"),
   rows: document.getElementById("exerciseRows"),
   addButton: document.getElementById("addExerciseButton"),
   pinRow: document.getElementById("pinRow"),
   pinInput: document.getElementById("pinInput"),
   saveButton: document.getElementById("saveButton"),
+  deleteButton: document.getElementById("deleteButton"),
   error: document.getElementById("builderError"),
   success: document.getElementById("builderSuccess"),
   exerciseOptions: document.getElementById("exerciseOptions"),
 };
+
+// This client's existing workouts, keyed by lowercased name — refreshed
+// every time the client selection changes, and consulted whenever the
+// workout name field changes so typing an existing name (or picking its
+// chip) loads that workout's exercises for editing.
+let clientWorkouts = {};
 
 function showError(message) {
   els.error.textContent = message;
@@ -121,44 +129,103 @@ async function loadExerciseOptions() {
   }
 }
 
-async function loadClientWorkout(clientSlug) {
-  clearRows();
+/** Loads every workout name this client already has, grouped into { lowercaseName: { name, exercises } }. */
+async function loadClientWorkouts(clientSlug) {
+  clientWorkouts = {};
   if (!clientSlug) return;
 
   try {
     const { rows, col } = await fetchWorkoutExercises();
-    const existing = rows
+    const clientRows = rows
       .filter((r) => String(r[col.client] || "").trim().toLowerCase() === clientSlug)
       .map((r) => ({
+        workoutName: (col.workoutName >= 0 ? r[col.workoutName] : "") || "",
         name: (r[col.exercise] || "").trim(),
         sets: parseSessions(r[col.sets], ""),
         reps: (r[col.reps] || "").trim(),
         order: parseSessions(r[col.order], 0),
       }))
-      .filter((ex) => ex.name)
-      .sort((a, b) => a.order - b.order);
+      .filter((ex) => ex.name && ex.workoutName);
 
-    if (existing.length) {
-      existing.forEach(addRow);
-      return;
+    for (const ex of clientRows) {
+      const key = ex.workoutName.toLowerCase();
+      if (!clientWorkouts[key]) clientWorkouts[key] = { name: ex.workoutName, exercises: [] };
+      clientWorkouts[key].exercises.push(ex);
+    }
+    for (const key of Object.keys(clientWorkouts)) {
+      clientWorkouts[key].exercises.sort((a, b) => a.order - b.order);
     }
   } catch (err) {
-    // Couldn't check for an existing workout — fine, just start blank below.
+    // Couldn't check for existing workouts — fine, builder just starts blank.
   }
-
-  addRow();
 }
 
-els.clientSelect.addEventListener("change", () => {
-  loadClientWorkout(els.clientSelect.value);
+function renderChipsAndOptions() {
+  els.chips.innerHTML = "";
+  els.workoutNameOptions.innerHTML = "";
+
+  const currentName = els.workoutNameInput.value.trim().toLowerCase();
+  for (const key of Object.keys(clientWorkouts)) {
+    const workout = clientWorkouts[key];
+
+    const option = document.createElement("option");
+    option.value = workout.name;
+    els.workoutNameOptions.appendChild(option);
+
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "builder__chip";
+    if (key === currentName) chip.classList.add("builder__chip--active");
+    chip.textContent = workout.name;
+    chip.addEventListener("click", () => {
+      els.workoutNameInput.value = workout.name;
+      loadNamedWorkoutIntoRows(workout.name);
+    });
+    els.chips.appendChild(chip);
+  }
+}
+
+function loadNamedWorkoutIntoRows(workoutName) {
+  const key = workoutName.trim().toLowerCase();
+  const workout = clientWorkouts[key];
+  clearRows();
+  if (workout && workout.exercises.length) {
+    workout.exercises.forEach(addRow);
+    els.deleteButton.hidden = false;
+  } else {
+    addRow();
+    els.deleteButton.hidden = true;
+  }
+  renderChipsAndOptions();
+}
+
+els.clientSelect.addEventListener("change", async () => {
+  els.workoutNameInput.value = "";
+  clearRows();
+  els.deleteButton.hidden = true;
+  els.chips.innerHTML = "";
+  await loadClientWorkouts(els.clientSelect.value);
+  renderChipsAndOptions();
+  addRow();
+});
+
+els.workoutNameInput.addEventListener("change", () => {
+  if (!els.clientSelect.value) return;
+  loadNamedWorkoutIntoRows(els.workoutNameInput.value);
 });
 
 els.addButton.addEventListener("click", () => addRow());
 
 els.saveButton.addEventListener("click", async () => {
   const clientSlug = els.clientSelect.value;
+  const workoutName = els.workoutNameInput.value.trim();
+
   if (!clientSlug) {
     showError("Pick a client first.");
+    return;
+  }
+  if (!workoutName) {
+    showError("Give this workout a name (e.g. Push, Pull, Legs).");
     return;
   }
 
@@ -193,7 +260,7 @@ els.saveButton.addEventListener("click", async () => {
     const res = await fetch(APPS_SCRIPT_URL, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" }, // avoids a CORS preflight
-      body: JSON.stringify({ action: "assignWorkout", pin, clientSlug, exercises }),
+      body: JSON.stringify({ action: "assignWorkout", pin, clientSlug, workoutName, exercises }),
     });
     result = await res.json();
   } catch (err) {
@@ -204,15 +271,7 @@ els.saveButton.addEventListener("click", async () => {
   }
 
   if (result.status === "unauthorized") {
-    try {
-      localStorage.removeItem(STAFF_PIN_STORAGE_KEY);
-    } catch (err) {
-      // Ignore — worst case they retype an already-wrong PIN once more.
-    }
-    els.pinRow.hidden = false;
-    els.pinInput.value = "";
-    els.pinInput.focus();
-    showError("Incorrect PIN.");
+    handleUnauthorized_();
     els.saveButton.disabled = false;
     els.saveButton.textContent = "Save Workout";
     return;
@@ -225,19 +284,88 @@ els.saveButton.addEventListener("click", async () => {
     return;
   }
 
-  if (pin) {
-    try {
-      localStorage.setItem(STAFF_PIN_STORAGE_KEY, pin);
-    } catch (err) {
-      // Ignore — this device just asks for the PIN again next time.
-    }
-  }
-
+  rememberPin_(pin);
   els.pinRow.hidden = true;
   els.success.hidden = false;
   els.saveButton.disabled = false;
   els.saveButton.textContent = "Save Workout";
+  els.deleteButton.hidden = false;
+  await loadClientWorkouts(clientSlug);
+  renderChipsAndOptions();
 });
+
+els.deleteButton.addEventListener("click", async () => {
+  const clientSlug = els.clientSelect.value;
+  const workoutName = els.workoutNameInput.value.trim();
+  if (!clientSlug || !workoutName) return;
+  if (!window.confirm(`Delete "${workoutName}" for this client? This can't be undone.`)) return;
+
+  const pin = currentPin();
+  els.deleteButton.disabled = true;
+  els.deleteButton.textContent = "Deleting…";
+  els.error.hidden = true;
+  els.success.hidden = true;
+
+  let result;
+  try {
+    const res = await fetch(APPS_SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action: "deleteWorkout", pin, clientSlug, workoutName }),
+    });
+    result = await res.json();
+  } catch (err) {
+    showError("Couldn't reach the server — check your connection and try again.");
+    els.deleteButton.disabled = false;
+    els.deleteButton.textContent = "Delete This Workout";
+    return;
+  }
+
+  if (result.status === "unauthorized") {
+    handleUnauthorized_();
+    els.deleteButton.disabled = false;
+    els.deleteButton.textContent = "Delete This Workout";
+    return;
+  }
+
+  if (result.status !== "success") {
+    showError(result.message || "Something went wrong — try again.");
+    els.deleteButton.disabled = false;
+    els.deleteButton.textContent = "Delete This Workout";
+    return;
+  }
+
+  rememberPin_(pin);
+  els.deleteButton.disabled = false;
+  els.deleteButton.textContent = "Delete This Workout";
+  els.deleteButton.hidden = true;
+  els.workoutNameInput.value = "";
+  clearRows();
+  addRow();
+  await loadClientWorkouts(clientSlug);
+  renderChipsAndOptions();
+});
+
+function handleUnauthorized_() {
+  try {
+    localStorage.removeItem(STAFF_PIN_STORAGE_KEY);
+  } catch (err) {
+    // Ignore — worst case they retype an already-wrong PIN once more.
+  }
+  els.pinRow.hidden = false;
+  els.pinInput.value = "";
+  els.pinInput.focus();
+  showError("Incorrect PIN.");
+}
+
+function rememberPin_(pin) {
+  if (!pin) return;
+  try {
+    localStorage.setItem(STAFF_PIN_STORAGE_KEY, pin);
+  } catch (err) {
+    // Ignore — this device just asks for the PIN again next time.
+  }
+}
 
 (function init() {
   let rememberedPin = "";

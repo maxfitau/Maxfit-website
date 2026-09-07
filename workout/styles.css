@@ -23,10 +23,71 @@
   background: rgba(255, 255, 255, 0.08);
 }
 
+.workout__picker {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.workout__picker[hidden] {
+  display: none;
+}
+
+.workout__picker-hint {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--dim);
+  margin: 0;
+}
+
+.workout__picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.workout__picker-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: 17px;
+  color: var(--white);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 16px 18px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.workout__picker-option:active {
+  border-color: var(--red);
+  background: rgba(224, 0, 0, 0.08);
+}
+
+.workout__picker-option-count {
+  font-family: var(--font-body);
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 13px;
+  color: var(--dim);
+  flex-shrink: 0;
+}
+
 .workout__list {
   display: flex;
   flex-direction: column;
   gap: 22px;
+}
+
+.workout__list[hidden] {
+  display: none;
 }
 
 .workout__exercise {

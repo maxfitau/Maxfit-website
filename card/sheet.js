@@ -175,6 +175,7 @@ function fetchWorkoutExercises() {
         const [header, ...rows] = parseCSV(text);
         const col = {
           client: findColumn(header, "Client"),
+          workoutName: findColumn(header, "Workout Name"),
           order: findColumn(header, "Order"),
           exercise: findColumn(header, "Exercise"),
           sets: findColumn(header, "Target Sets"),
@@ -200,6 +201,7 @@ function fetchLoggedSets() {
         const [header, ...rows] = parseCSV(text);
         const col = {
           client: findColumn(header, "Client"),
+          workoutName: findColumn(header, "Workout Name"),
           exercise: findColumn(header, "Exercise"),
           setNumber: findColumn(header, "Set Number"),
           weight: findColumn(header, "Weight (kg)"),

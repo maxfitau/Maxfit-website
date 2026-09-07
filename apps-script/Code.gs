@@ -83,8 +83,8 @@ function backfillTokens() {
  */
 function setupWorkoutSheets() {
   getOrCreateSheetByName_(EXERCISES_SHEET_NAME, ["Name", "Default Starting Weight (kg)"]);
-  getOrCreateSheetByName_(WORKOUT_EXERCISES_SHEET_NAME, ["Client", "Order", "Exercise", "Target Sets", "Target Reps"]);
-  getOrCreateSheetByName_(LOGGED_SETS_SHEET_NAME, ["Client", "Exercise", "Set Number", "Weight (kg)", "Reps", "Date", "Timestamp"]);
+  getOrCreateSheetByName_(WORKOUT_EXERCISES_SHEET_NAME, ["Client", "Workout Name", "Order", "Exercise", "Target Sets", "Target Reps"]);
+  getOrCreateSheetByName_(LOGGED_SETS_SHEET_NAME, ["Client", "Workout Name", "Exercise", "Set Number", "Weight (kg)", "Reps", "Date", "Timestamp"]);
   Logger.log("Workout sheets ready.");
 }
 
@@ -146,6 +146,9 @@ function doPost(e) {
   }
   if (action === "assignWorkout") {
     return handleAssignWorkout_(payload);
+  }
+  if (action === "deleteWorkout") {
+    return handleDeleteWorkout_(payload);
   }
   if (action === "logSet") {
     return handleLogSet_(payload);
@@ -524,14 +527,15 @@ function findReferralsRow_(friendName, columnNames) {
 }
 
 /**
- * Coach builder (workout/builder.html) saving a client's workout. PIN-gated
- * — this is the one write path in the whole workout feature that isn't
- * link-only, since it can rewrite any client's assigned exercises.
+ * Coach builder (workout/builder.html) saving one named workout for a
+ * client — e.g. a client on a push/pull/legs split has three separate rows
+ * of these, "Push", "Pull", "Legs", each with its own exercise list. Keyed
+ * on (client, workout name) together, so saving "Push" never touches that
+ * same client's "Pull" or "Legs" rows — only replaces the one named
+ * workout being edited, outright rather than versioning it.
  *
- * There's only ever one "current" workout per client, matching the card's
- * single "Today's Workout" tile — assigning a new one replaces the old one
- * outright rather than scheduling a future date, which keeps both the data
- * model and the builder UI simple for a single-coach business.
+ * PIN-gated — this is the one write path in the whole workout feature that
+ * isn't link-only, since it can rewrite any client's assigned exercises.
  */
 function handleAssignWorkout_(payload) {
   if (!checkPin_(payload.pin)) {
@@ -539,9 +543,10 @@ function handleAssignWorkout_(payload) {
   }
 
   const clientSlug = String(payload.clientSlug || "").trim().toLowerCase();
+  const workoutName = String(payload.workoutName || "").trim();
   const exercises = Array.isArray(payload.exercises) ? payload.exercises : [];
-  if (!clientSlug || !exercises.length) {
-    return jsonResponse_({ status: "error", message: "Missing client or exercises." });
+  if (!clientSlug || !workoutName || !exercises.length) {
+    return jsonResponse_({ status: "error", message: "Missing client, workout name, or exercises." });
   }
 
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(WORKOUT_EXERCISES_SHEET_NAME);
@@ -554,26 +559,19 @@ function handleAssignWorkout_(payload) {
   const header = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
   const col = {
     client: findColumn_(header, "Client"),
+    workoutName: findColumn_(header, "Workout Name"),
     order: findColumn_(header, "Order"),
     exercise: findColumn_(header, "Exercise"),
     sets: findColumn_(header, "Target Sets"),
     reps: findColumn_(header, "Target Reps"),
   };
 
-  // Clear this client's existing workout rows (top to bottom so a deleted
-  // row doesn't shift the index of the next one still to check).
-  if (lastRow >= 2) {
-    const clientValues = sheet.getRange(2, col.client + 1, lastRow - 1, 1).getValues();
-    for (let i = clientValues.length - 1; i >= 0; i--) {
-      if (String(clientValues[i][0] || "").trim().toLowerCase() === clientSlug) {
-        sheet.deleteRow(i + 2);
-      }
-    }
-  }
+  deleteMatchingRows_(sheet, lastRow, col.client, clientSlug, col.workoutName, workoutName);
 
   const newRows = exercises.map((ex, i) => {
     const row = new Array(header.length).fill("");
     row[col.client] = clientSlug;
+    row[col.workoutName] = workoutName;
     row[col.order] = i + 1;
     row[col.exercise] = String((ex && ex.name) || "").trim();
     row[col.sets] = Number(ex && ex.sets) || 0;
@@ -581,6 +579,53 @@ function handleAssignWorkout_(payload) {
     return row;
   });
   sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, header.length).setValues(newRows);
+
+  return jsonResponse_({ status: "success" });
+}
+
+/**
+ * Deletes every row where column `matchCol` equals `matchValue` (case-
+ * insensitive) and, if `matchCol2` >= 0, column `matchCol2` also equals
+ * `matchValue2`. Top to bottom so a deleted row never shifts the index of
+ * the next one still to check.
+ */
+function deleteMatchingRows_(sheet, lastRow, matchCol, matchValue, matchCol2, matchValue2) {
+  if (lastRow < 2) return;
+  const numCols = sheet.getLastColumn();
+  const values = sheet.getRange(2, 1, lastRow - 1, numCols).getValues();
+  for (let i = values.length - 1; i >= 0; i--) {
+    const matches1 = String(values[i][matchCol] || "").trim().toLowerCase() === matchValue;
+    const matches2 = matchCol2 < 0 || String(values[i][matchCol2] || "").trim().toLowerCase() === matchValue2.toLowerCase();
+    if (matches1 && matches2) sheet.deleteRow(i + 2);
+  }
+}
+
+/**
+ * Removes one named workout entirely — the builder's "Delete this workout"
+ * button. PIN-gated for the same reason as assigning one.
+ */
+function handleDeleteWorkout_(payload) {
+  if (!checkPin_(payload.pin)) {
+    return jsonResponse_({ status: "unauthorized" });
+  }
+
+  const clientSlug = String(payload.clientSlug || "").trim().toLowerCase();
+  const workoutName = String(payload.workoutName || "").trim();
+  if (!clientSlug || !workoutName) {
+    return jsonResponse_({ status: "error", message: "Missing client or workout name." });
+  }
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(WORKOUT_EXERCISES_SHEET_NAME);
+  if (!sheet) {
+    return jsonResponse_({ status: "error", message: "Run setupWorkoutSheets first." });
+  }
+
+  const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const col = {
+    client: findColumn_(header, "Client"),
+    workoutName: findColumn_(header, "Workout Name"),
+  };
+  deleteMatchingRows_(sheet, sheet.getLastRow(), col.client, clientSlug, col.workoutName, workoutName);
 
   return jsonResponse_({ status: "success" });
 }
@@ -614,6 +659,7 @@ function handleLogSet_(payload) {
   const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   const col = {
     client: findColumn_(header, "Client"),
+    workoutName: findColumn_(header, "Workout Name"),
     exercise: findColumn_(header, "Exercise"),
     setNumber: findColumn_(header, "Set Number"),
     weight: findColumn_(header, "Weight (kg)"),
@@ -622,9 +668,17 @@ function handleLogSet_(payload) {
     timestamp: findColumn_(header, "Timestamp"),
   };
 
+  // Recorded for reference only — which named workout this set came from
+  // never affects the prefill lookup below, which is deliberately keyed on
+  // (client, exercise) alone across every workout, matching the whole
+  // point of the feature: "your last logged weight for this exact
+  // exercise", not "the last time you happened to run this exact workout".
+  const workoutName = String(payload.workoutName || "").trim();
+
   const now = new Date();
   const newRow = new Array(header.length).fill("");
   if (col.client >= 0) newRow[col.client] = clientSlug;
+  if (col.workoutName >= 0) newRow[col.workoutName] = workoutName;
   if (col.exercise >= 0) newRow[col.exercise] = exercise;
   if (col.setNumber >= 0) newRow[col.setNumber] = setNumber;
   if (col.weight >= 0) newRow[col.weight] = weight;

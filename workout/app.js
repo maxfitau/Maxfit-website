@@ -8,11 +8,17 @@
  * card itself loaded on this phone (same storage key, same origin, so it's
  * already there for anyone who's opened their card even once before).
  *
- * The whole point of this page is the weight prefill: every set opens with
- * a weight already filled in from the client's own most recent logged set
- * for that exact exercise (not just "last time this exact workout ran") —
- * on a normal week they glance at the number, do the set, type in reps.
- * Moving the weight up or down is just editing that field before logging.
+ * A client can have several named workouts (a push/pull/legs split, say) —
+ * if so, this opens on a picker so they choose which one they're doing
+ * today; a client with only one skips straight to it.
+ *
+ * The whole point of the logging screen itself is the weight prefill: every
+ * set opens with a weight already filled in from the client's own most
+ * recent logged set for that exact exercise — regardless of which named
+ * workout it was logged under — not just "last time this exact workout
+ * ran". On a normal week they glance at the number, do the set, type in
+ * reps. Moving the weight up or down is just editing that field before
+ * logging.
  */
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbya8dm8g5eC4ldAbNYmMCccDCZ6K7encj_q4IzXtKMOpd007RMYhnR3_PJ2eL2gjVDQ/exec";
 const MEMBER_ID_STORAGE_KEY = "maxfitMemberId"; // shared with card/app.js
@@ -30,6 +36,9 @@ if (!memberId) {
 }
 
 const els = {
+  pageTag: document.getElementById("pageTag"),
+  picker: document.getElementById("workoutPicker"),
+  pickerList: document.getElementById("workoutPickerList"),
   list: document.getElementById("exerciseList"),
   done: document.getElementById("workoutDone"),
   status: document.getElementById("status"),
@@ -47,7 +56,7 @@ function todayString() {
   return `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
 }
 
-/** Picks whichever logged row for this exercise has the latest timestamp/date — history can come back in any order from the sheet. */
+/** Picks whichever logged row for this exercise has the latest timestamp/date — history can come back in any order from the sheet, and can span every named workout, not just the one open right now. */
 function mostRecentWeight(setRows, col, clientSlug, exerciseName) {
   let best = null;
   for (const row of setRows) {
@@ -71,7 +80,7 @@ function formatWeight(n) {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 
-function buildSetRow(clientSlug, exercise, setNumber, prefillWeight, isFromHistory, onLogged) {
+function buildSetRow(clientSlug, workoutName, exercise, setNumber, prefillWeight, isFromHistory, onLogged) {
   const row = document.createElement("div");
   row.className = "workout__set";
 
@@ -157,6 +166,7 @@ function buildSetRow(clientSlug, exercise, setNumber, prefillWeight, isFromHisto
         body: JSON.stringify({
           action: "logSet",
           clientSlug,
+          workoutName,
           exercise: exercise.name,
           setNumber,
           weight,
@@ -185,8 +195,11 @@ function buildSetRow(clientSlug, exercise, setNumber, prefillWeight, isFromHisto
   return row;
 }
 
-function renderWorkout(clientSlug, exercises, setRows, setCol, startingWeights) {
+function renderWorkout(clientSlug, workoutName, exercises, setRows, setCol, startingWeights) {
+  els.status.hidden = true;
   els.list.innerHTML = "";
+  els.list.hidden = false;
+  els.pageTag.textContent = workoutName || "Today's Workout";
 
   let totalSets = 0;
   let loggedSets = 0;
@@ -240,7 +253,7 @@ function renderWorkout(clientSlug, exercises, setRows, setCol, startingWeights) 
 
     for (let setNumber = 1; setNumber <= exercise.sets; setNumber++) {
       totalSets++;
-      const row = buildSetRow(clientSlug, exercise, setNumber, prefillWeight, historyWeight !== null, () => {
+      const row = buildSetRow(clientSlug, workoutName, exercise, setNumber, prefillWeight, historyWeight !== null, () => {
         loggedSets++;
         updateDoneState();
       });
@@ -254,6 +267,47 @@ function renderWorkout(clientSlug, exercises, setRows, setCol, startingWeights) 
   updateDoneState();
 }
 
+function showPicker(clientSlug, workoutGroups, setRows, setCol, startingWeights) {
+  els.status.hidden = true;
+  els.list.hidden = true;
+  els.done.hidden = true;
+  els.pageTag.textContent = "Choose Your Workout";
+  els.picker.hidden = false;
+  els.pickerList.innerHTML = "";
+  els.backLink.href = `../card/?id=${encodeURIComponent(memberId)}`;
+
+  for (const name of Object.keys(workoutGroups)) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "workout__picker-option";
+
+    const label = document.createElement("span");
+    label.textContent = name;
+    button.appendChild(label);
+
+    const count = document.createElement("span");
+    count.className = "workout__picker-option-count";
+    const exerciseCount = workoutGroups[name].length;
+    count.textContent = `${exerciseCount} exercise${exerciseCount === 1 ? "" : "s"}`;
+    button.appendChild(count);
+
+    button.addEventListener("click", () => {
+      els.picker.hidden = true;
+      // From inside a specific workout, "back" returns to this picker
+      // rather than straight to the card — easy to switch if they tapped
+      // the wrong day.
+      els.backLink.href = "#";
+      els.backLink.onclick = (event) => {
+        event.preventDefault();
+        showPicker(clientSlug, workoutGroups, setRows, setCol, startingWeights);
+      };
+      renderWorkout(clientSlug, name, workoutGroups[name], setRows, setCol, startingWeights);
+    });
+
+    els.pickerList.appendChild(button);
+  }
+}
+
 async function init() {
   if (!memberId) {
     showStatus("Open this from your membership card.", true);
@@ -263,7 +317,7 @@ async function init() {
   els.backLink.href = `../card/?id=${encodeURIComponent(memberId)}`;
   const clientSlug = slugify(memberId);
 
-  let exercises;
+  let workoutGroups;
   let setRows, setCol;
   let startingWeights;
 
@@ -274,16 +328,25 @@ async function init() {
       fetchExercises(),
     ]);
 
-    exercises = workout.rows
+    const clientExercises = workout.rows
       .filter((r) => String(r[workout.col.client] || "").trim().toLowerCase() === clientSlug)
       .map((r) => ({
+        workoutName: (workout.col.workoutName >= 0 ? r[workout.col.workoutName] : "") || "Today's Workout",
         name: (r[workout.col.exercise] || "").trim(),
         sets: parseSessions(r[workout.col.sets], 0),
         reps: (r[workout.col.reps] || "").trim(),
         order: parseSessions(r[workout.col.order], 0),
       }))
-      .filter((ex) => ex.name && ex.sets > 0)
-      .sort((a, b) => a.order - b.order);
+      .filter((ex) => ex.name && ex.sets > 0);
+
+    workoutGroups = {};
+    for (const ex of clientExercises) {
+      if (!workoutGroups[ex.workoutName]) workoutGroups[ex.workoutName] = [];
+      workoutGroups[ex.workoutName].push(ex);
+    }
+    for (const name of Object.keys(workoutGroups)) {
+      workoutGroups[name].sort((a, b) => a.order - b.order);
+    }
 
     setRows = sets.rows;
     setCol = sets.col;
@@ -299,12 +362,18 @@ async function init() {
     return;
   }
 
-  if (!exercises.length) {
+  const workoutNames = Object.keys(workoutGroups);
+  if (!workoutNames.length) {
     showStatus("No workout assigned yet — check with Max.", false);
     return;
   }
 
-  renderWorkout(clientSlug, exercises, setRows, setCol, startingWeights);
+  if (workoutNames.length === 1) {
+    renderWorkout(clientSlug, workoutNames[0], workoutGroups[workoutNames[0]], setRows, setCol, startingWeights);
+    return;
+  }
+
+  showPicker(clientSlug, workoutGroups, setRows, setCol, startingWeights);
 }
 
 init();
