@@ -5,6 +5,11 @@
 
 .workout {
   gap: 20px;
+  /* Unlike the fixed-height card, this page can run long — a floating
+     mobile browser toolbar (Safari's especially) sits over the bottom of
+     the viewport during scroll, so the default card padding isn't enough
+     clearance for whatever the last exercise on the list happens to be. */
+  padding-bottom: max(48px, calc(env(safe-area-inset-bottom, 0px) + 40px));
 }
 
 .workout__back {
