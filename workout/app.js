@@ -46,6 +46,7 @@ const els = {
   doneText: document.querySelector(".workout__done-text"),
   status: document.getElementById("status"),
   backLink: document.getElementById("backLink"),
+  historyLink: document.getElementById("historyLink"),
 };
 
 function showStatus(message, isError) {
@@ -120,9 +121,17 @@ function formatWeight(n) {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 
-function buildSetRow(clientSlug, workoutName, exercise, setNumber, prefillWeight, isFromHistory, onLogged) {
+/**
+ * A set row is just two editable fields now — weight and reps — tagged with
+ * which exercise/set they belong to so the single "Save Workout" button at
+ * the bottom can walk every row and submit the whole session in one go,
+ * instead of each row locking itself in with its own submit.
+ */
+function buildSetRow(exercise, setNumber, prefillWeight, isFromHistory) {
   const row = document.createElement("div");
   row.className = "workout__set";
+  row.dataset.exercise = exercise.name;
+  row.dataset.setNumber = String(setNumber);
 
   const label = document.createElement("span");
   label.className = "workout__set-num";
@@ -176,61 +185,6 @@ function buildSetRow(clientSlug, workoutName, exercise, setNumber, prefillWeight
   repsInput.className = "workout__reps-input";
   repsInput.placeholder = exercise.reps || "reps";
   row.appendChild(repsInput);
-
-  const logButton = document.createElement("button");
-  logButton.type = "button";
-  logButton.className = "workout__log-btn";
-  logButton.textContent = "Log";
-  row.appendChild(logButton);
-
-  logButton.addEventListener("click", async () => {
-    const weight = Number(weightInput.value);
-    const reps = Number(repsInput.value);
-
-    if (!Number.isFinite(weight) || weight <= 0) {
-      weightInput.focus();
-      return;
-    }
-    if (!Number.isFinite(reps) || reps <= 0) {
-      repsInput.focus();
-      return;
-    }
-
-    logButton.disabled = true;
-    logButton.textContent = "…";
-
-    try {
-      const res = await fetch(APPS_SCRIPT_URL, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" }, // avoids a CORS preflight
-        body: JSON.stringify({
-          action: "logSet",
-          clientSlug,
-          workoutName,
-          exercise: exercise.name,
-          setNumber,
-          weight,
-          reps,
-        }),
-      });
-      const result = await res.json();
-      if (result.status !== "success") throw new Error("log failed");
-    } catch (err) {
-      logButton.disabled = false;
-      logButton.textContent = "Log";
-      showStatus("Couldn't save that set — check your connection and try again.", true);
-      return;
-    }
-
-    weightInput.disabled = true;
-    repsInput.disabled = true;
-    minus.disabled = true;
-    plus.disabled = true;
-    weightInput.classList.remove("workout__weight-input--prefilled");
-    row.classList.add("workout__set--done");
-    logButton.textContent = "✓";
-    onLogged();
-  });
 
   return row;
 }
@@ -288,11 +242,7 @@ function addExerciseSection(ctx, exercise, opts) {
   let setCount = 0;
   function addSetRow() {
     setCount++;
-    ctx.totalSets++;
-    const row = buildSetRow(clientSlug, workoutName, exercise, setCount, prefillWeight, historyWeight !== null, () => {
-      ctx.loggedSets++;
-      ctx.updateDoneState();
-    });
+    const row = buildSetRow(exercise, setCount, prefillWeight, historyWeight !== null);
     setsWrap.appendChild(row);
   }
 
@@ -303,10 +253,7 @@ function addExerciseSection(ctx, exercise, opts) {
     addSetBtn.type = "button";
     addSetBtn.className = "workout__add-set";
     addSetBtn.textContent = "+ Add Set";
-    addSetBtn.addEventListener("click", () => {
-      addSetRow();
-      ctx.updateDoneState();
-    });
+    addSetBtn.addEventListener("click", addSetRow);
     section.appendChild(addSetBtn);
   }
 
@@ -381,37 +328,80 @@ function buildAddExerciseControl(ctx, exerciseNameOptions) {
   return wrap;
 }
 
+/**
+ * Everything is editable up front — no per-set locking — and this one
+ * button at the bottom submits the whole session together. Re-pressing it
+ * after editing a value just re-saves (the backend upserts on client +
+ * workout + exercise + set number + today's date), so nothing gets
+ * duplicated by saving more than once.
+ */
+function buildSaveButton(ctx) {
+  const wrap = document.createElement("div");
+  wrap.className = "workout__save-wrap";
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "workout__save-btn";
+  btn.textContent = "Save Workout";
+  wrap.appendChild(btn);
+
+  btn.addEventListener("click", async () => {
+    const sets = [];
+    ctx.list.querySelectorAll(".workout__set").forEach((row) => {
+      const weight = Number(row.querySelector(".workout__weight-input").value);
+      const reps = Number(row.querySelector(".workout__reps-input").value);
+      if (!Number.isFinite(weight) || weight <= 0) return;
+      if (!Number.isFinite(reps) || reps <= 0) return;
+      sets.push({ exercise: row.dataset.exercise, setNumber: Number(row.dataset.setNumber), weight, reps });
+    });
+
+    if (!sets.length) {
+      showStatus("Fill in at least one set's weight and reps before saving.", true);
+      return;
+    }
+
+    els.status.hidden = true;
+    btn.disabled = true;
+    btn.textContent = "Saving…";
+
+    try {
+      const res = await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" }, // avoids a CORS preflight
+        body: JSON.stringify({ action: "saveWorkoutSession", clientSlug: ctx.clientSlug, workoutName: ctx.workoutName, sets }),
+      });
+      const result = await res.json();
+      if (result.status !== "success") throw new Error("save failed");
+
+      const elapsed = stopWorkoutTimer();
+      els.timerValue.textContent = formatElapsed(elapsed);
+      els.doneText.textContent = `Nice work — saved in ${formatElapsed(elapsed)}. Head back to your card.`;
+      els.done.hidden = false;
+      try {
+        localStorage.setItem(WORKOUT_COMPLETE_STORAGE_KEY, todayString());
+      } catch (err) {
+        // Storage unavailable — the card just won't auto-show as completed.
+      }
+    } catch (err) {
+      showStatus("Couldn't save your workout — check your connection and try again.", true);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Save Workout";
+    }
+  });
+
+  return wrap;
+}
+
 function renderWorkout(clientSlug, workoutName, exercises, setRows, setCol, startingWeights, exerciseNameOptions) {
   els.status.hidden = true;
   els.list.innerHTML = "";
   els.list.hidden = false;
+  els.done.hidden = true;
   els.pageTag.textContent = workoutName || "Today's Workout";
   startWorkoutTimer();
 
-  const ctx = {
-    clientSlug,
-    workoutName,
-    setRows,
-    setCol,
-    startingWeights,
-    list: els.list,
-    totalSets: 0,
-    loggedSets: 0,
-    addExerciseWrap: null,
-    updateDoneState() {
-      const allDone = ctx.totalSets > 0 && ctx.loggedSets >= ctx.totalSets;
-      els.done.hidden = !allDone;
-      if (allDone) {
-        const elapsed = stopWorkoutTimer();
-        els.doneText.textContent = `Nice work — done in ${formatElapsed(elapsed)}. Head back to your card.`;
-        try {
-          localStorage.setItem(WORKOUT_COMPLETE_STORAGE_KEY, todayString());
-        } catch (err) {
-          // Storage unavailable — the card just won't auto-show as completed.
-        }
-      }
-    },
-  };
+  const ctx = { clientSlug, workoutName, setRows, setCol, startingWeights, list: els.list, addExerciseWrap: null };
 
   ctx.addExerciseWrap = buildAddExerciseControl(ctx, exerciseNameOptions || []);
   els.list.appendChild(ctx.addExerciseWrap);
@@ -420,7 +410,7 @@ function renderWorkout(clientSlug, workoutName, exercises, setRows, setCol, star
     addExerciseSection(ctx, exercise, { isExtra: false });
   }
 
-  ctx.updateDoneState();
+  els.list.appendChild(buildSaveButton(ctx));
 }
 
 function showPicker(clientSlug, workoutGroups, setRows, setCol, startingWeights, exerciseNameOptions) {
@@ -473,6 +463,7 @@ async function init() {
   }
 
   els.backLink.href = `../card/?id=${encodeURIComponent(memberId)}`;
+  els.historyLink.href = `calendar.html?id=${encodeURIComponent(memberId)}`;
   const clientSlug = slugify(memberId);
 
   let workoutGroups;

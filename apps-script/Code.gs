@@ -173,8 +173,8 @@ function doPost(e) {
   if (action === "deleteWorkout") {
     return handleDeleteWorkout_(payload);
   }
-  if (action === "logSet") {
-    return handleLogSet_(payload);
+  if (action === "saveWorkoutSession") {
+    return handleSaveWorkoutSession_(payload);
   }
   if (action === "checkGroceryCode") {
     return handleCheckGroceryCode_(payload);
@@ -663,24 +663,22 @@ function handleDeleteWorkout_(payload) {
 }
 
 /**
- * Client logging a single set from workout/index.html. Deliberately no PIN
- * — same link-only trust model as the rest of the client-facing card, where
- * anyone with the client's own link can already tick "Workout Completed"
- * with no login. This only ever appends, never overwrites, so there's
- * nothing destructive a stray request could do here.
+ * Client saving their whole workout session at once from workout/index.html
+ * — the "Save Workout" button, pressed after editing every set freely.
+ * Deliberately no PIN, same link-only trust model as the rest of the
+ * client-facing card.
+ *
+ * Upserts rather than blindly appending: re-pressing Save after editing a
+ * value updates that same (client, workout, exercise, set number) row for
+ * TODAY rather than creating a duplicate, so pressing Save more than once
+ * is always safe. Earlier days' rows are never touched.
  */
-function handleLogSet_(payload) {
+function handleSaveWorkoutSession_(payload) {
   const clientSlug = String(payload.clientSlug || "").trim().toLowerCase();
-  const exercise = String(payload.exercise || "").trim();
-  const setNumber = Number(payload.setNumber);
-  const weight = Number(payload.weight);
-  const reps = Number(payload.reps);
-
-  if (!clientSlug || !exercise || !Number.isFinite(setNumber) || setNumber < 1) {
-    return jsonResponse_({ status: "error", message: "Missing client, exercise, or set number." });
-  }
-  if (!Number.isFinite(weight) || !Number.isFinite(reps)) {
-    return jsonResponse_({ status: "error", message: "Missing or invalid weight/reps." });
+  const workoutName = String(payload.workoutName || "").trim();
+  const sets = Array.isArray(payload.sets) ? payload.sets : [];
+  if (!clientSlug || !sets.length) {
+    return jsonResponse_({ status: "error", message: "Missing client or sets." });
   }
 
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LOGGED_SETS_SHEET_NAME);
@@ -700,24 +698,51 @@ function handleLogSet_(payload) {
     timestamp: findColumn_(header, "Timestamp"),
   };
 
-  // Recorded for reference only — which named workout this set came from
-  // never affects the prefill lookup below, which is deliberately keyed on
-  // (client, exercise) alone across every workout, matching the whole
-  // point of the feature: "your last logged weight for this exact
-  // exercise", not "the last time you happened to run this exact workout".
-  const workoutName = String(payload.workoutName || "").trim();
-
   const now = new Date();
-  const newRow = new Array(header.length).fill("");
-  if (col.client >= 0) newRow[col.client] = clientSlug;
-  if (col.workoutName >= 0) newRow[col.workoutName] = workoutName;
-  if (col.exercise >= 0) newRow[col.exercise] = exercise;
-  if (col.setNumber >= 0) newRow[col.setNumber] = setNumber;
-  if (col.weight >= 0) newRow[col.weight] = weight;
-  if (col.reps >= 0) newRow[col.reps] = reps;
-  if (col.date >= 0) newRow[col.date] = Utilities.formatDate(now, TIMEZONE, "yyyy-MM-dd");
-  if (col.timestamp >= 0) newRow[col.timestamp] = now;
-  sheet.appendRow(newRow);
+  const todayStr = Utilities.formatDate(now, TIMEZONE, "yyyy-MM-dd");
+
+  const lastRow = sheet.getLastRow();
+  const existing = lastRow >= 2 ? sheet.getRange(2, 1, lastRow - 1, header.length).getValues() : [];
+  const rowNumberByKey = {};
+  for (let i = 0; i < existing.length; i++) {
+    const r = existing[i];
+    if (String(r[col.date] || "") !== todayStr) continue;
+    if (String(r[col.client] || "").trim().toLowerCase() !== clientSlug) continue;
+    if (String(r[col.workoutName] || "").trim() !== workoutName) continue;
+    const key = String(r[col.exercise] || "").trim().toLowerCase() + "|" + String(r[col.setNumber] || "");
+    rowNumberByKey[key] = i + 2; // absolute sheet row (data starts at row 2)
+  }
+
+  const newRows = [];
+  for (const s of sets) {
+    const exercise = String(s.exercise || "").trim();
+    const setNumber = Number(s.setNumber);
+    const weight = Number(s.weight);
+    const reps = Number(s.reps);
+    if (!exercise || !Number.isFinite(setNumber) || !Number.isFinite(weight) || !Number.isFinite(reps)) continue;
+
+    const rowValues = new Array(header.length).fill("");
+    if (col.client >= 0) rowValues[col.client] = clientSlug;
+    if (col.workoutName >= 0) rowValues[col.workoutName] = workoutName;
+    if (col.exercise >= 0) rowValues[col.exercise] = exercise;
+    if (col.setNumber >= 0) rowValues[col.setNumber] = setNumber;
+    if (col.weight >= 0) rowValues[col.weight] = weight;
+    if (col.reps >= 0) rowValues[col.reps] = reps;
+    if (col.date >= 0) rowValues[col.date] = todayStr;
+    if (col.timestamp >= 0) rowValues[col.timestamp] = now;
+
+    const key = exercise.toLowerCase() + "|" + setNumber;
+    const existingRowNumber = rowNumberByKey[key];
+    if (existingRowNumber) {
+      sheet.getRange(existingRowNumber, 1, 1, header.length).setValues([rowValues]);
+    } else {
+      newRows.push(rowValues);
+    }
+  }
+
+  if (newRows.length) {
+    sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, header.length).setValues(newRows);
+  }
 
   return jsonResponse_({ status: "success" });
 }
