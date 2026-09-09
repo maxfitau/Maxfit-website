@@ -3,6 +3,17 @@
    Loads on top of card/styles.css — same shell/fonts/palette as the card.
    ========================================================================== */
 
+/* card/styles.css centers .card vertically with `body { align-items: center }`,
+   which is fine for the fixed-height membership card but actively harmful
+   here: once the exercise list is taller than the screen, centering an
+   overflowing flex item pushes its top half above y=0, and mobile Safari
+   won't scroll back up far enough to reach it — the header reads as
+   permanently cut off. Top-aligning fixes it: the page now grows downward
+   from the existing safe-area padding instead of overflowing both ways. */
+body {
+  align-items: flex-start;
+}
+
 .workout {
   gap: 20px;
   /* Unlike the fixed-height card, this page can run long — a floating

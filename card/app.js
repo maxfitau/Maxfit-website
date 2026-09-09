@@ -305,14 +305,22 @@ function renderLoyalty(totalAttended) {
  * outcome, not an error, so this never throws — it just returns 0 and lets
  * render() fall through to whatever came before this feature existed.
  */
-async function countAssignedExercises_(clientSlug) {
-  if (!clientSlug) return 0;
+async function assignedWorkoutSummary_(clientSlug) {
+  if (!clientSlug) return { count: 0, names: [] };
   try {
     const { rows, col } = await fetchWorkoutExercises();
-    if (col.client < 0) return 0;
-    return rows.filter((r) => String(r[col.client] || "").trim().toLowerCase() === clientSlug).length;
+    if (col.client < 0) return { count: 0, names: [] };
+    const mine = rows.filter((r) => String(r[col.client] || "").trim().toLowerCase() === clientSlug);
+    const names = [
+      ...new Set(
+        mine
+          .map((r) => (col.workoutName >= 0 ? String(r[col.workoutName] || "").trim() : ""))
+          .filter(Boolean)
+      ),
+    ];
+    return { count: mine.length, names };
   } catch (err) {
-    return 0;
+    return { count: 0, names: [] };
   }
 }
 
@@ -324,12 +332,17 @@ async function render(data) {
   renderQR(data.checkInUrl);
   renderLoyalty(data.totalAttended);
 
-  const assignedCount = await countAssignedExercises_(data.clientSlug);
+  const { count: assignedCount, names: workoutNames } = await assignedWorkoutSummary_(data.clientSlug);
   if (assignedCount > 0) {
     els.upcomingLabel.textContent = "Today's Workout";
     els.upcomingLink.href = `../workout/?id=${encodeURIComponent(data.clientSlug)}`;
     els.upcomingLink.target = "_self"; // this is our own page, not an external doc — no reason to leave a tab behind
-    els.upcomingValue.textContent = `${assignedCount} exercise${assignedCount === 1 ? "" : "s"} — tap to start`;
+    els.upcomingValue.textContent =
+      workoutNames.length === 1
+        ? `${workoutNames[0]} — tap to start`
+        : workoutNames.length > 1
+        ? "Tap to choose your workout"
+        : `${assignedCount} exercise${assignedCount === 1 ? "" : "s"} — tap to start`;
     return;
   }
 
