@@ -1,0 +1,181 @@
+/* ==========================================================================
+   MAX FIT · workout history calendar
+   Loads on top of card/styles.css + workout/styles.css.
+   ========================================================================== */
+
+.calendar {
+  gap: 16px;
+}
+
+.calendar__nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.calendar__nav-btn {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 20px;
+  color: var(--grey-light);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  width: 36px;
+  height: 36px;
+  cursor: pointer;
+}
+
+.calendar__nav-btn:active {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.calendar__month-label {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 15px;
+  color: var(--white);
+}
+
+.calendar__weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+}
+
+.calendar__weekdays span {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--dim);
+}
+
+.calendar__grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+
+.calendar__day {
+  position: relative;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--grey-light);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.calendar__day--empty {
+  visibility: hidden;
+}
+
+.calendar__day--active {
+  color: var(--white);
+  background: rgba(224, 0, 0, 0.16);
+  border-color: var(--red);
+  cursor: pointer;
+}
+
+.calendar__day--active:active {
+  background: rgba(224, 0, 0, 0.3);
+}
+
+.calendar__day--today {
+  box-shadow: inset 0 0 0 2px var(--grey-light);
+}
+
+.calendar__hint {
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  color: var(--dim);
+  margin: 0;
+  text-align: center;
+}
+
+.calendar__detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+}
+
+.calendar__detail[hidden] {
+  display: none;
+}
+
+.calendar__detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.calendar__detail-close {
+  font-family: var(--font-head);
+  font-size: 20px;
+  line-height: 1;
+  color: var(--dim);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.calendar__detail-close:active {
+  color: var(--red);
+}
+
+.calendar__detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.calendar__detail-workout {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.calendar__detail-workout-name {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 14px;
+  color: var(--red);
+  margin: 0;
+}
+
+.calendar__detail-exercise {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.calendar__detail-exercise-name {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--white);
+}
+
+.calendar__detail-exercise-sets {
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--grey-light);
+  font-variant-numeric: tabular-nums;
+}
