@@ -214,3 +214,28 @@ function fetchLoggedSets() {
   }
   return loggedSetsPromise;
 }
+
+/**
+ * Fetches + parses the "Grocery Items" tab — deliberately NOT memoized like
+ * the functions above, since several family members can be adding/removing
+ * items around the same time and every open of the list should show the
+ * current state, not whatever was cached on first load.
+ */
+function fetchGroceryItems() {
+  return fetch(gvizCsvUrl_("Grocery Items"), { cache: "no-store" })
+    .then((res) => {
+      if (!res.ok) throw new Error("grocery items fetch failed");
+      return res.text();
+    })
+    .then((text) => {
+      const [header, ...rows] = parseCSV(text);
+      const col = {
+        id: findColumn(header, "ID"),
+        surname: findColumn(header, "Surname"),
+        item: findColumn(header, "Item"),
+        addedBy: findColumn(header, "Added By"),
+        addedAt: findColumn(header, "Added At"),
+      };
+      return { rows, col };
+    });
+}

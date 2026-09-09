@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+<title>Family Grocery List</title>
+<meta name="theme-color" content="#111111" />
+<meta name="robots" content="noindex" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="../card/styles.css?v=20260909a" />
+<link rel="stylesheet" href="styles.css?v=20260909a" />
+</head>
+<body>
+
+<main class="card grocery" id="grocery">
+  <div class="card__top">
+    <span class="card__tag">Grocery List</span>
+  </div>
+
+  <section class="grocery__gate" id="groceryGate">
+    <p class="picker__hint">Enter your family access code to get in.</p>
+    <input class="picker__input" id="codeInput" type="password" inputmode="numeric" placeholder="Access code" autocomplete="off" />
+    <button class="picker__submit" id="codeSubmit" type="button">Continue</button>
+    <p class="picker__error" id="codeError" hidden></p>
+  </section>
+
+  <section class="grocery__search" id="grocerySearch" hidden>
+    <p class="picker__hint">Find your family's list by surname.</p>
+    <input class="picker__input" id="surnameInput" type="text" placeholder="Surname" autocomplete="off" />
+    <button class="picker__submit" id="surnameSubmit" type="button">Find List</button>
+    <p class="picker__error" id="surnameError" hidden></p>
+  </section>
+
+  <section class="grocery__list-view" id="groceryListView" hidden>
+    <div class="grocery__list-head">
+      <span class="card__tag" id="groceryFamilyName">Family List</span>
+      <button class="grocery__switch" id="switchFamily" type="button">Switch</button>
+    </div>
+
+    <div class="grocery__add-row">
+      <input class="picker__input" id="itemInput" type="text" placeholder="Add an item…" autocomplete="off" />
+      <button class="grocery__add-btn" id="itemAdd" type="button">Add</button>
+    </div>
+
+    <p class="grocery__list-hint">Double-tap an item to remove it.</p>
+
+    <div class="grocery__items" id="groceryItems"></div>
+    <p class="grocery__empty" id="groceryEmpty" hidden>No items yet — add the first one.</p>
+  </section>
+
+  <p class="status" id="groceryStatus" hidden></p>
+</main>
+
+<script src="../card/sheet.js?v=20260909a"></script>
+<script src="app.js?v=20260909a"></script>
+</body>
+</html>

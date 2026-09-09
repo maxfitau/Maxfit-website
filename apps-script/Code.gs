@@ -26,6 +26,10 @@ const EXERCISES_SHEET_NAME = "Exercises";
 const WORKOUT_EXERCISES_SHEET_NAME = "Workout Exercises";
 const LOGGED_SETS_SHEET_NAME = "Logged Sets";
 
+// Family grocery list — same by-name lookup as the workout tabs above, for
+// the same reason (setupGrocerySheet() creates it, so there's no gid yet).
+const GROCERY_SHEET_NAME = "Grocery Items";
+
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheets().find((s) => s.getSheetId() === gid);
@@ -88,6 +92,15 @@ function setupWorkoutSheets() {
   Logger.log("Workout sheets ready.");
 }
 
+/**
+ * One-time helper — run manually from the Apps Script editor to create the
+ * "Grocery Items" tab the family grocery list needs. Safe to re-run.
+ */
+function setupGrocerySheet() {
+  getOrCreateSheetByName_(GROCERY_SHEET_NAME, ["ID", "Surname", "Item", "Added By", "Added At"]);
+  Logger.log("Grocery sheet ready.");
+}
+
 function getOrCreateSheetByName_(name, headers) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName(name);
@@ -128,6 +141,16 @@ function checkPin_(pin) {
 }
 
 /**
+ * Same idea as checkPin_ but a separate Script Property (key: GROCERY_CODE)
+ * — one shared code the whole family uses, unrelated to staff PIN access.
+ */
+function checkGroceryCode_(code) {
+  const expected = PropertiesService.getScriptProperties().getProperty("GROCERY_CODE");
+  if (!expected) return true; // not configured yet — don't lock everyone out by accident
+  return String(code || "").trim() === expected;
+}
+
+/**
  * Single POST endpoint, dispatched by payload.action. checkin.js doesn't
  * send an action (predates this), so "checkin" is the default — anything
  * else (currently just "signup") must say so explicitly.
@@ -152,6 +175,15 @@ function doPost(e) {
   }
   if (action === "logSet") {
     return handleLogSet_(payload);
+  }
+  if (action === "checkGroceryCode") {
+    return handleCheckGroceryCode_(payload);
+  }
+  if (action === "addGroceryItem") {
+    return handleAddGroceryItem_(payload);
+  }
+  if (action === "deleteGroceryItem") {
+    return handleDeleteGroceryItem_(payload);
   }
   return handleCheckIn_(payload);
 }
@@ -686,6 +718,72 @@ function handleLogSet_(payload) {
   if (col.date >= 0) newRow[col.date] = Utilities.formatDate(now, TIMEZONE, "yyyy-MM-dd");
   if (col.timestamp >= 0) newRow[col.timestamp] = now;
   sheet.appendRow(newRow);
+
+  return jsonResponse_({ status: "success" });
+}
+
+function handleCheckGroceryCode_(payload) {
+  if (!checkGroceryCode_(payload.code)) {
+    return jsonResponse_({ status: "unauthorized" });
+  }
+  return jsonResponse_({ status: "success" });
+}
+
+function handleAddGroceryItem_(payload) {
+  if (!checkGroceryCode_(payload.code)) {
+    return jsonResponse_({ status: "unauthorized" });
+  }
+
+  const surname = String(payload.surname || "").trim();
+  const item = String(payload.item || "").trim();
+  if (!surname || !item) {
+    return jsonResponse_({ status: "error", message: "Missing surname or item." });
+  }
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(GROCERY_SHEET_NAME);
+  if (!sheet) {
+    return jsonResponse_({ status: "error", message: "Run setupGrocerySheet first." });
+  }
+
+  const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const col = {
+    id: findColumn_(header, "ID"),
+    surname: findColumn_(header, "Surname"),
+    item: findColumn_(header, "Item"),
+    addedAt: findColumn_(header, "Added At"),
+  };
+
+  const id = Utilities.getUuid();
+  const newRow = new Array(header.length).fill("");
+  if (col.id >= 0) newRow[col.id] = id;
+  if (col.surname >= 0) newRow[col.surname] = surname;
+  if (col.item >= 0) newRow[col.item] = item;
+  if (col.addedAt >= 0) newRow[col.addedAt] = new Date();
+  sheet.appendRow(newRow);
+
+  return jsonResponse_({ status: "success", id });
+}
+
+/** Double-tap/double-click removal on the client side lands here — deletes the row outright rather than marking it done, matching the brief. */
+function handleDeleteGroceryItem_(payload) {
+  if (!checkGroceryCode_(payload.code)) {
+    return jsonResponse_({ status: "unauthorized" });
+  }
+
+  const id = String(payload.id || "").trim().toLowerCase();
+  if (!id) {
+    return jsonResponse_({ status: "error", message: "Missing id." });
+  }
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(GROCERY_SHEET_NAME);
+  if (!sheet) {
+    return jsonResponse_({ status: "error", message: "Run setupGrocerySheet first." });
+  }
+
+  const lastRow = sheet.getLastRow();
+  const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const idCol = findColumn_(header, "ID");
+  deleteMatchingRows_(sheet, lastRow, idCol, id, -1, "");
 
   return jsonResponse_({ status: "success" });
 }

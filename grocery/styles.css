@@ -1,0 +1,149 @@
+/* ==========================================================================
+   Family Grocery List
+   Loads on top of card/styles.css — same shell/fonts/palette as the rest of
+   the site, since it shares the same access code + Google Sheet mechanics.
+   ========================================================================== */
+
+body {
+  align-items: flex-start;
+}
+
+.grocery {
+  gap: 18px;
+}
+
+.grocery__gate,
+.grocery__search {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.grocery__gate[hidden],
+.grocery__search[hidden] {
+  display: none;
+}
+
+.grocery__list-view {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.grocery__list-view[hidden] {
+  display: none;
+}
+
+.grocery__list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.grocery__switch {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--dim);
+  background: transparent;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.grocery__switch:active {
+  color: var(--red);
+}
+
+.grocery__add-row {
+  display: flex;
+  gap: 8px;
+}
+
+.grocery__add-row .picker__input {
+  flex: 1;
+  min-width: 0;
+}
+
+.grocery__add-btn {
+  flex-shrink: 0;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 14px;
+  color: var(--on-red);
+  background: var(--red);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 0 20px;
+  cursor: pointer;
+}
+
+.grocery__add-btn:active {
+  background: var(--red-dim);
+}
+
+.grocery__add-btn:disabled {
+  background: var(--line);
+  color: var(--dim);
+}
+
+.grocery__list-hint {
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  color: var(--dim);
+  margin: -6px 0 0;
+}
+
+.grocery__items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.grocery__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--white);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.grocery__item--removing {
+  opacity: 0;
+  transform: scale(0.96);
+}
+
+.grocery__item-added-by {
+  flex-shrink: 0;
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.grocery__empty {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--dim);
+  text-align: center;
+  margin: 8px 0 0;
+}
+
+.grocery__empty[hidden] {
+  display: none;
+}
