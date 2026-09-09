@@ -293,6 +293,103 @@ body {
   color: var(--grey-light);
 }
 
+.workout__exercise--extra .workout__exercise-target {
+  color: var(--grey-light);
+}
+
+.workout__add-set {
+  align-self: flex-start;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 12px;
+  color: var(--grey-light);
+  background: transparent;
+  border: 1px dashed var(--line-strong, var(--line));
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.workout__add-set:active {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.workout__add-exercise {
+  order: 999; /* always last, regardless of DOM insertion order of exercise sections around it */
+}
+
+.workout__add-exercise-toggle {
+  width: 100%;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 13px;
+  color: var(--grey-light);
+  background: transparent;
+  border: 1px dashed var(--line-strong, var(--line));
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  cursor: pointer;
+}
+
+.workout__add-exercise-toggle[hidden] {
+  display: none;
+}
+
+.workout__add-exercise-toggle:active {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.workout__add-exercise-form {
+  display: flex;
+  gap: 8px;
+}
+
+.workout__add-exercise-form[hidden] {
+  display: none;
+}
+
+.workout__add-exercise-input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--white);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+}
+
+.workout__add-exercise-input:focus {
+  outline: none;
+  border-color: var(--red);
+}
+
+.workout__add-exercise-confirm {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 13px;
+  color: var(--on-red);
+  background: var(--red);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 0 18px;
+  cursor: pointer;
+}
+
+.workout__add-exercise-confirm:active {
+  background: var(--red-dim);
+}
+
 .workout__done {
   display: flex;
   flex-direction: column;

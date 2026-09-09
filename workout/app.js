@@ -195,79 +195,192 @@ function buildSetRow(clientSlug, workoutName, exercise, setNumber, prefillWeight
   return row;
 }
 
-function renderWorkout(clientSlug, workoutName, exercises, setRows, setCol, startingWeights) {
+/**
+ * Builds one exercise's section (name/target/hint + its set rows) and drops
+ * it into the list. Shared by the assigned-workout render loop and by
+ * "+ Add Exercise" below — a client who finds their machine taken can log
+ * whatever they did instead, and it prefills/tracks history exactly like an
+ * assigned exercise would.
+ */
+function addExerciseSection(ctx, exercise, opts) {
+  const { clientSlug, workoutName, setRows, setCol, startingWeights } = ctx;
+  const isExtra = Boolean(opts && opts.isExtra);
+  const key = exercise.name.toLowerCase();
+  const historyWeight = mostRecentWeight(setRows, setCol, clientSlug, key);
+  const prefillWeight = historyWeight !== null ? historyWeight : (startingWeights[key] !== undefined ? startingWeights[key] : null);
+
+  const section = document.createElement("section");
+  section.className = "workout__exercise";
+  if (isExtra) section.classList.add("workout__exercise--extra");
+
+  const head = document.createElement("div");
+  head.className = "workout__exercise-head";
+
+  const name = document.createElement("h2");
+  name.className = "workout__exercise-name";
+  name.textContent = exercise.name;
+  head.appendChild(name);
+
+  const target = document.createElement("span");
+  target.className = "workout__exercise-target";
+  target.textContent = isExtra
+    ? "Extra"
+    : exercise.reps
+      ? `${exercise.sets} × ${exercise.reps}`
+      : `${exercise.sets} sets`;
+  head.appendChild(target);
+
+  section.appendChild(head);
+
+  const hint = document.createElement("p");
+  hint.className = "workout__exercise-hint";
+  hint.textContent = historyWeight !== null
+    ? `Last time: ${formatWeight(historyWeight)}kg`
+    : prefillWeight !== null
+      ? `Starting weight: ${formatWeight(prefillWeight)}kg`
+      : "New exercise — enter your starting weight";
+  section.appendChild(hint);
+
+  const setsWrap = document.createElement("div");
+  setsWrap.className = "workout__sets";
+  section.appendChild(setsWrap);
+
+  let setCount = 0;
+  function addSetRow() {
+    setCount++;
+    ctx.totalSets++;
+    const row = buildSetRow(clientSlug, workoutName, exercise, setCount, prefillWeight, historyWeight !== null, () => {
+      ctx.loggedSets++;
+      ctx.updateDoneState();
+    });
+    setsWrap.appendChild(row);
+  }
+
+  for (let i = 0; i < exercise.sets; i++) addSetRow();
+
+  if (isExtra) {
+    const addSetBtn = document.createElement("button");
+    addSetBtn.type = "button";
+    addSetBtn.className = "workout__add-set";
+    addSetBtn.textContent = "+ Add Set";
+    addSetBtn.addEventListener("click", () => {
+      addSetRow();
+      ctx.updateDoneState();
+    });
+    section.appendChild(addSetBtn);
+  }
+
+  ctx.list.insertBefore(section, ctx.addExerciseWrap);
+  return section;
+}
+
+/** "+ Add Exercise" — collapsed button that expands into a name field + confirm, for whatever the client ends up doing instead of what was planned. */
+function buildAddExerciseControl(ctx, exerciseNameOptions) {
+  const wrap = document.createElement("div");
+  wrap.className = "workout__add-exercise";
+
+  const toggleBtn = document.createElement("button");
+  toggleBtn.type = "button";
+  toggleBtn.className = "workout__add-exercise-toggle";
+  toggleBtn.textContent = "+ Add Exercise";
+  wrap.appendChild(toggleBtn);
+
+  const form = document.createElement("div");
+  form.className = "workout__add-exercise-form";
+  form.hidden = true;
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "workout__add-exercise-input";
+  input.placeholder = "Exercise name";
+  input.setAttribute("list", "extraExerciseOptions");
+  form.appendChild(input);
+
+  if (!document.getElementById("extraExerciseOptions")) {
+    const datalist = document.createElement("datalist");
+    datalist.id = "extraExerciseOptions";
+    for (const optName of exerciseNameOptions) {
+      const option = document.createElement("option");
+      option.value = optName;
+      datalist.appendChild(option);
+    }
+    document.body.appendChild(datalist);
+  }
+
+  const confirmBtn = document.createElement("button");
+  confirmBtn.type = "button";
+  confirmBtn.className = "workout__add-exercise-confirm";
+  confirmBtn.textContent = "Add";
+  form.appendChild(confirmBtn);
+
+  wrap.appendChild(form);
+
+  toggleBtn.addEventListener("click", () => {
+    form.hidden = false;
+    toggleBtn.hidden = true;
+    input.focus();
+  });
+
+  function submit() {
+    const exerciseName = input.value.trim();
+    if (!exerciseName) {
+      input.focus();
+      return;
+    }
+    addExerciseSection(ctx, { name: exerciseName, sets: 1, reps: "" }, { isExtra: true });
+    input.value = "";
+    form.hidden = true;
+    toggleBtn.hidden = false;
+  }
+
+  confirmBtn.addEventListener("click", submit);
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") submit();
+  });
+
+  return wrap;
+}
+
+function renderWorkout(clientSlug, workoutName, exercises, setRows, setCol, startingWeights, exerciseNameOptions) {
   els.status.hidden = true;
   els.list.innerHTML = "";
   els.list.hidden = false;
   els.pageTag.textContent = workoutName || "Today's Workout";
 
-  let totalSets = 0;
-  let loggedSets = 0;
-
-  function updateDoneState() {
-    const allDone = totalSets > 0 && loggedSets >= totalSets;
-    els.done.hidden = !allDone;
-    if (allDone) {
-      try {
-        localStorage.setItem(WORKOUT_COMPLETE_STORAGE_KEY, todayString());
-      } catch (err) {
-        // Storage unavailable — the card just won't auto-show as completed.
+  const ctx = {
+    clientSlug,
+    workoutName,
+    setRows,
+    setCol,
+    startingWeights,
+    list: els.list,
+    totalSets: 0,
+    loggedSets: 0,
+    addExerciseWrap: null,
+    updateDoneState() {
+      const allDone = ctx.totalSets > 0 && ctx.loggedSets >= ctx.totalSets;
+      els.done.hidden = !allDone;
+      if (allDone) {
+        try {
+          localStorage.setItem(WORKOUT_COMPLETE_STORAGE_KEY, todayString());
+        } catch (err) {
+          // Storage unavailable — the card just won't auto-show as completed.
+        }
       }
-    }
-  }
+    },
+  };
+
+  ctx.addExerciseWrap = buildAddExerciseControl(ctx, exerciseNameOptions || []);
+  els.list.appendChild(ctx.addExerciseWrap);
 
   for (const exercise of exercises) {
-    const key = exercise.name.toLowerCase();
-    const historyWeight = mostRecentWeight(setRows, setCol, clientSlug, key);
-    const prefillWeight = historyWeight !== null ? historyWeight : (startingWeights[key] !== undefined ? startingWeights[key] : null);
-
-    const section = document.createElement("section");
-    section.className = "workout__exercise";
-
-    const head = document.createElement("div");
-    head.className = "workout__exercise-head";
-
-    const name = document.createElement("h2");
-    name.className = "workout__exercise-name";
-    name.textContent = exercise.name;
-    head.appendChild(name);
-
-    const target = document.createElement("span");
-    target.className = "workout__exercise-target";
-    target.textContent = exercise.reps ? `${exercise.sets} × ${exercise.reps}` : `${exercise.sets} sets`;
-    head.appendChild(target);
-
-    section.appendChild(head);
-
-    const hint = document.createElement("p");
-    hint.className = "workout__exercise-hint";
-    hint.textContent = historyWeight !== null
-      ? `Last time: ${formatWeight(historyWeight)}kg`
-      : prefillWeight !== null
-        ? `Starting weight: ${formatWeight(prefillWeight)}kg`
-        : "New exercise — enter your starting weight";
-    section.appendChild(hint);
-
-    const setsWrap = document.createElement("div");
-    setsWrap.className = "workout__sets";
-
-    for (let setNumber = 1; setNumber <= exercise.sets; setNumber++) {
-      totalSets++;
-      const row = buildSetRow(clientSlug, workoutName, exercise, setNumber, prefillWeight, historyWeight !== null, () => {
-        loggedSets++;
-        updateDoneState();
-      });
-      setsWrap.appendChild(row);
-    }
-
-    section.appendChild(setsWrap);
-    els.list.appendChild(section);
+    addExerciseSection(ctx, exercise, { isExtra: false });
   }
 
-  updateDoneState();
+  ctx.updateDoneState();
 }
 
-function showPicker(clientSlug, workoutGroups, setRows, setCol, startingWeights) {
+function showPicker(clientSlug, workoutGroups, setRows, setCol, startingWeights, exerciseNameOptions) {
   els.status.hidden = true;
   els.list.hidden = true;
   els.done.hidden = true;
@@ -299,9 +412,9 @@ function showPicker(clientSlug, workoutGroups, setRows, setCol, startingWeights)
       els.backLink.href = "#";
       els.backLink.onclick = (event) => {
         event.preventDefault();
-        showPicker(clientSlug, workoutGroups, setRows, setCol, startingWeights);
+        showPicker(clientSlug, workoutGroups, setRows, setCol, startingWeights, exerciseNameOptions);
       };
-      renderWorkout(clientSlug, name, workoutGroups[name], setRows, setCol, startingWeights);
+      renderWorkout(clientSlug, name, workoutGroups[name], setRows, setCol, startingWeights, exerciseNameOptions);
     });
 
     els.pickerList.appendChild(button);
@@ -320,6 +433,7 @@ async function init() {
   let workoutGroups;
   let setRows, setCol;
   let startingWeights;
+  let exerciseNameOptions;
 
   try {
     const [workout, sets, exerciseDefaults] = await Promise.all([
@@ -352,10 +466,14 @@ async function init() {
     setCol = sets.col;
 
     startingWeights = {};
+    exerciseNameOptions = [];
     for (const row of exerciseDefaults.rows) {
-      const name = (row[exerciseDefaults.col.name] || "").trim().toLowerCase();
+      const rawName = (row[exerciseDefaults.col.name] || "").trim();
+      if (!rawName) continue;
+      exerciseNameOptions.push(rawName);
+      const name = rawName.toLowerCase();
       const weight = Number(row[exerciseDefaults.col.startingWeight]);
-      if (name && Number.isFinite(weight)) startingWeights[name] = weight;
+      if (Number.isFinite(weight)) startingWeights[name] = weight;
     }
   } catch (err) {
     showStatus("Couldn't load your workout. Check your connection and reopen.", true);
@@ -369,11 +487,11 @@ async function init() {
   }
 
   if (workoutNames.length === 1) {
-    renderWorkout(clientSlug, workoutNames[0], workoutGroups[workoutNames[0]], setRows, setCol, startingWeights);
+    renderWorkout(clientSlug, workoutNames[0], workoutGroups[workoutNames[0]], setRows, setCol, startingWeights, exerciseNameOptions);
     return;
   }
 
-  showPicker(clientSlug, workoutGroups, setRows, setCol, startingWeights);
+  showPicker(clientSlug, workoutGroups, setRows, setCol, startingWeights, exerciseNameOptions);
 }
 
 init();
