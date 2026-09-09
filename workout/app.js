@@ -37,10 +37,13 @@ if (!memberId) {
 
 const els = {
   pageTag: document.getElementById("pageTag"),
+  timer: document.getElementById("workoutTimer"),
+  timerValue: document.getElementById("workoutTimerValue"),
   picker: document.getElementById("workoutPicker"),
   pickerList: document.getElementById("workoutPickerList"),
   list: document.getElementById("exerciseList"),
   done: document.getElementById("workoutDone"),
+  doneText: document.querySelector(".workout__done-text"),
   status: document.getElementById("status"),
   backLink: document.getElementById("backLink"),
 };
@@ -54,6 +57,43 @@ function showStatus(message, isError) {
 function todayString() {
   const now = new Date();
   return `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
+}
+
+function formatElapsed(ms) {
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const mins = Math.floor((totalSeconds % 3600) / 60);
+  const secs = totalSeconds % 60;
+  const paddedMins = hours > 0 ? String(mins).padStart(2, "0") : String(mins);
+  const paddedSecs = String(secs).padStart(2, "0");
+  return hours > 0 ? `${hours}:${paddedMins}:${paddedSecs}` : `${paddedMins}:${paddedSecs}`;
+}
+
+/**
+ * Counts up from when the client opens their actual workout (not the
+ * picker) — based on wall-clock time each tick rather than counting ticks,
+ * so it stays accurate even if the tab is backgrounded and iOS throttles
+ * the interval.
+ */
+let workoutTimerInterval = null;
+let workoutTimerStart = null;
+
+function startWorkoutTimer() {
+  workoutTimerStart = Date.now();
+  els.timer.hidden = false;
+  els.timerValue.textContent = formatElapsed(0);
+  if (workoutTimerInterval) clearInterval(workoutTimerInterval);
+  workoutTimerInterval = setInterval(() => {
+    els.timerValue.textContent = formatElapsed(Date.now() - workoutTimerStart);
+  }, 1000);
+}
+
+function stopWorkoutTimer() {
+  if (workoutTimerInterval) {
+    clearInterval(workoutTimerInterval);
+    workoutTimerInterval = null;
+  }
+  return workoutTimerStart ? Date.now() - workoutTimerStart : 0;
 }
 
 /** Picks whichever logged row for this exercise has the latest timestamp/date — history can come back in any order from the sheet, and can span every named workout, not just the one open right now. */
@@ -346,6 +386,7 @@ function renderWorkout(clientSlug, workoutName, exercises, setRows, setCol, star
   els.list.innerHTML = "";
   els.list.hidden = false;
   els.pageTag.textContent = workoutName || "Today's Workout";
+  startWorkoutTimer();
 
   const ctx = {
     clientSlug,
@@ -361,6 +402,8 @@ function renderWorkout(clientSlug, workoutName, exercises, setRows, setCol, star
       const allDone = ctx.totalSets > 0 && ctx.loggedSets >= ctx.totalSets;
       els.done.hidden = !allDone;
       if (allDone) {
+        const elapsed = stopWorkoutTimer();
+        els.doneText.textContent = `Nice work — done in ${formatElapsed(elapsed)}. Head back to your card.`;
         try {
           localStorage.setItem(WORKOUT_COMPLETE_STORAGE_KEY, todayString());
         } catch (err) {
@@ -384,6 +427,8 @@ function showPicker(clientSlug, workoutGroups, setRows, setCol, startingWeights,
   els.status.hidden = true;
   els.list.hidden = true;
   els.done.hidden = true;
+  stopWorkoutTimer();
+  els.timer.hidden = true;
   els.pageTag.textContent = "Choose Your Workout";
   els.picker.hidden = false;
   els.pickerList.innerHTML = "";
