@@ -209,6 +209,7 @@ function fetchLoggedSets() {
           reps: findColumn(header, "Reps"),
           date: findColumn(header, "Date"),
           timestamp: findColumn(header, "Timestamp"),
+          notes: findColumn(header, "Notes"),
         };
         return { rows, col };
       });

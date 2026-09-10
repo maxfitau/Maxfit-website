@@ -58,15 +58,16 @@ let today = new Date();
 let viewYear = today.getFullYear();
 let viewMonth = today.getMonth(); // 0-indexed
 
-// dateKey -> { [workoutName]: { [exerciseName]: [{ setNumber, weight, reps }] } }
+// dateKey -> { [workoutName]: { notes, exercises: { [exerciseName]: [{ setNumber, weight, reps }] } } }
 let byDate = {};
 
-function addSet(dateKey, workoutName, exerciseName, setNumber, weight, reps) {
+function addSet(dateKey, workoutName, exerciseName, setNumber, weight, reps, notes) {
   if (!byDate[dateKey]) byDate[dateKey] = {};
   const wName = workoutName || "Workout";
-  if (!byDate[dateKey][wName]) byDate[dateKey][wName] = {};
-  if (!byDate[dateKey][wName][exerciseName]) byDate[dateKey][wName][exerciseName] = [];
-  byDate[dateKey][wName][exerciseName].push({ setNumber, weight, reps });
+  if (!byDate[dateKey][wName]) byDate[dateKey][wName] = { notes: "", exercises: {} };
+  if (!byDate[dateKey][wName].exercises[exerciseName]) byDate[dateKey][wName].exercises[exerciseName] = [];
+  byDate[dateKey][wName].exercises[exerciseName].push({ setNumber, weight, reps });
+  if (notes) byDate[dateKey][wName].notes = notes;
 }
 
 function renderCalendar() {
@@ -116,7 +117,14 @@ function showDetail(dateKey, year, month, day) {
     name.textContent = workoutName;
     section.appendChild(name);
 
-    const exercises = workouts[workoutName];
+    if (workouts[workoutName].notes) {
+      const notes = document.createElement("p");
+      notes.className = "calendar__detail-notes";
+      notes.textContent = workouts[workoutName].notes;
+      section.appendChild(notes);
+    }
+
+    const exercises = workouts[workoutName].exercises;
     for (const exerciseName of Object.keys(exercises)) {
       const sets = exercises[exerciseName].slice().sort((a, b) => a.setNumber - b.setNumber);
 
@@ -190,9 +198,10 @@ async function init() {
       const setNumber = Number(col.setNumber >= 0 ? r[col.setNumber] : NaN);
       const weight = Number(col.weight >= 0 ? r[col.weight] : NaN);
       const reps = Number(col.reps >= 0 ? r[col.reps] : NaN);
+      const notes = col.notes >= 0 ? String(r[col.notes] || "").trim() : "";
       if (!exerciseName || !Number.isFinite(weight) || !Number.isFinite(reps)) continue;
 
-      addSet(dateKey, workoutName, exerciseName, Number.isFinite(setNumber) ? setNumber : 0, weight, reps);
+      addSet(dateKey, workoutName, exerciseName, Number.isFinite(setNumber) ? setNumber : 0, weight, reps, notes);
     }
   } catch (err) {
     showStatus("Couldn't load your workout history. Check your connection and reopen.", true);

@@ -159,6 +159,14 @@
   margin: 0;
 }
 
+.calendar__detail-notes {
+  font-family: var(--font-body);
+  font-style: italic;
+  font-size: 13px;
+  color: var(--grey-light);
+  margin: -2px 0 0;
+}
+
 .calendar__detail-exercise {
   display: flex;
   flex-direction: column;

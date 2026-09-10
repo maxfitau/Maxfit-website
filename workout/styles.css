@@ -409,6 +409,43 @@ body {
   background: var(--red-dim);
 }
 
+.workout__notes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.workout__notes-label {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.workout__notes-input {
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--white);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  resize: vertical;
+  min-height: 56px;
+}
+
+.workout__notes-input::placeholder {
+  color: var(--dim);
+}
+
+.workout__notes-input:focus {
+  outline: none;
+  border-color: var(--red);
+}
+
 .workout__save-wrap {
   margin-top: 6px;
 }

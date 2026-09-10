@@ -88,7 +88,7 @@ function backfillTokens() {
 function setupWorkoutSheets() {
   getOrCreateSheetByName_(EXERCISES_SHEET_NAME, ["Name", "Default Starting Weight (kg)"]);
   getOrCreateSheetByName_(WORKOUT_EXERCISES_SHEET_NAME, ["Client", "Workout Name", "Order", "Exercise", "Target Sets", "Target Reps", "Days"]);
-  getOrCreateSheetByName_(LOGGED_SETS_SHEET_NAME, ["Client", "Workout Name", "Exercise", "Set Number", "Weight (kg)", "Reps", "Date", "Timestamp"]);
+  getOrCreateSheetByName_(LOGGED_SETS_SHEET_NAME, ["Client", "Workout Name", "Exercise", "Set Number", "Weight (kg)", "Reps", "Date", "Timestamp", "Notes"]);
   Logger.log("Workout sheets ready.");
 }
 
@@ -113,6 +113,27 @@ function addDaysColumnToWorkoutExercises() {
   }
   sheet.getRange(1, lastCol + 1).setValue("Days");
   Logger.log("Added Days column.");
+}
+
+/**
+ * One-time helper — run manually from the Apps Script editor. Adds the
+ * "Notes" column to an existing Logged Sets tab that predates it, same
+ * reasoning as addDaysColumnToWorkoutExercises above. Safe to re-run.
+ */
+function addNotesColumnToLoggedSets() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LOGGED_SETS_SHEET_NAME);
+  if (!sheet) {
+    Logger.log("No Logged Sets tab yet — run setupWorkoutSheets first.");
+    return;
+  }
+  const lastCol = sheet.getLastColumn();
+  const header = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  if (findColumn_(header, "Notes") >= 0) {
+    Logger.log("Notes column already exists.");
+    return;
+  }
+  sheet.getRange(1, lastCol + 1).setValue("Notes");
+  Logger.log("Added Notes column.");
 }
 
 /**
@@ -708,6 +729,7 @@ function handleSaveWorkoutSession_(payload) {
   const clientSlug = String(payload.clientSlug || "").trim().toLowerCase();
   const workoutName = String(payload.workoutName || "").trim();
   const sets = Array.isArray(payload.sets) ? payload.sets : [];
+  const notes = String(payload.notes || "").trim();
   if (!clientSlug || !sets.length) {
     return jsonResponse_({ status: "error", message: "Missing client or sets." });
   }
@@ -727,6 +749,7 @@ function handleSaveWorkoutSession_(payload) {
     reps: findColumn_(header, "Reps"),
     date: findColumn_(header, "Date"),
     timestamp: findColumn_(header, "Timestamp"),
+    notes: findColumn_(header, "Notes"),
   };
 
   const now = new Date();
@@ -761,6 +784,10 @@ function handleSaveWorkoutSession_(payload) {
     if (col.reps >= 0) rowValues[col.reps] = reps;
     if (col.date >= 0) rowValues[col.date] = todayStr;
     if (col.timestamp >= 0) rowValues[col.timestamp] = now;
+    // Repeated on every row of this save, same as Workout Name — a session
+    // note isn't per-set, but there's no separate per-session tab, so it
+    // rides along on each of that session's own rows instead.
+    if (col.notes >= 0) rowValues[col.notes] = notes;
 
     const key = exercise.toLowerCase() + "|" + setNumber;
     const existingRowNumber = rowNumberByKey[key];

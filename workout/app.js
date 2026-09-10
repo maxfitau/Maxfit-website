@@ -328,6 +328,26 @@ function buildAddExerciseControl(ctx, exerciseNameOptions) {
   return wrap;
 }
 
+/** Free-text notes for the whole session — how they're feeling, not tied to any one exercise. Rides along with every set in this same save, same as the workout name. */
+function buildNotesSection(ctx) {
+  const wrap = document.createElement("div");
+  wrap.className = "workout__notes";
+
+  const label = document.createElement("span");
+  label.className = "workout__notes-label";
+  label.textContent = "Notes";
+  wrap.appendChild(label);
+
+  const textarea = document.createElement("textarea");
+  textarea.className = "workout__notes-input";
+  textarea.placeholder = "e.g. slept bad, shoulder hurts, etc.";
+  textarea.rows = 2;
+  wrap.appendChild(textarea);
+
+  ctx.notesInput = textarea;
+  return wrap;
+}
+
 /**
  * Everything is editable up front — no per-set locking — and this one
  * button at the bottom submits the whole session together. Re-pressing it
@@ -368,7 +388,13 @@ function buildSaveButton(ctx) {
       const res = await fetch(APPS_SCRIPT_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" }, // avoids a CORS preflight
-        body: JSON.stringify({ action: "saveWorkoutSession", clientSlug: ctx.clientSlug, workoutName: ctx.workoutName, sets }),
+        body: JSON.stringify({
+          action: "saveWorkoutSession",
+          clientSlug: ctx.clientSlug,
+          workoutName: ctx.workoutName,
+          sets,
+          notes: ctx.notesInput ? ctx.notesInput.value.trim() : "",
+        }),
       });
       const result = await res.json();
       if (result.status !== "success") throw new Error("save failed");
@@ -410,6 +436,7 @@ function renderWorkout(clientSlug, workoutName, exercises, setRows, setCol, star
     addExerciseSection(ctx, exercise, { isExtra: false });
   }
 
+  els.list.appendChild(buildNotesSection(ctx));
   els.list.appendChild(buildSaveButton(ctx));
 }
 
