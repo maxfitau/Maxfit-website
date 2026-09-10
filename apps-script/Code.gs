@@ -87,9 +87,32 @@ function backfillTokens() {
  */
 function setupWorkoutSheets() {
   getOrCreateSheetByName_(EXERCISES_SHEET_NAME, ["Name", "Default Starting Weight (kg)"]);
-  getOrCreateSheetByName_(WORKOUT_EXERCISES_SHEET_NAME, ["Client", "Workout Name", "Order", "Exercise", "Target Sets", "Target Reps"]);
+  getOrCreateSheetByName_(WORKOUT_EXERCISES_SHEET_NAME, ["Client", "Workout Name", "Order", "Exercise", "Target Sets", "Target Reps", "Days"]);
   getOrCreateSheetByName_(LOGGED_SETS_SHEET_NAME, ["Client", "Workout Name", "Exercise", "Set Number", "Weight (kg)", "Reps", "Date", "Timestamp"]);
   Logger.log("Workout sheets ready.");
+}
+
+/**
+ * One-time helper — run manually from the Apps Script editor. Adds the
+ * "Days" column to an existing Workout Exercises tab that was created
+ * before that column existed (setupWorkoutSheets only creates a tab if it's
+ * missing entirely, it never adds columns to one that's already there).
+ * Safe to re-run — does nothing if the column already exists.
+ */
+function addDaysColumnToWorkoutExercises() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(WORKOUT_EXERCISES_SHEET_NAME);
+  if (!sheet) {
+    Logger.log("No Workout Exercises tab yet — run setupWorkoutSheets first.");
+    return;
+  }
+  const lastCol = sheet.getLastColumn();
+  const header = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  if (findColumn_(header, "Days") >= 0) {
+    Logger.log("Days column already exists.");
+    return;
+  }
+  sheet.getRange(1, lastCol + 1).setValue("Days");
+  Logger.log("Added Days column.");
 }
 
 /**
@@ -577,6 +600,7 @@ function handleAssignWorkout_(payload) {
   const clientSlug = String(payload.clientSlug || "").trim().toLowerCase();
   const workoutName = String(payload.workoutName || "").trim();
   const exercises = Array.isArray(payload.exercises) ? payload.exercises : [];
+  const days = Array.isArray(payload.days) ? payload.days.map((d) => String(d).trim()).filter(Boolean) : [];
   if (!clientSlug || !workoutName || !exercises.length) {
     return jsonResponse_({ status: "error", message: "Missing client, workout name, or exercises." });
   }
@@ -596,9 +620,15 @@ function handleAssignWorkout_(payload) {
     exercise: findColumn_(header, "Exercise"),
     sets: findColumn_(header, "Target Sets"),
     reps: findColumn_(header, "Target Reps"),
+    days: findColumn_(header, "Days"),
   };
 
   deleteMatchingRows_(sheet, lastRow, col.client, clientSlug, col.workoutName, workoutName);
+
+  // The same Days value is repeated on every exercise row of this workout
+  // — matches the existing pattern (Workout Name is repeated the same way)
+  // rather than needing a separate one-row-per-workout summary tab.
+  const daysStr = days.join(",");
 
   const newRows = exercises.map((ex, i) => {
     const row = new Array(header.length).fill("");
@@ -608,6 +638,7 @@ function handleAssignWorkout_(payload) {
     row[col.exercise] = String((ex && ex.name) || "").trim();
     row[col.sets] = Number(ex && ex.sets) || 0;
     row[col.reps] = String((ex && ex.reps) || "").trim();
+    if (col.days >= 0) row[col.days] = daysStr;
     return row;
   });
   sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, header.length).setValues(newRows);

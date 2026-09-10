@@ -180,6 +180,7 @@ function fetchWorkoutExercises() {
           exercise: findColumn(header, "Exercise"),
           sets: findColumn(header, "Target Sets"),
           reps: findColumn(header, "Target Reps"),
+          days: findColumn(header, "Days"),
         };
         return { rows, col };
       });

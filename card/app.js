@@ -305,11 +305,28 @@ function renderLoyalty(totalAttended) {
  * outcome, not an error, so this never throws — it just returns 0 and lets
  * render() fall through to whatever came before this feature existed.
  */
+const DAY_ABBR = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/**
+ * How many exercises are in this client's currently assigned workout, if
+ * any — this is what decides whether "Today's Workout" points at the new
+ * interactive logger or falls back to the legacy self-guided Doc link.
+ * Same defensive pattern as fetchTodaysWorkout: a client with no assigned
+ * workout yet (or the "Workout Exercises" tab not existing yet) is a normal
+ * outcome, not an error, so this never throws — it just returns 0 and lets
+ * render() fall through to whatever came before this feature existed.
+ *
+ * When a client has more than one named workout, todayName names whichever
+ * one the builder scheduled for today's weekday (its "Days" column) — but
+ * only when that's unambiguous (exactly one workout claims today); with
+ * zero or several matches there's no single right answer, so it's left
+ * null and the card falls back to letting them choose.
+ */
 async function assignedWorkoutSummary_(clientSlug) {
-  if (!clientSlug) return { count: 0, names: [] };
+  if (!clientSlug) return { count: 0, names: [], todayName: null };
   try {
     const { rows, col } = await fetchWorkoutExercises();
-    if (col.client < 0) return { count: 0, names: [] };
+    if (col.client < 0) return { count: 0, names: [], todayName: null };
     const mine = rows.filter((r) => String(r[col.client] || "").trim().toLowerCase() === clientSlug);
     const names = [
       ...new Set(
@@ -318,9 +335,23 @@ async function assignedWorkoutSummary_(clientSlug) {
           .filter(Boolean)
       ),
     ];
-    return { count: mine.length, names };
+
+    let todayName = null;
+    if (col.days >= 0) {
+      const todayAbbr = DAY_ABBR[new Date().getDay()];
+      const scheduledToday = names.filter((name) =>
+        mine.some((r) => {
+          if ((col.workoutName >= 0 ? String(r[col.workoutName] || "").trim() : "") !== name) return false;
+          const days = String(r[col.days] || "").split(",").map((d) => d.trim());
+          return days.includes(todayAbbr);
+        })
+      );
+      if (scheduledToday.length === 1) todayName = scheduledToday[0];
+    }
+
+    return { count: mine.length, names, todayName };
   } catch (err) {
-    return { count: 0, names: [] };
+    return { count: 0, names: [], todayName: null };
   }
 }
 
@@ -332,7 +363,7 @@ async function render(data) {
   renderQR(data.checkInUrl);
   renderLoyalty(data.totalAttended);
 
-  const { count: assignedCount, names: workoutNames } = await assignedWorkoutSummary_(data.clientSlug);
+  const { count: assignedCount, names: workoutNames, todayName } = await assignedWorkoutSummary_(data.clientSlug);
   if (assignedCount > 0) {
     els.upcomingLabel.textContent = "Today's Workout";
     els.upcomingLink.href = `../workout/?id=${encodeURIComponent(data.clientSlug)}`;
@@ -340,6 +371,8 @@ async function render(data) {
     els.upcomingValue.textContent =
       workoutNames.length === 1
         ? `${workoutNames[0]} — tap to start`
+        : todayName
+        ? `${todayName} — tap to start`
         : workoutNames.length > 1
         ? "Tap to choose your workout"
         : `${assignedCount} exercise${assignedCount === 1 ? "" : "s"} — tap to start`;

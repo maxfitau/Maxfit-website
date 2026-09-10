@@ -16,11 +16,14 @@
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbya8dm8g5eC4ldAbNYmMCccDCZ6K7encj_q4IzXtKMOpd007RMYhnR3_PJ2eL2gjVDQ/exec";
 const STAFF_PIN_STORAGE_KEY = "maxfitStaffPin"; // shared with checkin.js
 
+const DAY_ABBR = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
 const els = {
   clientSelect: document.getElementById("clientSelect"),
   workoutNameInput: document.getElementById("workoutNameInput"),
   workoutNameOptions: document.getElementById("workoutNameOptions"),
   chips: document.getElementById("existingWorkoutChips"),
+  daysPicker: document.getElementById("daysPicker"),
   rows: document.getElementById("exerciseRows"),
   addButton: document.getElementById("addExerciseButton"),
   pinRow: document.getElementById("pinRow"),
@@ -93,6 +96,32 @@ function clearRows() {
   els.rows.innerHTML = "";
 }
 
+/** One toggle chip per weekday, built once — schedules which day(s) this named workout is meant for, so the card can name it instead of just saying "tap to choose". Entirely optional: a workout with no days selected still works exactly as before. */
+function buildDaysPicker() {
+  els.daysPicker.innerHTML = "";
+  for (const day of DAY_ABBR) {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "builder__day";
+    chip.textContent = day[0];
+    chip.setAttribute("aria-label", day);
+    chip.dataset.day = day;
+    chip.addEventListener("click", () => chip.classList.toggle("builder__day--active"));
+    els.daysPicker.appendChild(chip);
+  }
+}
+
+function getSelectedDays() {
+  return Array.from(els.daysPicker.querySelectorAll(".builder__day--active")).map((chip) => chip.dataset.day);
+}
+
+function setSelectedDays(days) {
+  const wanted = new Set(days || []);
+  els.daysPicker.querySelectorAll(".builder__day").forEach((chip) => {
+    chip.classList.toggle("builder__day--active", wanted.has(chip.dataset.day));
+  });
+}
+
 async function loadClientList() {
   try {
     const { rows, col } = await fetchSheet();
@@ -144,12 +173,13 @@ async function loadClientWorkouts(clientSlug) {
         sets: parseSessions(r[col.sets], ""),
         reps: (r[col.reps] || "").trim(),
         order: parseSessions(r[col.order], 0),
+        days: (col.days >= 0 ? String(r[col.days] || "") : "").split(",").map((d) => d.trim()).filter(Boolean),
       }))
       .filter((ex) => ex.name && ex.workoutName);
 
     for (const ex of clientRows) {
       const key = ex.workoutName.toLowerCase();
-      if (!clientWorkouts[key]) clientWorkouts[key] = { name: ex.workoutName, exercises: [] };
+      if (!clientWorkouts[key]) clientWorkouts[key] = { name: ex.workoutName, exercises: [], days: ex.days };
       clientWorkouts[key].exercises.push(ex);
     }
     for (const key of Object.keys(clientWorkouts)) {
@@ -191,9 +221,11 @@ function loadNamedWorkoutIntoRows(workoutName) {
   clearRows();
   if (workout && workout.exercises.length) {
     workout.exercises.forEach(addRow);
+    setSelectedDays(workout.days);
     els.deleteButton.hidden = false;
   } else {
     addRow();
+    setSelectedDays([]);
     els.deleteButton.hidden = true;
   }
   renderChipsAndOptions();
@@ -202,6 +234,7 @@ function loadNamedWorkoutIntoRows(workoutName) {
 els.clientSelect.addEventListener("change", async () => {
   els.workoutNameInput.value = "";
   clearRows();
+  setSelectedDays([]);
   els.deleteButton.hidden = true;
   els.chips.innerHTML = "";
   await loadClientWorkouts(els.clientSelect.value);
@@ -249,6 +282,7 @@ els.saveButton.addEventListener("click", async () => {
     return;
   }
 
+  const days = getSelectedDays();
   const pin = currentPin();
   els.saveButton.disabled = true;
   els.saveButton.textContent = "Saving…";
@@ -260,7 +294,7 @@ els.saveButton.addEventListener("click", async () => {
     const res = await fetch(APPS_SCRIPT_URL, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" }, // avoids a CORS preflight
-      body: JSON.stringify({ action: "assignWorkout", pin, clientSlug, workoutName, exercises }),
+      body: JSON.stringify({ action: "assignWorkout", pin, clientSlug, workoutName, exercises, days }),
     });
     result = await res.json();
   } catch (err) {
@@ -341,6 +375,7 @@ els.deleteButton.addEventListener("click", async () => {
   els.deleteButton.hidden = true;
   els.workoutNameInput.value = "";
   clearRows();
+  setSelectedDays([]);
   addRow();
   await loadClientWorkouts(clientSlug);
   renderChipsAndOptions();
@@ -376,6 +411,7 @@ function rememberPin_(pin) {
   }
   els.pinRow.hidden = Boolean(rememberedPin);
 
+  buildDaysPicker();
   loadClientList();
   loadExerciseOptions();
   addRow();

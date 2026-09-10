@@ -48,6 +48,34 @@
   color: var(--white);
 }
 
+.builder__days {
+  display: flex;
+  gap: 6px;
+}
+
+.builder__day {
+  flex: 1;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--grey-light);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  height: 38px;
+  cursor: pointer;
+}
+
+.builder__day:active {
+  border-color: var(--red);
+}
+
+.builder__day--active {
+  background: var(--red);
+  border-color: var(--red);
+  color: var(--on-red);
+}
+
 .builder__delete {
   font-family: var(--font-head);
   font-weight: 700;
