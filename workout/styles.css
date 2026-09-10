@@ -39,20 +39,26 @@ body {
   background: rgba(255, 255, 255, 0.08);
 }
 
-.workout__history-link {
-  color: var(--grey-light);
+.workout__history-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  margin: -6px -6px -6px 0;
-  border-radius: 8px;
-  transition: background 0.15s var(--ease, ease);
+  gap: 10px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 14px;
+  color: var(--grey-light);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 16px;
 }
 
-.workout__history-link:active {
-  background: rgba(255, 255, 255, 0.08);
+.workout__history-btn:active {
+  border-color: var(--red);
+  color: var(--red);
 }
 
 .workout__timer {
