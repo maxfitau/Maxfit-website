@@ -534,7 +534,7 @@ function renderWorkout(clientSlug, workoutName, exercises, setRows, setCol, star
   els.list.appendChild(buildSaveButton(ctx));
 }
 
-function showPicker(clientSlug, workoutGroups, setRows, setCol, startingWeights, exerciseNameOptions) {
+function showPicker(clientSlug, workoutGroups, workoutNames, setRows, setCol, startingWeights, exerciseNameOptions) {
   els.status.hidden = true;
   els.list.hidden = true;
   els.done.hidden = true;
@@ -545,7 +545,7 @@ function showPicker(clientSlug, workoutGroups, setRows, setCol, startingWeights,
   els.pickerList.innerHTML = "";
   els.backLink.href = `../card/?id=${encodeURIComponent(memberId)}`;
 
-  for (const name of Object.keys(workoutGroups)) {
+  for (const name of workoutNames) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "workout__picker-option";
@@ -568,7 +568,7 @@ function showPicker(clientSlug, workoutGroups, setRows, setCol, startingWeights,
       els.backLink.href = "#";
       els.backLink.onclick = (event) => {
         event.preventDefault();
-        showPicker(clientSlug, workoutGroups, setRows, setCol, startingWeights, exerciseNameOptions);
+        showPicker(clientSlug, workoutGroups, workoutNames, setRows, setCol, startingWeights, exerciseNameOptions);
       };
       renderWorkout(clientSlug, name, workoutGroups[name], setRows, setCol, startingWeights, exerciseNameOptions);
     });
@@ -588,6 +588,7 @@ async function init() {
   const clientSlug = slugify(memberId);
 
   let workoutGroups;
+  let workoutOrderByName;
   let setRows, setCol;
   let startingWeights;
   let exerciseNameOptions;
@@ -607,13 +608,18 @@ async function init() {
         sets: parseSessions(r[workout.col.sets], 0),
         reps: (r[workout.col.reps] || "").trim(),
         order: parseSessions(r[workout.col.order], 0),
+        workoutOrder: workout.col.workoutOrder >= 0 ? Number(r[workout.col.workoutOrder]) : NaN,
       }))
       .filter((ex) => ex.name && ex.sets > 0);
 
     workoutGroups = {};
+    workoutOrderByName = {};
     for (const ex of clientExercises) {
       if (!workoutGroups[ex.workoutName]) workoutGroups[ex.workoutName] = [];
       workoutGroups[ex.workoutName].push(ex);
+      if (Number.isFinite(ex.workoutOrder) && workoutOrderByName[ex.workoutName] === undefined) {
+        workoutOrderByName[ex.workoutName] = ex.workoutOrder;
+      }
     }
     for (const name of Object.keys(workoutGroups)) {
       workoutGroups[name].sort((a, b) => a.order - b.order);
@@ -637,7 +643,9 @@ async function init() {
     return;
   }
 
-  const workoutNames = Object.keys(workoutGroups);
+  const workoutNames = Object.keys(workoutGroups).sort(
+    (a, b) => (workoutOrderByName[a] ?? Infinity) - (workoutOrderByName[b] ?? Infinity)
+  );
   if (!workoutNames.length) {
     showStatus("No workout assigned yet — check with Max.", false);
     return;
@@ -648,7 +656,7 @@ async function init() {
     return;
   }
 
-  showPicker(clientSlug, workoutGroups, setRows, setCol, startingWeights, exerciseNameOptions);
+  showPicker(clientSlug, workoutGroups, workoutNames, setRows, setCol, startingWeights, exerciseNameOptions);
 }
 
 init();

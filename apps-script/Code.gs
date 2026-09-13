@@ -87,7 +87,7 @@ function backfillTokens() {
  */
 function setupWorkoutSheets() {
   getOrCreateSheetByName_(EXERCISES_SHEET_NAME, ["Name", "Default Starting Weight (kg)"]);
-  getOrCreateSheetByName_(WORKOUT_EXERCISES_SHEET_NAME, ["Client", "Workout Name", "Order", "Exercise", "Target Sets", "Target Reps", "Days"]);
+  getOrCreateSheetByName_(WORKOUT_EXERCISES_SHEET_NAME, ["Client", "Workout Name", "Order", "Exercise", "Target Sets", "Target Reps", "Days", "Workout Order"]);
   getOrCreateSheetByName_(LOGGED_SETS_SHEET_NAME, ["Client", "Workout Name", "Exercise", "Set Number", "Weight (kg)", "Reps", "Date", "Timestamp", "Notes"]);
   Logger.log("Workout sheets ready.");
 }
@@ -113,6 +113,29 @@ function addDaysColumnToWorkoutExercises() {
   }
   sheet.getRange(1, lastCol + 1).setValue("Days");
   Logger.log("Added Days column.");
+}
+
+/**
+ * One-time helper — run manually from the Apps Script editor. Adds the
+ * "Workout Order" column an existing Workout Exercises tab predates —
+ * lets the client card / builder chips show workouts in whatever order
+ * you've dragged them into, instead of an arbitrary sheet order. Safe to
+ * re-run.
+ */
+function addWorkoutOrderColumnToWorkoutExercises() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(WORKOUT_EXERCISES_SHEET_NAME);
+  if (!sheet) {
+    Logger.log("No Workout Exercises tab yet — run setupWorkoutSheets first.");
+    return;
+  }
+  const lastCol = sheet.getLastColumn();
+  const header = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  if (findColumn_(header, "Workout Order") >= 0) {
+    Logger.log("Workout Order column already exists.");
+    return;
+  }
+  sheet.getRange(1, lastCol + 1).setValue("Workout Order");
+  Logger.log("Added Workout Order column.");
 }
 
 /**
@@ -213,6 +236,9 @@ function doPost(e) {
   }
   if (action === "assignWorkout") {
     return handleAssignWorkout_(payload);
+  }
+  if (action === "reorderWorkouts") {
+    return handleReorderWorkouts_(payload);
   }
   if (action === "deleteWorkout") {
     return handleDeleteWorkout_(payload);
@@ -642,13 +668,34 @@ function handleAssignWorkout_(payload) {
     sets: findColumn_(header, "Target Sets"),
     reps: findColumn_(header, "Target Reps"),
     days: findColumn_(header, "Days"),
+    workoutOrder: findColumn_(header, "Workout Order"),
   };
+
+  // A resave keeps this workout's existing position in the chip/picker
+  // order; a genuinely new workout goes on the end (one past whatever the
+  // client's highest workout order currently is), rather than defaulting
+  // to 0 and jumping to the front.
+  let existingWorkoutOrder = null;
+  let maxWorkoutOrder = -1;
+  if (col.workoutOrder >= 0 && lastRow >= 2) {
+    const allRows = sheet.getRange(2, 1, lastRow - 1, header.length).getValues();
+    for (const r of allRows) {
+      if (String(r[col.client] || "").trim().toLowerCase() !== clientSlug) continue;
+      const orderVal = Number(r[col.workoutOrder]);
+      if (Number.isFinite(orderVal) && orderVal > maxWorkoutOrder) maxWorkoutOrder = orderVal;
+      if (existingWorkoutOrder === null && Number.isFinite(orderVal) && String(r[col.workoutName] || "").trim() === workoutName) {
+        existingWorkoutOrder = orderVal;
+      }
+    }
+  }
+  const workoutOrderValue = existingWorkoutOrder !== null ? existingWorkoutOrder : maxWorkoutOrder + 1;
 
   deleteMatchingRows_(sheet, lastRow, col.client, clientSlug, col.workoutName, workoutName);
 
-  // The same Days value is repeated on every exercise row of this workout
-  // — matches the existing pattern (Workout Name is repeated the same way)
-  // rather than needing a separate one-row-per-workout summary tab.
+  // The same Days/Workout Order values are repeated on every exercise row
+  // of this workout — matches the existing pattern (Workout Name is
+  // repeated the same way) rather than needing a separate one-row-per-
+  // workout summary tab.
   const daysStr = days.join(",");
 
   const newRows = exercises.map((ex, i) => {
@@ -660,9 +707,63 @@ function handleAssignWorkout_(payload) {
     row[col.sets] = Number(ex && ex.sets) || 0;
     row[col.reps] = String((ex && ex.reps) || "").trim();
     if (col.days >= 0) row[col.days] = daysStr;
+    if (col.workoutOrder >= 0) row[col.workoutOrder] = workoutOrderValue;
     return row;
   });
   sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, header.length).setValues(newRows);
+
+  return jsonResponse_({ status: "success" });
+}
+
+/**
+ * Persists the order the coach dragged a client's workout chips into —
+ * every row of each named workout gets that workout's new index written
+ * to "Workout Order", so the client card and picker (and the builder's own
+ * chips, next time they're loaded) all show them in the same order.
+ */
+function handleReorderWorkouts_(payload) {
+  if (!checkPin_(payload.pin)) {
+    return jsonResponse_({ status: "unauthorized" });
+  }
+
+  const clientSlug = String(payload.clientSlug || "").trim().toLowerCase();
+  const order = Array.isArray(payload.order) ? payload.order.map((n) => String(n).trim()).filter(Boolean) : [];
+  if (!clientSlug || !order.length) {
+    return jsonResponse_({ status: "error", message: "Missing client or order." });
+  }
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(WORKOUT_EXERCISES_SHEET_NAME);
+  if (!sheet) {
+    return jsonResponse_({ status: "error", message: "Run setupWorkoutSheets first." });
+  }
+
+  const lastRow = sheet.getLastRow();
+  const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const col = {
+    client: findColumn_(header, "Client"),
+    workoutName: findColumn_(header, "Workout Name"),
+    workoutOrder: findColumn_(header, "Workout Order"),
+  };
+  if (col.workoutOrder < 0) {
+    return jsonResponse_({ status: "error", message: "Run addWorkoutOrderColumnToWorkoutExercises first." });
+  }
+  if (lastRow < 2) {
+    return jsonResponse_({ status: "success" });
+  }
+
+  const orderIndex = {};
+  order.forEach((name, i) => {
+    orderIndex[name.toLowerCase()] = i;
+  });
+
+  const values = sheet.getRange(2, 1, lastRow - 1, header.length).getValues();
+  for (let i = 0; i < values.length; i++) {
+    const row = values[i];
+    if (String(row[col.client] || "").trim().toLowerCase() !== clientSlug) continue;
+    const idx = orderIndex[String(row[col.workoutName] || "").trim().toLowerCase()];
+    if (idx === undefined) continue;
+    sheet.getRange(i + 2, col.workoutOrder + 1).setValue(idx);
+  }
 
   return jsonResponse_({ status: "success" });
 }

@@ -78,31 +78,11 @@ function addRow(exercise) {
   repsInput.placeholder = "Reps";
   repsInput.value = (exercise && exercise.reps) || "";
 
-  const moveWrap = document.createElement("div");
-  moveWrap.className = "builder__row-move";
-
-  const upButton = document.createElement("button");
-  upButton.type = "button";
-  upButton.className = "builder__row-move-btn";
-  upButton.textContent = "▲";
-  upButton.setAttribute("aria-label", "Move exercise up");
-  upButton.addEventListener("click", () => {
-    const prev = row.previousElementSibling;
-    if (prev) els.rows.insertBefore(row, prev);
-  });
-
-  const downButton = document.createElement("button");
-  downButton.type = "button";
-  downButton.className = "builder__row-move-btn";
-  downButton.textContent = "▼";
-  downButton.setAttribute("aria-label", "Move exercise down");
-  downButton.addEventListener("click", () => {
-    const next = row.nextElementSibling;
-    if (next) els.rows.insertBefore(next, row);
-  });
-
-  moveWrap.appendChild(upButton);
-  moveWrap.appendChild(downButton);
+  const handle = document.createElement("div");
+  handle.className = "builder__row-handle";
+  handle.textContent = "⠿";
+  handle.setAttribute("aria-label", "Drag to reorder");
+  makeRowDraggable(row, handle);
 
   const removeButton = document.createElement("button");
   removeButton.type = "button";
@@ -114,9 +94,43 @@ function addRow(exercise) {
   row.appendChild(nameInput);
   row.appendChild(setsInput);
   row.appendChild(repsInput);
-  row.appendChild(moveWrap);
+  row.appendChild(handle);
   row.appendChild(removeButton);
   els.rows.appendChild(row);
+}
+
+/**
+ * Press-and-drag on the grip handle to reorder exercise rows — driven by
+ * Pointer Events (not native HTML5 drag-and-drop) so it works the same on
+ * touch and mouse. elementFromPoint finds whichever row the pointer is
+ * currently over; the dragged row hops before/after it depending on which
+ * half of that row the pointer is on.
+ */
+function makeRowDraggable(row, handle) {
+  handle.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    handle.setPointerCapture(event.pointerId);
+    row.classList.add("builder__row--dragging");
+
+    function onMove(moveEvent) {
+      const target = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY)?.closest(".builder__row");
+      if (!target || target === row || target.parentElement !== els.rows) return;
+      const rect = target.getBoundingClientRect();
+      const before = moveEvent.clientY < rect.top + rect.height / 2;
+      els.rows.insertBefore(row, before ? target : target.nextSibling);
+    }
+
+    function onUp() {
+      row.classList.remove("builder__row--dragging");
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", onUp);
+      handle.removeEventListener("pointercancel", onUp);
+    }
+
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", onUp);
+    handle.addEventListener("pointercancel", onUp);
+  });
 }
 
 function clearRows() {
@@ -201,12 +215,15 @@ async function loadClientWorkouts(clientSlug) {
         reps: (r[col.reps] || "").trim(),
         order: parseSessions(r[col.order], 0),
         days: (col.days >= 0 ? String(r[col.days] || "") : "").split(",").map((d) => d.trim()).filter(Boolean),
+        workoutOrder: col.workoutOrder >= 0 ? Number(r[col.workoutOrder]) : NaN,
       }))
       .filter((ex) => ex.name && ex.workoutName);
 
     for (const ex of clientRows) {
       const key = ex.workoutName.toLowerCase();
-      if (!clientWorkouts[key]) clientWorkouts[key] = { name: ex.workoutName, exercises: [], days: ex.days };
+      if (!clientWorkouts[key]) {
+        clientWorkouts[key] = { name: ex.workoutName, exercises: [], days: ex.days, order: ex.workoutOrder };
+      }
       clientWorkouts[key].exercises.push(ex);
     }
     for (const key of Object.keys(clientWorkouts)) {
@@ -222,24 +239,115 @@ function renderChipsAndOptions() {
   els.workoutNameOptions.innerHTML = "";
 
   const currentName = els.workoutNameInput.value.trim().toLowerCase();
-  for (const key of Object.keys(clientWorkouts)) {
+  const sortedKeys = Object.keys(clientWorkouts).sort(
+    (a, b) => (Number.isFinite(clientWorkouts[a].order) ? clientWorkouts[a].order : Infinity)
+      - (Number.isFinite(clientWorkouts[b].order) ? clientWorkouts[b].order : Infinity)
+  );
+
+  for (const key of sortedKeys) {
     const workout = clientWorkouts[key];
 
     const option = document.createElement("option");
     option.value = workout.name;
     els.workoutNameOptions.appendChild(option);
 
-    const chip = document.createElement("button");
-    chip.type = "button";
-    chip.className = "builder__chip";
-    if (key === currentName) chip.classList.add("builder__chip--active");
-    chip.textContent = workout.name;
-    chip.addEventListener("click", () => {
-      els.workoutNameInput.value = workout.name;
-      loadNamedWorkoutIntoRows(workout.name);
-    });
-    els.chips.appendChild(chip);
+    els.chips.appendChild(buildChip(workout, key === currentName));
   }
+}
+
+/**
+ * One workout-name chip — tap to load it for editing, or press-and-drag to
+ * reorder it among the client's other workouts (same pointer-driven
+ * dragging as the exercise rows below). A drag that never moves past a
+ * small threshold is treated as a plain tap so the two don't conflict.
+ */
+function buildChip(workout, isActive) {
+  const chip = document.createElement("button");
+  chip.type = "button";
+  chip.className = "builder__chip";
+  if (isActive) chip.classList.add("builder__chip--active");
+  chip.textContent = workout.name;
+  chip.dataset.workoutName = workout.name;
+
+  const DRAG_THRESHOLD = 6;
+
+  chip.addEventListener("pointerdown", (event) => {
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let dragging = false;
+    chip.setPointerCapture(event.pointerId);
+
+    function onMove(moveEvent) {
+      if (!dragging) {
+        if (Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) < DRAG_THRESHOLD) return;
+        dragging = true;
+        chip.classList.add("builder__chip--dragging");
+      }
+      const target = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY)?.closest(".builder__chip");
+      if (!target || target === chip || target.parentElement !== els.chips) return;
+      const rect = target.getBoundingClientRect();
+      const before = moveEvent.clientX < rect.left + rect.width / 2;
+      els.chips.insertBefore(chip, before ? target : target.nextSibling);
+    }
+
+    function onUp() {
+      chip.removeEventListener("pointermove", onMove);
+      chip.removeEventListener("pointerup", onUp);
+      chip.removeEventListener("pointercancel", onUp);
+      if (dragging) {
+        chip.classList.remove("builder__chip--dragging");
+        persistChipOrder_();
+      } else {
+        els.workoutNameInput.value = workout.name;
+        loadNamedWorkoutIntoRows(workout.name);
+      }
+    }
+
+    chip.addEventListener("pointermove", onMove);
+    chip.addEventListener("pointerup", onUp);
+    chip.addEventListener("pointercancel", onUp);
+  });
+
+  return chip;
+}
+
+async function persistChipOrder_() {
+  const clientSlug = els.clientSelect.value;
+  if (!clientSlug) return;
+
+  const order = Array.from(els.chips.querySelectorAll(".builder__chip")).map((chip) => chip.dataset.workoutName);
+  const pin = currentPin();
+
+  let result;
+  try {
+    const res = await fetch(APPS_SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action: "reorderWorkouts", pin, clientSlug, order }),
+    });
+    result = await res.json();
+  } catch (err) {
+    showError("Couldn't reach the server — check your connection and try again.");
+    return;
+  }
+
+  if (result.status === "unauthorized") {
+    handleUnauthorized_();
+    return;
+  }
+  if (result.status !== "success") {
+    showError(result.message || "Couldn't save the new order — try again.");
+    return;
+  }
+
+  rememberPin_(pin);
+  // Keep clientWorkouts' own order values in sync with what's now on the
+  // sheet, so a later renderChipsAndOptions() (e.g. after saving an edit)
+  // doesn't undo the drag by re-sorting on stale data.
+  order.forEach((name, i) => {
+    const key = name.toLowerCase();
+    if (clientWorkouts[key]) clientWorkouts[key].order = i;
+  });
 }
 
 function loadNamedWorkoutIntoRows(workoutName) {

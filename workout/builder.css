@@ -40,12 +40,19 @@
   border-radius: 999px;
   padding: 6px 12px;
   cursor: pointer;
+  touch-action: none; /* a touch-drag reorders the chip instead of scrolling the page */
+  user-select: none;
 }
 
 .builder__chip:active,
 .builder__chip--active {
   border-color: var(--red);
   color: var(--white);
+}
+
+.builder__chip--dragging {
+  opacity: 0.5;
+  border-color: var(--red);
 }
 
 .builder__days {
@@ -151,28 +158,31 @@
   color: var(--red);
 }
 
-.builder__row-move {
+.builder__row-handle {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
   height: 40px;
-}
-
-.builder__row-move-btn {
-  flex: 1;
-  font-size: 9px;
-  line-height: 1;
+  font-size: 16px;
+  letter-spacing: -1px;
   color: var(--dim);
   background: var(--bg-card);
   border: 1px solid var(--line);
-  border-radius: 4px;
-  padding: 0;
-  cursor: pointer;
+  border-radius: var(--radius-sm);
+  cursor: grab;
+  touch-action: none; /* otherwise a touch-drag tries to scroll the page instead of reordering */
+  user-select: none;
 }
 
-.builder__row-move-btn:active {
-  color: var(--red);
+.builder__row--dragging {
+  opacity: 0.5;
+}
+
+.builder__row--dragging .builder__row-handle {
+  cursor: grabbing;
   border-color: var(--red);
+  color: var(--red);
 }
 
 .builder__add {
