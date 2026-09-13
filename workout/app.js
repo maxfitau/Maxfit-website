@@ -97,9 +97,22 @@ function stopWorkoutTimer() {
   return workoutTimerStart ? Date.now() - workoutTimerStart : 0;
 }
 
-/** Picks whichever logged row for this exercise has the latest timestamp/date — history can come back in any order from the sheet, and can span every named workout, not just the one open right now. */
-function mostRecentWeight(setRows, col, clientSlug, exerciseName) {
-  let best = null;
+/**
+ * Finds this client's most recent SESSION that included this exercise —
+ * "session" meaning every row sharing the same timestamp, since one Save
+ * writes every set of that visit with an identical one. Deliberately not
+ * scoped to the workout currently open: a client who does Bench Press under
+ * both "Push" and "Upper" should see the same last-session numbers either
+ * way, since it's the same lift regardless of which named workout it's
+ * filed under.
+ *
+ * Returns a Map of set number -> { weight, reps } for that one session, or
+ * null if this exercise has never been logged before.
+ */
+function mostRecentSessionSets(setRows, col, clientSlug, exerciseName) {
+  let bestWhen = -Infinity;
+  let bestRows = [];
+
   for (const row of setRows) {
     if (String(row[col.client] || "").trim().toLowerCase() !== clientSlug) continue;
     if (String(row[col.exercise] || "").trim().toLowerCase() !== exerciseName) continue;
@@ -110,11 +123,25 @@ function mostRecentWeight(setRows, col, clientSlug, exerciseName) {
     const rawWhen = (col.timestamp >= 0 && row[col.timestamp]) || (col.date >= 0 && row[col.date]) || "";
     const when = Date.parse(rawWhen) || 0;
 
-    if (!best || when >= best.when) {
-      best = { weight, when };
+    if (when > bestWhen) {
+      bestWhen = when;
+      bestRows = [row];
+    } else if (when === bestWhen) {
+      bestRows.push(row);
     }
   }
-  return best ? best.weight : null;
+
+  if (!bestRows.length) return null;
+
+  const bySetNumber = new Map();
+  for (const row of bestRows) {
+    const setNumber = Number(row[col.setNumber]);
+    const weight = Number(row[col.weight]);
+    if (!Number.isFinite(setNumber) || !Number.isFinite(weight)) continue;
+    const reps = Number(row[col.reps]);
+    bySetNumber.set(setNumber, { weight, reps: Number.isFinite(reps) ? reps : null });
+  }
+  return bySetNumber.size ? bySetNumber : null;
 }
 
 function formatWeight(n) {
@@ -127,7 +154,7 @@ function formatWeight(n) {
  * the bottom can walk every row and submit the whole session in one go,
  * instead of each row locking itself in with its own submit.
  */
-function buildSetRow(exercise, setNumber, prefillWeight, isFromHistory) {
+function buildSetRow(exercise, setNumber, prefillWeight, prefillReps, isFromHistory) {
   const row = document.createElement("div");
   row.className = "workout__set";
   row.dataset.exercise = exercise.name;
@@ -183,7 +210,13 @@ function buildSetRow(exercise, setNumber, prefillWeight, isFromHistory) {
   repsInput.type = "number";
   repsInput.inputMode = "numeric";
   repsInput.className = "workout__reps-input";
-  repsInput.placeholder = exercise.reps || "reps";
+  if (prefillReps !== null && prefillReps !== undefined) {
+    repsInput.value = String(prefillReps);
+    if (isFromHistory) repsInput.classList.add("workout__reps-input--prefilled");
+  } else {
+    repsInput.placeholder = exercise.reps || "reps";
+  }
+  repsInput.addEventListener("input", () => repsInput.classList.remove("workout__reps-input--prefilled"));
   row.appendChild(repsInput);
 
   return row;
@@ -200,7 +233,10 @@ function addExerciseSection(ctx, exercise, opts) {
   const { clientSlug, workoutName, setRows, setCol, startingWeights } = ctx;
   const isExtra = Boolean(opts && opts.isExtra);
   const key = exercise.name.toLowerCase();
-  const historyWeight = mostRecentWeight(setRows, setCol, clientSlug, key);
+  const historySets = mostRecentSessionSets(setRows, setCol, clientSlug, key);
+  const maxHistSetNumber = historySets ? Math.max(...historySets.keys()) : 0;
+  const firstSetHistory = historySets ? historySets.get(1) : null;
+  const historyWeight = firstSetHistory ? firstSetHistory.weight : null;
   const prefillWeight = historyWeight !== null ? historyWeight : (startingWeights[key] !== undefined ? startingWeights[key] : null);
 
   const section = document.createElement("section");
@@ -229,7 +265,7 @@ function addExerciseSection(ctx, exercise, opts) {
   const hint = document.createElement("p");
   hint.className = "workout__exercise-hint";
   hint.textContent = historyWeight !== null
-    ? `Last time: ${formatWeight(historyWeight)}kg`
+    ? `Last time: ${formatWeight(historyWeight)}kg${Number.isFinite(firstSetHistory.reps) ? ` × ${firstSetHistory.reps}` : ""}`
     : prefillWeight !== null
       ? `Starting weight: ${formatWeight(prefillWeight)}kg`
       : "New exercise — enter your starting weight";
@@ -242,7 +278,14 @@ function addExerciseSection(ctx, exercise, opts) {
   let setCount = 0;
   function addSetRow() {
     setCount++;
-    const row = buildSetRow(exercise, setCount, prefillWeight, historyWeight !== null);
+    // Set-for-set against last session where possible (today's Set 2 gets
+    // last time's Set 2); a set beyond how many they did last time falls
+    // back to repeating the last set of that session rather than going in
+    // blind, since that's the closest known data point.
+    const hist = historySets && (historySets.get(setCount) || historySets.get(maxHistSetNumber));
+    const rowPrefillWeight = hist ? hist.weight : prefillWeight;
+    const rowPrefillReps = hist ? hist.reps : null;
+    const row = buildSetRow(exercise, setCount, rowPrefillWeight, rowPrefillReps, Boolean(hist));
     setsWrap.appendChild(row);
   }
 

@@ -307,6 +307,11 @@ body {
   font-size: 12px;
 }
 
+.workout__reps-input--prefilled {
+  color: var(--dim);
+  font-weight: 600;
+}
+
 .workout__reps-input:focus {
   outline: none;
   border-color: var(--red);
