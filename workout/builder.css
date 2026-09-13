@@ -107,7 +107,7 @@
 
 .builder__row {
   display: grid;
-  grid-template-columns: 1fr 52px 76px 30px;
+  grid-template-columns: 1fr 52px 76px 26px 30px;
   gap: 8px;
   align-items: center;
 }
@@ -149,6 +149,30 @@
 
 .builder__row-remove:active {
   color: var(--red);
+}
+
+.builder__row-move {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  height: 40px;
+}
+
+.builder__row-move-btn {
+  flex: 1;
+  font-size: 9px;
+  line-height: 1;
+  color: var(--dim);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.builder__row-move-btn:active {
+  color: var(--red);
+  border-color: var(--red);
 }
 
 .builder__add {
@@ -203,6 +227,6 @@
 
 @media (max-width: 360px) {
   .builder__row {
-    grid-template-columns: 1fr 44px 64px 26px;
+    grid-template-columns: 1fr 44px 64px 22px 26px;
   }
 }

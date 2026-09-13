@@ -78,6 +78,32 @@ function addRow(exercise) {
   repsInput.placeholder = "Reps";
   repsInput.value = (exercise && exercise.reps) || "";
 
+  const moveWrap = document.createElement("div");
+  moveWrap.className = "builder__row-move";
+
+  const upButton = document.createElement("button");
+  upButton.type = "button";
+  upButton.className = "builder__row-move-btn";
+  upButton.textContent = "▲";
+  upButton.setAttribute("aria-label", "Move exercise up");
+  upButton.addEventListener("click", () => {
+    const prev = row.previousElementSibling;
+    if (prev) els.rows.insertBefore(row, prev);
+  });
+
+  const downButton = document.createElement("button");
+  downButton.type = "button";
+  downButton.className = "builder__row-move-btn";
+  downButton.textContent = "▼";
+  downButton.setAttribute("aria-label", "Move exercise down");
+  downButton.addEventListener("click", () => {
+    const next = row.nextElementSibling;
+    if (next) els.rows.insertBefore(next, row);
+  });
+
+  moveWrap.appendChild(upButton);
+  moveWrap.appendChild(downButton);
+
   const removeButton = document.createElement("button");
   removeButton.type = "button";
   removeButton.className = "builder__row-remove";
@@ -88,6 +114,7 @@ function addRow(exercise) {
   row.appendChild(nameInput);
   row.appendChild(setsInput);
   row.appendChild(repsInput);
+  row.appendChild(moveWrap);
   row.appendChild(removeButton);
   els.rows.appendChild(row);
 }
