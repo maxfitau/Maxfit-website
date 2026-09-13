@@ -149,6 +149,47 @@ function formatWeight(n) {
 }
 
 /**
+ * Every exercise from the client's single most recent logged session,
+ * across every workout — used so an "extra" exercise they added on the fly
+ * (machine taken, out of time, whatever) automatically shows up again the
+ * next time they open a workout, instead of only ever existing if they
+ * re-add it themselves through "+ Add Exercise". Naturally self-limiting:
+ * once they log a newer session, this points at that one instead, so a
+ * one-off extra only ever resurfaces the one time.
+ */
+function mostRecentSessionExercises(setRows, col, clientSlug) {
+  let bestWhen = -Infinity;
+  let bestRows = [];
+
+  for (const row of setRows) {
+    if (String(row[col.client] || "").trim().toLowerCase() !== clientSlug) continue;
+    const rawWhen = (col.timestamp >= 0 && row[col.timestamp]) || (col.date >= 0 && row[col.date]) || "";
+    const when = Date.parse(rawWhen) || 0;
+    if (!when) continue;
+
+    if (when > bestWhen) {
+      bestWhen = when;
+      bestRows = [row];
+    } else if (when === bestWhen) {
+      bestRows.push(row);
+    }
+  }
+
+  const byExercise = new Map(); // nameLower -> { name, maxSetNumber }
+  for (const row of bestRows) {
+    const name = (col.exercise >= 0 ? row[col.exercise] : "").trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    const setNumber = Number(col.setNumber >= 0 ? row[col.setNumber] : NaN);
+
+    if (!byExercise.has(key)) byExercise.set(key, { name, maxSetNumber: 0 });
+    const entry = byExercise.get(key);
+    if (Number.isFinite(setNumber) && setNumber > entry.maxSetNumber) entry.maxSetNumber = setNumber;
+  }
+  return byExercise;
+}
+
+/**
  * A set row is just two editable fields now — weight and reps — tagged with
  * which exercise/set they belong to so the single "Save Workout" button at
  * the bottom can walk every row and submit the whole session in one go,
@@ -477,6 +518,16 @@ function renderWorkout(clientSlug, workoutName, exercises, setRows, setCol, star
 
   for (const exercise of exercises) {
     addExerciseSection(ctx, exercise, { isExtra: false });
+  }
+
+  // Anything they did last session that isn't actually on today's plan
+  // carries over automatically — same as if they'd re-typed it into
+  // "+ Add Exercise" themselves, weight/reps and all.
+  const assignedKeys = new Set(exercises.map((ex) => ex.name.toLowerCase()));
+  const lastSessionExercises = mostRecentSessionExercises(setRows, setCol, clientSlug);
+  for (const info of lastSessionExercises.values()) {
+    if (assignedKeys.has(info.name.toLowerCase())) continue;
+    addExerciseSection(ctx, { name: info.name, sets: Math.max(1, info.maxSetNumber), reps: "" }, { isExtra: true });
   }
 
   els.list.appendChild(buildNotesSection(ctx));
