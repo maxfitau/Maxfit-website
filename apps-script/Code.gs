@@ -232,30 +232,57 @@ function doPost(e) {
 
   const action = payload.action || "checkin";
   if (action === "signup") {
-    return handleSignup_(payload);
+    return withLock_(() => handleSignup_(payload));
   }
   if (action === "assignWorkout") {
-    return handleAssignWorkout_(payload);
+    return withLock_(() => handleAssignWorkout_(payload));
   }
   if (action === "reorderWorkouts") {
-    return handleReorderWorkouts_(payload);
+    return withLock_(() => handleReorderWorkouts_(payload));
   }
   if (action === "deleteWorkout") {
-    return handleDeleteWorkout_(payload);
+    return withLock_(() => handleDeleteWorkout_(payload));
   }
   if (action === "saveWorkoutSession") {
-    return handleSaveWorkoutSession_(payload);
+    return withLock_(() => handleSaveWorkoutSession_(payload));
   }
   if (action === "checkGroceryCode") {
     return handleCheckGroceryCode_(payload);
   }
   if (action === "addGroceryItem") {
-    return handleAddGroceryItem_(payload);
+    return withLock_(() => handleAddGroceryItem_(payload));
   }
   if (action === "deleteGroceryItem") {
-    return handleDeleteGroceryItem_(payload);
+    return withLock_(() => handleDeleteGroceryItem_(payload));
   }
-  return handleCheckIn_(payload);
+  return withLock_(() => handleCheckIn_(payload));
+}
+
+/**
+ * Every handler above that mutates the sheet does a read, then a delete,
+ * then a write, as separate steps — if two requests overlap (a client
+ * saving a workout while the coach edits it in the builder, two family
+ * members hitting the grocery list at once, even just a page firing a
+ * request twice), the second one can act on row numbers the first one just
+ * shifted or deleted out from under it. That's exactly the shape of an
+ * intermittent, hard-to-reproduce "it just didn't save" bug. A script-wide
+ * lock serializes every write so only one request touches the sheet at a
+ * time; the rest queue briefly rather than racing. If the wait times out
+ * (10s — should only happen under genuinely heavy concurrent load), it
+ * fails with a clear, visible error instead of silently corrupting data.
+ */
+function withLock_(fn) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (err) {
+    return jsonResponse_({ status: "error", message: "Server's busy right now — try again in a moment." });
+  }
+  try {
+    return fn();
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function handleCheckIn_(payload) {
