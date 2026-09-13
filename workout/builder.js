@@ -239,9 +239,13 @@ function renderChipsAndOptions() {
   els.workoutNameOptions.innerHTML = "";
 
   const currentName = els.workoutNameInput.value.trim().toLowerCase();
+  // Infinity - Infinity is NaN, an invalid sort comparator result — a
+  // large finite fallback keeps unordered workouts tied (and stable)
+  // instead of relying on how a given engine happens to handle NaN here.
+  const UNORDERED = Number.MAX_SAFE_INTEGER;
   const sortedKeys = Object.keys(clientWorkouts).sort(
-    (a, b) => (Number.isFinite(clientWorkouts[a].order) ? clientWorkouts[a].order : Infinity)
-      - (Number.isFinite(clientWorkouts[b].order) ? clientWorkouts[b].order : Infinity)
+    (a, b) => (Number.isFinite(clientWorkouts[a].order) ? clientWorkouts[a].order : UNORDERED)
+      - (Number.isFinite(clientWorkouts[b].order) ? clientWorkouts[b].order : UNORDERED)
   );
 
   for (const key of sortedKeys) {

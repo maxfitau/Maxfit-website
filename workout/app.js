@@ -643,8 +643,12 @@ async function init() {
     return;
   }
 
+  // Infinity - Infinity is NaN, an invalid sort comparator result — a
+  // large finite fallback keeps unordered workouts tied (and stable)
+  // instead of relying on how a given engine happens to handle NaN here.
+  const UNORDERED = Number.MAX_SAFE_INTEGER;
   const workoutNames = Object.keys(workoutGroups).sort(
-    (a, b) => (workoutOrderByName[a] ?? Infinity) - (workoutOrderByName[b] ?? Infinity)
+    (a, b) => (workoutOrderByName[a] ?? UNORDERED) - (workoutOrderByName[b] ?? UNORDERED)
   );
   if (!workoutNames.length) {
     showStatus("No workout assigned yet — check with Max.", false);
