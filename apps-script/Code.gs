@@ -720,10 +720,20 @@ function handleDeleteWorkout_(payload) {
  * Deliberately no PIN, same link-only trust model as the rest of the
  * client-facing card.
  *
- * Upserts rather than blindly appending: re-pressing Save after editing a
- * value updates that same (client, workout, exercise, set number) row for
- * TODAY rather than creating a duplicate, so pressing Save more than once
- * is always safe. Earlier days' rows are never touched.
+ * Replaces today's whole saved session for this (client, workout) rather
+ * than patching individual rows: Save always submits the complete current
+ * state of the form, so deleting whatever was there for today and
+ * re-appending it fresh is both simpler and far faster than hunting down
+ * and rewriting matching rows one at a time. Earlier days' rows are never
+ * touched.
+ *
+ * The lookup for "does today's row already exist" only scans the last
+ * MAX_SCAN_ROWS of the sheet, not the whole history — since new saves are
+ * always appended at the bottom, today's own rows (if any exist from an
+ * earlier save today) are always near the current end, no matter how many
+ * months of history sit above them. Without this cap, save time keeps
+ * growing forever as the sheet grows, which is what was actually behind
+ * saves getting slower and timing out over time.
  */
 function handleSaveWorkoutSession_(payload) {
   const clientSlug = String(payload.clientSlug || "").trim().toLowerCase();
@@ -755,16 +765,18 @@ function handleSaveWorkoutSession_(payload) {
   const now = new Date();
   const todayStr = Utilities.formatDate(now, TIMEZONE, "yyyy-MM-dd");
 
+  const MAX_SCAN_ROWS = 1000;
   const lastRow = sheet.getLastRow();
-  const existing = lastRow >= 2 ? sheet.getRange(2, 1, lastRow - 1, header.length).getValues() : [];
-  const rowNumberByKey = {};
-  for (let i = 0; i < existing.length; i++) {
+  const scanCount = Math.min(lastRow - 1, MAX_SCAN_ROWS);
+  const scanStart = lastRow - scanCount + 1;
+  const existing = scanCount > 0 ? sheet.getRange(scanStart, 1, scanCount, header.length).getValues() : [];
+
+  for (let i = existing.length - 1; i >= 0; i--) {
     const r = existing[i];
     if (String(r[col.date] || "") !== todayStr) continue;
     if (String(r[col.client] || "").trim().toLowerCase() !== clientSlug) continue;
     if (String(r[col.workoutName] || "").trim() !== workoutName) continue;
-    const key = String(r[col.exercise] || "").trim().toLowerCase() + "|" + String(r[col.setNumber] || "");
-    rowNumberByKey[key] = i + 2; // absolute sheet row (data starts at row 2)
+    sheet.deleteRow(scanStart + i);
   }
 
   const newRows = [];
@@ -788,14 +800,7 @@ function handleSaveWorkoutSession_(payload) {
     // note isn't per-set, but there's no separate per-session tab, so it
     // rides along on each of that session's own rows instead.
     if (col.notes >= 0) rowValues[col.notes] = notes;
-
-    const key = exercise.toLowerCase() + "|" + setNumber;
-    const existingRowNumber = rowNumberByKey[key];
-    if (existingRowNumber) {
-      sheet.getRange(existingRowNumber, 1, 1, header.length).setValues([rowValues]);
-    } else {
-      newRows.push(rowValues);
-    }
+    newRows.push(rowValues);
   }
 
   if (newRows.length) {
