@@ -51,8 +51,10 @@
 }
 
 .builder__chip--dragging {
-  opacity: 0.5;
+  position: relative;
+  z-index: 5;
   border-color: var(--red);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
 }
 
 .builder__days {
@@ -176,7 +178,10 @@
 }
 
 .builder__row--dragging {
-  opacity: 0.5;
+  position: relative;
+  z-index: 5;
+  background: var(--bg-card);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
 }
 
 .builder__row--dragging .builder__row-handle {

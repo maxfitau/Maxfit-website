@@ -102,17 +102,25 @@ function addRow(exercise) {
 /**
  * Press-and-drag on the grip handle to reorder exercise rows — driven by
  * Pointer Events (not native HTML5 drag-and-drop) so it works the same on
- * touch and mouse. elementFromPoint finds whichever row the pointer is
- * currently over; the dragged row hops before/after it depending on which
- * half of that row the pointer is on.
+ * touch and mouse. The row visually follows the cursor (via a CSS
+ * transform) so it actually reads as a drag rather than just silently
+ * reordering once you happen to cross into a neighbor — pointer-events is
+ * turned off on it while dragging so elementFromPoint can "see through" it
+ * to whichever row is really underneath the cursor.
  */
 function makeRowDraggable(row, handle) {
   handle.addEventListener("pointerdown", (event) => {
     event.preventDefault();
     handle.setPointerCapture(event.pointerId);
+    const startX = event.clientX;
+    const startY = event.clientY;
+
     row.classList.add("builder__row--dragging");
+    row.style.pointerEvents = "none";
 
     function onMove(moveEvent) {
+      row.style.transform = `translate(${moveEvent.clientX - startX}px, ${moveEvent.clientY - startY}px)`;
+
       const target = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY)?.closest(".builder__row");
       if (!target || target === row || target.parentElement !== els.rows) return;
       const rect = target.getBoundingClientRect();
@@ -122,6 +130,8 @@ function makeRowDraggable(row, handle) {
 
     function onUp() {
       row.classList.remove("builder__row--dragging");
+      row.style.pointerEvents = "";
+      row.style.transform = "";
       handle.removeEventListener("pointermove", onMove);
       handle.removeEventListener("pointerup", onUp);
       handle.removeEventListener("pointercancel", onUp);
@@ -282,11 +292,19 @@ function buildChip(workout, isActive) {
     chip.setPointerCapture(event.pointerId);
 
     function onMove(moveEvent) {
+      const dx = moveEvent.clientX - startX;
+      const dy = moveEvent.clientY - startY;
       if (!dragging) {
-        if (Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) < DRAG_THRESHOLD) return;
+        if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
         dragging = true;
         chip.classList.add("builder__chip--dragging");
+        chip.style.pointerEvents = "none";
       }
+      // Visually follows the cursor so this actually reads as a drag,
+      // rather than only silently swapping once you cross into a
+      // neighboring chip with no feedback in between.
+      chip.style.transform = `translate(${dx}px, ${dy}px)`;
+
       const target = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY)?.closest(".builder__chip");
       if (!target || target === chip || target.parentElement !== els.chips) return;
       const rect = target.getBoundingClientRect();
@@ -300,6 +318,8 @@ function buildChip(workout, isActive) {
       chip.removeEventListener("pointercancel", onUp);
       if (dragging) {
         chip.classList.remove("builder__chip--dragging");
+        chip.style.pointerEvents = "";
+        chip.style.transform = "";
         persistChipOrder_();
       } else {
         els.workoutNameInput.value = workout.name;
