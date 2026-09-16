@@ -10,9 +10,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="../card/styles.css?v=20260913b" />
-<link rel="stylesheet" href="styles.css?v=20260913b" />
-<link rel="stylesheet" href="calendar.css?v=20260913b" />
+<link rel="stylesheet" href="../card/styles.css?v=20260917a" />
+<link rel="stylesheet" href="styles.css?v=20260917a" />
+<link rel="stylesheet" href="calendar.css?v=20260917a" />
 </head>
 <body>
 
@@ -40,15 +40,19 @@
   <div class="calendar__detail" id="calendarDetail" hidden>
     <div class="calendar__detail-head">
       <span class="card__label card__label--red" id="calendarDetailDate">—</span>
-      <button class="calendar__detail-close" id="calendarDetailClose" type="button" aria-label="Close">×</button>
+      <div class="calendar__detail-head-actions">
+        <button class="calendar__undo-btn" id="calendarUndoBtn" type="button" hidden>Undo</button>
+        <button class="calendar__detail-close" id="calendarDetailClose" type="button" aria-label="Close">×</button>
+      </div>
     </div>
+    <p class="calendar__save-status" id="calendarSaveStatus" hidden>Saved</p>
     <div class="calendar__detail-body" id="calendarDetailBody"></div>
   </div>
 
   <p class="status" id="status" hidden></p>
 </main>
 
-<script src="../card/sheet.js?v=20260913b"></script>
-<script src="calendar.js?v=20260913b"></script>
+<script src="../card/sheet.js?v=20260917a"></script>
+<script src="calendar.js?v=20260917a"></script>
 </body>
 </html>

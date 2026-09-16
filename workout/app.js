@@ -99,42 +99,46 @@ function stopWorkoutTimer() {
 
 /**
  * Finds this client's most recent SESSION that included this exercise —
- * "session" meaning every row sharing the same timestamp, since one Save
+ * "session" meaning every row sharing the same Date value, since one Save
  * writes every set of that visit with an identical one. Deliberately not
  * scoped to the workout currently open: a client who does Bench Press under
  * both "Push" and "Upper" should see the same last-session numbers either
  * way, since it's the same lift regardless of which named workout it's
  * filed under.
  *
+ * Deliberately does NOT use Date.parse() on the Timestamp column — Sheets
+ * exports that as a locale-formatted string (this sheet's Australian
+ * DD/MM/YYYY), which Date.parse() either mis-reads or fails on outright, so
+ * every row silently tied at "0" and every session collapsed into one.
+ * Logged Sets is append-only (each save deletes that day's old rows for
+ * this client/workout, then appends fresh ones at the current end), so the
+ * LAST matching row in the array is simply the most recent by construction
+ * — no date parsing needed, just a raw string compare against the Date
+ * column, which is written in an unambiguous "yyyy-MM-dd" format.
+ *
  * Returns a Map of set number -> { weight, reps } for that one session, or
  * null if this exercise has never been logged before.
  */
 function mostRecentSessionSets(setRows, col, clientSlug, exerciseName) {
-  let bestWhen = -Infinity;
-  let bestRows = [];
+  let mostRecentDate = null;
+  for (let i = setRows.length - 1; i >= 0; i--) {
+    const row = setRows[i];
+    if (String(row[col.client] || "").trim().toLowerCase() !== clientSlug) continue;
+    if (String(row[col.exercise] || "").trim().toLowerCase() !== exerciseName) continue;
+    const dateStr = col.date >= 0 ? String(row[col.date] || "").trim() : "";
+    if (!dateStr) continue;
+    mostRecentDate = dateStr;
+    break;
+  }
+  if (!mostRecentDate) return null;
 
+  const bySetNumber = new Map();
   for (const row of setRows) {
     if (String(row[col.client] || "").trim().toLowerCase() !== clientSlug) continue;
     if (String(row[col.exercise] || "").trim().toLowerCase() !== exerciseName) continue;
+    const dateStr = col.date >= 0 ? String(row[col.date] || "").trim() : "";
+    if (dateStr !== mostRecentDate) continue;
 
-    const weight = Number(row[col.weight]);
-    if (!Number.isFinite(weight)) continue;
-
-    const rawWhen = (col.timestamp >= 0 && row[col.timestamp]) || (col.date >= 0 && row[col.date]) || "";
-    const when = Date.parse(rawWhen) || 0;
-
-    if (when > bestWhen) {
-      bestWhen = when;
-      bestRows = [row];
-    } else if (when === bestWhen) {
-      bestRows.push(row);
-    }
-  }
-
-  if (!bestRows.length) return null;
-
-  const bySetNumber = new Map();
-  for (const row of bestRows) {
     const setNumber = Number(row[col.setNumber]);
     const weight = Number(row[col.weight]);
     if (!Number.isFinite(setNumber) || !Number.isFinite(weight)) continue;
@@ -149,34 +153,40 @@ function formatWeight(n) {
 }
 
 /**
- * Every exercise from the client's single most recent logged session,
- * across every workout — used so an "extra" exercise they added on the fly
+ * Every exercise from the client's single most recent logged DAY, across
+ * every workout — used so an "extra" exercise they added on the fly
  * (machine taken, out of time, whatever) automatically shows up again the
  * next time they open a workout, instead of only ever existing if they
  * re-add it themselves through "+ Add Exercise". Naturally self-limiting:
- * once they log a newer session, this points at that one instead, so a
- * one-off extra only ever resurfaces the one time.
+ * once they log a newer day, this points at that one instead, so a one-off
+ * extra only ever resurfaces the one time.
+ *
+ * Same reasoning as mostRecentSessionSets above for using the raw Date
+ * column (and the last matching row, since Logged Sets is append-only)
+ * instead of Date.parse() on Timestamp — that was silently collapsing
+ * every session that was ever logged into one, which is why this was
+ * surfacing every extra exercise from all of history instead of just the
+ * last day trained.
  */
 function mostRecentSessionExercises(setRows, col, clientSlug) {
-  let bestWhen = -Infinity;
-  let bestRows = [];
-
-  for (const row of setRows) {
+  let mostRecentDate = null;
+  for (let i = setRows.length - 1; i >= 0; i--) {
+    const row = setRows[i];
     if (String(row[col.client] || "").trim().toLowerCase() !== clientSlug) continue;
-    const rawWhen = (col.timestamp >= 0 && row[col.timestamp]) || (col.date >= 0 && row[col.date]) || "";
-    const when = Date.parse(rawWhen) || 0;
-    if (!when) continue;
-
-    if (when > bestWhen) {
-      bestWhen = when;
-      bestRows = [row];
-    } else if (when === bestWhen) {
-      bestRows.push(row);
-    }
+    const dateStr = col.date >= 0 ? String(row[col.date] || "").trim() : "";
+    if (!dateStr) continue;
+    mostRecentDate = dateStr;
+    break;
   }
 
   const byExercise = new Map(); // nameLower -> { name, maxSetNumber }
-  for (const row of bestRows) {
+  if (!mostRecentDate) return byExercise;
+
+  for (const row of setRows) {
+    if (String(row[col.client] || "").trim().toLowerCase() !== clientSlug) continue;
+    const dateStr = col.date >= 0 ? String(row[col.date] || "").trim() : "";
+    if (dateStr !== mostRecentDate) continue;
+
     const name = (col.exercise >= 0 ? row[col.exercise] : "").trim();
     if (!name) continue;
     const key = name.toLowerCase();

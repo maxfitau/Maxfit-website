@@ -844,32 +844,39 @@ function handleDeleteWorkout_(payload) {
 
 /**
  * Client saving their whole workout session at once from workout/index.html
- * — the "Save Workout" button, pressed after editing every set freely.
+ * — the "Save Workout" button, pressed after editing every set freely. Also
+ * doubles as the endpoint the workout-history editor (calendar.html) uses
+ * to auto-save edits to a PAST day: same shape, plus an explicit `date`.
  * Deliberately no PIN, same link-only trust model as the rest of the
  * client-facing card.
  *
- * Replaces today's whole saved session for this (client, workout) rather
+ * Replaces the whole saved session for this (client, workout, date) rather
  * than patching individual rows: Save always submits the complete current
- * state of the form, so deleting whatever was there for today and
- * re-appending it fresh is both simpler and far faster than hunting down
- * and rewriting matching rows one at a time. Earlier days' rows are never
- * touched.
+ * state, so deleting whatever was there and re-appending it fresh is both
+ * simpler and far faster than hunting down and rewriting matching rows one
+ * at a time. `sets` may legitimately be empty — that's how the history
+ * editor clears a day down to nothing (e.g. removing its last exercise).
+ * Other days/workouts are never touched.
  *
- * The lookup for "does today's row already exist" only scans the last
- * MAX_SCAN_ROWS of the sheet, not the whole history — since new saves are
- * always appended at the bottom, today's own rows (if any exist from an
- * earlier save today) are always near the current end, no matter how many
- * months of history sit above them. Without this cap, save time keeps
- * growing forever as the sheet grows, which is what was actually behind
- * saves getting slower and timing out over time.
+ * The lookup for "does this day's row already exist" only scans the last
+ * MAX_SCAN_ROWS of the sheet when saving TODAY — since new saves are always
+ * appended at the bottom, today's own rows (if any exist from an earlier
+ * save today) are always near the current end, no matter how many months
+ * of history sit above them. That bound would be wrong for an edit to an
+ * OLDER date though — those rows are NOT near the end, they're wherever
+ * they were originally appended — so a historical edit (date != today)
+ * scans the whole sheet instead. Slower, but correctness matters more than
+ * speed for what's a rare, manual action, and skipping the bound entirely
+ * for a past-date edit would otherwise leave the original rows in place
+ * untouched while the "edit" just appends a duplicate copy alongside them.
  */
 function handleSaveWorkoutSession_(payload) {
   const clientSlug = String(payload.clientSlug || "").trim().toLowerCase();
   const workoutName = String(payload.workoutName || "").trim();
   const sets = Array.isArray(payload.sets) ? payload.sets : [];
   const notes = String(payload.notes || "").trim();
-  if (!clientSlug || !sets.length) {
-    return jsonResponse_({ status: "error", message: "Missing client or sets." });
+  if (!clientSlug || !workoutName) {
+    return jsonResponse_({ status: "error", message: "Missing client or workout name." });
   }
 
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LOGGED_SETS_SHEET_NAME);
@@ -892,16 +899,25 @@ function handleSaveWorkoutSession_(payload) {
 
   const now = new Date();
   const todayStr = Utilities.formatDate(now, TIMEZONE, "yyyy-MM-dd");
+  const requestedDate = String(payload.date || "").trim();
+  const isPastDateEdit = /^\d{4}-\d{2}-\d{2}$/.test(requestedDate) && requestedDate !== todayStr;
+  const targetDateStr = isPastDateEdit ? requestedDate : todayStr;
 
-  const MAX_SCAN_ROWS = 1000;
   const lastRow = sheet.getLastRow();
-  const scanCount = Math.min(lastRow - 1, MAX_SCAN_ROWS);
-  const scanStart = lastRow - scanCount + 1;
+  let scanStart, scanCount;
+  if (isPastDateEdit) {
+    scanStart = 2;
+    scanCount = Math.max(lastRow - 1, 0);
+  } else {
+    const MAX_SCAN_ROWS = 1000;
+    scanCount = Math.min(lastRow - 1, MAX_SCAN_ROWS);
+    scanStart = lastRow - scanCount + 1;
+  }
   const existing = scanCount > 0 ? sheet.getRange(scanStart, 1, scanCount, header.length).getValues() : [];
 
   for (let i = existing.length - 1; i >= 0; i--) {
     const r = existing[i];
-    if (String(r[col.date] || "") !== todayStr) continue;
+    if (String(r[col.date] || "") !== targetDateStr) continue;
     if (String(r[col.client] || "").trim().toLowerCase() !== clientSlug) continue;
     if (String(r[col.workoutName] || "").trim() !== workoutName) continue;
     sheet.deleteRow(scanStart + i);
@@ -922,7 +938,7 @@ function handleSaveWorkoutSession_(payload) {
     if (col.setNumber >= 0) rowValues[col.setNumber] = setNumber;
     if (col.weight >= 0) rowValues[col.weight] = weight;
     if (col.reps >= 0) rowValues[col.reps] = reps;
-    if (col.date >= 0) rowValues[col.date] = todayStr;
+    if (col.date >= 0) rowValues[col.date] = targetDateStr;
     if (col.timestamp >= 0) rowValues[col.timestamp] = now;
     // Repeated on every row of this save, same as Workout Name — a session
     // note isn't per-set, but there's no separate per-session tab, so it
