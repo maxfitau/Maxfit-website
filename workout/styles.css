@@ -50,6 +50,7 @@ body {
   letter-spacing: 0.05em;
   font-size: 14px;
   color: var(--grey-light);
+  text-decoration: none;
   background: var(--bg-card);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
@@ -213,9 +214,9 @@ body {
 
 .workout__set {
   display: grid;
-  grid-template-columns: 44px 1fr 72px;
+  grid-template-columns: 38px 1fr 58px 54px;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .workout__set-num {
@@ -319,6 +320,47 @@ body {
 
 .workout__reps-input:disabled {
   opacity: 0.7;
+}
+
+/* Per-set Save: outlined until tapped, then a filled red tick. Editing a saved
+   set's numbers flips it back to "Save" (see refreshRowState in app.js). */
+.workout__set-save {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 13px;
+  height: 40px;
+  width: 100%;
+  padding: 0;
+  color: var(--grey-light);
+  background: transparent;
+  border: 1px solid var(--line-strong, var(--line));
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.workout__set-save:active {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.workout__set--saved .workout__set-save {
+  font-size: 17px;
+  color: var(--on-red);
+  background: var(--red);
+  border-color: var(--red);
+}
+
+.workout__set--saved .workout__weight,
+.workout__set--saved .workout__reps-input {
+  border-color: rgba(224, 0, 0, 0.45);
+}
+
+.workout__weight.workout__field--invalid,
+.workout__reps-input.workout__field--invalid {
+  border-color: var(--red);
+  box-shadow: 0 0 0 1px var(--red);
 }
 
 .workout__exercise--extra .workout__exercise-target {
@@ -455,6 +497,14 @@ body {
   margin-top: 6px;
 }
 
+.workout__save-summary {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--dim);
+  text-align: center;
+  margin: 0 0 10px;
+}
+
 .workout__save-btn {
   width: 100%;
   font-family: var(--font-head);
@@ -502,10 +552,15 @@ body {
 
 @media (max-width: 360px) {
   .workout__set {
-    grid-template-columns: 36px 1fr 60px;
+    grid-template-columns: 32px 1fr 48px 46px;
+    gap: 5px;
   }
 
   .workout__step {
-    width: 28px;
+    width: 26px;
+  }
+
+  .workout__set-save {
+    font-size: 12px;
   }
 }

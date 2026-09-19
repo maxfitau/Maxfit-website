@@ -13,6 +13,7 @@
  */
 const MEMBER_ID_STORAGE_KEY = "maxfitMemberId"; // shared with card/app.js
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbya8dm8g5eC4ldAbNYmMCccDCZ6K7encj_q4IzXtKMOpd007RMYhnR3_PJ2eL2gjVDQ/exec";
+const DRAFT_KEY_PREFIX = "maxfitWorkoutDraft|"; // same key format as workout/app.js
 
 const params = new URLSearchParams(window.location.search);
 let memberId = params.get("id");
@@ -77,7 +78,18 @@ function addSet(dateKey, workoutName, exerciseName, setNumber, weight, reps, not
   const wName = workoutName || "Workout";
   if (!byDate[dateKey][wName]) byDate[dateKey][wName] = { notes: "", exercises: {} };
   if (!byDate[dateKey][wName].exercises[exerciseName]) byDate[dateKey][wName].exercises[exerciseName] = [];
-  byDate[dateKey][wName].exercises[exerciseName].push({ setNumber, weight, reps });
+  const list = byDate[dateKey][wName].exercises[exerciseName];
+  // The sheet is append-only, so a set that was saved twice appears twice —
+  // the later row is the current one. Collapsing them here means a
+  // duplicated row never shows as a phantom extra set (and saving the day
+  // writes it back once).
+  const existing = list.find((s) => s.setNumber === setNumber);
+  if (existing) {
+    existing.weight = weight;
+    existing.reps = reps;
+  } else {
+    list.push({ setNumber, weight, reps });
+  }
   if (notes) byDate[dateKey][wName].notes = notes;
 }
 
@@ -147,6 +159,14 @@ async function saveDay_() {
   const dateStr = backendDateStr(dayState.year, dayState.month, dayState.day);
   const requests = Object.keys(dayState.workouts).map((workoutName) => {
     const workout = dayState.workouts[workoutName];
+    // This edit is now the newest word on that day. A copy of the same
+    // session still saved on the workout page (from logging it there) would
+    // otherwise come back the next time it opens and undo the change.
+    try {
+      localStorage.removeItem(`${DRAFT_KEY_PREFIX}${dayState.clientSlug}|${workoutName.trim().toLowerCase()}|${dateStr}`);
+    } catch (err) {
+      // Storage unavailable — there's no local copy to clear.
+    }
     const sets = [];
     for (const exerciseName of Object.keys(workout.exercises)) {
       for (const s of workout.exercises[exerciseName]) {

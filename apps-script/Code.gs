@@ -255,6 +255,13 @@ function doPost(e) {
   if (action === "deleteGroceryItem") {
     return withLock_(() => handleDeleteGroceryItem_(payload));
   }
+  // Only the check-in page sends no action at all, so that's the only thing
+  // that should ever land in the check-in handler. Anything else is a page
+  // asking for an action this deployment doesn't know — better an honest
+  // error than quietly being treated as a check-in.
+  if (action !== "checkin") {
+    return jsonResponse_({ status: "error", message: "Unknown action." });
+  }
   return withLock_(() => handleCheckIn_(payload));
 }
 
@@ -796,20 +803,48 @@ function handleReorderWorkouts_(payload) {
 }
 
 /**
+ * Deletes the given 1-based sheet rows (ascending order). Every Sheets call
+ * is its own round trip and that's what makes a save slow — deleting a
+ * 25-set session one row at a time was ~25 of them — so each contiguous run
+ * of rows goes in a single deleteRows call instead. Bottom-up, so removing a
+ * run never shifts the row numbers of the runs still waiting above it.
+ */
+function deleteRowNumbers_(sheet, rowNumbers) {
+  let runEnd = rowNumbers.length - 1;
+  while (runEnd >= 0) {
+    let runStart = runEnd;
+    while (runStart > 0 && rowNumbers[runStart - 1] === rowNumbers[runStart] - 1) runStart--;
+    const firstRow = rowNumbers[runStart];
+    const count = runEnd - runStart + 1;
+    try {
+      sheet.deleteRows(firstRow, count);
+    } catch (err) {
+      // Sheets refuses to delete every non-frozen row on a tab (these tabs
+      // freeze their header). That only happens when the rows being removed
+      // are ALL the data there is, so blanking them is equivalent — the
+      // next append reuses the space, and readers skip rows with no client.
+      sheet.getRange(firstRow, 1, count, sheet.getMaxColumns()).clearContent();
+    }
+    runEnd = runStart - 1;
+  }
+}
+
+/**
  * Deletes every row where column `matchCol` equals `matchValue` (case-
  * insensitive) and, if `matchCol2` >= 0, column `matchCol2` also equals
- * `matchValue2`. Top to bottom so a deleted row never shifts the index of
- * the next one still to check.
+ * `matchValue2`.
  */
 function deleteMatchingRows_(sheet, lastRow, matchCol, matchValue, matchCol2, matchValue2) {
   if (lastRow < 2) return;
   const numCols = sheet.getLastColumn();
   const values = sheet.getRange(2, 1, lastRow - 1, numCols).getValues();
-  for (let i = values.length - 1; i >= 0; i--) {
+  const matchingRows = [];
+  for (let i = 0; i < values.length; i++) {
     const matches1 = String(values[i][matchCol] || "").trim().toLowerCase() === matchValue;
     const matches2 = matchCol2 < 0 || String(values[i][matchCol2] || "").trim().toLowerCase() === matchValue2.toLowerCase();
-    if (matches1 && matches2) sheet.deleteRow(i + 2);
+    if (matches1 && matches2) matchingRows.push(i + 2);
   }
+  deleteRowNumbers_(sheet, matchingRows);
 }
 
 /**
@@ -843,20 +878,69 @@ function handleDeleteWorkout_(payload) {
 }
 
 /**
- * Client saving their whole workout session at once from workout/index.html
- * — the "Save Workout" button, pressed after editing every set freely. Also
- * doubles as the endpoint the workout-history editor (calendar.html) uses
- * to auto-save edits to a PAST day: same shape, plus an explicit `date`.
+ * Makes sure the Logged Sets tab has every column the current code reads and
+ * writes, adding any that are missing at the end of the header (everything
+ * looks columns up by NAME, so where they sit doesn't matter).
+ *
+ * The live tab was created before "Workout Name" and "Notes" existed, and
+ * setupWorkoutSheets only creates a tab that's missing entirely — it never
+ * adds columns to one that's already there. Without them, every save
+ * silently dropped the session notes, and there was no workout name on any
+ * row to tell one workout's sets from another's, so replacing a session
+ * could never find the rows it was meant to replace. Doing this on demand
+ * means no manual migration step to remember.
+ */
+function ensureLoggedSetsColumns_(sheet) {
+  const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  for (const name of ["Workout Name", "Notes"]) {
+    if (findColumn_(header, name) >= 0) continue;
+    if (sheet.getMaxColumns() < header.length + 1) {
+      sheet.insertColumnsAfter(sheet.getMaxColumns(), header.length + 1 - sheet.getMaxColumns());
+    }
+    sheet.getRange(1, header.length + 1).setValue(name);
+    header.push(name);
+  }
+  return header;
+}
+
+/**
+ * A "Date" cell as "yyyy-MM-dd". The column holds real dates, not text —
+ * Sheets turns "2026-09-16" into a date the moment it's written — so
+ * getValues() hands back Date objects, and comparing String(thatDate) to
+ * "2026-09-16" can never be equal. That mismatch is why a re-save used to
+ * pile a second copy of the session on top of the first instead of
+ * replacing it. Date cells are read in the spreadsheet's own time zone,
+ * which is what they were interpreted in when written.
+ */
+function dateCellToString_(value, spreadsheetTimeZone) {
+  if (value instanceof Date) {
+    return Utilities.formatDate(value, spreadsheetTimeZone, "yyyy-MM-dd");
+  }
+  const text = String(value || "").trim();
+  const m = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  return m ? `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}` : text;
+}
+
+/**
+ * The workout logger saving a session — "Log Workout" on workout/index.html —
+ * and also the endpoint the workout-history editor (calendar.html) uses to
+ * auto-save edits to a PAST day: same shape, plus an explicit `date`.
  * Deliberately no PIN, same link-only trust model as the rest of the
  * client-facing card.
  *
  * Replaces the whole saved session for this (client, workout, date) rather
- * than patching individual rows: Save always submits the complete current
- * state, so deleting whatever was there and re-appending it fresh is both
+ * than patching individual rows: the caller always submits the complete
+ * current state, so swapping whatever was there for a fresh copy is both
  * simpler and far faster than hunting down and rewriting matching rows one
  * at a time. `sets` may legitimately be empty — that's how the history
  * editor clears a day down to nothing (e.g. removing its last exercise).
- * Other days/workouts are never touched.
+ * Other days/workouts are never touched. Rows logged before the Workout
+ * Name column existed have it blank; there's no telling which workout they
+ * were, so they count as part of whichever session is replacing that day.
+ *
+ * The new rows are appended BEFORE the old ones are deleted, so a failure
+ * part-way through leaves a duplicate that the next save cleans up, rather
+ * than a session that has vanished.
  *
  * The lookup for "does this day's row already exist" only scans the last
  * MAX_SCAN_ROWS of the sheet when saving TODAY — since new saves are always
@@ -879,12 +963,13 @@ function handleSaveWorkoutSession_(payload) {
     return jsonResponse_({ status: "error", message: "Missing client or workout name." });
   }
 
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LOGGED_SETS_SHEET_NAME);
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(LOGGED_SETS_SHEET_NAME);
   if (!sheet) {
     return jsonResponse_({ status: "error", message: "Run setupWorkoutSheets first." });
   }
 
-  const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const header = ensureLoggedSetsColumns_(sheet);
   const col = {
     client: findColumn_(header, "Client"),
     workoutName: findColumn_(header, "Workout Name"),
@@ -915,12 +1000,16 @@ function handleSaveWorkoutSession_(payload) {
   }
   const existing = scanCount > 0 ? sheet.getRange(scanStart, 1, scanCount, header.length).getValues() : [];
 
-  for (let i = existing.length - 1; i >= 0; i--) {
+  const spreadsheetTimeZone = ss.getSpreadsheetTimeZone();
+  const wantedWorkout = workoutName.toLowerCase();
+  const oldRows = [];
+  for (let i = 0; i < existing.length; i++) {
     const r = existing[i];
-    if (String(r[col.date] || "") !== targetDateStr) continue;
+    if (dateCellToString_(r[col.date], spreadsheetTimeZone) !== targetDateStr) continue;
     if (String(r[col.client] || "").trim().toLowerCase() !== clientSlug) continue;
-    if (String(r[col.workoutName] || "").trim() !== workoutName) continue;
-    sheet.deleteRow(scanStart + i);
+    const rowWorkout = String(r[col.workoutName] || "").trim().toLowerCase();
+    if (rowWorkout && rowWorkout !== wantedWorkout) continue;
+    oldRows.push(scanStart + i);
   }
 
   const newRows = [];
@@ -932,24 +1021,25 @@ function handleSaveWorkoutSession_(payload) {
     if (!exercise || !Number.isFinite(setNumber) || !Number.isFinite(weight) || !Number.isFinite(reps)) continue;
 
     const rowValues = new Array(header.length).fill("");
-    if (col.client >= 0) rowValues[col.client] = clientSlug;
-    if (col.workoutName >= 0) rowValues[col.workoutName] = workoutName;
-    if (col.exercise >= 0) rowValues[col.exercise] = exercise;
-    if (col.setNumber >= 0) rowValues[col.setNumber] = setNumber;
-    if (col.weight >= 0) rowValues[col.weight] = weight;
-    if (col.reps >= 0) rowValues[col.reps] = reps;
-    if (col.date >= 0) rowValues[col.date] = targetDateStr;
-    if (col.timestamp >= 0) rowValues[col.timestamp] = now;
+    rowValues[col.client] = clientSlug;
+    rowValues[col.workoutName] = workoutName;
+    rowValues[col.exercise] = exercise;
+    rowValues[col.setNumber] = setNumber;
+    rowValues[col.weight] = weight;
+    rowValues[col.reps] = reps;
+    rowValues[col.date] = targetDateStr;
+    rowValues[col.timestamp] = now;
     // Repeated on every row of this save, same as Workout Name — a session
     // note isn't per-set, but there's no separate per-session tab, so it
     // rides along on each of that session's own rows instead.
-    if (col.notes >= 0) rowValues[col.notes] = notes;
+    rowValues[col.notes] = notes;
     newRows.push(rowValues);
   }
 
   if (newRows.length) {
-    sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, header.length).setValues(newRows);
+    sheet.getRange(lastRow + 1, 1, newRows.length, header.length).setValues(newRows);
   }
+  deleteRowNumbers_(sheet, oldRows);
 
   return jsonResponse_({ status: "success" });
 }
