@@ -31,8 +31,22 @@ const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbya8dm8g5eC4ldA
 const MEMBER_ID_STORAGE_KEY = "maxfitMemberId"; // shared with card/app.js
 const WORKOUT_COMPLETE_STORAGE_KEY = "maxfitWorkoutCompleteDate"; // shared with card/app.js
 const DRAFT_KEY_PREFIX = "maxfitWorkoutDraft|"; // calendar.js clears drafts by this same key format
+const DRAFT_SCHEMA = 2; // bump to make every older draft on every phone get ignored + discarded
 const WEIGHT_STEP = 2.5;
 const LOG_TIMEOUT_MS = 30000;
+
+/**
+ * The ?v= tag this script was loaded with, shown at the bottom of the page so
+ * it's obvious which copy a phone is really running — a phone holding an
+ * old cached copy shows an older number, or none at all.
+ */
+const APP_VERSION = (() => {
+  try {
+    return new URL(document.currentScript.src).searchParams.get("v") || "";
+  } catch (err) {
+    return "";
+  }
+})();
 
 const params = new URLSearchParams(window.location.search);
 let memberId = params.get("id");
@@ -192,35 +206,6 @@ function mostRecentSessionSets(setRows, col, clientSlug, exerciseName, excludeKe
   return bySetNumber.size ? bySetNumber : null;
 }
 
-/**
- * Whatever's already in the sheet for this client + workout + today — used to
- * put a workout back the way it was when it's opened on a phone that has no
- * local draft of it (a different browser, cleared site data). Rows logged
- * before the sheet had a Workout Name column have it blank, and count for any
- * workout — the same rule the backend uses when it replaces a session.
- */
-function savedSetsFromRows(setRows, col, clientSlug, workoutName, todayKey) {
-  const wanted = workoutName.trim().toLowerCase();
-  const byKey = new Map();
-  let notes = "";
-  for (const row of setRows) {
-    if (String(row[col.client] || "").trim().toLowerCase() !== clientSlug) continue;
-    if (dateSortKey(col.date >= 0 ? row[col.date] : "") !== todayKey) continue;
-    const rowWorkout = col.workoutName >= 0 ? String(row[col.workoutName] || "").trim().toLowerCase() : "";
-    if (rowWorkout && rowWorkout !== wanted) continue;
-
-    const exercise = String(row[col.exercise] || "").trim();
-    const setNumber = Number(row[col.setNumber]);
-    const weight = Number(row[col.weight]);
-    const reps = Number(row[col.reps]);
-    if (!exercise || !Number.isFinite(setNumber) || !Number.isFinite(weight) || !Number.isFinite(reps)) continue;
-
-    byKey.set(`${exercise.toLowerCase()}|${setNumber}`, { exercise, setNumber, weight, reps });
-    if (col.notes >= 0 && row[col.notes]) notes = String(row[col.notes]).trim();
-  }
-  return { sets: Array.from(byKey.values()), notes };
-}
-
 // ---- Drafts: the session as it's been saved on this phone -----------------
 //
 // One draft per (client, workout, day): { clientSlug, workoutName, date, sets,
@@ -243,14 +228,27 @@ function draftKey(clientSlug, workoutName, dateStr) {
   return `${DRAFT_KEY_PREFIX}${clientSlug}|${workoutName.trim().toLowerCase()}|${dateStr}`;
 }
 
+/**
+ * A draft only counts if it was written by this schema. The first release of
+ * per-set saving could fill a draft with sets it had copied out of the sheet
+ * rather than sets the client tapped Save on (a bug — those showed up as
+ * pre-ticked rows and phantom "Extra" exercises), so anything without the
+ * marker is treated as if it doesn't exist and gets cleaned up by
+ * flushOldDrafts, never displayed and never sent anywhere.
+ */
 function readDraft(key) {
-  if (!storageUsable) return memoryDrafts.get(key) || null;
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : null;
-  } catch (err) {
-    return null;
+  let draft = null;
+  if (!storageUsable) {
+    draft = memoryDrafts.get(key) || null;
+  } else {
+    try {
+      const raw = localStorage.getItem(key);
+      draft = raw ? JSON.parse(raw) : null;
+    } catch (err) {
+      draft = null;
+    }
   }
+  return draft && draft.schema === DRAFT_SCHEMA ? draft : null;
 }
 
 function writeDraft(key, draft) {
@@ -323,10 +321,11 @@ async function postSession(draft) {
 async function flushOldDrafts(todayStr) {
   for (const key of allDraftKeys()) {
     const draft = readDraft(key);
-    if (!draft || draft.date === todayStr) {
-      if (!draft) removeDraft(key);
+    if (!draft) {
+      removeDraft(key); // empty, unreadable, or written by an older schema (see readDraft)
       continue;
     }
+    if (draft.date === todayStr) continue;
     if (!draft.pending || !Array.isArray(draft.sets) || !draft.sets.length) {
       removeDraft(key);
       continue;
@@ -757,13 +756,14 @@ function renderWorkout(shared, workoutName, exercises) {
   const dateStr = sydneyDateStr();
   const key = draftKey(clientSlug, workoutName, dateStr);
 
-  // Whatever they'd already saved today comes back exactly as they left it:
-  // from this phone's draft if there is one, otherwise from the sheet (a
-  // workout logged from another browser, say).
+  // The only sets ever put back on screen are ones THIS client tapped Save on,
+  // on this phone, today, in this exact workout (the draft's key is client +
+  // workout + day). Nothing is read back out of the sheet for display — logged
+  // history only shows up as the grey "last time" numbers, and in the calendar.
   const draft = readDraft(key);
   const restored = draft
     ? { sets: draft.sets || [], notes: draft.notes || "" }
-    : savedSetsFromRows(setRows, setCol, clientSlug, workoutName, dateSortKey(dateStr));
+    : { sets: [], notes: "" };
   const savedByExercise = new Map(); // nameLower -> { name, sets: Map(setNumber -> { weight, reps }) }
   for (const s of restored.sets) {
     const lower = s.exercise.toLowerCase();
@@ -799,6 +799,7 @@ function renderWorkout(shared, workoutName, exercises) {
     const previous = readDraft(key);
     if (!sets.length && !notes && !previous) return null;
     const next = {
+      schema: DRAFT_SCHEMA,
       clientSlug, workoutName, date: dateStr, sets, notes,
       rev: (previous ? previous.rev || 0 : 0) + 1,
       pending: sets.length > 0,
@@ -981,6 +982,13 @@ async function init() {
   }
 
   showPicker(shared, workoutGroups, workoutNames);
+}
+
+if (APP_VERSION) {
+  const stamp = document.createElement("p");
+  stamp.className = "workout__version";
+  stamp.textContent = `Version ${APP_VERSION}`;
+  document.getElementById("workout").appendChild(stamp);
 }
 
 init();
