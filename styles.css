@@ -2397,12 +2397,11 @@ body.vt-lightbox-open { overflow: hidden; }
   align-items: center;
   gap: 12px 20px;
   flex-wrap: wrap;
-  background: var(--red);
-  color: var(--on-red);
+  background: var(--bg-card);
+  border: 1px solid var(--red);
   border-radius: var(--radius);
   padding: 20px 24px;
   margin-bottom: 28px;
-  box-shadow: 0 12px 40px rgba(224, 0, 0, 0.25);
 }
 
 .sale-banner__tag {
@@ -2410,8 +2409,8 @@ body.vt-lightbox-open { overflow: hidden; }
   font-size: 0.8rem;
   letter-spacing: 2px;
   text-transform: uppercase;
-  color: var(--red);
-  background: var(--white);
+  color: var(--on-red);
+  background: var(--red);
   padding: 5px 14px;
   border-radius: 999px;
   flex: none;
@@ -2424,7 +2423,7 @@ body.vt-lightbox-open { overflow: hidden; }
   font-size: clamp(1.4rem, 3.5vw, 2rem);
   letter-spacing: 0.5px;
   text-transform: uppercase;
-  color: var(--on-red);
+  color: var(--white);
   flex: 1 1 260px;
 }
 
@@ -2442,8 +2441,8 @@ body.vt-lightbox-open { overflow: hidden; }
 .sale-banner__list s { opacity: 0.75; }
 
 .sale-banner__free {
-  background: var(--white);
-  color: var(--red);
+  background: var(--red);
+  color: var(--on-red);
   padding: 1px 8px;
   border-radius: 999px;
   font-size: 0.8rem;

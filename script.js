@@ -329,9 +329,10 @@ document.addEventListener("DOMContentLoaded", function () {
     var target = parseFloat(el.getAttribute("data-count"));
     var numEl = el.querySelector(".num");
     if (!numEl) return;
+    var decimals = parseInt(el.getAttribute("data-decimals") || "0", 10);
 
     if (prefersReducedMotion) {
-      numEl.textContent = target;
+      numEl.textContent = target.toFixed(decimals);
       return;
     }
 
@@ -343,12 +344,12 @@ document.addEventListener("DOMContentLoaded", function () {
       if (!startTime) startTime = timestamp;
       var progress = Math.min((timestamp - startTime) / duration, 1);
       var eased = 1 - Math.pow(1 - progress, 3);
-      var value = Math.round(start + (target - start) * eased);
+      var value = (start + (target - start) * eased).toFixed(decimals);
       numEl.textContent = value;
       if (progress < 1) {
         requestAnimationFrame(step);
       } else {
-        numEl.textContent = target;
+        numEl.textContent = target.toFixed(decimals);
       }
     }
 
