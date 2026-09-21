@@ -71,6 +71,161 @@ body {
   margin: -6px 0 0;
 }
 
+/* Coach mode: whose workout this is, unmistakably. */
+.workout__coach-banner {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  background: rgba(224, 0, 0, 0.08);
+  border: 1px solid rgba(224, 0, 0, 0.35);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+}
+
+.workout__coach-banner-label {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 12px;
+  color: var(--red);
+  flex-shrink: 0;
+}
+
+.workout__coach-banner-name {
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: 19px;
+  color: var(--white);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+/* Workout date: today by default; pointed at an earlier day it logs a session that already happened. */
+.workout__date {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.workout__date-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 8px 8px 8px 16px;
+}
+
+.workout__date-label {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.workout__date-input {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--white);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  min-width: 0;
+  color-scheme: dark;
+}
+
+.workout__date-input:focus {
+  outline: none;
+  border-color: var(--red);
+}
+
+.workout__date-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--red);
+  margin: 0;
+}
+
+.workout__date-note[hidden] {
+  display: none;
+}
+
+.workout__date-reset {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--grey-light);
+  background: none;
+  border: none;
+  padding: 0;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* The coach's note above the exercises, and their tip under an exercise. */
+.workout__coach-note {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+}
+
+.workout__coach-note-label {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 12px;
+  color: var(--red);
+}
+
+.workout__coach-note-text {
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--grey-light);
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.workout__exercise-tip {
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--grey-light);
+  margin: -4px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.workout__exercise-tip-label {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 11px;
+  color: var(--red);
+  margin-right: 6px;
+}
+
 .workout__timer {
   display: flex;
   align-items: baseline;
@@ -504,6 +659,19 @@ body {
 
 .workout__save-wrap {
   margin-top: 6px;
+}
+
+.workout__save-warning {
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--red);
+  text-align: center;
+  margin: 0 0 10px;
+}
+
+.workout__save-warning[hidden] {
+  display: none;
 }
 
 .workout__save-summary {

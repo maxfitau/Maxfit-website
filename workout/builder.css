@@ -144,6 +144,27 @@
   padding: 11px 4px;
 }
 
+/* The tip sits on its own line under the exercise (spans every column). It's
+   the LAST input in the row, so the first three inputs keep their meaning. */
+.builder__row .builder__row-tip {
+  grid-column: 1 / -1;
+  font-size: 12.5px;
+  font-weight: 500;
+  padding: 8px 10px;
+}
+
+.builder__row .builder__row-tip::placeholder {
+  color: var(--dim);
+}
+
+.builder__note {
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.4;
+  resize: vertical;
+  min-height: 62px;
+}
+
 .builder__row-remove {
   font-family: var(--font-head);
   font-weight: 700;
@@ -264,8 +285,45 @@
   margin: 0;
 }
 
+/* Phones: name + sets + reps + the drag/move/remove controls can't share one
+   line — the name box shrinks to ~40px and you can't see what you're typing.
+   So the name gets its own full-width line, sets/reps and the controls share
+   the next one, and the tip sits underneath. (Children, in order: 1 name,
+   2 sets, 3 reps, 4 drag handle, 5 up/down, 6 remove, then the tip.) */
+@media (max-width: 440px) {
+  .builder__row {
+    grid-template-columns: 56px 80px 1fr 26px 26px 30px;
+    row-gap: 6px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .builder__row:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+
+  .builder__row > :nth-child(1) { grid-column: 1 / -1; grid-row: 1; }
+  .builder__row > :nth-child(2) { grid-column: 1; grid-row: 2; }
+  .builder__row > :nth-child(3) { grid-column: 2; grid-row: 2; }
+  .builder__row > :nth-child(4) { grid-column: 4; grid-row: 2; }
+  .builder__row > :nth-child(5) { grid-column: 5; grid-row: 2; }
+  .builder__row > :nth-child(6) { grid-column: 6; grid-row: 2; }
+  .builder__row .builder__row-tip { grid-column: 1 / -1; grid-row: 3; }
+}
+
+/* The smallest phones: trim the fixed columns so the row still fits inside the card. */
 @media (max-width: 360px) {
   .builder__row {
-    grid-template-columns: 1fr 44px 64px 22px 22px 26px;
+    grid-template-columns: 48px 64px 1fr 24px 24px 26px;
+    column-gap: 6px;
+  }
+
+  .builder__row .builder__row-handle {
+    width: 24px;
+  }
+
+  .builder__row .builder__row-remove {
+    width: 26px;
   }
 }

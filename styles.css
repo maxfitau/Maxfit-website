@@ -2389,3 +2389,127 @@ body.vt-lightbox-open { overflow: hidden; }
 
   .tv2__track .tv2-card[aria-hidden="true"] { display: none; }
 }
+
+/* ---------- Opening sale ---------- */
+
+.sale-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px 20px;
+  flex-wrap: wrap;
+  background: var(--red);
+  color: var(--on-red);
+  border-radius: var(--radius);
+  padding: 20px 24px;
+  margin-bottom: 28px;
+  box-shadow: 0 12px 40px rgba(224, 0, 0, 0.25);
+}
+
+.sale-banner__tag {
+  font-family: var(--font-head);
+  font-size: 0.8rem;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--red);
+  background: var(--white);
+  padding: 5px 14px;
+  border-radius: 999px;
+  flex: none;
+}
+
+.sale-banner__head {
+  margin: 0;
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: clamp(1.4rem, 3.5vw, 2rem);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--on-red);
+  flex: 1 1 260px;
+}
+
+.sale-banner__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.9rem;
+  flex: 1 1 260px;
+}
+
+.sale-banner__list s { opacity: 0.75; }
+
+.sale-banner__free {
+  background: var(--white);
+  color: var(--red);
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  letter-spacing: 1px;
+}
+
+.price-card__was {
+  font-family: var(--font-head);
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--white);
+  margin-right: 10px;
+  text-decoration-line: line-through;
+  text-decoration-thickness: 3px;
+  text-decoration-color: var(--red);
+}
+
+/* ---------- Why it matters ---------- */
+
+.why-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+@media (max-width: 800px) {
+  .why-grid { grid-template-columns: 1fr; }
+}
+
+.why-card {
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.why-card__num {
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: clamp(2.4rem, 5vw, 3.4rem);
+  line-height: 1;
+  color: var(--red);
+}
+
+.why-card__text {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  flex: 1;
+}
+
+.why-card__src {
+  font-size: 0.72rem;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.why__tie {
+  max-width: 720px;
+  margin: 32px auto 0;
+  text-align: center;
+  color: var(--white);
+  font-size: 1.05rem;
+  line-height: 1.6;
+}

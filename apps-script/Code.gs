@@ -30,6 +30,11 @@ const LOGGED_SETS_SHEET_NAME = "Logged Sets";
 // the same reason (setupGrocerySheet() creates it, so there's no gid yet).
 const GROCERY_SHEET_NAME = "Grocery Items";
 
+// Changes whenever this file does, and is shown when you open the deployed
+// URL in a browser (see doGet) — the quick way to tell whether a redeploy
+// actually took, instead of guessing from behaviour.
+const BACKEND_VERSION = "2026-09-20a";
+
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheets().find((s) => s.getSheetId() === gid);
@@ -87,7 +92,7 @@ function backfillTokens() {
  */
 function setupWorkoutSheets() {
   getOrCreateSheetByName_(EXERCISES_SHEET_NAME, ["Name", "Default Starting Weight (kg)"]);
-  getOrCreateSheetByName_(WORKOUT_EXERCISES_SHEET_NAME, ["Client", "Workout Name", "Order", "Exercise", "Target Sets", "Target Reps", "Days", "Workout Order"]);
+  getOrCreateSheetByName_(WORKOUT_EXERCISES_SHEET_NAME, ["Client", "Workout Name", "Order", "Exercise", "Target Sets", "Target Reps", "Days", "Workout Order", "Exercise Notes", "Workout Notes"]);
   getOrCreateSheetByName_(LOGGED_SETS_SHEET_NAME, ["Client", "Workout Name", "Exercise", "Set Number", "Weight (kg)", "Reps", "Date", "Timestamp", "Notes"]);
   Logger.log("Workout sheets ready.");
 }
@@ -181,7 +186,7 @@ function getOrCreateSheetByName_(name, headers) {
 
 /** Visiting the deployed URL directly in a browser hits this — confirms the deployment is live. */
 function doGet(e) {
-  return jsonResponse_({ status: "ok", message: "MaxFit check-in API is running." });
+  return jsonResponse_({ status: "ok", message: "MaxFit check-in API is running.", version: BACKEND_VERSION });
 }
 
 // Which sheet column each check-in "sessionType" decrements.
@@ -436,6 +441,7 @@ function handleCheckIn_(payload) {
     }
 
     maybeApplyReferralBonus_(sheet, col, rowIndex + 1, paidSessionsCount, sessionType, hasPaidOneOnOne);
+    markReferralCounted_(sheet, rowIndex + 1, paidSessionsCount);
   }
 
   return jsonResponse_({
@@ -599,11 +605,14 @@ function isEmailAlreadyPresent_(sheet, emailCol, email) {
  *   (group sessions after the milestone don't earn anything further).
  *   Stored on the referrer's own "Tokens Owed" cell if they're a client,
  *   or in the Referrals tab if they're not.
+ *
+ * Who the referrer is comes from referrerNameFor_ below: whatever's typed in
+ * the client's "Referred By" cell (a name, the referrer's Referral Code, or
+ * a client's unique check-in code), or — if that's blank — the referrer whose
+ * row lists this client's own unique code under "Referred Clients".
  */
 function maybeApplyReferralBonus_(sheet, col, row, paidSessionsCount, sessionType, hasPaidOneOnOne) {
-  const referredBy = col.referredBy >= 0
-    ? String(sheet.getRange(row, col.referredBy + 1).getValue() || "").trim()
-    : "";
+  const referredBy = referrerNameFor_(sheet, col, row);
   if (!referredBy) return;
 
   const lastRow = sheet.getLastRow();
@@ -647,7 +656,13 @@ function maybeApplyReferralBonus_(sheet, col, row, paidSessionsCount, sessionTyp
 
 /** Finds a friend's row in the Referrals tab. Returns null if the tab, the friend, or a needed column isn't there. */
 function findReferralsRow_(friendName, columnNames) {
-  const refSheet = getSheetByGid_(REFERRALS_SHEET_GID);
+  // A missing or renamed Refferals tab shouldn't stop a client referrer being paid.
+  let refSheet;
+  try {
+    refSheet = getSheetByGid_(REFERRALS_SHEET_GID);
+  } catch (err) {
+    return null;
+  }
   const refHeader = refSheet.getRange(1, 1, 1, refSheet.getLastColumn()).getValues()[0];
   const rCol = { friendName: findColumn_(refHeader, "Friend Name") };
   for (const name of columnNames) rCol[name] = findColumn_(refHeader, name);
@@ -660,6 +675,289 @@ function findReferralsRow_(friendName, columnNames) {
   if (idx < 0) return null;
 
   return { sheet: refSheet, col: rCol, row: idx + 2 };
+}
+
+// ---- Referral payout when Paid Sessions is edited BY HAND ------------------
+//
+// The payout above used to run only inside a check-in scan. These let it
+// happen off a hand-typed Paid Sessions number too, so a client who was
+// marked up by hand (or never scanned) still earns their referrer the same
+// tokens. Two helper columns are involved, both created on demand:
+//   "Referral Sessions Counted" (Sessions Remaining) — the highest paid-session
+//     count already run through the payout for that client. It's what stops
+//     any session being paid for twice: correcting 5 -> 4 -> 5 by hand, or a
+//     check-in followed by a manual edit, only ever pays for counts above it.
+//   "Referred Clients" (Refferals tab, and optionally Sessions Remaining) — a
+//     referrer's row can list the unique codes of the clients they referred.
+
+const REFERRAL_COUNTER_COLUMN = "Referral Sessions Counted";
+const REFERRED_CLIENTS_COLUMN = "Referred Clients";
+
+// A hand edit that raises Paid Sessions by more than this in one go is far
+// more likely a typo (30 for 3) than a real catch-up, and paying 155 tokens
+// for a slip of the finger isn't something to do silently.
+const MAX_MANUAL_CATCH_UP = 10;
+
+function sessionsReferralColumns_(header) {
+  return {
+    name: findColumn_(header, "Name"),
+    paidSessions: findColumn_(header, "Paid Sessions"),
+    hasPaidOneOnOne: findColumn_(header, "Has Paid 1-on-1"),
+    referredBy: findColumn_(header, "Referred By"),
+    groupSessions: findColumn_(header, "Group Sessions Remaining"),
+    paidInClasses: findColumn_(header, "Paid In Classes"),
+    tokensOwed: findColumn_(header, "Tokens Owed"),
+    checkInToken: findColumn_(header, "Check-in Token"),
+    counter: findColumn_(header, REFERRAL_COUNTER_COLUMN),
+  };
+}
+
+/** A cell's value as a whole number of sessions — blank, text and negatives all count as 0. */
+function toSessionCount_(value) {
+  const n = Number(String(value == null ? "" : value).trim());
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+/**
+ * Runs by itself whenever the spreadsheet is edited by hand — a "simple
+ * trigger", so there's nothing to set up: it works as soon as this code is
+ * saved in the Apps Script project. (It does not fire for changes the
+ * check-in script itself makes, which already run the payout directly.)
+ *
+ * Only a single-cell edit to Paid Sessions on Sessions Remaining does
+ * anything. Pastes and fills across several cells are ignored on purpose —
+ * with no per-cell "before" value there's no safe way to tell what changed.
+ */
+function onEdit(e) {
+  try {
+    if (!e || !e.range) return;
+    const range = e.range;
+    const sheet = range.getSheet();
+    if (sheet.getSheetId() !== SESSIONS_SHEET_GID) return;
+    if (range.getNumRows() !== 1 || range.getNumColumns() !== 1) return;
+    const row = range.getRow();
+    if (row < 2) return;
+
+    const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const paidCol = findColumn_(header, "Paid Sessions");
+    if (paidCol < 0 || range.getColumn() - 1 !== paidCol) return;
+
+    const oldCount = toSessionCount_(e.oldValue);
+    const newCount = toSessionCount_(range.getValue());
+
+    // Take the same lock check-ins use, so a hand edit can't interleave with a
+    // scan. If a lock isn't available to a simple trigger (or is busy for 10s),
+    // carry on without one — a missed payout is worse than a tiny race.
+    let lock = null;
+    let locked = false;
+    try {
+      lock = LockService.getScriptLock();
+      lock.waitLock(10000);
+      locked = true;
+    } catch (err) {
+      locked = false;
+    }
+    try {
+      applyPaidSessionsEdit_(sheet, row, oldCount, newCount, range);
+    } finally {
+      if (locked) {
+        try {
+          lock.releaseLock();
+        } catch (err) {
+          // Already released — nothing to do.
+        }
+      }
+    }
+  } catch (err) {
+    Logger.log("Referral payout after a manual edit failed: " + err);
+  }
+}
+
+/**
+ * Pays the referrer for every paid session above what's already been counted
+ * for this client, one session at a time so each threshold (the 3rd = 20
+ * tokens, every later one = 5) lands exactly once — the same rules as a
+ * check-in. A hand edit can't say whether a session was a group class or a
+ * 1-on-1, so each one past the 3rd is treated as earning the 5.
+ *
+ * The first time a client is seen here their counter is blank; it's taken to
+ * be whatever the cell held BEFORE this edit, on the basis that everything up
+ * to then was already handled by check-ins. That's what keeps clients who
+ * already have paid sessions from being paid for them all over again.
+ */
+function applyPaidSessionsEdit_(sheet, row, oldCount, newCount, editedRange) {
+  const header = ensureColumns_(sheet, [REFERRAL_COUNTER_COLUMN]);
+  const col = sessionsReferralColumns_(header);
+  const counterCell = sheet.getRange(row, col.counter + 1);
+  const rawValue = counterCell.getValue();
+  const rawCounter = rawValue === "" || rawValue == null ? "" : String(rawValue).trim();
+  const counted = rawCounter !== "" && Number.isFinite(Number(rawCounter)) ? Number(rawCounter) : oldCount;
+
+  if (newCount > counted) {
+    if (newCount - counted > MAX_MANUAL_CATCH_UP) {
+      // Pay nothing. A blank counter is pinned to the value from BEFORE this
+      // edit, otherwise the correction that follows (30 -> 3) would be measured
+      // against the typo and never pay. A counter that already has a value is
+      // left alone, so the corrected number picks up from where it should.
+      if (rawCounter === "") counterCell.setValue(counted);
+      if (editedRange && editedRange.setNote) {
+        editedRange.setNote("Referral payout skipped: Paid Sessions jumped by more than " + MAX_MANUAL_CATCH_UP
+          + " in one edit, which looks like a typo. Fix the number, or set '" + REFERRAL_COUNTER_COLUMN + "' by hand if it's right.");
+      }
+      return;
+    }
+    const hasPaidOneOnOne = col.hasPaidOneOnOne >= 0
+      && String(sheet.getRange(row, col.hasPaidOneOnOne + 1).getValue() || "").trim().toLowerCase() === "y";
+    for (let k = counted + 1; k <= newCount; k++) {
+      maybeApplyReferralBonus_(sheet, col, row, k, "one-on-one", hasPaidOneOnOne);
+    }
+  }
+
+  const target = Math.max(counted, newCount);
+  if (rawCounter === "" || target !== counted) counterCell.setValue(target);
+}
+
+/** Called after a check-in has run the payout, so a later manual edit only pays for sessions beyond this one. */
+function markReferralCounted_(sheet, row, count) {
+  const header = ensureColumns_(sheet, [REFERRAL_COUNTER_COLUMN]);
+  const counterCol = findColumn_(header, REFERRAL_COUNTER_COLUMN);
+  const cell = sheet.getRange(row, counterCol + 1);
+  const raw = cell.getValue();
+  const current = raw === "" || raw == null ? 0 : Number(raw);
+  if (!Number.isFinite(current) || count > current) cell.setValue(count);
+}
+
+/**
+ * Works out WHO referred the client on `row`, as a name the payout can look
+ * up (a client's Name, or a friend's name on the Refferals tab):
+ *   1. Whatever's typed in the client's "Referred By" — a name as before, or
+ *      the referrer's Referral Code, or a client's own unique check-in code.
+ *   2. If that's blank: the referrer whose row lists this client's unique
+ *      code under "Referred Clients".
+ */
+function referrerNameFor_(sheet, col, row) {
+  const typed = col.referredBy >= 0
+    ? String(sheet.getRange(row, col.referredBy + 1).getValue() || "").trim()
+    : "";
+  if (typed) return resolveReferrerText_(sheet, col, typed);
+
+  const token = col.checkInToken >= 0
+    ? String(sheet.getRange(row, col.checkInToken + 1).getValue() || "").trim()
+    : "";
+  return token ? findReferrerListingCode_(token) : "";
+}
+
+/** Turns what was typed in "Referred By" into a referrer's name. Anything that isn't a recognised code is assumed to be a name already. */
+function resolveReferrerText_(sheet, col, text) {
+  const wanted = text.toLowerCase();
+  const lastRow = sheet.getLastRow();
+  const names = col.name >= 0 && lastRow >= 2
+    ? sheet.getRange(2, col.name + 1, lastRow - 1, 1).getValues().flat()
+    : [];
+
+  // A client's name — the way it has always worked.
+  if (names.some((n) => String(n || "").trim().toLowerCase() === wanted)) return text;
+
+  // A Referral Code from the Refferals tab.
+  const byCode = findReferrerNameByCode_(text);
+  if (byCode) return byCode;
+
+  // A client's own unique code.
+  if (col.checkInToken >= 0 && lastRow >= 2) {
+    const tokens = sheet.getRange(2, col.checkInToken + 1, lastRow - 1, 1).getValues().flat();
+    const idx = tokens.findIndex((t) => String(t || "").trim().toLowerCase() === wanted);
+    if (idx >= 0 && String(names[idx] || "").trim()) return String(names[idx]).trim();
+  }
+  return text;
+}
+
+/** The friend on the Refferals tab whose Referral Code is `code`, or "". */
+function findReferrerNameByCode_(code) {
+  let refSheet;
+  try {
+    refSheet = getSheetByGid_(REFERRALS_SHEET_GID);
+  } catch (err) {
+    return "";
+  }
+  const lastRow = refSheet.getLastRow();
+  const lastCol = refSheet.getLastColumn();
+  if (lastRow < 2 || lastCol < 1) return "";
+  const header = refSheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const codeCol = findColumn_(header, "Referral Code");
+  const nameCol = findColumn_(header, "Friend Name");
+  if (codeCol < 0 || nameCol < 0) return "";
+
+  const wanted = code.toLowerCase();
+  const values = refSheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+  for (const r of values) {
+    if (String(r[codeCol] || "").trim().toLowerCase() === wanted) return String(r[nameCol] || "").trim();
+  }
+  return "";
+}
+
+/** The referrer (on the Refferals tab, else Sessions Remaining) whose "Referred Clients" cell contains this unique code, or "". */
+function findReferrerListingCode_(code) {
+  if (code.length < 8) return ""; // a fragment this short could match by accident
+  const wanted = code.toLowerCase();
+  const candidates = [];
+  try {
+    candidates.push([getSheetByGid_(REFERRALS_SHEET_GID), "Friend Name"]);
+  } catch (err) {
+    // No Refferals tab — Sessions Remaining is still checked below.
+  }
+  try {
+    candidates.push([getSheetByGid_(SESSIONS_SHEET_GID), "Name"]);
+  } catch (err) {
+    // Nothing else to check.
+  }
+
+  for (const [sheet, nameHeader] of candidates) {
+    const lastRow = sheet.getLastRow();
+    const lastCol = sheet.getLastColumn();
+    if (lastRow < 2 || lastCol < 1) continue;
+    const header = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    const listCol = findColumn_(header, REFERRED_CLIENTS_COLUMN);
+    const nameCol = findColumn_(header, nameHeader);
+    if (listCol < 0 || nameCol < 0) continue;
+
+    const values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+    for (const r of values) {
+      if (String(r[listCol] || "").toLowerCase().indexOf(wanted) >= 0) {
+        const name = String(r[nameCol] || "").trim();
+        if (name) return name;
+      }
+    }
+  }
+  return "";
+}
+
+/**
+ * Optional one-time helper — run manually from the Apps Script editor. Adds
+ * the helper columns the manual referral payout uses ("Referral Sessions
+ * Counted" on Sessions Remaining; "Referred Clients" on the Refferals tab and
+ * on Sessions Remaining) and sets every existing client's counter to their
+ * current Paid Sessions, so nothing already handled can ever be paid twice.
+ * The payout works without running this — it creates what it needs the first
+ * time it fires — but this is the way to get the "Referred Clients" column
+ * to exist so you can start pasting codes into it. Safe to re-run.
+ */
+function setupReferralTracking() {
+  const sessions = getSheetByGid_(SESSIONS_SHEET_GID);
+  const header = ensureColumns_(sessions, [REFERRAL_COUNTER_COLUMN, REFERRED_CLIENTS_COLUMN]);
+  const col = sessionsReferralColumns_(header);
+  const lastRow = sessions.getLastRow();
+  if (lastRow >= 2 && col.paidSessions >= 0) {
+    const paid = sessions.getRange(2, col.paidSessions + 1, lastRow - 1, 1).getValues();
+    const counters = sessions.getRange(2, col.counter + 1, lastRow - 1, 1).getValues();
+    const filled = counters.map((c, i) => (c[0] === "" || c[0] == null ? [toSessionCount_(paid[i][0])] : [c[0]]));
+    sessions.getRange(2, col.counter + 1, lastRow - 1, 1).setValues(filled);
+  }
+  try {
+    ensureColumns_(getSheetByGid_(REFERRALS_SHEET_GID), [REFERRED_CLIENTS_COLUMN]);
+  } catch (err) {
+    Logger.log("No Refferals tab found — skipped its Referred Clients column.");
+  }
+  Logger.log("Referral tracking ready.");
 }
 
 /**
@@ -682,6 +980,7 @@ function handleAssignWorkout_(payload) {
   const workoutName = String(payload.workoutName || "").trim();
   const exercises = Array.isArray(payload.exercises) ? payload.exercises : [];
   const days = Array.isArray(payload.days) ? payload.days.map((d) => String(d).trim()).filter(Boolean) : [];
+  const workoutNote = cleanNote_(payload.workoutNote, 1000);
   if (!clientSlug || !workoutName || !exercises.length) {
     return jsonResponse_({ status: "error", message: "Missing client, workout name, or exercises." });
   }
@@ -692,8 +991,7 @@ function handleAssignWorkout_(payload) {
   }
 
   const lastRow = sheet.getLastRow();
-  const lastCol = sheet.getLastColumn();
-  const header = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const header = ensureWorkoutExercisesColumns_(sheet);
   const col = {
     client: findColumn_(header, "Client"),
     workoutName: findColumn_(header, "Workout Name"),
@@ -703,6 +1001,8 @@ function handleAssignWorkout_(payload) {
     reps: findColumn_(header, "Target Reps"),
     days: findColumn_(header, "Days"),
     workoutOrder: findColumn_(header, "Workout Order"),
+    exerciseNotes: findColumn_(header, "Exercise Notes"),
+    workoutNotes: findColumn_(header, "Workout Notes"),
   };
 
   // A resave keeps this workout's existing position in the chip/picker
@@ -742,11 +1042,16 @@ function handleAssignWorkout_(payload) {
     row[col.reps] = String((ex && ex.reps) || "").trim();
     if (col.days >= 0) row[col.days] = daysStr;
     if (col.workoutOrder >= 0) row[col.workoutOrder] = workoutOrderValue;
+    // The workout-level note is repeated on every row, same as Days.
+    row[col.exerciseNotes] = cleanNote_(ex && ex.note, 300);
+    row[col.workoutNotes] = workoutNote;
     return row;
   });
   sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, header.length).setValues(newRows);
 
-  return jsonResponse_({ status: "success" });
+  // notesSupported lets the builder tell a deployment that stored the tips
+  // from an older one that would have quietly ignored them.
+  return jsonResponse_({ status: "success", notesSupported: true });
 }
 
 /**
@@ -891,8 +1196,23 @@ function handleDeleteWorkout_(payload) {
  * means no manual migration step to remember.
  */
 function ensureLoggedSetsColumns_(sheet) {
+  return ensureColumns_(sheet, ["Workout Name", "Notes"]);
+}
+
+/**
+ * Same idea for the Workout Exercises tab: the coach's per-exercise tips
+ * ("Exercise Notes") and the note shown at the top of a workout ("Workout
+ * Notes"). Older tabs don't have them, so they're added the first time a
+ * workout is saved rather than needing a manual migration.
+ */
+function ensureWorkoutExercisesColumns_(sheet) {
+  return ensureColumns_(sheet, ["Exercise Notes", "Workout Notes"]);
+}
+
+/** Adds any of `names` that are missing from the sheet's header row (at the end — everything looks columns up by NAME, so position doesn't matter) and returns the up-to-date header. */
+function ensureColumns_(sheet, names) {
   const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  for (const name of ["Workout Name", "Notes"]) {
+  for (const name of names) {
     if (findColumn_(header, name) >= 0) continue;
     if (sheet.getMaxColumns() < header.length + 1) {
       sheet.insertColumnsAfter(sheet.getMaxColumns(), header.length + 1 - sheet.getMaxColumns());
@@ -901,6 +1221,17 @@ function ensureLoggedSetsColumns_(sheet) {
     header.push(name);
   }
   return header;
+}
+
+/**
+ * Coach-typed text (an exercise tip, a workout note) made safe to store in a
+ * cell: line endings normalised, trimmed, capped at maxLen. Sheets reads
+ * anything starting with = + - or @ as a formula rather than text, so those
+ * get a leading apostrophe, which forces plain text (and isn't stored).
+ */
+function cleanNote_(value, maxLen) {
+  const text = String(value == null ? "" : value).replace(/\r\n?/g, "\n").trim().slice(0, maxLen);
+  return /^[=+\-@]/.test(text) ? "'" + text : text;
 }
 
 /**

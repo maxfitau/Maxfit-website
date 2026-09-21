@@ -78,6 +78,15 @@ function addRow(exercise) {
   repsInput.placeholder = "Reps";
   repsInput.value = (exercise && exercise.reps) || "";
 
+  // An optional coaching cue shown to the client under this exercise. Added to
+  // the row LAST, so the name/sets/reps inputs stay the first three inputs.
+  const tipInput = document.createElement("input");
+  tipInput.type = "text";
+  tipInput.className = "builder__row-tip";
+  tipInput.placeholder = "Tip for the client (optional) — e.g. keep your elbows tucked";
+  tipInput.maxLength = 300;
+  tipInput.value = (exercise && exercise.note) || "";
+
   const handle = document.createElement("div");
   handle.className = "builder__row-handle";
   handle.textContent = "⠿";
@@ -126,6 +135,7 @@ function addRow(exercise) {
   row.appendChild(handle);
   row.appendChild(moveWrap);
   row.appendChild(removeButton);
+  row.appendChild(tipInput);
   els.rows.appendChild(row);
 }
 
@@ -175,6 +185,39 @@ function makeRowDraggable(row, handle) {
 
 function clearRows() {
   els.rows.innerHTML = "";
+}
+
+/**
+ * The note shown at the top of the client's workout ("warm up 5 min first,
+ * rest 60–90 sec"). Created here rather than in builder.html so this script
+ * never depends on markup an older cached copy of the page might not have.
+ */
+function buildWorkoutNoteField() {
+  const field = document.createElement("div");
+  field.className = "builder__field";
+
+  const label = document.createElement("span");
+  label.className = "card__label";
+  label.textContent = "Workout note for the client (optional)";
+  field.appendChild(label);
+
+  const textarea = document.createElement("textarea");
+  textarea.className = "picker__input builder__note";
+  textarea.rows = 2;
+  textarea.maxLength = 1000;
+  textarea.placeholder = "Shown at the top of their workout — e.g. warm up for 5 minutes first, rest 60–90 seconds between sets.";
+  field.appendChild(textarea);
+
+  els.daysPicker.parentElement.insertAdjacentElement("afterend", field);
+  els.workoutNote = textarea;
+}
+
+function workoutNoteValue() {
+  return els.workoutNote ? els.workoutNote.value.trim() : "";
+}
+
+function setWorkoutNote(text) {
+  if (els.workoutNote) els.workoutNote.value = text || "";
 }
 
 /** One toggle chip per weekday, built once — schedules which day(s) this named workout is meant for, so the card can name it instead of just saying "tap to choose". Entirely optional: a workout with no days selected still works exactly as before. */
@@ -256,14 +299,17 @@ async function loadClientWorkouts(clientSlug) {
         order: parseSessions(r[col.order], 0),
         days: (col.days >= 0 ? String(r[col.days] || "") : "").split(",").map((d) => d.trim()).filter(Boolean),
         workoutOrder: col.workoutOrder >= 0 ? Number(r[col.workoutOrder]) : NaN,
+        note: col.notes >= 0 ? String(r[col.notes] || "").trim() : "",
+        workoutNote: col.workoutNotes >= 0 ? String(r[col.workoutNotes] || "").trim() : "",
       }))
       .filter((ex) => ex.name && ex.workoutName);
 
     for (const ex of clientRows) {
       const key = ex.workoutName.toLowerCase();
       if (!clientWorkouts[key]) {
-        clientWorkouts[key] = { name: ex.workoutName, exercises: [], days: ex.days, order: ex.workoutOrder };
+        clientWorkouts[key] = { name: ex.workoutName, exercises: [], days: ex.days, order: ex.workoutOrder, note: "" };
       }
+      if (!clientWorkouts[key].note && ex.workoutNote) clientWorkouts[key].note = ex.workoutNote;
       clientWorkouts[key].exercises.push(ex);
     }
     for (const key of Object.keys(clientWorkouts)) {
@@ -409,12 +455,14 @@ function loadNamedWorkoutIntoRows(workoutName) {
   const workout = clientWorkouts[key];
   clearRows();
   if (workout && workout.exercises.length) {
-    workout.exercises.forEach(addRow);
+    workout.exercises.forEach((exercise) => addRow(exercise));
     setSelectedDays(workout.days);
+    setWorkoutNote(workout.note);
     els.deleteButton.hidden = false;
   } else {
     addRow();
     setSelectedDays([]);
+    setWorkoutNote("");
     els.deleteButton.hidden = true;
   }
   renderChipsAndOptions();
@@ -424,6 +472,7 @@ els.clientSelect.addEventListener("change", async () => {
   els.workoutNameInput.value = "";
   clearRows();
   setSelectedDays([]);
+  setWorkoutNote("");
   els.deleteButton.hidden = true;
   els.chips.innerHTML = "";
   await loadClientWorkouts(els.clientSelect.value);
@@ -453,11 +502,12 @@ els.saveButton.addEventListener("click", async () => {
 
   const exercises = Array.from(els.rows.children)
     .map((row) => {
-      const [nameInput, setsInput, repsInput] = row.querySelectorAll("input");
+      const [nameInput, setsInput, repsInput, tipInput] = row.querySelectorAll("input");
       return {
         name: nameInput.value.trim(),
         sets: Number(setsInput.value),
         reps: repsInput.value.trim(),
+        note: tipInput ? tipInput.value.trim() : "",
       };
     })
     .filter((ex) => ex.name);
@@ -472,6 +522,8 @@ els.saveButton.addEventListener("click", async () => {
   }
 
   const days = getSelectedDays();
+  const workoutNote = workoutNoteValue();
+  const hasNotes = Boolean(workoutNote) || exercises.some((ex) => ex.note);
   const pin = currentPin();
   els.saveButton.disabled = true;
   els.saveButton.textContent = "Saving…";
@@ -483,7 +535,7 @@ els.saveButton.addEventListener("click", async () => {
     const res = await fetch(APPS_SCRIPT_URL, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" }, // avoids a CORS preflight
-      body: JSON.stringify({ action: "assignWorkout", pin, clientSlug, workoutName, exercises, days }),
+      body: JSON.stringify({ action: "assignWorkout", pin, clientSlug, workoutName, exercises, days, workoutNote }),
     });
     result = await res.json();
   } catch (err) {
@@ -515,6 +567,12 @@ els.saveButton.addEventListener("click", async () => {
   els.deleteButton.hidden = false;
   await loadClientWorkouts(clientSlug);
   renderChipsAndOptions();
+
+  // An Apps Script deployment from before tips existed saves the exercises but
+  // silently throws the tips away — say so, rather than let "Saved" imply they're there.
+  if (hasNotes && !result.notesSupported) {
+    showError("Saved the exercises, but the tips and notes were NOT stored — the Apps Script on Google is out of date. Redeploy it (Deploy → Manage deployments → New version), then Save again.");
+  }
 });
 
 els.deleteButton.addEventListener("click", async () => {
@@ -565,6 +623,7 @@ els.deleteButton.addEventListener("click", async () => {
   els.workoutNameInput.value = "";
   clearRows();
   setSelectedDays([]);
+  setWorkoutNote("");
   addRow();
   await loadClientWorkouts(clientSlug);
   renderChipsAndOptions();
@@ -601,6 +660,7 @@ function rememberPin_(pin) {
   els.pinRow.hidden = Boolean(rememberedPin);
 
   buildDaysPicker();
+  buildWorkoutNoteField();
   loadClientList();
   loadExerciseOptions();
   addRow();

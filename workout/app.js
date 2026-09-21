@@ -21,6 +21,23 @@
  * was saved but never logged is sent automatically the next time this page
  * opens on a later day, so it isn't stranded on the phone.)
  *
+ * A "Workout date" row at the top defaults to today. Pointing it at an earlier
+ * day logs a session that already happened (a workout done with a client
+ * yesterday, say): everything — the phone-side draft, the "last time"
+ * numbers, the Log Workout that sends it — then belongs to THAT day, and it
+ * doesn't tick today's "workout completed" box on the card.
+ *
+ * Coach mode (?coach=1): opened from the check-in page (checkin.html) after
+ * Max scans a client's QR code, so he can log THEIR workout on his own phone.
+ * It's the same page with the same client id — plus ?workout= to open one
+ * workout directly, ?name= for the "Logging for ..." banner, and ?back= so the
+ * back arrow returns to the check-in screen. It has no timer (he may be logging
+ * after the fact) and never ticks the "workout completed" box, which lives on
+ * whichever phone this is.
+ *
+ * The coach can attach a tip to any exercise and a note to the whole workout
+ * (workout/builder.html); they show under the exercise / above the list.
+ *
  * The weight prefill is what makes a normal week quick: every set opens with
  * the numbers from the client's most recent PREVIOUS session of that exact
  * exercise — regardless of which named workout it was logged under — so they
@@ -56,6 +73,27 @@ if (!memberId) {
   } catch (err) {
     // Ignore — memberId stays null, handled below.
   }
+}
+
+// Coach mode: see the header comment. None of this grants anything — it only changes what's shown.
+const coachMode = params.get("coach") === "1";
+const coachClientName = (params.get("name") || "").trim();
+const presetWorkoutName = (params.get("workout") || "").trim();
+
+/** Where the back arrow goes from the top level: the check-in page that sent us here (this site only — anything else is ignored), else the client's card. */
+function homeHref() {
+  if (coachMode) {
+    const back = params.get("back");
+    if (back) {
+      try {
+        const url = new URL(back, window.location.href);
+        if (url.origin === window.location.origin) return url.href;
+      } catch (err) {
+        // Not a usable URL — fall through to the card.
+      }
+    }
+  }
+  return `../card/?id=${encodeURIComponent(memberId)}`;
 }
 
 const els = {
@@ -118,6 +156,23 @@ function dateSortKey(raw) {
   return y * 10000 + m * 100 + d;
 }
 
+const DAY_ABBR = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MAX_BACKLOG_DAYS = 365; // how far back a session can be logged
+
+/** "2026-09-19" -> "Sat 19 Sep". */
+function friendlyDate(dateStr) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const weekday = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  return `${DAY_ABBR[weekday]} ${d} ${MONTH_ABBR[m - 1]}`;
+}
+
+/** A "yyyy-MM-dd" date moved by whole days — plain calendar arithmetic, so no timezone or daylight-saving surprises. */
+function shiftDate(dateStr, days) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d) + days * 86400000).toISOString().slice(0, 10);
+}
+
 function formatElapsed(ms) {
   const totalSeconds = Math.floor(ms / 1000);
   const hours = Math.floor(totalSeconds / 3600);
@@ -166,9 +221,11 @@ function formatWeight(n) {
  * not scoped to the workout currently open: a client who does Bench Press
  * under both "Push" and "Upper" should see the same last-session numbers
  * either way, since it's the same lift regardless of which named workout
- * it's filed under. Today's own rows are skipped (`excludeKey`) — sets they've
- * already saved today are restored separately, and the prefill is meant to
- * show what they did LAST time.
+ * it's filed under. Only sessions strictly BEFORE `beforeKey` (the day being
+ * logged) count: for today that's everything up to yesterday — sets already
+ * saved today are restored separately, and the prefill is meant to show what
+ * they did LAST time — and when logging a past day it's what they did before
+ * THAT day, never anything after it.
  *
  * "Most recent" is decided by comparing the Date column itself, not by row
  * position: editing an old day in the history calendar re-appends that day's
@@ -180,13 +237,13 @@ function formatWeight(n) {
  * Returns a Map of set number -> { weight, reps } for that one session, or
  * null if this exercise has never been logged before.
  */
-function mostRecentSessionSets(setRows, col, clientSlug, exerciseName, excludeKey) {
+function mostRecentSessionSets(setRows, col, clientSlug, exerciseName, beforeKey) {
   let bestKey = -1;
   for (const row of setRows) {
     if (String(row[col.client] || "").trim().toLowerCase() !== clientSlug) continue;
     if (String(row[col.exercise] || "").trim().toLowerCase() !== exerciseName) continue;
     const key = col.date >= 0 ? dateSortKey(row[col.date]) : NaN;
-    if (!Number.isFinite(key) || key === excludeKey) continue;
+    if (!Number.isFinite(key) || key >= beforeKey) continue;
     if (key > bestKey) bestKey = key;
   }
   if (bestKey < 0) return null;
@@ -204,6 +261,27 @@ function mostRecentSessionSets(setRows, col, clientSlug, exerciseName, excludeKe
     bySetNumber.set(setNumber, { weight, reps: Number.isFinite(reps) ? reps : null });
   }
   return bySetNumber.size ? bySetNumber : null;
+}
+
+/**
+ * How many distinct sets the sheet already holds for this client + workout +
+ * day — used ONLY to warn that logging is about to replace them (say, the
+ * client already logged that session from their own phone). It's a count,
+ * never something put on screen as sets. Rows from before the sheet had a
+ * Workout Name column can't be told apart by workout, so they aren't counted.
+ */
+function existingLogCount(setRows, col, clientSlug, workoutName, dateStr) {
+  if (col.workoutName < 0 || col.date < 0) return 0;
+  const wantedDate = dateSortKey(dateStr);
+  const wantedName = workoutName.trim().toLowerCase();
+  const seen = new Set();
+  for (const row of setRows) {
+    if (String(row[col.client] || "").trim().toLowerCase() !== clientSlug) continue;
+    if (dateSortKey(row[col.date]) !== wantedDate) continue;
+    if (String(row[col.workoutName] || "").trim().toLowerCase() !== wantedName) continue;
+    seen.add(`${String(row[col.exercise] || "").trim().toLowerCase()}|${row[col.setNumber]}`);
+  }
+  return seen.size;
 }
 
 // ---- Drafts: the session as it's been saved on this phone -----------------
@@ -310,13 +388,17 @@ async function postSession(draft) {
   }
 }
 
+const DRAFT_KEEP_MS = 14 * 24 * 60 * 60 * 1000; // sent drafts are kept this long, then cleaned up
+
 /**
  * A workout that was saved set-by-set but never logged (they forgot the final
  * button, or had no signal when they pressed it) would otherwise sit on the
  * phone forever. Once the day it belongs to is over, send it — every set in
- * it was one they deliberately saved. Older drafts that were already logged
- * are just cleaned up. Runs in the background; anything that fails stays put
- * for the next open.
+ * it was one they deliberately saved. A draft that's been sent is kept (marked
+ * as sent, not deleted) for a couple of weeks rather than thrown away: a
+ * session being logged for an earlier day can then be reopened and carried on
+ * from where it was left, without the sets already sent being lost. Runs in
+ * the background; anything that fails stays put for the next open.
  */
 async function flushOldDrafts(todayStr) {
   for (const key of allDraftKeys()) {
@@ -326,16 +408,18 @@ async function flushOldDrafts(todayStr) {
       continue;
     }
     if (draft.date === todayStr) continue;
-    if (!draft.pending || !Array.isArray(draft.sets) || !draft.sets.length) {
-      removeDraft(key);
+
+    if (draft.pending && Array.isArray(draft.sets) && draft.sets.length) {
+      try {
+        await postSession(draft);
+        const latest = readDraft(key);
+        if (latest && latest.rev === draft.rev) writeDraft(key, { ...latest, pending: false });
+      } catch (err) {
+        // Offline, or the server's busy — try again next time the page opens.
+      }
       continue;
     }
-    try {
-      await postSession(draft);
-      removeDraft(key);
-    } catch (err) {
-      // Offline, or the server's busy — try again next time the page opens.
-    }
+    if (Date.now() - (draft.updatedAt || 0) > DRAFT_KEEP_MS) removeDraft(key);
   }
 }
 
@@ -472,7 +556,7 @@ function addExerciseSection(ctx, exercise, opts) {
   const isExtra = Boolean(opts && opts.isExtra);
   const savedSets = (opts && opts.savedSets) || new Map(); // setNumber -> { weight, reps }
   const key = exercise.name.toLowerCase();
-  const historySets = mostRecentSessionSets(setRows, setCol, clientSlug, key, ctx.todayKey);
+  const historySets = mostRecentSessionSets(setRows, setCol, clientSlug, key, ctx.beforeKey);
   const maxHistSetNumber = historySets ? Math.max(...historySets.keys()) : 0;
   const firstSetHistory = historySets ? historySets.get(1) : null;
   const historyWeight = firstSetHistory ? firstSetHistory.weight : null;
@@ -509,6 +593,19 @@ function addExerciseSection(ctx, exercise, opts) {
       ? `Starting weight: ${formatWeight(prefillWeight)}kg`
       : "New exercise — enter your starting weight";
   section.appendChild(hint);
+
+  // The coach's tip for this exercise, if there is one. Inserted as text, never
+  // as markup, so whatever was typed is shown exactly as written.
+  if (exercise.note) {
+    const tip = document.createElement("p");
+    tip.className = "workout__exercise-tip";
+    const tipLabel = document.createElement("span");
+    tipLabel.className = "workout__exercise-tip-label";
+    tipLabel.textContent = "Tip";
+    tip.appendChild(tipLabel);
+    tip.appendChild(document.createTextNode(exercise.note));
+    section.appendChild(tip);
+  }
 
   const setsWrap = document.createElement("div");
   setsWrap.className = "workout__sets";
@@ -678,6 +775,17 @@ function buildLogSection(ctx) {
   summary.className = "workout__save-summary";
   wrap.appendChild(summary);
 
+  // Only when the sheet already has this workout for this day and this phone has
+  // no draft of it (so it wasn't logged from here): logging would replace it.
+  const warning = document.createElement("p");
+  warning.className = "workout__save-warning";
+  warning.hidden = !ctx.alreadyLoggedCount;
+  if (ctx.alreadyLoggedCount) {
+    const when = ctx.isToday ? "today" : friendlyDate(ctx.dateStr);
+    warning.textContent = `${ctx.workoutName} is already logged for ${when} (${ctx.alreadyLoggedCount} set${ctx.alreadyLoggedCount === 1 ? "" : "s"}). Log Workout will replace it.`;
+  }
+  wrap.appendChild(warning);
+
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "workout__save-btn";
@@ -722,19 +830,37 @@ function buildLogSection(ctx) {
       const latest = readDraft(ctx.draftKey);
       if (latest && latest.rev === draft.rev) writeDraft(ctx.draftKey, { ...latest, pending: false });
 
-      if (ctx.finalElapsed === undefined) ctx.finalElapsed = stopWorkoutTimer();
-      els.timerValue.textContent = formatElapsed(ctx.finalElapsed);
-      els.doneText.textContent = `Nice work — logged in ${formatElapsed(ctx.finalElapsed)}. Head back to your card.`
-        + (unfinished ? ` (${unfinished} set${unfinished === 1 ? "" : "s"} had no weight or reps, so ${unfinished === 1 ? "it wasn't" : "they weren't"} logged.)` : "");
+      // The date was changed (or they went back) while this was sending — the
+      // draft above is already marked sent, but this screen isn't theirs anymore.
+      if (ctx.dead) return;
+
+      warning.hidden = true; // it's this phone's own log now
+      const unfinishedNote = unfinished
+        ? ` (${unfinished} set${unfinished === 1 ? "" : "s"} had no weight or reps, so ${unfinished === 1 ? "it wasn't" : "they weren't"} logged.)`
+        : "";
+      if (coachMode) {
+        // Logged by the coach for a client: no timer text, and the "workout
+        // completed" box (which belongs to whichever phone this is) stays alone.
+        const who = coachClientName || "them";
+        els.doneText.textContent = `Logged for ${who}${ctx.isToday ? "" : ` (${friendlyDate(ctx.dateStr)})`}. Scan the next member's QR code, or tap back to check-in.${unfinishedNote}`;
+      } else if (ctx.isToday) {
+        if (ctx.finalElapsed === undefined) ctx.finalElapsed = stopWorkoutTimer();
+        els.timerValue.textContent = formatElapsed(ctx.finalElapsed);
+        els.doneText.textContent = `Nice work — logged in ${formatElapsed(ctx.finalElapsed)}. Head back to your card.${unfinishedNote}`;
+        try {
+          localStorage.setItem(WORKOUT_COMPLETE_STORAGE_KEY, todayString());
+        } catch (err) {
+          // Storage unavailable — the card just won't auto-show as completed.
+        }
+      } else {
+        // A session for an earlier day isn't today's workout: no timer, and
+        // the card's "workout completed" box is left alone.
+        els.doneText.textContent = `Logged for ${friendlyDate(ctx.dateStr)}. Head back to your card.${unfinishedNote}`;
+      }
       els.done.hidden = false;
       els.done.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      try {
-        localStorage.setItem(WORKOUT_COMPLETE_STORAGE_KEY, todayString());
-      } catch (err) {
-        // Storage unavailable — the card just won't auto-show as completed.
-      }
     } catch (err) {
-      showStatus("Couldn't reach the server — your sets are saved on this phone. Tap Log Workout again when you have signal.", true);
+      if (!ctx.dead) showStatus("Couldn't reach the server — your sets are saved on this phone. Tap Log Workout again when you have signal.", true);
     } finally {
       btn.disabled = false;
       btn.textContent = "Log Workout";
@@ -746,14 +872,23 @@ function buildLogSection(ctx) {
 
 function renderWorkout(shared, workoutName, exercises) {
   const { clientSlug, setRows, setCol, startingWeights, exerciseNameOptions } = shared;
+  const dateStr = shared.date;
+  const isToday = dateStr === sydneyDateStr();
+  if (shared.currentCtx) shared.currentCtx.dead = true; // whatever was on screen before is finished with
+  shared.current = { workoutName, exercises };
+
   els.status.hidden = true;
   els.list.innerHTML = "";
   els.list.hidden = false;
   els.done.hidden = true;
-  els.pageTag.textContent = workoutName || "Today's Workout";
-  startWorkoutTimer();
+  els.pageTag.textContent = workoutName || (isToday ? "Today's Workout" : "Workout");
+  if (isToday && !coachMode) {
+    startWorkoutTimer();
+  } else {
+    stopWorkoutTimer(); // a session logged after the fact (or by the coach) has no meaningful duration
+    els.timer.hidden = true;
+  }
 
-  const dateStr = sydneyDateStr();
   const key = draftKey(clientSlug, workoutName, dateStr);
 
   // The only sets ever put back on screen are ones THIS client tapped Save on,
@@ -779,9 +914,14 @@ function renderWorkout(shared, workoutName, exercises) {
     sections: new Map(), // nameLower -> { section, name, addSet }
     draftKey: key,
     dateStr,
-    todayKey: dateSortKey(dateStr),
+    isToday,
+    beforeKey: dateSortKey(dateStr),
+    // Warn (never display) if logging this would replace a session already in the sheet.
+    alreadyLoggedCount: draft ? 0 : existingLogCount(setRows, setCol, clientSlug, workoutName, dateStr),
+    dead: false,
     updateSummary: () => {},
   };
+  shared.currentCtx = ctx;
 
   /** Every set they've tapped Save on, in on-screen order — using the numbers as last saved, not whatever's typed in the box right now. */
   ctx.collectSets = () => {
@@ -792,12 +932,19 @@ function renderWorkout(shared, workoutName, exercises) {
     return sets;
   };
 
-  /** Writes the current saved sets + notes to this phone. Skips writing (returns null) when there's nothing yet to keep: no sets, no notes, no earlier draft. */
+  /**
+   * Writes the current saved sets + notes to this phone. Returns null when
+   * there's nothing yet to keep (no sets, no notes, no earlier draft), and
+   * returns the stored draft untouched when nothing has changed since — so
+   * calling it "just in case" never flips a draft that has already been sent
+   * back to unsent, which would make it get sent again later.
+   */
   ctx.persist = () => {
     const sets = ctx.collectSets();
     const notes = ctx.notesInput ? ctx.notesInput.value.trim() : "";
     const previous = readDraft(key);
     if (!sets.length && !notes && !previous) return null;
+    if (previous && previous.notes === notes && JSON.stringify(previous.sets) === JSON.stringify(sets)) return previous;
     const next = {
       schema: DRAFT_SCHEMA,
       clientSlug, workoutName, date: dateStr, sets, notes,
@@ -820,10 +967,15 @@ function renderWorkout(shared, workoutName, exercises) {
     }
     row._saved = { weight: values.weight, reps: values.reps };
     refreshRowState(row);
-    ctx.persist();
-    els.done.hidden = true; // changed since it was logged — needs logging again
+    const before = readDraft(key);
+    const after = ctx.persist();
+    if (!before || !after || after.rev !== before.rev) els.done.hidden = true; // changed since it was logged — needs logging again
     ctx.updateSummary();
   };
+
+  // The coach's note for the whole workout, if there is one, sits above the exercises.
+  const coachNote = shared.workoutNotes ? shared.workoutNotes[workoutName] : "";
+  if (coachNote) els.list.appendChild(buildCoachNote(coachNote));
 
   ctx.addExerciseWrap = buildAddExerciseControl(ctx, exerciseNameOptions || []);
   els.list.appendChild(ctx.addExerciseWrap);
@@ -849,16 +1001,139 @@ function renderWorkout(shared, workoutName, exercises) {
   ctx.updateSummary();
 }
 
+/** "Logging for <client>" — shown in coach mode so it's always obvious whose workout is being filled in. Text only, never markup. */
+function buildCoachBanner(name) {
+  const box = document.createElement("div");
+  box.className = "workout__coach-banner";
+
+  const label = document.createElement("span");
+  label.className = "workout__coach-banner-label";
+  label.textContent = "Logging for";
+  box.appendChild(label);
+
+  const who = document.createElement("span");
+  who.className = "workout__coach-banner-name";
+  who.textContent = name || "this client";
+  box.appendChild(who);
+  return box;
+}
+
+/** The coach's note for the whole workout — plain text, line breaks kept. */
+function buildCoachNote(text) {
+  const box = document.createElement("div");
+  box.className = "workout__coach-note";
+
+  const label = document.createElement("span");
+  label.className = "workout__coach-note-label";
+  label.textContent = "Coach's note";
+  box.appendChild(label);
+
+  const body = document.createElement("p");
+  body.className = "workout__coach-note-text";
+  body.textContent = text;
+  box.appendChild(body);
+  return box;
+}
+
+/**
+ * "Workout date" — today unless it's pointed at an earlier day. Built here
+ * (not in index.html) so this script never depends on markup an older cached
+ * copy of the page might not have. Future days aren't possible, and neither
+ * is anything more than a year back (that's a typo, not a backlog).
+ */
+function buildDateRow(shared) {
+  const wrap = document.createElement("div");
+  wrap.className = "workout__date";
+
+  const row = document.createElement("div");
+  row.className = "workout__date-row";
+
+  const label = document.createElement("label");
+  label.className = "workout__date-label";
+  label.htmlFor = "workoutDateInput";
+  label.textContent = "Workout date";
+  row.appendChild(label);
+
+  const input = document.createElement("input");
+  input.type = "date";
+  input.id = "workoutDateInput";
+  input.className = "workout__date-input";
+  const today = sydneyDateStr();
+  input.max = today;
+  input.min = shiftDate(today, -MAX_BACKLOG_DAYS);
+  row.appendChild(input);
+  wrap.appendChild(row);
+
+  const note = document.createElement("p");
+  note.className = "workout__date-note";
+  note.hidden = true;
+  const noteText = document.createElement("span");
+  note.appendChild(noteText);
+  const resetBtn = document.createElement("button");
+  resetBtn.type = "button";
+  resetBtn.className = "workout__date-reset";
+  resetBtn.textContent = "Back to today";
+  note.appendChild(resetBtn);
+  wrap.appendChild(note);
+
+  shared.syncDate = () => {
+    const isToday = shared.date === sydneyDateStr();
+    input.value = shared.date;
+    note.hidden = isToday;
+    noteText.textContent = isToday ? "" : `Logging for ${friendlyDate(shared.date)} — this won't count as today's workout.`;
+  };
+
+  input.addEventListener("change", () => changeDate(shared, input.value));
+  resetBtn.addEventListener("click", () => changeDate(shared, sydneyDateStr()));
+  shared.syncDate();
+  return wrap;
+}
+
+/** Sets: any typed-in-but-unsaved set on screen (those would be lost when the workout reloads for the new day). */
+function hasUnsavedEntries() {
+  return Array.from(els.list.querySelectorAll(".workout__set")).some((row) => row._touched && !row.classList.contains("workout__set--saved"));
+}
+
+function changeDate(shared, value) {
+  const today = sydneyDateStr();
+  let next = /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : today; // cleared or garbled -> today
+  if (next > today) next = today; // yyyy-MM-dd strings compare correctly as text
+  const earliest = shiftDate(today, -MAX_BACKLOG_DAYS);
+  if (next < earliest) next = earliest;
+
+  if (next === shared.date) {
+    shared.syncDate();
+    return;
+  }
+
+  if (shared.current) {
+    if (hasUnsavedEntries() && !window.confirm("Changing the date reloads this workout. Sets you've typed but not saved will be cleared. Continue?")) {
+      shared.syncDate(); // stay put
+      return;
+    }
+    if (shared.currentCtx) shared.currentCtx.persist(); // keep any notes typed so far with the day they belong to
+  }
+
+  shared.date = next;
+  shared.syncDate();
+  if (shared.current) renderWorkout(shared, shared.current.workoutName, shared.current.exercises);
+}
+
 function showPicker(shared, workoutGroups, workoutNames) {
+  if (shared.currentCtx) shared.currentCtx.dead = true;
+  shared.current = null;
+  shared.currentCtx = null;
   els.status.hidden = true;
   els.list.hidden = true;
   els.done.hidden = true;
   stopWorkoutTimer();
   els.timer.hidden = true;
-  els.pageTag.textContent = "Choose Your Workout";
+  els.pageTag.textContent = coachMode ? "Choose Workout" : "Choose Your Workout";
   els.picker.hidden = false;
   els.pickerList.innerHTML = "";
-  els.backLink.href = `../card/?id=${encodeURIComponent(memberId)}`;
+  const pickerHint = els.picker.querySelector(".workout__picker-hint");
+  if (pickerHint && coachMode) pickerHint.textContent = "Which workout did they do?";
+  els.backLink.href = homeHref();
   els.backLink.onclick = null;
 
   for (const name of workoutNames) {
@@ -899,12 +1174,13 @@ async function init() {
     return;
   }
 
-  els.backLink.href = `../card/?id=${encodeURIComponent(memberId)}`;
+  els.backLink.href = homeHref();
   els.historyLink.href = `calendar.html?id=${encodeURIComponent(memberId)}`;
   const clientSlug = slugify(memberId);
 
   let workoutGroups;
   let workoutOrderByName;
+  let workoutNotes;
   let setRows, setCol;
   let startingWeights;
   let exerciseNameOptions;
@@ -925,14 +1201,18 @@ async function init() {
         reps: (r[workout.col.reps] || "").trim(),
         order: parseSessions(r[workout.col.order], 0),
         workoutOrder: workout.col.workoutOrder >= 0 ? Number(r[workout.col.workoutOrder]) : NaN,
+        note: workout.col.notes >= 0 ? String(r[workout.col.notes] || "").trim() : "",
+        workoutNote: workout.col.workoutNotes >= 0 ? String(r[workout.col.workoutNotes] || "").trim() : "",
       }))
       .filter((ex) => ex.name && ex.sets > 0);
 
     workoutGroups = {};
     workoutOrderByName = {};
+    workoutNotes = {};
     for (const ex of clientExercises) {
       if (!workoutGroups[ex.workoutName]) workoutGroups[ex.workoutName] = [];
       workoutGroups[ex.workoutName].push(ex);
+      if (ex.workoutNote && !workoutNotes[ex.workoutName]) workoutNotes[ex.workoutName] = ex.workoutNote;
       if (Number.isFinite(ex.workoutOrder) && workoutOrderByName[ex.workoutName] === undefined) {
         workoutOrderByName[ex.workoutName] = ex.workoutOrder;
       }
@@ -974,7 +1254,21 @@ async function init() {
     return;
   }
 
-  const shared = { clientSlug, setRows, setCol, startingWeights, exerciseNameOptions };
+  // date = the day being logged (today unless changed); current/currentCtx =
+  // whichever workout is open, so changing the date can reload it for the new day.
+  const shared = { clientSlug, setRows, setCol, startingWeights, exerciseNameOptions, workoutNotes, date: sydneyDateStr(), current: null, currentCtx: null };
+  document.querySelector(".card__top").insertAdjacentElement("afterend", buildDateRow(shared));
+  if (coachMode) document.querySelector(".card__top").insertAdjacentElement("afterend", buildCoachBanner(coachClientName || memberId));
+
+  // Sent here for one particular workout (the check-in page's buttons): open
+  // it straight away. The back arrow already points home, so it returns to
+  // the check-in screen to pick a different one.
+  const presetKey = presetWorkoutName.toLowerCase();
+  const presetMatch = presetKey ? workoutNames.find((n) => n.toLowerCase() === presetKey) : null;
+  if (presetMatch) {
+    renderWorkout(shared, presetMatch, workoutGroups[presetMatch]);
+    return;
+  }
 
   if (workoutNames.length === 1) {
     renderWorkout(shared, workoutNames[0], workoutGroups[workoutNames[0]]);

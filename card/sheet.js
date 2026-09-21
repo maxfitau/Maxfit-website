@@ -182,6 +182,8 @@ function fetchWorkoutExercises() {
           reps: findColumn(header, "Target Reps"),
           days: findColumn(header, "Days"),
           workoutOrder: findColumn(header, "Workout Order"),
+          notes: findColumn(header, "Exercise Notes"), // the coach's tip for one exercise
+          workoutNotes: findColumn(header, "Workout Notes"), // a note for the whole workout (repeated on each of its rows)
         };
         return { rows, col };
       });

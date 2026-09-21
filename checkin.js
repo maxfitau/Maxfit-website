@@ -10,6 +10,13 @@
  * owner's own Apps Script authorization, which is the entire point of
  * this approach.
  *
+ * Below the check-in buttons (and still there after checking in) sits a "Log
+ * <name>'s workout" button for each workout that member has been assigned, so
+ * Max can go straight from the scan to logging their session on his phone —
+ * see the coach mode in workout/app.js. It's built from the same sheet the
+ * page already reads, after the check-in screen is up, and if anything about
+ * it fails the check-in itself is unaffected.
+ *
  * Two buttons, not one, because Group and 1-on-1 sessions are tracked (and
  * priced) separately — the front desk picks which type this visit is, and
  * only that column gets decremented.
@@ -34,6 +41,7 @@ const params = new URLSearchParams(window.location.search);
 const token = params.get("token");
 
 const els = {
+  main: document.getElementById("checkin"),
   loading: document.getElementById("checkinLoading"),
   invalid: document.getElementById("checkinInvalid"),
   confirm: document.getElementById("checkinConfirm"),
@@ -58,10 +66,126 @@ const BUTTON_LABELS = {
   "one-on-one": "Check In — 1-on-1",
 };
 
+const DAY_ABBR = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+let currentState = null;
+let workoutsSection = null; // the "Log <name>'s workout" block, once it's been built
+
 function showState(state) {
+  currentState = state;
   for (const el of [els.loading, els.invalid, els.confirm, els.success]) {
     el.hidden = el !== state;
   }
+  syncWorkoutsVisibility();
+}
+
+/** The workout buttons belong with the member on screen — before and after check-in — and nowhere else (not while loading, not on an invalid code). */
+function syncWorkoutsVisibility() {
+  if (workoutsSection) workoutsSection.hidden = !(currentState === els.confirm || currentState === els.success);
+}
+
+/**
+ * This member's assigned workouts, in the order set up in the builder, each
+ * with its exercise count. If exactly one is scheduled for today's weekday it's
+ * flagged and moved to the front (the same rule the card uses to name today's
+ * workout). An exercise needs a name and at least one set to count — the same
+ * filter the workout page applies — so the count matches what Max will see.
+ */
+async function loadClientWorkouts(memberName) {
+  const clientSlug = slugify(memberName);
+  const { rows, col } = await fetchWorkoutExercises();
+
+  const groups = new Map();
+  for (const r of rows) {
+    if (String(r[col.client] || "").trim().toLowerCase() !== clientSlug) continue;
+    if (!(r[col.exercise] || "").trim() || parseSessions(r[col.sets], 0) <= 0) continue;
+
+    const name = (col.workoutName >= 0 ? String(r[col.workoutName] || "").trim() : "") || "Today's Workout";
+    if (!groups.has(name)) groups.set(name, { name, count: 0, order: NaN, days: new Set() });
+    const group = groups.get(name);
+    group.count++;
+    if (!Number.isFinite(group.order) && col.workoutOrder >= 0) group.order = Number(r[col.workoutOrder]);
+    if (col.days >= 0) {
+      String(r[col.days] || "").split(",").map((d) => d.trim()).filter(Boolean).forEach((d) => group.days.add(d));
+    }
+  }
+
+  // Unordered workouts tie at a large finite number (Infinity - Infinity would be NaN).
+  const UNORDERED = Number.MAX_SAFE_INTEGER;
+  const list = Array.from(groups.values()).sort(
+    (a, b) => (Number.isFinite(a.order) ? a.order : UNORDERED) - (Number.isFinite(b.order) ? b.order : UNORDERED)
+  );
+
+  const today = DAY_ABBR[new Date().getDay()];
+  const scheduledToday = list.filter((g) => g.days.has(today));
+  const todayGroup = scheduledToday.length === 1 ? scheduledToday[0] : null;
+  if (todayGroup) {
+    list.splice(list.indexOf(todayGroup), 1);
+    list.unshift(todayGroup);
+  }
+  return { list, todayName: todayGroup ? todayGroup.name : "" };
+}
+
+/** Builds the "Log <name>'s workout" block under the check-in screen. Fire-and-forget: failing to load it must never get in the way of checking someone in. */
+async function showWorkoutLinks(memberName) {
+  let result;
+  try {
+    result = await loadClientWorkouts(memberName);
+  } catch (err) {
+    return;
+  }
+
+  const section = document.createElement("div");
+  section.className = "checkin__workouts";
+  section.hidden = true;
+
+  const label = document.createElement("span");
+  label.className = "card__label";
+  label.textContent = `Log ${memberName.trim().split(/\s+/)[0] || "their"}'s workout`;
+  section.appendChild(label);
+
+  if (!result.list.length) {
+    const none = document.createElement("p");
+    none.className = "checkin__no-workout";
+    none.appendChild(document.createTextNode("No workout assigned yet. "));
+    const build = document.createElement("a");
+    build.href = "workout/builder.html";
+    build.textContent = "Build one";
+    none.appendChild(build);
+    section.appendChild(none);
+  } else {
+    for (const group of result.list) {
+      const isToday = group.name === result.todayName;
+      const link = document.createElement("a");
+      link.className = "checkin__workout";
+      if (isToday) link.classList.add("checkin__workout--today");
+      // coach=1 puts the workout page in coach mode; back returns to this
+      // exact check-in screen (the workout page only honours same-site URLs).
+      link.href = "workout/?" + new URLSearchParams({
+        id: slugify(memberName),
+        workout: group.name,
+        coach: "1",
+        name: memberName,
+        back: window.location.href,
+      }).toString();
+
+      const name = document.createElement("span");
+      name.className = "checkin__workout-name";
+      name.textContent = group.name;
+      link.appendChild(name);
+
+      const meta = document.createElement("span");
+      meta.className = "checkin__workout-meta";
+      meta.textContent = isToday ? "Today" : `${group.count} exercise${group.count === 1 ? "" : "s"}`;
+      link.appendChild(meta);
+
+      section.appendChild(link);
+    }
+  }
+
+  els.main.appendChild(section);
+  workoutsSection = section;
+  syncWorkoutsVisibility();
 }
 
 async function init() {
@@ -130,6 +254,7 @@ async function init() {
   }
 
   showState(els.confirm);
+  showWorkoutLinks(match[col.name]);
 
   els.groupButton.addEventListener("click", () => submitCheckIn("group"));
   els.oneOnOneButton.addEventListener("click", () => submitCheckIn("one-on-one"));

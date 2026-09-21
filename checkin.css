@@ -139,3 +139,80 @@
   margin: 0;
   text-align: center;
 }
+
+/* "Log <name>'s workout" — one button per assigned workout, under the check-in
+   screen (before and after checking in). Today's scheduled workout is first. */
+.checkin__workouts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.checkin__workouts[hidden] {
+  display: none;
+}
+
+.checkin__workout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: 18px;
+  color: var(--white);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 16px 18px;
+  text-decoration: none;
+}
+
+.checkin__workout:active {
+  border-color: var(--red);
+  background: rgba(224, 0, 0, 0.08);
+}
+
+.checkin__workout--today {
+  border-color: var(--red);
+  background: rgba(224, 0, 0, 0.08);
+}
+
+.checkin__workout-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.checkin__workout-meta {
+  font-family: var(--font-body);
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 13px;
+  color: var(--dim);
+  flex-shrink: 0;
+}
+
+.checkin__workout--today .checkin__workout-meta {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--red);
+}
+
+.checkin__no-workout {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--dim);
+  margin: 0;
+}
+
+.checkin__no-workout a {
+  color: var(--grey-light);
+  text-decoration: underline;
+}
