@@ -108,8 +108,10 @@
 <span class="hero__split-half hero__split-half--right">Program<br>That Isn't<br>Working?</span>
 </h1>
 
+<div class="hero__video-slot">
 <div class="hero__video-frame" id="heroVideoFrame">
 <video class="hero__video" id="heroVideo" src="assets/videos/intro.mp4" poster="assets/images/intro-poster.jpg" muted playsinline preload="auto"></video>
+</div>
 </div>
 
 <div class="hero__cta-wrap">
@@ -131,22 +133,6 @@ Your first session is free
 <div class="container">
 <p class="hero__tagline">Maximum Fitness <span class="accent">·</span> Minimum Fuss</p>
 <p class="hero__sub">Stop guessing with cookie-cutter plans. Get science-based coaching built around your goals, your body, and your schedule, so training finally feels simple and the results actually show up.</p>
-<div class="hero__steps" aria-label="How it works">
-<div class="hero__step">
-<span class="hero__step-num">1</span>
-<span class="hero__step-text">Book your free consult</span>
-</div>
-<div class="hero__step-arrow" aria-hidden="true">&rarr;</div>
-<div class="hero__step">
-<span class="hero__step-num">2</span>
-<span class="hero__step-text">Get your custom plan</span>
-</div>
-<div class="hero__step-arrow" aria-hidden="true">&rarr;</div>
-<div class="hero__step">
-<span class="hero__step-num">3</span>
-<span class="hero__step-text">Start training, see results</span>
-</div>
-</div>
 <a href="#programs" class="btn btn--outline btn--sm hero-followup__cta">See programs</a>
 </div>
 </section>
@@ -167,21 +153,31 @@ Your first session is free
 <p class="problem__resolve">It was never you.<br>It was the plan.</p>
 </section>
 
+<!-- The Solution — the logo lands immediately as the answer to the
+     problem that just resolved, before Max's name or a single
+     credential is mentioned. Fully readable with no JS/motion: the
+     logo and line are simply visible (reuses the site's existing
+     .reveal fade-up, same as everywhere else). -->
+<section class="solution" id="solution">
+<img class="solution__logo reveal" src="assets/images/maxfit-logo.png" alt="Max Fit" />
+<p class="solution__line reveal">The solution.</p>
+</section>
+
 <!-- Marquee: opening sale -->
 <div class="marquee marquee--dark">
 <div class="marquee__track" style="animation-duration: 55s;">
-<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>Activation Fee Free</span><span class="dot"></span><span>Save Up To 31</span><span class="dot"></span></div>
-<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>Activation Fee Free</span><span class="dot"></span><span>Save Up To 31</span><span class="dot"></span></div>
-<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>Activation Fee Free</span><span class="dot"></span><span>Save Up To 31</span><span class="dot"></span></div>
-<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>Activation Fee Free</span><span class="dot"></span><span>Save Up To 31</span><span class="dot"></span></div>
-<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>Activation Fee Free</span><span class="dot"></span><span>Save Up To 31</span><span class="dot"></span></div>
-<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>Activation Fee Free</span><span class="dot"></span><span>Save Up To 31</span><span class="dot"></span></div>
-<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>Activation Fee Free</span><span class="dot"></span><span>Save Up To 31</span><span class="dot"></span></div>
-<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>Activation Fee Free</span><span class="dot"></span><span>Save Up To 31</span><span class="dot"></span></div>
-<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>Activation Fee Free</span><span class="dot"></span><span>Save Up To 31</span><span class="dot"></span></div>
-<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>Activation Fee Free</span><span class="dot"></span><span>Save Up To 31</span><span class="dot"></span></div>
-<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>Activation Fee Free</span><span class="dot"></span><span>Save Up To 31</span><span class="dot"></span></div>
-<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>Activation Fee Free</span><span class="dot"></span><span>Save Up To 31</span><span class="dot"></span></div>
+<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>$99 Activation Fee Waived</span><span class="dot"></span></div>
+<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>$99 Activation Fee Waived</span><span class="dot"></span></div>
+<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>$99 Activation Fee Waived</span><span class="dot"></span></div>
+<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>$99 Activation Fee Waived</span><span class="dot"></span></div>
+<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>$99 Activation Fee Waived</span><span class="dot"></span></div>
+<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>$99 Activation Fee Waived</span><span class="dot"></span></div>
+<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>$99 Activation Fee Waived</span><span class="dot"></span></div>
+<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>$99 Activation Fee Waived</span><span class="dot"></span></div>
+<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>$99 Activation Fee Waived</span><span class="dot"></span></div>
+<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>$99 Activation Fee Waived</span><span class="dot"></span></div>
+<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>$99 Activation Fee Waived</span><span class="dot"></span></div>
+<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>$99 Activation Fee Waived</span><span class="dot"></span></div>
 </div>
 </div>
 
@@ -261,6 +257,59 @@ First Aid Certificate
 </blockquote>
 </div>
 </section>
+
+<!-- Card showcase — Max's pre-made MaxFit Card promo video, sitting
+     right under "meet your coach" as the concrete proof of what
+     working with him looks like day to day. It plays itself, muted
+     and looping, only while it's actually on screen (paused the rest
+     of the time, for battery/data), and scales in as it arrives.
+     Fully readable/usable with no JS at all: a normal <video> with
+     native controls, no autoplay promise to keep. -->
+<section class="section section--tight showcase" id="card-showcase">
+<div class="container">
+<div class="section-head reveal">
+<span class="eyebrow">The MaxFit Card</span>
+<h2>Your whole membership, on your phone</h2>
+<p>Sessions, check-ins, macros, referrals — it's all on the card you already carry.</p>
+</div>
+<div class="showcase__frame reveal-scale" id="showcaseFrame">
+<video class="showcase__video" id="showcaseVideo" src="assets/videos/card-showcase.mp4" poster="assets/images/card-showcase-poster.jpg" muted loop playsinline preload="metadata" controls></video>
+<button class="showcase__mute" id="showcaseMuteBtn" type="button" aria-label="Unmute video" aria-pressed="false">
+<svg class="showcase__mute-icon showcase__mute-icon--off" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+<svg class="showcase__mute-icon showcase__mute-icon--on" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 6a9 9 0 0 1 0 12"/></svg>
+</button>
+</div>
+</div>
+</section>
+
+<!-- 04b · The Plan — the same 3-step copy as before, promoted from a
+     small row under the hero to its own full-width beat, per Max's
+     request to make it more prominent. -->
+<section class="section section--tight plan" id="plan">
+<div class="container">
+<div class="section-head reveal">
+<span class="eyebrow">How it works</span>
+<h2>Three steps. That's it.</h2>
+</div>
+<div class="plan__list">
+<div class="plan__step reveal">
+<span class="plan__num">01</span>
+<h3 class="plan__title">Book your free consult</h3>
+<p class="plan__desc">No pressure, no sales pitch. Just a chat about where you're at and what you want.</p>
+</div>
+<div class="plan__step reveal">
+<span class="plan__num">02</span>
+<h3 class="plan__title">Get your custom plan</h3>
+<p class="plan__desc">Built around your body, your goals, and your schedule. Not a generic template.</p>
+</div>
+<div class="plan__step reveal">
+<span class="plan__num">03</span>
+<h3 class="plan__title">Start training, see results</h3>
+<p class="plan__desc">Real coaching, real accountability, and progress you can actually feel.</p>
+</div>
+</div>
+<a href="join.html" class="btn btn--primary plan__cta reveal">Book your free consult</a>
+</div>
 </section>
 
 <!-- Marquee: motto -->
@@ -486,10 +535,10 @@ First Aid Certificate
 
 <div class="sale-banner reveal">
 <span class="sale-banner__tag">Opening sale</span>
-<p class="sale-banner__head">Save up to 31 per session</p>
+<p class="sale-banner__head">$99 activation fee waived for our first 10 members</p>
 <ul class="sale-banner__list">
 <li>Opening-sale prices for our <strong>first 10 members only</strong>. Once the slots fill, pricing goes back to regular.</li>
-<li>Membership activation fee <s>normally charged</s> <strong class="sale-banner__free">FREE</strong> for the first 10</li>
+<li>Membership activation fee <s>$99</s> <strong class="sale-banner__free">FREE</strong> for the first 10</li>
 </ul>
 </div>
 
@@ -1187,11 +1236,12 @@ Or email directly
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/SplitText.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/CustomEase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@studio-freight/lenis@1.0.42/dist/lenis.min.js"></script>
-<script src="js/animations/main.js?v=2026092304"></script>
-<script src="js/animations/preloader.js?v=2026092304"></script>
-<script src="js/animations/hero.js?v=2026092304"></script>
-<script src="js/animations/problem.js?v=2026092304"></script>
-<script src="js/animations/why.js?v=2026092304"></script>
-<script src="js/animations/about.js?v=2026092304"></script>
+<script src="js/animations/main.js?v=2026092401"></script>
+<script src="js/animations/preloader.js?v=2026092401"></script>
+<script src="js/animations/hero.js?v=2026092401"></script>
+<script src="js/animations/problem.js?v=2026092401"></script>
+<script src="js/animations/why.js?v=2026092401"></script>
+<script src="js/animations/about.js?v=2026092401"></script>
+<script src="js/animations/showcase.js?v=2026092401"></script>
 </body>
 </html>

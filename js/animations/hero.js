@@ -81,7 +81,23 @@ document.addEventListener("DOMContentLoaded", function () {
     // no 400vh-style pin, per the brief's "simpler pins on mobile" rule.
     if (isMobile) return;
 
-    gsap.set(frame, { xPercent: -50, yPercent: -50 });
+    // The frame starts as a normal absolutely-positioned card filling
+    // its slot (see .hero__video-slot in styles.css). Capturing its
+    // current on-screen rect and switching it to position: fixed at
+    // those exact pixel coordinates is a no-op visually (fixed is
+    // viewport-relative, same as getBoundingClientRect) — the slot
+    // below keeps reserving the layout space, so nothing jumps. From
+    // there the timeline can animate it straight to a full-viewport
+    // fixed box for the scrub-to-full-bleed effect.
+    var rect = frame.getBoundingClientRect();
+    gsap.set(frame, {
+      position: "fixed",
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+      margin: 0
+    });
 
     gsap
       .timeline({
@@ -99,7 +115,7 @@ document.addEventListener("DOMContentLoaded", function () {
           if (Math.abs(video.currentTime - t) > 0.01) video.currentTime = t;
         }
       })
-      .to(frame, { left: 0, top: 0, xPercent: 0, yPercent: 0, width: "100%", height: "100%", borderRadius: 0, duration: 1 }, 0)
+      .to(frame, { left: 0, top: 0, width: "100vw", height: "100vh", borderRadius: 0, duration: 1 }, 0)
       .to([".hero__hairline", ".hero__label-top", ".hero__label-bottom", ".hero__split"], { autoAlpha: 0, duration: 0.35 }, 0.1);
   }
 });

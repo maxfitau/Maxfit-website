@@ -315,6 +315,17 @@ section {
   padding: 0 24px;
 }
 
+/* Desktop only: reserve room above the headline for the absolutely
+   positioned labels + hairline (mobile puts those in normal flow
+   instead, via the media queries below, so needs no extra padding
+   here). Without this, the headline started at the very top of the
+   section and either the labels overlapped it or (once the headline
+   was no longer force-centred at 100vh — see .hero__split) it had no
+   guaranteed clearance at all. */
+@media (min-width: 1024px) {
+  .hero { padding-top: calc(var(--nav-h) + 130px); }
+}
+
 /* Vertical hairline ~37% from the left, in the style of the reference
    site's Swiss-poster layout — headline halves sit either side of it. */
 .hero__hairline {
@@ -373,10 +384,8 @@ section {
   position: relative;
   z-index: 2;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  min-height: 100vh;
-  min-height: 100svh;
   margin: 0;
   gap: 0;
 }
@@ -423,33 +432,39 @@ section {
 
 .hero__split-line { display: block; }
 
-.hero__video-frame {
-  position: absolute;
-  left: 50%;
-  top: 66%;
+/* The slot is a normal flow block that always reserves the video's
+   on-screen space — it never changes position, so nothing above or
+   below it can ever shift or overlap, with or without JS. The frame
+   inside it is absolutely positioned to fill the slot exactly (the
+   "small static card" everyone sees at rest). Only hero.js's pin-scrub
+   touches the frame itself (switching it to position: fixed at this
+   same on-screen rect, then animating that to full-bleed) — the slot
+   keeps holding its place in the layout the whole time, so that
+   reflow never touches the headline or the CTA below it. This
+   replaces the old design, which absolutely positioned the frame
+   directly against the whole .hero section at a guessed top: 66% —
+   on desktop that guess landed on top of the headline's last lines. */
+.hero__video-slot {
+  position: relative;
   width: min(46vw, 480px);
   aspect-ratio: 16 / 9;
-  transform: translate(-50%, -50%);
+  margin: 56px auto 0;
+}
+
+@media (max-width: 1023px) {
+  .hero__video-slot {
+    width: min(80vw, 420px);
+    margin: 24px auto 0;
+  }
+}
+
+.hero__video-frame {
+  position: absolute;
+  inset: 0;
   border-radius: 16px;
   overflow: hidden;
   z-index: 1;
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
-}
-
-/* Mobile keeps everything in normal document flow instead of absolute
-   positioning against a min-height box — a tall stacked headline can
-   need more room than the viewport floor, and bottom-anchored absolute
-   children would then overlap it instead of just flowing below. Same
-   lesson as the pre-redesign hero's mobile-overflow fix. The full-bleed
-   video scrub is a desktop-only flourish (see js/animations/hero.js);
-   mobile keeps the video as a normal static card. */
-@media (max-width: 1023px) {
-  .hero__video-frame {
-    position: static;
-    width: min(80vw, 420px);
-    margin: 24px auto 0;
-    transform: none;
-  }
 }
 
 .hero__video {
@@ -461,23 +476,14 @@ section {
 }
 
 .hero__cta-wrap {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 40px;
+  position: relative;
   z-index: 3;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 16px;
   text-align: center;
-}
-
-@media (max-width: 1023px) {
-  .hero__cta-wrap {
-    position: static;
-    margin: 32px 0 40px;
-  }
+  margin: 40px 0 64px;
 }
 
 .hero__tagline {
@@ -529,60 +535,12 @@ section {
 
 .hero-followup__cta { margin-top: 8px; }
 
-.hero__steps {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-top: 32px;
-}
-
-.hero__step {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.hero__step-num {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  flex: none;
-  border-radius: 50%;
-  background: var(--red);
-  color: var(--on-red);
-  font-family: var(--font-head);
-  font-size: 0.75rem;
-  font-weight: 700;
-}
-
-.hero__step-text {
-  font-size: 0.82rem;
-  letter-spacing: 0.3px;
-  color: var(--dim);
-  white-space: nowrap;
-}
-
-.hero__step-arrow {
-  color: var(--line-strong);
-  font-size: 0.9rem;
-}
-
-@media (max-width: 560px) {
-  .hero__steps { flex-direction: column; gap: 12px; }
-  .hero__step-arrow { display: none; }
-}
-
 @media (max-width: 600px) {
   .hero__tagline { font-size: clamp(1rem, 4.2vw, 1.4rem); letter-spacing: 2px; margin-bottom: 12px; }
   .hero__sub { font-size: 0.98rem; margin-bottom: 18px; }
   .hero__free-badge { font-size: 0.95rem; margin-bottom: 16px; }
   .hero__actions { gap: 12px; }
   .hero__actions .btn { padding: 14px 26px; }
-  .hero__steps { margin-top: 18px; }
 }
 
 .stakes-line {
@@ -2595,4 +2553,122 @@ body.is-preloading { overflow: hidden; }
 
 @media (max-width: 700px) {
   .problem__line { font-size: clamp(1.1rem, 5.5vw, 1.6rem); white-space: normal; }
+}
+
+/* ---------- The Solution ---------- */
+
+.solution {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 100px 24px;
+  text-align: center;
+}
+
+.solution__logo {
+  width: min(56vw, 320px);
+  height: auto;
+}
+
+.solution__line {
+  margin: 0;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: clamp(1rem, 3vw, 1.3rem);
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: var(--red);
+}
+
+/* ---------- Card showcase ---------- */
+
+.showcase__frame {
+  position: relative;
+  max-width: 860px;
+  margin: 0 auto;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 40px 100px rgba(0, 0, 0, 0.55);
+  background: var(--bg-card);
+}
+
+.showcase__video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.showcase__mute {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(17, 17, 17, 0.7);
+  border: 1px solid var(--line-strong);
+  color: var(--white);
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+}
+
+.showcase__mute-icon--on { display: none; }
+.showcase__mute[aria-pressed="true"] .showcase__mute-icon--off { display: none; }
+.showcase__mute[aria-pressed="true"] .showcase__mute-icon--on { display: block; }
+
+/* ---------- 04b · The Plan ---------- */
+
+.plan__list {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  border-top: 1px solid var(--line);
+  margin-bottom: 48px;
+}
+
+.plan__step {
+  padding: 40px 32px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.plan__step:last-child { border-right: none; }
+
+.plan__num {
+  display: block;
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: clamp(3rem, 7vw, 5.5rem);
+  line-height: 1;
+  color: var(--red);
+  margin-bottom: 16px;
+}
+
+.plan__title {
+  margin: 0 0 10px;
+  font-size: clamp(1.2rem, 2vw, 1.5rem);
+}
+
+.plan__desc {
+  margin: 0;
+  color: var(--dim);
+  font-size: 0.98rem;
+  max-width: 320px;
+}
+
+.plan__cta { display: block; margin: 0 auto; width: fit-content; }
+
+@media (max-width: 900px) {
+  .plan__list { grid-template-columns: 1fr; }
+  .plan__step { border-right: none; }
 }
