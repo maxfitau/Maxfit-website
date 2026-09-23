@@ -2512,3 +2512,59 @@ body.vt-lightbox-open { overflow: hidden; }
   font-size: 1.05rem;
   line-height: 1.6;
 }
+
+/* ---------- 00 · Preloader (redesign) ---------- */
+
+body.is-preloading { overflow: hidden; }
+
+#gsap-preloader {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.gsap-preloader__count {
+  position: absolute;
+  left: 24px;
+  bottom: 0;
+  font-family: var(--font-head);
+  font-weight: 900;
+  font-size: clamp(4rem, 16vw, 11rem);
+  line-height: 0.85;
+  color: var(--white);
+}
+
+.gsap-preloader__hairline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.gsap-preloader__hairline span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--red);
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+
+.gsap-preloader__chevron {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 80px;
+  height: 112px;
+  margin-left: -40px;
+  margin-top: -56px;
+  background: var(--red);
+  clip-path: polygon(0% 0%, 42% 0%, 100% 50%, 42% 100%, 0% 100%, 58% 50%);
+  transform: scale(1);
+  will-change: transform;
+}

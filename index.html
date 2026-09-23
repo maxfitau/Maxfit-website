@@ -54,6 +54,16 @@
 </head>
 <body>
 
+<!-- 00 · Preloader (redesign) — huge 0→100 counter bottom-left, a red
+     hairline growing across, then the brand chevron wipes it away. Skipped
+     via sessionStorage on repeat visits in the same session, and skipped
+     outright for prefers-reduced-motion (handled in js/animations/preloader.js). -->
+<div id="gsap-preloader" aria-hidden="true">
+<div class="gsap-preloader__count"><span id="gsapPreloaderNum">0</span>%</div>
+<div class="gsap-preloader__hairline"><span id="gsapPreloaderHairline"></span></div>
+<div class="gsap-preloader__chevron" id="gsapPreloaderChevron"></div>
+</div>
+
 <header class="site-header">
 <nav class="nav">
 <a href="#top" class="nav__logo" aria-label="Max Fit, home">
@@ -1117,5 +1127,15 @@ Or email directly
 </div>
 
 <script src="script.js"></script>
+
+<!-- Redesign: GSAP + Lenis from CDN, pinned versions. No build step —
+     plain <script> tags, same pattern as the Google Fonts <link> above. -->
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/ScrollTrigger.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/SplitText.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/CustomEase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@studio-freight/lenis@1.0.42/dist/lenis.min.js"></script>
+<script src="js/animations/main.js?v=2026092301"></script>
+<script src="js/animations/preloader.js?v=2026092301"></script>
 </body>
 </html>
