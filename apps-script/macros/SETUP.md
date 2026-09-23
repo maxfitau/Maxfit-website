@@ -29,6 +29,10 @@ Click **Project Settings** (the gear icon on the left), then **Script Properties
 | `MACRO_SHEET_ID` | The ID you copied in step 1. |
 | `MAIN_SHEET_ID` | `1dGQyIoJ2_XrkbvvPvM2JAY0xdeYQfsCnYHal8WZojUg` |
 | `DAILY_AI_LIMIT` | `25` (optional; 25 photo scans per client per day is the default). |
+| `CENTS_PER_SCAN` | Optional. What a client pays per photo scan, in cents. Defaults to `5`, so $10 = 200 scans. |
+| `FREE_SCANS` | Optional. Free photo scans for each new client. Defaults to `10`. |
+
+You can leave out `ANTHROPIC_API_KEY` until you buy API credits. Until then photo and label scanning are hidden and clients use barcodes only.
 
 Also set a monthly spend limit in console.anthropic.com → Settings → Limits. A photo scan costs roughly 1 US cent, and the **AI Usage** tab shows this month's total in cell N1.
 
@@ -62,5 +66,7 @@ Paste the new code in and save. Then go to **Deploy** → **Manage deployments**
 3. Optionally, tap **Set targets** to set their protein, carbs and fat yourself. If you don't, they can use the calculator in the app.
 
 **What clients need to do:** open the link once in Safari (iPhone) or Chrome (Android), then **Add to Home Screen again**. On iPhone, the old home-screen icon keeps its own storage and won't know the new link.
+
+**When a client pays you for photo scans:** on the coach page, tap **Add top-up** on their card, type the amount they paid (e.g. `10`) and tap **Add scans**. At 5c a scan, $10 gives them 200. Each successful photo or label scan uses 1; failed scans are free. Every top-up is recorded in the **Scan Credits** tab. If you type a wrong amount, enter a negative amount (e.g. `-10`), or just delete that row in the tab.
 
 Lost phone, or a link shared by mistake? Tap **New link** on the coach page. The old link stops working for FUEL straight away.

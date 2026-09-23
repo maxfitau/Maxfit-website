@@ -48,6 +48,8 @@
     pendingPhotoMode: null,
     loadedOn: null,
     aiEnabled: true,
+    scanCredits: null,
+    scanPriceCents: 5,
   };
 
   // ---------------------------------------------------------------------------
@@ -193,6 +195,8 @@
       state.scansLeft = data.scansLeft;
       state.scanLimit = data.scanLimit || 25;
       state.aiEnabled = data.aiEnabled !== false;
+      state.scanCredits = typeof data.scanCredits === "number" ? data.scanCredits : null;
+      state.scanPriceCents = data.scanPriceCents || 5;
       state.loaded = true;
       state.loadedOn = MacroCore.sydneyDate();
       render();
@@ -533,9 +537,20 @@
   // Scan chooser + photos
   // ---------------------------------------------------------------------------
 
+  /** Photo and label scans need the API key on the server AND prepaid scans left. */
+  function canPhotoScan() {
+    return state.aiEnabled && (state.scanCredits == null || state.scanCredits > 0);
+  }
+
   function scansLeftText() {
-    if (state.scansLeft == null || !state.aiEnabled) return "";
-    return `${state.scansLeft} of ${state.scanLimit} photo scans left today · barcodes are unlimited`;
+    if (!state.aiEnabled || state.scanCredits == null) return "";
+    const n = state.scanCredits;
+    return `${n} photo scan${n === 1 ? "" : "s"} left · barcodes are always free`;
+  }
+
+  /** "$10 = 200 scans", from the price Max set on the server. */
+  function topUpText() {
+    return `Top up with Max: $10 gets you ${int(1000 / state.scanPriceCents)} photo scans.`;
   }
 
   function openScanChooser() {
@@ -545,15 +560,17 @@
       openBarcode();
       return;
     }
+    const outOfScans = !canPhotoScan();
     openSheet(
       `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Scan food</h2>
        <p class="fuel-sheet__sub">${esc(scansLeftText())}</p>
+       ${outOfScans ? `<p class="fuel-error">You're out of photo scans. ${esc(topUpText())} Barcodes are always free.</p>` : ""}
        <div class="fuel-modes">
-         <button class="fuel-mode" type="button" data-mode="meal">${ICONS.camera}Photo<small>Snap your meal</small></button>
+         <button class="fuel-mode" type="button" data-mode="meal" ${outOfScans ? "disabled" : ""}>${ICONS.camera}Photo<small>Snap your meal</small></button>
          <button class="fuel-mode" type="button" data-mode="barcode">${ICONS.barcode}Barcode<small>Packaged food</small></button>
-         <button class="fuel-mode" type="button" data-mode="label">${ICONS.label}Label<small>Nutrition panel</small></button>
+         <button class="fuel-mode" type="button" data-mode="label" ${outOfScans ? "disabled" : ""}>${ICONS.label}Label<small>Nutrition panel</small></button>
        </div>
-       <button class="fuel-btn fuel-btn--quiet" type="button" data-mode="library">Choose a meal photo from your library</button>`,
+       ${outOfScans ? "" : '<button class="fuel-btn fuel-btn--quiet" type="button" data-mode="library">Choose a meal photo from your library</button>'}`,
       (body) => {
         body.querySelectorAll("[data-mode]").forEach((b) =>
           b.addEventListener("click", () => {
@@ -618,12 +635,22 @@
       const image = await resizeImage(file);
       data = await MacroApi.call("analyseImage", { image: image, mode: mode }, { timeoutMs: 90000 });
     } catch (err) {
+      if (err.code === "no_credits") {
+        state.scanCredits = 0;
+        sheetError(
+          "Out of photo scans",
+          `${err.message} ${topUpText()}`,
+          '<button class="fuel-btn" type="button" data-retry="barcode">Scan a barcode instead</button>'
+        );
+        return;
+      }
       const again = `<button class="fuel-btn" type="button" data-retry="${mode}">Try another photo</button>`;
       const alt = mode === "meal" ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-retry="barcode">Scan a barcode instead</button>' : "";
       sheetError("Hmm", err.message, again + alt);
       return;
     }
     if (typeof data.scansLeft === "number") state.scansLeft = data.scansLeft;
+    if (typeof data.scanCredits === "number") state.scanCredits = data.scanCredits;
 
     if (mode === "label") {
       const l = data.label;
@@ -852,7 +879,7 @@
         "Lookup failed",
         err.message,
         '<button class="fuel-btn" type="button" data-retry="barcode">Try again</button>' +
-          (state.aiEnabled
+          (canPhotoScan()
             ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-retry="label">Snap the nutrition label instead</button>'
             : "")
       );
@@ -864,7 +891,7 @@
         `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Not in the database yet</h2>
          <p class="fuel-sheet__sub">Barcode ${esc(code)}${p.name ? ` · ${esc(p.name)}` : ""}</p>
          ${
-           state.aiEnabled
+           canPhotoScan()
              ? `<p class="fuel-disclaimer">No problem. Snap the nutrition panel on the pack and we'll read the numbers from that.</p>
                 <button class="fuel-btn" type="button" data-retry="label">Snap the nutrition label instead</button>
                 <button class="fuel-btn fuel-btn--ghost" type="button" data-retry="barcode">Scan something else</button>`
@@ -1393,7 +1420,7 @@
        <label class="fuel-toggle">Hide calories, focus on protein <input type="checkbox" data-hide ${hideKcal() ? "checked" : ""} /></label>
        <button class="fuel-btn fuel-btn--ghost" type="button" data-s="targets">Daily targets</button>
        <button class="fuel-btn fuel-btn--ghost" type="button" data-s="favs">Favourites</button>
-       <p class="fuel-disclaimer">${esc(scansLeftText())}</p>
+       ${state.aiEnabled ? `<p class="fuel-disclaimer">${esc(scansLeftText())}. ${esc(topUpText())}</p>` : ""}
        <p class="fuel-disclaimer">Not medical advice. If you have a medical condition, pregnancy or a history of disordered eating, talk to your GP or an Accredited Practising Dietitian.</p>
        <button class="fuel-btn fuel-btn--quiet" type="button" data-close>Done</button>`,
       (body) => {

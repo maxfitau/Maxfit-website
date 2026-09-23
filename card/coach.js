@@ -15,6 +15,8 @@
   const PIN_STORAGE = "maxfitCoachPin";
   let pin = "";
   let clients = [];
+  let centsPerScan = 5;
+  let aiEnabled = true;
   const open = {}; // slug -> which inline form is showing
 
   try {
@@ -71,6 +73,8 @@
         // ignore
       }
       clients = data.clients;
+      centsPerScan = data.centsPerScan || 5;
+      aiEnabled = data.aiEnabled !== false;
       render();
     } catch (err) {
       if (err.code === "bad_pin") {
@@ -111,10 +115,12 @@
           <span class="coach-client__meta">${c.lastLog ? `Last log ${esc(c.lastLog)}` : "Never logged"}</span>
         </div>
         <span class="coach-client__meta">${esc(targetsText(c))}</span>
+        ${c.hasKey ? `<span class="coach-client__meta">Photo scans left: <b style="color:var(--white)">${int(c.credits)}</b></span>` : ""}
         ${c.link ? `<div class="coach-link">${esc(c.link)}</div>` : ""}
         <div class="coach-actions">
           ${c.link ? '<button class="fuel-btn" type="button" data-a="copy">Copy link</button>' : '<button class="fuel-btn" type="button" data-a="issue">Create Fuel link</button>'}
           <button class="fuel-btn fuel-btn--ghost" type="button" data-a="targets">Set targets</button>
+          ${c.hasKey ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="topup">Add top-up</button>' : ""}
           ${c.link ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="rotate">New link</button>' : ""}
         </div>
         ${
@@ -136,6 +142,20 @@
             : ""
         }
         ${
+          form === "topup"
+            ? `<div class="coach-form" data-topup-form>
+                <div class="fuel-fields2">
+                  <label class="fuel-field"><span class="card__label">Amount paid ($)</span><input class="fuel-input" name="dollars" type="number" inputmode="decimal" step="0.01" placeholder="10" /></label>
+                  <label class="fuel-field"><span class="card__label">Note (optional)</span><input class="fuel-input" name="note" type="text" maxlength="80" placeholder="Cash, transfer…" /></label>
+                </div>
+                <span class="coach-client__meta" data-topup-preview>At ${esc(centsPerScan)}c a scan, $10 = ${int(1000 / centsPerScan)} photo scans.</span>
+                <div class="coach-actions">
+                  <button class="fuel-btn" type="button" data-a="saveTopup">Add scans</button>
+                </div>
+              </div>`
+            : ""
+        }
+        ${
           form === "issue" || form === "rotate"
             ? `<div class="coach-form">
                 <span class="coach-client__meta">${form === "rotate" ? "Their old link will stop working for Fuel." : "Pick their sex for the calorie floor, then create the link."}</span>
@@ -149,6 +169,11 @@
 
   function render() {
     body.innerHTML = `
+      ${
+        aiEnabled
+          ? ""
+          : '<p class="fuel-error" style="margin-bottom:14px">Photo scanning is off until you add ANTHROPIC_API_KEY in Apps Script, so clients can only scan barcodes for now. You can still record top-ups.</p>'
+      }
       <p class="fuel-disclaimer" style="margin-bottom:14px">Text each client their Fuel link. They open it once and add it to their home screen again. Only you (with the PIN) and that client can see their food log.</p>
       ${clients.map(clientHtml).join("")}`;
     clients.forEach((c) => {
@@ -176,6 +201,17 @@
   }
 
   body.addEventListener("input", (e) => {
+    if (e.target.name === "dollars") {
+      const dollars = Number(e.target.value);
+      const scans = Math.round((dollars * 100) / centsPerScan);
+      e.target.closest("[data-topup-form]").querySelector("[data-topup-preview]").textContent =
+        dollars && scans
+          ? scans > 0
+            ? `= ${int(scans)} photo scans`
+            : `Takes back ${int(-scans)} photo scans (to fix a mistake)`
+          : `At ${centsPerScan}c a scan, $10 = ${int(1000 / centsPerScan)} photo scans.`;
+      return;
+    }
     const card = e.target.closest("[data-slug]");
     if (card && e.target.closest("[data-targets-form]")) paintKcal(card.dataset.slug);
   });
@@ -203,7 +239,7 @@
       }
       return;
     }
-    if (a === "issue" || a === "rotate" || a === "targets") {
+    if (a === "issue" || a === "rotate" || a === "targets" || a === "topup") {
       open[slug] = open[slug] === a ? null : a;
       render();
       return;
@@ -220,6 +256,7 @@
         });
         c.link = data.link;
         c.hasKey = true;
+        c.credits = data.credits;
         c.sex = selectedSex(slug) || c.sex;
         open[slug] = null;
         render();
@@ -238,6 +275,17 @@
         open[slug] = null;
         await load();
         toast(`Saved ${c.name}'s targets`);
+      } else if (a === "saveTopup") {
+        const el = formFor(slug);
+        const data = await MacroApi.coach("addCredit", pin, {
+          slug: slug,
+          dollars: el.querySelector('[name="dollars"]').value,
+          note: el.querySelector('[name="note"]').value,
+        });
+        c.credits = data.balance;
+        open[slug] = null;
+        render();
+        toast(`${data.scans > 0 ? "Added" : "Took back"} ${int(Math.abs(data.scans))} scans. ${c.name} now has ${int(data.balance)}.`);
       } else if (a === "clearTargets") {
         await MacroApi.coach("coachSetTargets", pin, { slug: slug, clear: true });
         open[slug] = null;

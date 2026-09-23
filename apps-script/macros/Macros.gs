@@ -17,6 +17,16 @@
  *   MACRO_SHEET_ID     — id of the private "MaxFit Macros" sheet
  *   MAIN_SHEET_ID      — the CRM sheet (read-only here, for client names)
  *   DAILY_AI_LIMIT     — optional, AI scans per member per day (default 25)
+ *   CENTS_PER_SCAN     — optional, what a client pays per photo scan in
+ *                        Australian cents (default 5, so $10 = 200 scans)
+ *   FREE_SCANS         — optional, free photo scans for each new client
+ *                        (default 10)
+ *
+ * Photo scans are prepaid by clients: Max records a payment on the coach
+ * page, it becomes scans at CENTS_PER_SCAN, and each successful photo or
+ * label scan uses one. The "Scan Credits" tab is the ledger; a client's
+ * balance is the sum of their "change" column, so a wrong top-up can be
+ * fixed by deleting its row.
  *
  * Who can do what: every member action needs the member's id AND their
  * secret key (the &k= part of their card link), checked against the
@@ -24,7 +34,7 @@
  * or change rows carrying their own id.
  */
 
-const MACROS_VERSION = "2026-09-23b";
+const MACROS_VERSION = "2026-09-23c";
 const TIMEZONE = "Australia/Sydney";
 const MAIN_SESSIONS_GID = 1169726169; // "Sessions Remaining" in the CRM sheet
 const CARD_URL = "https://maxfit.now/card/";
@@ -76,7 +86,15 @@ const TABS = {
     ],
     text: ["log_date", "slug"],
   },
+  credits: {
+    name: "Scan Credits",
+    headers: ["timestamp", "slug", "change", "amount_aud", "note", "by"],
+    text: ["slug"],
+  },
 };
+
+const DEFAULT_CENTS_PER_SCAN = 5;
+const DEFAULT_FREE_SCANS = 10;
 
 const SOURCES = ["photo", "barcode", "label", "manual", "fridge", "suggestion"];
 const CONFIDENCES = ["high", "medium", "low", ""];
@@ -95,16 +113,8 @@ function setupMacroSheets() {
   const ss = macroSheet_();
   Object.keys(TABS).forEach((key) => {
     const spec = TABS[key];
-    let sheet = ss.getSheetByName(spec.name);
-    if (!sheet) {
-      sheet = ss.insertSheet(spec.name);
-      sheet.getRange(1, 1, 1, spec.headers.length).setValues([spec.headers]).setFontWeight("bold");
-      sheet.setFrozenRows(1);
-    }
-    spec.text.forEach((col) => {
-      const idx = spec.headers.indexOf(col);
-      sheet.getRange(1, idx + 1, sheet.getMaxRows(), 1).setNumberFormat("@");
-    });
+    const sheet = ss.getSheetByName(spec.name) || createTab_(ss, spec);
+    formatTextColumns_(sheet, spec);
   });
   const usage = ss.getSheetByName(TABS.usage.name);
   usage.getRange("M1").setValue("This month (USD)");
@@ -140,6 +150,7 @@ const MEMBER_ACTIONS = {
 
 const COACH_ACTIONS = {
   coachList: actionCoachList_,
+  addCredit: actionAddCredit_,
   coachSetTargets: actionCoachSetTargets_,
   issueKey: actionIssueKey_,
 };
@@ -201,9 +212,25 @@ function macroSheet_() {
 
 function tab_(key) {
   const spec = TABS[key];
-  const sheet = macroSheet_().getSheetByName(spec.name);
-  if (!sheet) throw new Error('Tab "' + spec.name + '" is missing — run setupMacroSheets().');
+  const ss = macroSheet_();
+  // Tabs added in later versions (e.g. Scan Credits) create themselves on
+  // first use, so an update never needs setupMacroSheets() run again.
+  return ss.getSheetByName(spec.name) || createTab_(ss, spec);
+}
+
+function createTab_(ss, spec) {
+  const sheet = ss.insertSheet(spec.name);
+  sheet.getRange(1, 1, 1, spec.headers.length).setValues([spec.headers]).setFontWeight("bold");
+  sheet.setFrozenRows(1);
+  formatTextColumns_(sheet, spec);
   return sheet;
+}
+
+function formatTextColumns_(sheet, spec) {
+  spec.text.forEach((col) => {
+    const idx = spec.headers.indexOf(col);
+    sheet.getRange(1, idx + 1, sheet.getMaxRows(), 1).setNumberFormat("@");
+  });
 }
 
 /** All rows of a tab as objects keyed by header, each with its sheet row number in _row. */
@@ -412,6 +439,42 @@ function aiLimit_() {
   return n > 0 ? n : 25;
 }
 
+function centsPerScan_() {
+  const n = Number(prop_("CENTS_PER_SCAN"));
+  return n > 0 ? n : DEFAULT_CENTS_PER_SCAN;
+}
+
+function freeScans_() {
+  const raw = prop_("FREE_SCANS");
+  const n = Number(raw);
+  return raw !== null && raw !== "" && n >= 0 ? Math.round(n) : DEFAULT_FREE_SCANS;
+}
+
+/** Every member's prepaid photo-scan balance: the sum of their rows in Scan Credits. */
+function creditBalances_() {
+  const out = {};
+  readRows_("credits").forEach((r) => {
+    const s = String(r.slug);
+    out[s] = (out[s] || 0) + (Number(r.change) || 0);
+  });
+  return out;
+}
+
+function creditBalance_(slug) {
+  return creditBalances_()[slug] || 0;
+}
+
+function addCreditRow_(slug, change, amountAud, note, by) {
+  return appendRow_("credits", {
+    timestamp: nowStamp_(),
+    slug: slug,
+    change: change,
+    amount_aud: amountAud,
+    note: note,
+    by: by,
+  });
+}
+
 function scansUsedToday_(slug) {
   const today = todaySydney_();
   return readRows_("usage").filter((u) => String(u.slug) === slug && String(u.log_date) === today).length;
@@ -428,6 +491,8 @@ function actionMe_(payload, member) {
     favourites: favouritesFor_(slug),
     scansLeft: Math.max(0, aiLimit_() - scansUsedToday_(slug)),
     scanLimit: aiLimit_(),
+    scanCredits: creditBalance_(slug),
+    scanPriceCents: centsPerScan_(),
     // No API key yet = photo/label scanning is off; the card hides those buttons.
     aiEnabled: !!prop_("ANTHROPIC_API_KEY"),
   };
@@ -817,16 +882,23 @@ const MODE_PROMPTS = {
   label: "Read this Australian Nutrition Information Panel. Return the per-100 g (or per-100 mL) values, the serving size, and the product name if it's visible.",
 };
 
-/** Reserves one of today's AI scans under a lock, so two quick taps can't both slip past the limit. Returns the usage row number. */
+/**
+ * Takes one prepaid scan and one of today's scans under a lock, so two
+ * quick taps can't both slip past the balance or the daily limit. Returns
+ * the row numbers so a failed scan can be handed back (refundScan_).
+ */
 function reserveScan_(slug, kind, model) {
   return withLock_(() => {
+    if (creditBalance_(slug) < 1) {
+      throw userError_("no_credits", "You're out of photo scans. Top up with Max. Barcodes are always free.");
+    }
     if (scansUsedToday_(slug) >= aiLimit_()) {
       throw userError_(
         "limit",
         "You've used all " + aiLimit_() + " photo scans for today. Barcodes still work, and scans reset at midnight."
       );
     }
-    return appendRow_("usage", {
+    const usageRow = appendRow_("usage", {
       timestamp: nowStamp_(),
       log_date: todaySydney_(),
       slug: slug,
@@ -834,7 +906,14 @@ function reserveScan_(slug, kind, model) {
       model: model,
       ok: "pending",
     });
+    const creditRow = addCreditRow_(slug, -1, "", kind === "label" ? "Label scan" : "Photo scan", "scan");
+    return { usageRow: usageRow, creditRow: creditRow };
   });
+}
+
+/** A scan that failed doesn't cost the client: zero out the scan's credit row (it stays as a record). */
+function refundScan_(reservation) {
+  updateRow_("credits", reservation.creditRow, { change: 0, note: "Scan failed, not charged" });
 }
 
 function recordUsage_(rowNumber, usage, ok) {
@@ -903,37 +982,41 @@ function actionAnalyseImage_(payload, member) {
   if (image.length > 2000000) throw userError_("too_big", "That photo is too large. Try again.");
   if (!prop_("ANTHROPIC_API_KEY")) throw userError_("ai_off", "Photo scanning isn't switched on yet. Barcodes still work.");
 
-  const usageRow = reserveScan_(slug, mode, VISION_MODEL);
+  const reservation = reserveScan_(slug, mode, VISION_MODEL);
+  const fail = (usage, ok, message) => {
+    recordUsage_(reservation.usageRow, usage, ok);
+    refundScan_(reservation);
+    return userError_("ai_failed", message);
+  };
   let result;
   try {
     result = callClaude_(image, mode);
   } catch (err) {
-    recordUsage_(usageRow, null, "error");
-    throw userError_("ai_failed", "Couldn't read that photo just now. Try again in a moment.");
+    throw fail(null, "error", "Couldn't read that photo just now. Try again in a moment.");
   }
   const data = result.data || {};
   if (result.status !== 200) {
-    recordUsage_(usageRow, data.usage, "http_" + result.status);
     console.error("Claude error", result.status, JSON.stringify(data).slice(0, 500));
-    throw userError_("ai_failed", "Couldn't read that photo just now. Try again in a moment.");
+    throw fail(data.usage, "http_" + result.status, "Couldn't read that photo just now. Try again in a moment.");
   }
   if (data.stop_reason === "refusal" || data.stop_reason === "max_tokens") {
-    recordUsage_(usageRow, data.usage, data.stop_reason);
-    throw userError_("ai_failed", "Couldn't make sense of that photo. Try a clearer shot from above.");
+    throw fail(data.usage, data.stop_reason, "Couldn't make sense of that photo. Try a clearer shot from above.");
   }
   const textBlock = (data.content || []).find((b) => b.type === "text");
   let parsed;
   try {
     parsed = JSON.parse(textBlock.text);
   } catch (err) {
-    recordUsage_(usageRow, data.usage, "bad_json");
-    throw userError_("ai_failed", "Couldn't make sense of that photo. Try again.");
+    throw fail(data.usage, "bad_json", "Couldn't make sense of that photo. Try again.");
   }
-  recordUsage_(usageRow, data.usage, "Y");
+  recordUsage_(reservation.usageRow, data.usage, "Y");
 
-  const scansLeft = Math.max(0, aiLimit_() - scansUsedToday_(slug));
-  if (mode === "label") return { mode: mode, label: cleanLabel_(parsed), ai: parsed, scansLeft: scansLeft };
-  return { mode: mode, meal: cleanAiMeal_(parsed), ai: parsed, scansLeft: scansLeft };
+  const counts = {
+    scansLeft: Math.max(0, aiLimit_() - scansUsedToday_(slug)),
+    scanCredits: creditBalance_(slug),
+  };
+  if (mode === "label") return Object.assign({ mode: mode, label: cleanLabel_(parsed), ai: parsed }, counts);
+  return Object.assign({ mode: mode, meal: cleanAiMeal_(parsed), ai: parsed }, counts);
 }
 
 /** AI meal → items the confirm sheet can edit: grams, per-100g values, and kcal that agree with 4/4/9. */
@@ -1042,10 +1125,34 @@ function actionCoachList_() {
       coach_approved: t.coach_approved === "Y",
     };
   });
+  const balances = creditBalances_();
   const clients = Object.keys(bySlug)
-    .map((s) => Object.assign({ lastLog: lastLog[s] || "" }, bySlug[s]))
+    .map((s) => Object.assign({ lastLog: lastLog[s] || "", credits: balances[s] || 0 }, bySlug[s]))
     .sort((a, b) => String(a.name).localeCompare(String(b.name)));
-  return { clients: clients };
+  return { clients: clients, centsPerScan: centsPerScan_(), aiEnabled: !!prop_("ANTHROPIC_API_KEY") };
+}
+
+/**
+ * Max records a payment: dollars become photo scans at CENTS_PER_SCAN.
+ * A negative amount takes scans back (e.g. a typo), or delete the row in
+ * the Scan Credits tab.
+ */
+function actionAddCredit_(payload) {
+  const slug = slugify_(payload.slug);
+  const member = readRows_("members").find((m) => String(m.slug) === slug);
+  if (!member) throw userError_("no_member", "Create this client's Fuel link first.");
+  const dollars = Math.round(Number(payload.dollars) * 100) / 100;
+  if (!Number.isFinite(dollars) || dollars === 0 || Math.abs(dollars) > 1000) {
+    throw userError_("bad_amount", "Enter the amount they paid, in dollars (up to $1,000).");
+  }
+  const scans = Math.round((dollars * 100) / centsPerScan_());
+  if (scans === 0) throw userError_("bad_amount", "That's less than one scan.");
+  let balance;
+  withLock_(() => {
+    addCreditRow_(slug, scans, dollars, cleanText_(payload.note, 80) || (dollars > 0 ? "Top-up" : "Correction"), "coach");
+    balance = creditBalance_(slug);
+  });
+  return { slug: slug, scans: scans, balance: balance };
 }
 
 function actionIssueKey_(payload) {
@@ -1071,10 +1178,12 @@ function actionIssueKey_(payload) {
         hide_kcal: "N",
         created_at: nowStamp_(),
       });
+      // New clients get a few photo scans to try it before paying.
+      if (freeScans_() > 0) addCreditRow_(slug, freeScans_(), 0, "Free trial", "coach");
     }
     link = CARD_URL + "?id=" + encodeURIComponent(slug) + "&k=" + encodeURIComponent(key);
   });
-  return { slug: slug, link: link };
+  return { slug: slug, link: link, credits: creditBalance_(slug) };
 }
 
 function actionCoachSetTargets_(payload) {

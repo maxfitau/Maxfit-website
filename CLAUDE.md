@@ -85,15 +85,18 @@ Build one phase at a time. **Stop after each phase for Max to test.** At the end
   - Favourites
   - Barcode Cache (30 days for hits, 3 for misses)
   - AI Usage (tokens and est. USD per call; N1 holds this month's total)
+  - Scan Credits (a ledger: timestamp, slug, change, amount_aud, note, by). A client's balance is the sum of their `change` rows. It creates itself on first use (`tab_()` auto-creates any missing tab).
 
   The text columns are formatted `@` (plain text) before values are written, so dates don't become Date objects and barcodes keep their leading 0.
 - **Actions** (POST `{action,…}`):
   - Member: `me`, `getDay`, `analyseImage` (meal|label), `barcode`, `addEntries`, `updateEntry`, `deleteEntry`, `saveTargets`, `addFavourite`, `removeFavourite`, `setPrefs`.
-  - Coach: `coachList`, `coachSetTargets`, `issueKey`.
+  - Coach: `coachList`, `coachSetTargets`, `issueKey`, `addCredit`.
 - **AI:** `claude-sonnet-5` through `UrlFetchApp`, with `output_config.format` json_schema (guaranteed JSON), `effort: "low"`, and the system prompt cached (`cache_control`; the prompt is kept over 1,024 tokens so it can cache). Rules:
   - A 25-scan/day limit is reserved under a lock *before* each call.
   - kcal is replaced by 4/4/9 when the model's figure is more than 15% off.
   - `claude-haiku-4-5` is reserved for Phase 2 wording.
+  - **Clients prepay for photo scans** (Max's decision, 2026-09-23). Max records a payment on the coach page (`addCredit`, in dollars), which becomes scans at `CENTS_PER_SCAN` (default 5c, so $10 = 200). New clients get `FREE_SCANS` (default 10) when their link is created. `reserveScan_` takes 1 credit, plus a daily-limit slot, under a lock before calling Claude. `refundScan_` zeroes that ledger row if the call fails.
+  - With no `ANTHROPIC_API_KEY`, `me` returns `aiEnabled:false` and the card hides photo and label scanning (barcodes only). Max hasn't bought API credits yet.
 - **Barcodes:** `BarcodeDetector` when available (Android Chrome). Otherwise ZXing, vendored at `card/vendor/zxing-browser.min.js` (@zxing/browser 0.2.1) and loaded lazily. There's also a typed-number fallback and a photo-of-barcode fallback. Open Food Facts is always called server-side and cached.
 
 ### UI files

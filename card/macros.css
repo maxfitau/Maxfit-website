@@ -805,6 +805,12 @@ select.fuel-input {
   border-color: var(--red);
 }
 
+.fuel-mode:disabled {
+  opacity: 0.35;
+  cursor: default;
+  border-color: var(--line);
+}
+
 /* Confirm sheet items */
 .fuel-item {
   background: var(--bg);
