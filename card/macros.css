@@ -1154,3 +1154,206 @@ select.fuel-input {
     gap: 6px;
   }
 }
+
+/* ---------- Fuel AI: Ask button, upsell, plan ---------- */
+
+a.fuel-btn {
+  text-decoration: none;
+}
+
+.fuel-ask {
+  margin-top: -8px;
+}
+
+.fuel-ask svg {
+  color: var(--red);
+}
+
+.fuel-mode.is-locked {
+  opacity: 0.55;
+}
+
+.fuel-perks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fuel-perks li {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--grey);
+  line-height: 1.4;
+}
+
+.fuel-perks svg {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  color: var(--red);
+}
+
+.fuel-perks b {
+  color: var(--white);
+}
+
+.fuel-price {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--dim);
+  margin: 0;
+  text-align: center;
+}
+
+.fuel-price b {
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 30px;
+  color: var(--white);
+  margin-right: 2px;
+}
+
+.fuel-plan {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.fuel-plan__text {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--white);
+}
+
+/* ---------- What to eat next ---------- */
+
+.fuel-ideas {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fuel-ideas__headline {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--white);
+  margin: 4px 0 6px;
+  line-height: 1.4;
+}
+
+.fuel-idea {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid var(--line);
+}
+
+.fuel-idea__label {
+  display: block;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--white);
+}
+
+.fuel-idea__log {
+  flex-shrink: 0;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 12px;
+  color: var(--white);
+  background: transparent;
+  border: 1px solid var(--red);
+  border-radius: 8px;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+
+.fuel-idea__log:active {
+  background: var(--red);
+}
+
+.fuel-idea__log:disabled {
+  opacity: 0.4;
+}
+
+/* ---------- Ask Fuel chat ---------- */
+
+.fuel-chat {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 46vh;
+  max-height: 46dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.fuel-msg {
+  align-self: flex-start;
+  max-width: 88%;
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--white);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 14px 14px 14px 4px;
+  padding: 10px 13px;
+}
+
+.fuel-msg--me {
+  align-self: flex-end;
+  border-color: rgba(224, 0, 0, 0.45);
+  border-radius: 14px 14px 4px 14px;
+}
+
+.fuel-msg--error {
+  color: var(--grey);
+  border-style: dashed;
+}
+
+.fuel-chips--wrap {
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
+.fuel-typing {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px 0;
+}
+
+.fuel-typing i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dim);
+  animation: fuel-blink 1s infinite ease-in-out;
+}
+
+.fuel-typing i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.fuel-typing i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes fuel-blink {
+  0%, 80%, 100% { opacity: 0.25; }
+  40% { opacity: 1; }
+}

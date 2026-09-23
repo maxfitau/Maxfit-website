@@ -16,17 +16,23 @@
  *   STAFF_PIN          — same PIN as the check-in script (coach view)
  *   MACRO_SHEET_ID     — id of the private "MaxFit Macros" sheet
  *   MAIN_SHEET_ID      — the CRM sheet (read-only here, for client names)
- *   DAILY_AI_LIMIT     — optional, AI scans per member per day (default 25)
- *   CENTS_PER_SCAN     — optional, what a client pays per photo scan in
- *                        Australian cents (default 5, so $10 = 200 scans)
- *   FREE_SCANS         — optional, free photo scans for each new client
- *                        (default 10)
+ *   DAILY_AI_LIMIT     — optional, photo/label scans per member per day (default 25)
+ *   CHAT_DAILY_LIMIT   — optional, Ask Fuel messages per member per day (default 40)
+ *   STRIPE_SECRET_KEY  — Stripe RESTRICTED key, read-only on Checkout
+ *                        Sessions and Subscriptions
+ *   STRIPE_FUEL_LINK   — the Stripe Payment Link for Fuel AI ($14.99/month)
+ *   STRIPE_PORTAL_LINK — Stripe customer-portal login link (manage/cancel)
  *
- * Photo scans are prepaid by clients: Max records a payment on the coach
- * page, it becomes scans at CENTS_PER_SCAN, and each successful photo or
- * label scan uses one. The "Scan Credits" tab is the ledger; a client's
- * balance is the sum of their "change" column, so a wrong top-up can be
- * fixed by deleting its row.
+ * Fuel AI (photo/label scans + the Ask Fuel chat) is a paid add-on: a
+ * 7-day free trial from the first time a client opens FUEL, then a Stripe
+ * subscription, or a free month Max gives from the coach page. Barcodes,
+ * targets, totals and "what to eat next" suggestions are free for everyone.
+ *
+ * Stripe is never called by webhook (Apps Script can't read webhook
+ * headers to verify them). Instead syncStripe() asks Stripe's API: every
+ * 15 minutes on a trigger (installStripeSync), when a client lands back
+ * from checkout, and from the coach page. The Upgrade button passes
+ * client_reference_id=fuel-<slug>, which is how a payment finds its client.
  *
  * Who can do what: every member action needs the member's id AND their
  * secret key (the &k= part of their card link), checked against the
@@ -34,13 +40,13 @@
  * or change rows carrying their own id.
  */
 
-const MACROS_VERSION = "2026-09-23c";
+const MACROS_VERSION = "2026-09-24a";
 const TIMEZONE = "Australia/Sydney";
 const MAIN_SESSIONS_GID = 1169726169; // "Sessions Remaining" in the CRM sheet
 const CARD_URL = "https://maxfit.now/card/";
 
 // Claude models (checked against the Claude API model list, Sept 2026).
-// Sonnet reads photos; Haiku is kept for cheap text-only wording later.
+// Sonnet reads photos; Haiku runs the Ask Fuel chat.
 const VISION_MODEL = "claude-sonnet-5";
 const TEXT_MODEL = "claude-haiku-4-5";
 // USD per million tokens, for the AI Usage log. Cache writes are 1.25x
@@ -51,7 +57,16 @@ const PRICING = {
 };
 
 const TABS = {
-  members: { name: "Members", headers: ["slug", "name", "sex", "key", "hide_kcal", "created_at"], text: ["slug", "key"] },
+  // New columns go at the END of a header list: existing sheets get them
+  // appended by addMissingColumns_, and must end up in the same order.
+  members: {
+    name: "Members",
+    headers: [
+      "slug", "name", "sex", "key", "hide_kcal", "created_at",
+      "trial_started", "stripe_customer", "stripe_subscription", "plan_status", "plan_until", "comp_until",
+    ],
+    text: ["slug", "key", "trial_started", "plan_until", "comp_until"],
+  },
   targets: {
     name: "Macro Targets",
     headers: ["slug", "kcal", "protein_g", "carbs_g", "fat_g", "set_by", "calc_inputs", "coach_approved", "updated_at"],
@@ -86,15 +101,12 @@ const TABS = {
     ],
     text: ["log_date", "slug"],
   },
-  credits: {
-    name: "Scan Credits",
-    headers: ["timestamp", "slug", "change", "amount_aud", "note", "by"],
-    text: ["slug"],
+  foods: {
+    name: "Foods",
+    headers: ["name", "category", "serve_g", "serve_label", "kcal_100g", "protein_100g", "carbs_100g", "fat_100g"],
+    text: [],
   },
 };
-
-const DEFAULT_CENTS_PER_SCAN = 5;
-const DEFAULT_FREE_SCANS = 10;
 
 const SOURCES = ["photo", "barcode", "label", "manual", "fridge", "suggestion"];
 const CONFIDENCES = ["high", "medium", "low", ""];
@@ -146,13 +158,21 @@ const MEMBER_ACTIONS = {
   addFavourite: actionAddFavourite_,
   removeFavourite: actionRemoveFavourite_,
   setPrefs: actionSetPrefs_,
+  chat: actionChat_,
 };
 
 const COACH_ACTIONS = {
   coachList: actionCoachList_,
-  addCredit: actionAddCredit_,
   coachSetTargets: actionCoachSetTargets_,
   issueKey: actionIssueKey_,
+  coachGiveMonth: actionCoachGiveMonth_,
+  coachSyncStripe: actionCoachSyncStripe_,
+};
+
+// No key or PIN: only safe, idempotent things. stripeReturn looks up a
+// checkout session by its (unguessable) id and links it to its client.
+const PUBLIC_ACTIONS = {
+  stripeReturn: actionStripeReturn_,
 };
 
 function doPost(e) {
@@ -171,6 +191,9 @@ function doPost(e) {
     if (COACH_ACTIONS[action]) {
       checkCoachPin_(payload.pin);
       return json_(Object.assign({ ok: true, version: MACROS_VERSION }, COACH_ACTIONS[action](payload)));
+    }
+    if (PUBLIC_ACTIONS[action]) {
+      return json_(Object.assign({ ok: true, version: MACROS_VERSION }, PUBLIC_ACTIONS[action](payload)));
     }
     return json_({ ok: false, error: "unknown_action", message: "Unknown action." });
   } catch (err) {
@@ -210,12 +233,35 @@ function macroSheet_() {
   return macroSheetCache_;
 }
 
+const tabCache_ = {};
+
+/**
+ * The sheet for a TABS key. Tabs and header columns added in later versions
+ * create themselves on first use, so an update never needs
+ * setupMacroSheets() run again.
+ */
 function tab_(key) {
+  if (tabCache_[key]) return tabCache_[key];
   const spec = TABS[key];
   const ss = macroSheet_();
-  // Tabs added in later versions (e.g. Scan Credits) create themselves on
-  // first use, so an update never needs setupMacroSheets() run again.
-  return ss.getSheetByName(spec.name) || createTab_(ss, spec);
+  let sheet = ss.getSheetByName(spec.name);
+  if (sheet) addMissingColumns_(sheet, spec);
+  else sheet = createTab_(ss, spec);
+  tabCache_[key] = sheet;
+  return sheet;
+}
+
+function addMissingColumns_(sheet, spec) {
+  const width = Math.max(1, sheet.getLastColumn());
+  const header = sheet.getRange(1, 1, 1, width).getValues()[0].map((h) => String(h).trim());
+  while (header.length && header[header.length - 1] === "") header.pop();
+  spec.headers.forEach((h) => {
+    if (header.indexOf(h) >= 0) return;
+    header.push(h);
+    const col = header.length;
+    if (spec.text.indexOf(h) >= 0) sheet.getRange(1, col, sheet.getMaxRows(), 1).setNumberFormat("@");
+    sheet.getRange(1, col).setValue(h).setFontWeight("bold");
+  });
 }
 
 function createTab_(ss, spec) {
@@ -439,49 +485,82 @@ function aiLimit_() {
   return n > 0 ? n : 25;
 }
 
-function centsPerScan_() {
-  const n = Number(prop_("CENTS_PER_SCAN"));
-  return n > 0 ? n : DEFAULT_CENTS_PER_SCAN;
+function chatLimit_() {
+  const n = Number(prop_("CHAT_DAILY_LIMIT"));
+  return n > 0 ? n : 40;
 }
 
-function freeScans_() {
-  const raw = prop_("FREE_SCANS");
-  const n = Number(raw);
-  return raw !== null && raw !== "" && n >= 0 ? Math.round(n) : DEFAULT_FREE_SCANS;
-}
-
-/** Every member's prepaid photo-scan balance: the sum of their rows in Scan Credits. */
-function creditBalances_() {
-  const out = {};
-  readRows_("credits").forEach((r) => {
-    const s = String(r.slug);
-    out[s] = (out[s] || 0) + (Number(r.change) || 0);
-  });
-  return out;
-}
-
-function creditBalance_(slug) {
-  return creditBalances_()[slug] || 0;
-}
-
-function addCreditRow_(slug, change, amountAud, note, by) {
-  return appendRow_("credits", {
-    timestamp: nowStamp_(),
-    slug: slug,
-    change: change,
-    amount_aud: amountAud,
-    note: note,
-    by: by,
-  });
+/** AI Usage rows for this member today, counting only the given kinds. */
+function usageToday_(slug, kinds) {
+  const today = todaySydney_();
+  return readRows_("usage").filter(
+    (u) => String(u.slug) === slug && String(u.log_date) === today && kinds.indexOf(String(u.kind)) >= 0
+  ).length;
 }
 
 function scansUsedToday_(slug) {
-  const today = todaySydney_();
-  return readRows_("usage").filter((u) => String(u.slug) === slug && String(u.log_date) === today).length;
+  return usageToday_(slug, ["meal", "label"]);
+}
+
+/** Photo scanning and Ask Fuel need a Claude API key on the server. */
+function aiOn_() {
+  return !!prop_("ANTHROPIC_API_KEY");
+}
+
+function planFor_(member) {
+  return MacroCore.planState(
+    {
+      trial_started: member.trial_started,
+      plan_status: member.plan_status,
+      plan_until: member.plan_until,
+      comp_until: member.comp_until,
+    },
+    todaySydney_()
+  );
+}
+
+/** Stops a Fuel AI action (photo/label scan, chat) unless this member has the plan. */
+function requireFuelAi_(member) {
+  if (!aiOn_()) throw userError_("ai_off", "Fuel AI isn't switched on yet. Barcodes still work.");
+  if (!planFor_(member).access) {
+    throw userError_("no_plan", "That's part of Fuel AI. Barcodes and suggestions stay free.");
+  }
+}
+
+function upgradeUrl_(slug) {
+  const link = prop_("STRIPE_FUEL_LINK");
+  if (!link) return "";
+  return link + (link.indexOf("?") >= 0 ? "&" : "?") + "client_reference_id=fuel-" + slug;
+}
+
+function planPayload_(member) {
+  return Object.assign({}, planFor_(member), {
+    upgradeUrl: upgradeUrl_(String(member.slug)),
+    portalUrl: prop_("STRIPE_PORTAL_LINK") || "",
+  });
 }
 
 function actionMe_(payload, member) {
   const slug = String(member.slug);
+  // The free week starts the first time they open FUEL while Fuel AI is on.
+  if (aiOn_() && !member.trial_started) {
+    updateRow_("members", member._row, { trial_started: todaySydney_() });
+    member.trial_started = todaySydney_();
+  }
+  // Back from Stripe checkout, or "Already paid? Refresh": check Stripe now
+  // (at most once a minute per member).
+  if (payload.sync && prop_("STRIPE_SECRET_KEY")) {
+    const cache = CacheService.getScriptCache();
+    if (!cache.get("sync_" + slug)) {
+      cache.put("sync_" + slug, "1", 60);
+      try {
+        syncStripe_();
+      } catch (err) {
+        console.error("Stripe sync failed", err && err.message);
+      }
+      member = readRows_("members").find((m) => String(m.slug) === slug) || member;
+    }
+  }
   const logRows = readRows_("logs");
   return {
     member: { slug: slug, name: member.name, sex: member.sex, hide_kcal: member.hide_kcal === "Y" },
@@ -489,12 +568,13 @@ function actionMe_(payload, member) {
     day: dayFor_(slug, validDate_(payload.date), logRows),
     recent: recentFor_(slug, logRows),
     favourites: favouritesFor_(slug),
+    foods: foodsList_(),
     scansLeft: Math.max(0, aiLimit_() - scansUsedToday_(slug)),
     scanLimit: aiLimit_(),
-    scanCredits: creditBalance_(slug),
-    scanPriceCents: centsPerScan_(),
-    // No API key yet = photo/label scanning is off; the card hides those buttons.
-    aiEnabled: !!prop_("ANTHROPIC_API_KEY"),
+    chatLimit: chatLimit_(),
+    // No API key yet = Fuel AI is off; the card hides photo scans and Ask Fuel.
+    aiEnabled: aiOn_(),
+    plan: planPayload_(member),
   };
 }
 
@@ -883,22 +963,23 @@ const MODE_PROMPTS = {
 };
 
 /**
- * Takes one prepaid scan and one of today's scans under a lock, so two
- * quick taps can't both slip past the balance or the daily limit. Returns
- * the row numbers so a failed scan can be handed back (refundScan_).
+ * Reserves one of today's AI calls under a lock, so two quick taps can't
+ * both slip past the daily limit. kind is "meal" / "label" (photo scans)
+ * or "chat". Returns the AI Usage row number, filled in by recordUsage_.
  */
-function reserveScan_(slug, kind, model) {
+function reserveAi_(slug, kind, model) {
   return withLock_(() => {
-    if (creditBalance_(slug) < 1) {
-      throw userError_("no_credits", "You're out of photo scans. Top up with Max. Barcodes are always free.");
-    }
-    if (scansUsedToday_(slug) >= aiLimit_()) {
+    if (kind === "chat") {
+      if (usageToday_(slug, ["chat"]) >= chatLimit_()) {
+        throw userError_("limit", "That's all the Ask Fuel messages for today. It resets at midnight.");
+      }
+    } else if (scansUsedToday_(slug) >= aiLimit_()) {
       throw userError_(
         "limit",
         "You've used all " + aiLimit_() + " photo scans for today. Barcodes still work, and scans reset at midnight."
       );
     }
-    const usageRow = appendRow_("usage", {
+    return appendRow_("usage", {
       timestamp: nowStamp_(),
       log_date: todaySydney_(),
       slug: slug,
@@ -906,19 +987,12 @@ function reserveScan_(slug, kind, model) {
       model: model,
       ok: "pending",
     });
-    const creditRow = addCreditRow_(slug, -1, "", kind === "label" ? "Label scan" : "Photo scan", "scan");
-    return { usageRow: usageRow, creditRow: creditRow };
   });
 }
 
-/** A scan that failed doesn't cost the client: zero out the scan's credit row (it stays as a record). */
-function refundScan_(reservation) {
-  updateRow_("credits", reservation.creditRow, { change: 0, note: "Scan failed, not charged" });
-}
-
-function recordUsage_(rowNumber, usage, ok) {
+function recordUsage_(rowNumber, usage, ok, model) {
   const u = usage || {};
-  const price = PRICING[VISION_MODEL];
+  const price = PRICING[model || VISION_MODEL] || PRICING[VISION_MODEL];
   const input = Number(u.input_tokens) || 0;
   const output = Number(u.output_tokens) || 0;
   const cacheWrite = Number(u.cache_creation_input_tokens) || 0;
@@ -980,12 +1054,11 @@ function actionAnalyseImage_(payload, member) {
   if (!image) throw userError_("no_image", "No photo came through. Try again.");
   // A 1024px JPEG at 0.8 is ~100–300 KB; 2 MB of base64 means resizing was skipped.
   if (image.length > 2000000) throw userError_("too_big", "That photo is too large. Try again.");
-  if (!prop_("ANTHROPIC_API_KEY")) throw userError_("ai_off", "Photo scanning isn't switched on yet. Barcodes still work.");
+  requireFuelAi_(member);
 
-  const reservation = reserveScan_(slug, mode, VISION_MODEL);
+  const usageRow = reserveAi_(slug, mode, VISION_MODEL);
   const fail = (usage, ok, message) => {
-    recordUsage_(reservation.usageRow, usage, ok);
-    refundScan_(reservation);
+    recordUsage_(usageRow, usage, ok);
     return userError_("ai_failed", message);
   };
   let result;
@@ -1009,12 +1082,9 @@ function actionAnalyseImage_(payload, member) {
   } catch (err) {
     throw fail(data.usage, "bad_json", "Couldn't make sense of that photo. Try again.");
   }
-  recordUsage_(reservation.usageRow, data.usage, "Y");
+  recordUsage_(usageRow, data.usage, "Y");
 
-  const counts = {
-    scansLeft: Math.max(0, aiLimit_() - scansUsedToday_(slug)),
-    scanCredits: creditBalance_(slug),
-  };
+  const counts = { scansLeft: Math.max(0, aiLimit_() - scansUsedToday_(slug)) };
   if (mode === "label") return Object.assign({ mode: mode, label: cleanLabel_(parsed), ai: parsed }, counts);
   return Object.assign({ mode: mode, meal: cleanAiMeal_(parsed), ai: parsed }, counts);
 }
@@ -1111,6 +1181,7 @@ function actionCoachList_() {
       hasKey: !!m.key,
       sex: m.sex,
       link: m.key ? CARD_URL + "?id=" + encodeURIComponent(s) + "&k=" + encodeURIComponent(m.key) : "",
+      plan: planFor_(m),
     });
   });
   targets.forEach((t) => {
@@ -1125,34 +1196,15 @@ function actionCoachList_() {
       coach_approved: t.coach_approved === "Y",
     };
   });
-  const balances = creditBalances_();
   const clients = Object.keys(bySlug)
-    .map((s) => Object.assign({ lastLog: lastLog[s] || "", credits: balances[s] || 0 }, bySlug[s]))
+    .map((s) => Object.assign({ lastLog: lastLog[s] || "" }, bySlug[s]))
     .sort((a, b) => String(a.name).localeCompare(String(b.name)));
-  return { clients: clients, centsPerScan: centsPerScan_(), aiEnabled: !!prop_("ANTHROPIC_API_KEY") };
-}
-
-/**
- * Max records a payment: dollars become photo scans at CENTS_PER_SCAN.
- * A negative amount takes scans back (e.g. a typo), or delete the row in
- * the Scan Credits tab.
- */
-function actionAddCredit_(payload) {
-  const slug = slugify_(payload.slug);
-  const member = readRows_("members").find((m) => String(m.slug) === slug);
-  if (!member) throw userError_("no_member", "Create this client's Fuel link first.");
-  const dollars = Math.round(Number(payload.dollars) * 100) / 100;
-  if (!Number.isFinite(dollars) || dollars === 0 || Math.abs(dollars) > 1000) {
-    throw userError_("bad_amount", "Enter the amount they paid, in dollars (up to $1,000).");
-  }
-  const scans = Math.round((dollars * 100) / centsPerScan_());
-  if (scans === 0) throw userError_("bad_amount", "That's less than one scan.");
-  let balance;
-  withLock_(() => {
-    addCreditRow_(slug, scans, dollars, cleanText_(payload.note, 80) || (dollars > 0 ? "Top-up" : "Correction"), "coach");
-    balance = creditBalance_(slug);
-  });
-  return { slug: slug, scans: scans, balance: balance };
+  return {
+    clients: clients,
+    aiEnabled: aiOn_(),
+    stripeReady: !!(prop_("STRIPE_SECRET_KEY") && prop_("STRIPE_FUEL_LINK")),
+    lastStripeSync: prop_("STRIPE_LAST_SYNC_AT") || "",
+  };
 }
 
 function actionIssueKey_(payload) {
@@ -1178,12 +1230,11 @@ function actionIssueKey_(payload) {
         hide_kcal: "N",
         created_at: nowStamp_(),
       });
-      // New clients get a few photo scans to try it before paying.
-      if (freeScans_() > 0) addCreditRow_(slug, freeScans_(), 0, "Free trial", "coach");
     }
     link = CARD_URL + "?id=" + encodeURIComponent(slug) + "&k=" + encodeURIComponent(key);
   });
-  return { slug: slug, link: link, credits: creditBalance_(slug) };
+  const member = readRows_("members").find((m) => String(m.slug) === slug);
+  return { slug: slug, link: link, plan: planFor_(member) };
 }
 
 function actionCoachSetTargets_(payload) {
@@ -1224,4 +1275,474 @@ function actionCoachSetTargets_(payload) {
     if (sex && sex !== member.sex) updateRow_("members", member._row, { sex: sex });
   });
   return { targets: targetsFor_(slug) };
+}
+
+function actionCoachGiveMonth_(payload) {
+  const slug = slugify_(payload.slug);
+  let plan;
+  withLock_(() => {
+    const member = readRows_("members").find((m) => String(m.slug) === slug);
+    if (!member) throw userError_("no_member", "Create this client's Fuel link first.");
+    const today = todaySydney_();
+    const current = /^\d{4}-\d{2}-\d{2}$/.test(String(member.comp_until)) ? String(member.comp_until) : "";
+    // Stack onto an existing free month rather than overlapping it.
+    const from = current && current >= today ? MacroCore.addDays(current, 1) : today;
+    const until = MacroCore.addDays(from, 29);
+    updateRow_("members", member._row, { comp_until: until });
+    member.comp_until = until;
+    plan = planFor_(member);
+  });
+  return { slug: slug, plan: plan };
+}
+
+function actionCoachSyncStripe_() {
+  if (!prop_("STRIPE_SECRET_KEY")) throw userError_("no_stripe", "Add STRIPE_SECRET_KEY in Script Properties first.");
+  return { sync: syncStripe_() };
+}
+
+// ---------------------------------------------------------------------------
+// Stripe (read-only; see the notes at the top of this file)
+// ---------------------------------------------------------------------------
+
+function stripeGet_(path, params) {
+  const key = prop_("STRIPE_SECRET_KEY");
+  if (!key) throw new Error("STRIPE_SECRET_KEY is not set.");
+  const qs = Object.keys(params || {})
+    .map((k) => encodeURIComponent(k) + "=" + encodeURIComponent(params[k]))
+    .join("&");
+  const res = UrlFetchApp.fetch("https://api.stripe.com/v1/" + path + (qs ? "?" + qs : ""), {
+    headers: { Authorization: "Bearer " + key },
+    muteHttpExceptions: true,
+  });
+  let body = null;
+  try {
+    body = JSON.parse(res.getContentText());
+  } catch (err) {
+    body = null;
+  }
+  if (res.getResponseCode() !== 200 || !body) {
+    const msg = body && body.error && body.error.message ? body.error.message : "HTTP " + res.getResponseCode();
+    throw new Error("Stripe " + path + ": " + msg);
+  }
+  return body;
+}
+
+/** Every page of a Stripe list endpoint (capped, to stay well inside Apps Script's time limit). */
+function stripeList_(path, params, maxPages) {
+  const out = [];
+  let after = null;
+  for (let page = 0; page < (maxPages || 5); page++) {
+    const p = Object.assign({ limit: 100 }, params || {});
+    if (after) p.starting_after = after;
+    const res = stripeGet_(path, p);
+    (res.data || []).forEach((x) => out.push(x));
+    if (!res.has_more || !res.data.length) break;
+    after = res.data[res.data.length - 1].id;
+  }
+  return out;
+}
+
+/** "fuel-jordansmith" → the Members row for jordansmith, or null. */
+function memberForSession_(session, members) {
+  const m = /^fuel-([a-z0-9]+)$/.exec(String(session.client_reference_id || ""));
+  if (!m || session.status !== "complete" || !session.subscription) return null;
+  return members.find((x) => String(x.slug) === m[1]) || null;
+}
+
+function linkSubscription_(member, session) {
+  const sub = String(session.subscription);
+  if (String(member.stripe_subscription) === sub) return false;
+  updateRow_("members", member._row, { stripe_subscription: sub, stripe_customer: String(session.customer || "") });
+  member.stripe_subscription = sub;
+  return true;
+}
+
+/** Copies a Stripe subscription's status and renewal date onto the member. */
+function applySubscription_(member, sub) {
+  // Newer Stripe API versions keep the period end on the subscription item.
+  const item = sub.items && sub.items.data && sub.items.data[0];
+  const end = sub.current_period_end || (item && item.current_period_end);
+  const until = end ? Utilities.formatDate(new Date(end * 1000), TIMEZONE, "yyyy-MM-dd") : "";
+  if (String(member.plan_status) === sub.status && String(member.plan_until) === until) return false;
+  updateRow_("members", member._row, { plan_status: sub.status, plan_until: until });
+  member.plan_status = sub.status;
+  member.plan_until = until;
+  return true;
+}
+
+/**
+ * Links new Fuel AI checkouts to their clients, then refreshes every
+ * linked client's subscription status. Two to a few Stripe calls — fine
+ * for ~30 clients. Returns { linked, updated }.
+ */
+function syncStripe_() {
+  return withLock_(() => {
+    const props = PropertiesService.getScriptProperties();
+    const since = Number(props.getProperty("STRIPE_SYNCED_TO")) || 0;
+    const startedAt = Math.floor(Date.now() / 1000);
+    const members = readRows_("members");
+    let linked = 0;
+    let updated = 0;
+
+    // An hour of overlap, so a checkout finishing mid-sync is never missed.
+    const sessions = stripeList_("checkout/sessions", { status: "complete", "created[gte]": Math.max(0, since - 3600) });
+    sessions.forEach((session) => {
+      const member = memberForSession_(session, members);
+      if (member && linkSubscription_(member, session)) linked++;
+    });
+
+    if (members.some((m) => m.stripe_subscription)) {
+      const subs = {};
+      stripeList_("subscriptions", { status: "all" }).forEach((sub) => (subs[sub.id] = sub));
+      members.forEach((member) => {
+        const sub = subs[String(member.stripe_subscription)];
+        if (sub && applySubscription_(member, sub)) updated++;
+      });
+    }
+    props.setProperty("STRIPE_SYNCED_TO", String(startedAt));
+    props.setProperty("STRIPE_LAST_SYNC_AT", nowStamp_());
+    return { linked: linked, updated: updated };
+  });
+}
+
+/** Run by the 15-minute trigger (and safe to run by hand from the editor). */
+function syncStripe() {
+  if (!prop_("STRIPE_SECRET_KEY")) return "Add STRIPE_SECRET_KEY first.";
+  return JSON.stringify(syncStripe_());
+}
+
+/** Run ONCE from the editor: checks Stripe every 15 minutes from now on. */
+function installStripeSync() {
+  ScriptApp.getProjectTriggers()
+    .filter((t) => t.getHandlerFunction() === "syncStripe")
+    .forEach((t) => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger("syncStripe").timeBased().everyMinutes(15).create();
+  return "Stripe sync will run every 15 minutes.";
+}
+
+/**
+ * The Payment Link redirects to maxfit.now/card/?paid={CHECKOUT_SESSION_ID}.
+ * The card sends that id here; we fetch the session from Stripe (so it
+ * can't be faked) and switch the client's Fuel AI on straight away.
+ */
+function actionStripeReturn_(payload) {
+  const id = String(payload.session_id || "");
+  if (!/^cs_[A-Za-z0-9_]+$/.test(id)) throw userError_("bad_session", "That payment link didn't come back properly.");
+  if (!prop_("STRIPE_SECRET_KEY")) return { linked: false };
+  let session;
+  try {
+    session = stripeGet_("checkout/sessions/" + id, {});
+  } catch (err) {
+    return { linked: false }; // not a real session (or Stripe hiccup): the 15-minute sync is the backstop
+  }
+  let linked = false;
+  withLock_(() => {
+    const member = memberForSession_(session, readRows_("members"));
+    if (!member) return;
+    linkSubscription_(member, session);
+    applySubscription_(member, stripeGet_("subscriptions/" + session.subscription, {}));
+    linked = planFor_(member).access;
+  });
+  return { linked: linked };
+}
+
+// ---------------------------------------------------------------------------
+// Foods: the curated list behind "what to eat next"
+// ---------------------------------------------------------------------------
+
+// About 80 Australian staples, per 100 g (or 100 ml). Whole foods follow
+// AUSNUT/FSANZ-style reference values; takeaway items are approximate
+// published figures. Seeded into the Foods tab once — Max edits them there.
+// [name, category, serve_g, serve_label, kcal, protein, carbs, fat]
+const FOOD_SEED = [
+  ["Chicken breast, grilled", "protein", 150, "", 165, 31, 0, 3.6],
+  ["Chicken thigh, grilled (skin off)", "protein", 150, "", 190, 26, 0, 9.5],
+  ["Roast chicken with skin", "protein", 150, "", 215, 27, 0, 11.5],
+  ["Lean beef mince, cooked", "protein", 150, "", 175, 27, 0, 7.5],
+  ["Rump steak, lean, grilled", "protein", 180, "", 180, 30, 0, 6.5],
+  ["Pork loin, lean, grilled", "protein", 150, "", 165, 30, 0, 4.5],
+  ["Lamb, lean, grilled", "protein", 150, "", 190, 28, 0, 8.5],
+  ["Kangaroo steak, grilled", "protein", 150, "", 105, 24, 0, 1.2],
+  ["Salmon fillet, baked", "protein", 150, "", 206, 22, 0, 13],
+  ["White fish (barramundi), baked", "protein", 150, "", 110, 23, 0, 1.8],
+  ["Prawns, cooked", "protein", 150, "", 99, 24, 0.2, 0.3],
+  ["Tuna in springwater, drained", "protein", 95, "1 small tin", 110, 25, 0, 1],
+  ["Eggs", "protein", 104, "2 eggs", 143, 12.6, 0.7, 9.5],
+  ["Egg whites", "protein", 150, "", 52, 11, 0.7, 0.2],
+  ["Turkey breast, deli sliced", "protein", 80, "", 105, 21, 2, 1.5],
+  ["Ham, lean, deli sliced", "protein", 60, "", 110, 18, 2, 3.5],
+  ["Firm tofu", "protein", 150, "", 144, 15.8, 2.8, 8.7],
+  ["Lentils, cooked", "protein", 150, "", 116, 9, 20, 0.4],
+  ["Chickpeas, canned, drained", "protein", 125, "", 139, 7, 19, 2.6],
+  ["Beef jerky", "snack", 40, "", 280, 45, 11, 5],
+
+  ["Whey protein shake (water)", "shake", 30, "1 scoop", 370, 88, 3, 1.5],
+  ["Greek yoghurt, low fat (e.g. Chobani Fit)", "dairy", 170, "", 59, 10, 4, 0.2],
+  ["High-protein yoghurt pouch (e.g. YoPRO)", "dairy", 160, "1 pouch", 60, 10, 4, 0.2],
+  ["Natural yoghurt, full fat", "dairy", 150, "", 95, 4.5, 6.5, 5.5],
+  ["Cottage cheese, low fat", "dairy", 100, "", 80, 12.5, 3, 1.5],
+  ["Skim milk", "dairy", 250, "1 glass", 36, 3.5, 5, 0.1],
+  ["Full-cream milk", "dairy", 250, "1 glass", 65, 3.4, 4.8, 3.6],
+  ["Cheddar cheese", "snack", 25, "1 slice", 400, 25, 0.1, 33],
+
+  ["White rice, cooked", "carb", 180, "1 cup", 130, 2.4, 28.6, 0.3],
+  ["Microwave rice cup", "carb", 125, "1 cup", 146, 2.8, 32, 0.5],
+  ["Brown rice, cooked", "carb", 180, "1 cup", 123, 2.7, 25.6, 1],
+  ["Pasta, cooked", "carb", 180, "1 cup", 157, 5.8, 30.9, 0.9],
+  ["Potato, boiled", "carb", 200, "", 77, 2, 17, 0.1],
+  ["Sweet potato, baked", "carb", 200, "", 90, 2, 20.7, 0.2],
+  ["Wholemeal bread", "carb", 80, "2 slices", 240, 10, 40, 3],
+  ["Sourdough", "carb", 70, "1 thick slice", 250, 9, 48, 1.5],
+  ["Wholemeal wrap", "carb", 64, "1 wrap", 300, 9, 50, 7],
+  ["Rolled oats (dry)", "cereal", 40, "", 375, 13, 58, 8.5],
+  ["Weet-Bix", "cereal", 33, "2 biscuits", 353, 12.4, 65.9, 1.3],
+  ["Quinoa, cooked", "carb", 150, "", 120, 4.4, 21.3, 1.9],
+  ["Rice cakes", "snack", 20, "2 cakes", 385, 8, 80, 3],
+  ["Crumpets", "snack", 100, "2 crumpets", 190, 6, 38, 1],
+  ["Natural muesli", "cereal", 45, "", 380, 10, 58, 11],
+
+  ["Banana", "fruit", 120, "1 banana", 89, 1.1, 22.8, 0.3],
+  ["Apple", "fruit", 150, "1 apple", 52, 0.3, 13.8, 0.2],
+  ["Mixed berries", "fruit", 100, "", 45, 0.8, 9.5, 0.3],
+  ["Orange", "fruit", 150, "1 orange", 47, 0.9, 11.8, 0.1],
+  ["Mango", "fruit", 150, "", 60, 0.8, 15, 0.4],
+  ["Grapes", "fruit", 100, "", 69, 0.7, 18, 0.2],
+  ["Watermelon", "fruit", 200, "", 30, 0.6, 7.6, 0.2],
+
+  ["Mixed salad leaves", "veg", 50, "", 17, 1.5, 2, 0.2],
+  ["Broccoli, steamed", "veg", 100, "", 35, 2.4, 7, 0.4],
+  ["Stir-fry vegetables", "veg", 150, "", 35, 2, 6, 0.3],
+  ["Green beans", "veg", 100, "", 31, 1.8, 7, 0.1],
+  ["Carrot", "veg", 80, "1 carrot", 41, 0.9, 9.6, 0.2],
+  ["Cucumber", "veg", 100, "", 15, 0.7, 3.6, 0.1],
+  ["Edamame", "veg", 100, "", 121, 11.9, 8.9, 5.2],
+
+  ["Avocado", "fat", 50, "1/4 avocado", 160, 2, 8.5, 14.7],
+  ["Olive oil", "fat", 5, "1 tsp", 884, 0, 0, 100],
+  ["Almonds", "snack", 30, "small handful", 580, 21, 22, 50],
+  ["Peanut butter", "snack", 20, "1 tbsp", 590, 25, 20, 50],
+  ["Protein bar", "snack", 60, "1 bar", 380, 33, 35, 13],
+  ["Popcorn, plain", "snack", 20, "", 387, 12.9, 77.8, 4.5],
+  ["Hummus", "snack", 40, "", 260, 7, 14, 19],
+  ["Rice crackers", "snack", 20, "", 400, 7, 80, 4],
+  ["Dark chocolate (70%)", "snack", 20, "", 600, 7.8, 46, 43],
+
+  ["Flat white, full cream (regular)", "drink", 250, "1 coffee", 45, 2.5, 3.6, 2.3],
+  ["Flat white, skim (regular)", "drink", 250, "1 coffee", 25, 2.6, 3.8, 0.1],
+  ["Orange juice", "drink", 250, "1 glass", 45, 0.7, 10.4, 0.2],
+
+  ["Guzman y Gomez chicken burrito bowl", "meal", 480, "1 bowl", 117, 9, 12.1, 3.3],
+  ["Subway 6-inch chicken breast sub (no sauce)", "meal", 240, "1 sub", 137, 10.4, 17.9, 2.1],
+  ["Nando's quarter chicken breast (plain)", "meal", 170, "1 serve", 135, 23.5, 0.5, 4.1],
+  ["Salmon poke bowl", "meal", 450, "1 bowl", 133, 6.7, 15.6, 4.4],
+  ["Sushi hand roll (chicken avocado)", "meal", 110, "1 roll", 180, 5.5, 32, 3.5],
+  ["McDonald's cheeseburger", "meal", 118, "1 burger", 254, 13.6, 27, 10.6],
+  ["Meat pie", "meal", 175, "1 pie", 257, 7.4, 21.7, 15.4],
+  ["Chicken & salad wrap (cafe)", "meal", 250, "1 wrap", 170, 11, 18, 6],
+];
+
+/** The Foods tab as objects the card and MacroCore understand (seeds it on first use). */
+function foodsList_() {
+  let rows = readRows_("foods");
+  if (!rows.length) {
+    withLock_(() => {
+      if (readRows_("foods").length) return;
+      const sheet = tab_("foods");
+      const values = FOOD_SEED.map((r) => r.slice());
+      sheet.getRange(2, 1, values.length, values[0].length).setValues(values);
+    });
+    rows = readRows_("foods");
+  }
+  return rows
+    .map((r) => ({
+      name: String(r.name || "").trim(),
+      category: String(r.category || "").trim().toLowerCase(),
+      serve_g: Number(r.serve_g) || 0,
+      serve_label: String(r.serve_label || "").trim(),
+      per100: {
+        kcal: Number(r.kcal_100g) || 0,
+        protein_g: Number(r.protein_100g) || 0,
+        carbs_g: Number(r.carbs_100g) || 0,
+        fat_g: Number(r.fat_100g) || 0,
+      },
+    }))
+    .filter((f) => f.name && f.serve_g > 0 && f.per100.kcal > 0);
+}
+
+// ---------------------------------------------------------------------------
+// Ask Fuel: the AI copilot chat (Fuel AI plan)
+// ---------------------------------------------------------------------------
+
+const CHAT_SYSTEM_PROMPT = [
+  "You are Fuel, the nutrition copilot inside MaxFit, the app of Max, an Australian personal trainer in Sydney.",
+  "You help one of Max's clients decide what to eat next so they hit their daily protein, carbohydrate, fat and calorie targets.",
+  "",
+  "How to answer",
+  "- Be brief, warm and practical: 2–5 short sentences, like a supportive coach texting. No lectures, no headings.",
+  "- Use the client's numbers in the context (targets, what they've eaten, what's left). Suggest concrete foods and amounts in grams that fit what's left.",
+  "- Think Australian: supermarket staples (Woolworths, Coles, Aldi), cafe orders, and takeaway like Guzman y Gomez, Subway, Nando's, sushi, poke, Maccas.",
+  "- Put every specific food you recommend eating in `foods`, with realistic grams and macros for that amount (kcal ≈ 4×protein + 4×carbs + 9×fat). Leave `foods` empty if you're not recommending specific foods.",
+  "- If the client hides calories, talk about protein and portions and don't quote calorie numbers in `reply`.",
+  "",
+  "Tone and safety",
+  "- Supportive, never shaming. Going over is information, not failure: say 'no stress' and offer high-protein, lower-calorie options if they're still hungry.",
+  "- Never suggest skipping meals, purging, fasting to compensate, or eating less in a day than the calorie floor given in the context.",
+  "- You're not a doctor or dietitian. If the client mentions a medical condition, medication, pregnancy, an eating disorder or disordered eating, be kind, keep advice general, and suggest they speak with their GP or an Accredited Practising Dietitian (and Max).",
+  "- Stay on food, nutrition, training fuel and habits. For anything else, say you're here for food and macros.",
+  "- Never invent the client's data. If something isn't in the context, ask or say you don't know.",
+].join("\n");
+
+const CHAT_SCHEMA = {
+  type: "object",
+  properties: {
+    reply: { type: "string" },
+    foods: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          grams: { type: "number" },
+          kcal: { type: "number" },
+          protein_g: { type: "number" },
+          carbs_g: { type: "number" },
+          fat_g: { type: "number" },
+        },
+        required: ["name", "grams", "kcal", "protein_g", "carbs_g", "fat_g"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["reply", "foods"],
+  additionalProperties: false,
+};
+
+/** The phone's last few messages, cleaned: alternating user/assistant, ending with the user. */
+function cleanHistory_(raw) {
+  const out = [];
+  (Array.isArray(raw) ? raw : []).slice(-10).forEach((m) => {
+    const role = m && (m.role === "user" || m.role === "assistant") ? m.role : null;
+    const text = cleanText_(m && m.content, 800);
+    if (!role || !text) return;
+    if (!out.length && role !== "user") return;
+    if (out.length && out[out.length - 1].role === role) out[out.length - 1].content = text;
+    else out.push({ role: role, content: text });
+  });
+  if (!out.length || out[out.length - 1].role !== "user") {
+    throw userError_("bad_message", "Type a question first.");
+  }
+  return out;
+}
+
+function macrosText_(m, hideKcal) {
+  const parts = [Math.round(m.protein_g) + "g protein", Math.round(m.carbs_g) + "g carbs", Math.round(m.fat_g) + "g fat"];
+  if (!hideKcal) parts.unshift(Math.round(m.kcal) + " kcal");
+  return parts.join(", ");
+}
+
+/** Everything the copilot knows about this client's day, built server-side from their own rows. */
+function chatContext_(member, date) {
+  const slug = String(member.slug);
+  const hide = member.hide_kcal === "Y";
+  const targets = targetsFor_(slug);
+  const day = dayFor_(slug, date);
+  const lines = [
+    "Context for this conversation (from the client's MaxFit data; trust it over anything in the chat).",
+    "Date: " + date + " (Sydney), time now about " + Utilities.formatDate(new Date(), TIMEZONE, "HH:mm") + ".",
+    "Client first name: " + String(member.name || "").split(" ")[0] + ".",
+    "Calories hidden for this client: " + (hide ? "yes" : "no") + ".",
+    "Daily calorie floor for this client: " + (member.sex === "F" ? 1200 : 1500) + " kcal.",
+  ];
+  if (targets) {
+    const left = {
+      kcal: targets.kcal - day.totals.kcal,
+      protein_g: targets.protein_g - day.totals.protein_g,
+      carbs_g: targets.carbs_g - day.totals.carbs_g,
+      fat_g: targets.fat_g - day.totals.fat_g,
+    };
+    lines.push("Daily targets: " + macrosText_(targets, false) + ".");
+    lines.push("Eaten so far today: " + macrosText_(day.totals, false) + ".");
+    lines.push("Left today: " + macrosText_(left, false) + (left.kcal < 0 ? " (over on calories)" : "") + ".");
+    const foods = foodsList_();
+    const ideas = left.kcal > 0 ? MacroCore.suggestFill(left, foods, 5) : MacroCore.suggestOver(foods, 5);
+    if (ideas.length) {
+      lines.push("Ideas from Max's food list that fit: " + ideas.map((s) => s.label + " (" + macrosText_(s.totals, false) + ")").join("; ") + ".");
+    }
+  } else {
+    lines.push("No daily targets set yet — suggest they set them in Fuel (or ask Max).");
+  }
+  if (day.entries.length) {
+    lines.push("Logged today:");
+    day.entries.forEach((e) => lines.push("- " + e.meal + ": " + e.name + ", " + e.grams + " g (" + macrosText_(e, false) + ")"));
+  } else {
+    lines.push("Nothing logged yet today.");
+  }
+  return lines.join("\n");
+}
+
+function actionChat_(payload, member) {
+  const slug = String(member.slug);
+  requireFuelAi_(member);
+  const history = cleanHistory_(payload.messages);
+  const context = chatContext_(member, validDate_(payload.date));
+  const usageRow = reserveAi_(slug, "chat", TEXT_MODEL);
+
+  let res;
+  try {
+    res = UrlFetchApp.fetch("https://api.anthropic.com/v1/messages", {
+      method: "post",
+      contentType: "application/json",
+      headers: { "x-api-key": prop_("ANTHROPIC_API_KEY"), "anthropic-version": "2023-06-01" },
+      payload: JSON.stringify({
+        model: TEXT_MODEL,
+        max_tokens: 1200,
+        system: [
+          { type: "text", text: CHAT_SYSTEM_PROMPT },
+          { type: "text", text: context },
+        ],
+        output_config: { format: { type: "json_schema", schema: CHAT_SCHEMA } },
+        messages: history,
+      }),
+      muteHttpExceptions: true,
+    });
+  } catch (err) {
+    recordUsage_(usageRow, null, "error", TEXT_MODEL);
+    throw userError_("ai_failed", "Fuel couldn't answer just now. Try again in a moment.");
+  }
+  let data = {};
+  try {
+    data = JSON.parse(res.getContentText());
+  } catch (err) {
+    data = {};
+  }
+  if (res.getResponseCode() !== 200 || data.stop_reason === "refusal" || data.stop_reason === "max_tokens") {
+    recordUsage_(usageRow, data.usage, res.getResponseCode() !== 200 ? "http_" + res.getResponseCode() : data.stop_reason, TEXT_MODEL);
+    console.error("Chat error", res.getResponseCode(), JSON.stringify(data).slice(0, 500));
+    throw userError_("ai_failed", "Fuel couldn't answer just now. Try again in a moment.");
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse((data.content || []).find((b) => b.type === "text").text);
+  } catch (err) {
+    recordUsage_(usageRow, data.usage, "bad_json", TEXT_MODEL);
+    throw userError_("ai_failed", "Fuel couldn't answer just now. Try again in a moment.");
+  }
+  recordUsage_(usageRow, data.usage, "Y", TEXT_MODEL);
+
+  const foods = (parsed.foods || [])
+    .slice(0, 5)
+    .map((f) => {
+      const grams = Math.round(n_(f.grams, 0, 2000));
+      if (!(grams > 0)) return null;
+      const macros = { protein_g: n_(f.protein_g, 0, 500), carbs_g: n_(f.carbs_g, 0, 500), fat_g: n_(f.fat_g, 0, 500) };
+      macros.kcal = MacroCore.reconcileKcal(Object.assign({ kcal: n_(f.kcal, 0, 5000) }, macros));
+      const per100 = MacroCore.per100From(macros, grams);
+      return Object.assign({ name: cleanText_(f.name, 80) || "Food", grams: grams, per100: per100 }, MacroCore.scale(per100, grams));
+    })
+    .filter(Boolean);
+  return {
+    reply: String(parsed.reply || "").trim().slice(0, 1500), // keeps line breaks; the card escapes it
+    foods: foods,
+    chatsLeft: Math.max(0, chatLimit_() - usageToday_(slug, ["chat"])),
+  };
 }

@@ -205,6 +205,70 @@
   eq("7pm is dinner", C.mealForHour(19), "dinner");
   eq("11pm is a snack", C.mealForHour(23), "snack");
 
+  // --- Fuel AI plan state --------------------------------------------------------------------
+  eq("addDays across a month", C.addDays("2026-09-28", 7), "2026-10-05");
+  eq("daysBetween", C.daysBetween("2026-09-24", "2026-10-01"), 7);
+  const trial0 = C.planState({ trial_started: "2026-09-24" }, "2026-09-24");
+  eq("trial day 1: on, 7 days left", [trial0.access, trial0.kind, trial0.daysLeft], [true, "trial", 7]);
+  const trial6 = C.planState({ trial_started: "2026-09-24" }, "2026-09-30");
+  eq("trial day 7: on, 1 day left", [trial6.access, trial6.daysLeft], [true, 1]);
+  const trial7 = C.planState({ trial_started: "2026-09-24" }, "2026-10-01");
+  eq("day 8: trial over, off", [trial7.access, trial7.kind], [false, "trial_over"]);
+  eq("paying (active): on", C.planState({ trial_started: "2026-01-01", plan_status: "active", plan_until: "2026-10-24" }, "2026-09-24").access, true);
+  eq("card failed (past_due): still on", C.planState({ plan_status: "past_due" }, "2026-09-24").access, true);
+  eq("cancelled after trial: off, lapsed", [C.planState({ trial_started: "2026-01-01", plan_status: "canceled" }, "2026-09-24").access, C.planState({ trial_started: "2026-01-01", plan_status: "canceled" }, "2026-09-24").kind], [false, "lapsed"]);
+  eq("free month until today: on", C.planState({ trial_started: "2026-01-01", comp_until: "2026-09-24" }, "2026-09-24").access, true);
+  eq("free month ended yesterday: off", C.planState({ trial_started: "2026-01-01", comp_until: "2026-09-23" }, "2026-09-24").access, false);
+  eq("never opened Fuel: not started", C.planState({}, "2026-09-24").kind, "not_started");
+
+  // --- What to eat next -------------------------------------------------------------------------
+  // A slice of the seeded Foods list (per 100 g).
+  const food = (name, category, serve_g, serve_label, kcal, p, c, f) => ({ name, category, serve_g, serve_label, per100: { kcal, protein_g: p, carbs_g: c, fat_g: f } });
+  const FOODS = [
+    food("Chicken breast, grilled", "protein", 150, "", 165, 31, 0, 3.6),
+    food("Salmon fillet, baked", "protein", 150, "", 206, 22, 0, 13),
+    food("Prawns, cooked", "protein", 150, "", 99, 24, 0.2, 0.3),
+    food("Tuna in springwater, drained", "protein", 95, "1 small tin", 110, 25, 0, 1),
+    food("Egg whites", "protein", 150, "", 52, 11, 0.7, 0.2),
+    food("Whey protein shake (water)", "shake", 30, "1 scoop", 370, 88, 3, 1.5),
+    food("Greek yoghurt, low fat", "dairy", 170, "", 59, 10, 4, 0.2),
+    food("Cottage cheese, low fat", "dairy", 100, "", 80, 12.5, 3, 1.5),
+    food("Microwave rice cup", "carb", 125, "1 cup", 146, 2.8, 32, 0.5),
+    food("Sweet potato, baked", "carb", 200, "", 90, 2, 20.7, 0.2),
+    food("Wholemeal bread", "carb", 80, "2 slices", 240, 10, 40, 3),
+    food("Banana", "fruit", 120, "1 banana", 89, 1.1, 22.8, 0.3),
+    food("Mixed berries", "fruit", 100, "", 45, 0.8, 9.5, 0.3),
+    food("Broccoli, steamed", "veg", 100, "", 35, 2.4, 7, 0.4),
+    food("Mixed salad leaves", "veg", 50, "", 17, 1.5, 2, 0.2),
+    food("Olive oil", "fat", 5, "1 tsp", 884, 0, 0, 100),
+    food("Dark chocolate (70%)", "snack", 20, "", 600, 7.8, 46, 43),
+    food("Almonds", "snack", 30, "small handful", 580, 21, 22, 50),
+    food("Guzman y Gomez chicken burrito bowl", "meal", 480, "1 bowl", 117, 9, 12.1, 3.3),
+    food("Orange juice", "drink", 250, "1 glass", 45, 0.7, 10.4, 0.2),
+  ];
+  const left = { kcal: 460, protein_g: 52, carbs_g: 45, fat_g: 15 };
+  const ideas = C.suggestFill(left, FOODS, 5);
+  eq("fill: 5 ideas", ideas.length, 5);
+  truthy("fill: never over the calories left", ideas.every((i) => i.totals.kcal <= 460));
+  truthy("fill: top idea includes chicken breast", ideas[0].items.some((p) => p.name.startsWith("Chicken breast")));
+  truthy("fill: top idea brings ≥ 40g protein", ideas[0].totals.protein_g >= 40);
+  truthy("fill: chocolate isn't suggested", !ideas.some((i) => i.label.includes("chocolate")));
+  truthy("fill: oil and drinks are never suggested", !ideas.some((i) => i.items.some((p) => p.category === "fat" || p.category === "drink")));
+  const usedNames = ideas.flatMap((i) => i.items.map((p) => p.name));
+  eq("fill: each food used once", new Set(usedNames).size, usedNames.length);
+  eq("fill: nothing left, no ideas", C.suggestFill({ kcal: -150, protein_g: 10 }, FOODS, 5).length, 0);
+  truthy("fill: tight budget stays under it", C.suggestFill({ kcal: 120, protein_g: 30, carbs_g: 0, fat_g: 0 }, FOODS, 5).every((i) => i.totals.kcal <= 120));
+  eq("label with a serve", C.portionLabel({ name: "Whey protein shake (water)", grams: 30, serve_label: "1 scoop" }), "Whey protein shake (water) (1 scoop)");
+  eq("label in grams", C.portionLabel({ name: "chicken breast", grams: 200, serve_label: "" }), "200g chicken breast");
+
+  const over = C.suggestOver(FOODS, 8);
+  truthy("over: every option under 150 kcal", over.length > 0 && over.every((i) => i.totals.kcal < 150));
+  truthy("over: sorted by protein per 100 kcal", over.every((i, n) => n === 0 || over[n - 1].proteinPer100kcal >= i.proteinPer100kcal));
+  truthy("over: no chocolate, almonds or takeaway", !over.some((i) => /chocolate|Almonds|Guzman/.test(i.label)));
+  const chickenOver = over.find((i) => i.label.includes("Chicken breast"));
+  truthy("over: chicken shrunk to fit (90g, <150 kcal)", chickenOver && chickenOver.items[0].grams === 90);
+  truthy("over: top options are the lean proteins", ["Prawns", "Whey", "Tuna", "Egg whites"].some((n) => over[0].label.includes(n)));
+
   // --- report -------------------------------------------------------------------------
   const failed = results.filter((x) => !x.ok);
   document.getElementById("summary").textContent = `${results.length - failed.length} passed, ${failed.length} failed`;

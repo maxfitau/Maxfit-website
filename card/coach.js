@@ -8,6 +8,8 @@
  *   - set a client's targets in grams (kcal = 4P + 4C + 9F), approving
  *     anything under the 1,500 / 1,200 kcal floor explicitly
  *   - hand targets back to the client's own calculator
+ *   - see each client's Fuel AI status (trial / paying / free month),
+ *     give a free month, and ask the backend to check Stripe now
  */
 (function () {
   const body = document.getElementById("coachBody");
@@ -15,8 +17,9 @@
   const PIN_STORAGE = "maxfitCoachPin";
   let pin = "";
   let clients = [];
-  let centsPerScan = 5;
   let aiEnabled = true;
+  let stripeReady = false;
+  let lastStripeSync = "";
   const open = {}; // slug -> which inline form is showing
 
   try {
@@ -73,8 +76,9 @@
         // ignore
       }
       clients = data.clients;
-      centsPerScan = data.centsPerScan || 5;
       aiEnabled = data.aiEnabled !== false;
+      stripeReady = !!data.stripeReady;
+      lastStripeSync = data.lastStripeSync || "";
       render();
     } catch (err) {
       if (err.code === "bad_pin") {
@@ -115,12 +119,12 @@
           <span class="coach-client__meta">${c.lastLog ? `Last log ${esc(c.lastLog)}` : "Never logged"}</span>
         </div>
         <span class="coach-client__meta">${esc(targetsText(c))}</span>
-        ${c.hasKey ? `<span class="coach-client__meta">Photo scans left: <b style="color:var(--white)">${int(c.credits)}</b></span>` : ""}
+        ${c.hasKey && aiEnabled ? `<span class="coach-client__meta">${esc(planText(c.plan))}</span>` : ""}
         ${c.link ? `<div class="coach-link">${esc(c.link)}</div>` : ""}
         <div class="coach-actions">
           ${c.link ? '<button class="fuel-btn" type="button" data-a="copy">Copy link</button>' : '<button class="fuel-btn" type="button" data-a="issue">Create Fuel link</button>'}
           <button class="fuel-btn fuel-btn--ghost" type="button" data-a="targets">Set targets</button>
-          ${c.hasKey ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="topup">Add top-up</button>' : ""}
+          ${c.hasKey && aiEnabled ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="giveMonth">Give a free month</button>' : ""}
           ${c.link ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="rotate">New link</button>' : ""}
         </div>
         ${
@@ -142,20 +146,6 @@
             : ""
         }
         ${
-          form === "topup"
-            ? `<div class="coach-form" data-topup-form>
-                <div class="fuel-fields2">
-                  <label class="fuel-field"><span class="card__label">Amount paid ($)</span><input class="fuel-input" name="dollars" type="number" inputmode="decimal" step="0.01" placeholder="10" /></label>
-                  <label class="fuel-field"><span class="card__label">Note (optional)</span><input class="fuel-input" name="note" type="text" maxlength="80" placeholder="Cash, transfer…" /></label>
-                </div>
-                <span class="coach-client__meta" data-topup-preview>At ${esc(centsPerScan)}c a scan, $10 = ${int(1000 / centsPerScan)} photo scans.</span>
-                <div class="coach-actions">
-                  <button class="fuel-btn" type="button" data-a="saveTopup">Add scans</button>
-                </div>
-              </div>`
-            : ""
-        }
-        ${
           form === "issue" || form === "rotate"
             ? `<div class="coach-form">
                 <span class="coach-client__meta">${form === "rotate" ? "Their old link will stop working for Fuel." : "Pick their sex for the calorie floor, then create the link."}</span>
@@ -167,12 +157,38 @@
       </div>`;
   }
 
+  /** A client's Fuel AI status in a few words. */
+  function planText(p) {
+    if (!p) return "";
+    const date = (ymd) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(ymd || ""))) return "";
+      const [y, m, d] = ymd.split("-").map(Number);
+      return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-AU", { day: "numeric", month: "short", timeZone: "UTC" });
+    };
+    if (p.kind === "paid") return `Fuel AI: paying${p.until ? ` · renews ${date(p.until)}` : ""}${p.status === "past_due" ? " · card failed, Stripe retrying" : ""}`;
+    if (p.kind === "comp") return `Fuel AI: free month · until ${date(p.until)}`;
+    if (p.kind === "trial") return `Fuel AI: free trial · ${p.daysLeft} day${p.daysLeft === 1 ? "" : "s"} left`;
+    if (p.kind === "lapsed") return "Fuel AI: subscription ended";
+    if (p.kind === "trial_over") return "Fuel AI: trial finished, not subscribed";
+    return "Fuel AI: trial starts when they first open Fuel";
+  }
+
   function render() {
     body.innerHTML = `
       ${
         aiEnabled
           ? ""
-          : '<p class="fuel-error" style="margin-bottom:14px">Photo scanning is off until you add ANTHROPIC_API_KEY in Apps Script, so clients can only scan barcodes for now. You can still record top-ups.</p>'
+          : '<p class="fuel-error" style="margin-bottom:14px">Fuel AI (photo scans and Ask Fuel) is off until you add ANTHROPIC_API_KEY in Apps Script. Clients can scan barcodes and see food ideas for now.</p>'
+      }
+      ${
+        aiEnabled && stripeReady
+          ? `<div class="coach-actions" style="margin-bottom:14px;align-items:center">
+               <button class="fuel-btn fuel-btn--ghost" type="button" data-a="sync">Check Stripe now</button>
+               <span class="coach-client__meta">${lastStripeSync ? `Last checked ${esc(lastStripeSync)}` : "Checks every 15 minutes"}</span>
+             </div>`
+          : aiEnabled
+          ? '<p class="fuel-disclaimer" style="margin-bottom:14px">Stripe isn\'t connected yet, so clients can\'t subscribe. Add STRIPE_SECRET_KEY and STRIPE_FUEL_LINK in Apps Script (see SETUP.md).</p>'
+          : ""
       }
       <p class="fuel-disclaimer" style="margin-bottom:14px">Text each client their Fuel link. They open it once and add it to their home screen again. Only you (with the PIN) and that client can see their food log.</p>
       ${clients.map(clientHtml).join("")}`;
@@ -201,17 +217,6 @@
   }
 
   body.addEventListener("input", (e) => {
-    if (e.target.name === "dollars") {
-      const dollars = Number(e.target.value);
-      const scans = Math.round((dollars * 100) / centsPerScan);
-      e.target.closest("[data-topup-form]").querySelector("[data-topup-preview]").textContent =
-        dollars && scans
-          ? scans > 0
-            ? `= ${int(scans)} photo scans`
-            : `Takes back ${int(-scans)} photo scans (to fix a mistake)`
-          : `At ${centsPerScan}c a scan, $10 = ${int(1000 / centsPerScan)} photo scans.`;
-      return;
-    }
     const card = e.target.closest("[data-slug]");
     if (card && e.target.closest("[data-targets-form]")) paintKcal(card.dataset.slug);
   });
@@ -226,6 +231,20 @@
     }
     const btn = e.target.closest("[data-a]");
     if (!btn) return;
+    if (btn.dataset.a === "sync") {
+      btn.disabled = true;
+      btn.textContent = "Checking…";
+      try {
+        const data = await MacroApi.coach("coachSyncStripe", pin);
+        await load();
+        toast(`Stripe checked: ${data.sync.linked} new, ${data.sync.updated} updated`);
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = "Check Stripe now";
+        toast(err.message);
+      }
+      return;
+    }
     const slug = btn.closest("[data-slug]").dataset.slug;
     const c = clients.find((x) => x.slug === slug);
     const a = btn.dataset.a;
@@ -239,7 +258,7 @@
       }
       return;
     }
-    if (a === "issue" || a === "rotate" || a === "targets" || a === "topup") {
+    if (a === "issue" || a === "rotate" || a === "targets") {
       open[slug] = open[slug] === a ? null : a;
       render();
       return;
@@ -256,7 +275,7 @@
         });
         c.link = data.link;
         c.hasKey = true;
-        c.credits = data.credits;
+        c.plan = data.plan;
         c.sex = selectedSex(slug) || c.sex;
         open[slug] = null;
         render();
@@ -275,17 +294,11 @@
         open[slug] = null;
         await load();
         toast(`Saved ${c.name}'s targets`);
-      } else if (a === "saveTopup") {
-        const el = formFor(slug);
-        const data = await MacroApi.coach("addCredit", pin, {
-          slug: slug,
-          dollars: el.querySelector('[name="dollars"]').value,
-          note: el.querySelector('[name="note"]').value,
-        });
-        c.credits = data.balance;
-        open[slug] = null;
+      } else if (a === "giveMonth") {
+        const data = await MacroApi.coach("coachGiveMonth", pin, { slug: slug });
+        c.plan = data.plan;
         render();
-        toast(`${data.scans > 0 ? "Added" : "Took back"} ${int(Math.abs(data.scans))} scans. ${c.name} now has ${int(data.balance)}.`);
+        toast(`${c.name} has Fuel AI free until ${planText(data.plan).split("until ")[1] || "next month"}`);
       } else if (a === "clearTargets") {
         await MacroApi.coach("coachSetTargets", pin, { slug: slug, clear: true });
         open[slug] = null;

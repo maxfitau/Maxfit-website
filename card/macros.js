@@ -8,7 +8,10 @@
  *   confirm  — editable grams per item, live macros, ADD TO TODAY
  *   edit     — change grams/meal/name, favourite, delete
  *   targets  — Max's targets (read-only) or the calculator
- *   settings — hide calories, disclaimer
+ *   settings — hide calories, Fuel AI plan, disclaimer
+ *   suggest  — "what to eat next" from Max's Foods list (free, no AI)
+ *   chat     — Ask Fuel, the AI copilot (Fuel AI plan)
+ *   upsell   — Fuel AI: 7-day trial, then $14.99/month via Stripe
  *
  * Talks to the server only through MacroApi (macros-api.js); maths come
  * from MacroCore (macros-core.js). Photos are shrunk to 1024px JPEG in the
@@ -48,9 +51,29 @@
     pendingPhotoMode: null,
     loadedOn: null,
     aiEnabled: true,
-    scanCredits: null,
-    scanPriceCents: 5,
+    plan: null, // { access, kind, until, daysLeft, upgradeUrl, portalUrl } from the server
+    foods: [],
+    moreIdeas: false,
+    chat: [], // Ask Fuel messages, this visit only: { role, content, foods? }
+    awaitingUpgrade: false,
   };
+
+  // Back from Stripe checkout: the Payment Link redirects to
+  // /card/?paid={CHECKOUT_SESSION_ID}. Take it off the address straight away
+  // so it never ends up in a home-screen icon's start URL.
+  const returnedSession = (() => {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("paid");
+    if (!id) return null;
+    params.delete("paid");
+    const rest = params.toString();
+    try {
+      history.replaceState(null, "", window.location.pathname + (rest ? "?" + rest : "") + window.location.hash);
+    } catch (err) {
+      // ignore
+    }
+    return /^cs_[A-Za-z0-9_]+$/.test(id) ? id : null;
+  })();
 
   // ---------------------------------------------------------------------------
   // Small helpers
@@ -125,6 +148,9 @@
     left: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>',
     right: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>',
     x: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+    spark:
+      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></svg>',
+    lock: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
     star: '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l3 6.9 7.5.7-5.7 5 1.7 7.4L12 18l-6.5 4 1.7-7.4-5.7-5 7.5-.7z"/></svg>',
   };
 
@@ -148,7 +174,7 @@
         // ignore
       }
     }
-    if (fuel && !state.loaded && !state.loading) load();
+    if (fuel && !state.loaded && !state.loading) load(returnedSession ? { sync: true } : undefined);
   }
 
   els.tabs.forEach((t) => t.addEventListener("click", () => showTab(t.dataset.tab, true)));
@@ -170,13 +196,37 @@
     els.panelFuel.innerHTML = `<div class="fuel-loading"><div class="fuel-spinner"></div><span class="fuel-loading__text">${esc(text || "Loading")}</span></div>`;
   }
 
-  async function load() {
+  function applyMe(data) {
+    state.member = data.member;
+    state.targets = data.targets;
+    state.day = data.day;
+    state.recent = data.recent || [];
+    state.favourites = data.favourites || [];
+    state.foods = data.foods || [];
+    state.scansLeft = data.scansLeft;
+    state.scanLimit = data.scanLimit || 25;
+    state.aiEnabled = data.aiEnabled !== false;
+    state.plan = data.plan || null;
+  }
+
+  async function load(opts) {
     if (!MacroApi.configured()) {
       renderNotice("Fuel is coming soon", "Macro tracking isn't switched on for the card yet. Max will let you know when it's ready.");
       return;
     }
     const who = MacroApi.identity();
     if (!who.id || !who.k) {
+      if (returnedSession) {
+        // Paid in a browser that doesn't hold their card (e.g. Safari
+        // instead of the home-screen app): switch Fuel AI on anyway.
+        renderLoading("Switching on Fuel AI");
+        await confirmStripeReturn();
+        renderNotice(
+          "Payment received",
+          "Thanks! Fuel AI is being switched on. Go back to your MaxFit app from your home screen and open the Fuel tab."
+        );
+        return;
+      }
       renderNotice(
         "Unlock Fuel",
         "Macro tracking needs your personal link from Max. Open the link Max texts you, then add it to your home screen again so the icon remembers it."
@@ -184,22 +234,15 @@
       return;
     }
     state.loading = true;
-    renderLoading("Loading your day");
+    renderLoading(returnedSession ? "Switching on Fuel AI" : "Loading your day");
     try {
-      const data = await MacroApi.call("me", { date: state.viewDate });
-      state.member = data.member;
-      state.targets = data.targets;
-      state.day = data.day;
-      state.recent = data.recent || [];
-      state.favourites = data.favourites || [];
-      state.scansLeft = data.scansLeft;
-      state.scanLimit = data.scanLimit || 25;
-      state.aiEnabled = data.aiEnabled !== false;
-      state.scanCredits = typeof data.scanCredits === "number" ? data.scanCredits : null;
-      state.scanPriceCents = data.scanPriceCents || 5;
+      if (returnedSession) await confirmStripeReturn();
+      const data = await MacroApi.call("me", { date: state.viewDate, sync: !!(opts && opts.sync) });
+      applyMe(data);
       state.loaded = true;
       state.loadedOn = MacroCore.sydneyDate();
       render();
+      if (returnedSession && state.plan && state.plan.kind === "paid") toast("Fuel AI is on. Welcome!");
     } catch (err) {
       if (err.code === "bad_key") {
         renderNotice("Unlock Fuel", esc(err.message));
@@ -208,6 +251,15 @@
       }
     } finally {
       state.loading = false;
+    }
+  }
+
+  /** Tells the server which Stripe checkout just finished, so it can link it straight away. */
+  async function confirmStripeReturn() {
+    try {
+      await MacroApi.call("stripeReturn", { session_id: returnedSession });
+    } catch (err) {
+      // The 15-minute sync will pick it up anyway.
     }
   }
 
@@ -367,6 +419,12 @@
       </div>
       ${totalsHtml()}
       <button class="fuel-scan" type="button" data-act="scan">${ICONS.camera} Scan food</button>
+      ${
+        state.aiEnabled
+          ? `<button class="fuel-btn fuel-btn--ghost fuel-ask" type="button" data-act="ask">${ICONS.spark} Ask Fuel${fuelAi() ? "" : ` ${ICONS.lock}`}</button>`
+          : ""
+      }
+      ${today ? suggestionsHtml(state.moreIdeas ? 5 : 3, true) : ""}
       ${quickHtml()}
       ${entriesHtml()}
       ${
@@ -384,6 +442,11 @@
     else if (act === "prev") changeDay(-1);
     else if (act === "next") changeDay(1);
     else if (act === "scan") openScanChooser();
+    else if (act === "ask") openChat();
+    else if (act === "more-ideas") {
+      state.moreIdeas = !state.moreIdeas;
+      render();
+    } else if (act === "log-idea") logIdea(btn);
     else if (act === "settings") openSettings();
     else if (act === "targets") openTargets();
     else if (act === "favs") openFavourites();
@@ -396,6 +459,92 @@
       if (item) quickLog(item);
     }
   });
+
+  // ---------------------------------------------------------------------------
+  // What to eat next (free): ranked in MacroCore from Max's Foods list
+  // ---------------------------------------------------------------------------
+
+  let shownIdeas = []; // the suggestions currently on screen, for their Log buttons
+
+  function remainingToday() {
+    const g = state.targets;
+    const t = state.day ? state.day.totals : MacroCore.sumTotals([]);
+    return {
+      kcal: g.kcal - t.kcal,
+      protein_g: g.protein_g - t.protein_g,
+      carbs_g: g.carbs_g - t.carbs_g,
+      fat_g: g.fat_g - t.fat_g,
+    };
+  }
+
+  /** { headline, ideas } for the day on screen, or null without targets/foods. */
+  function ideasFor(limit) {
+    if (!state.targets || !state.foods.length) return null;
+    const left = remainingToday();
+    const p = Math.round(left.protein_g);
+    const k = Math.round(left.kcal);
+    if (k <= 0) {
+      return {
+        over: true,
+        headline: hideKcal()
+          ? "You're past today's target. No stress. If you're still hungry, these are high-protein, lighter options:"
+          : `You're ${int(-k)} kcal over. No stress. If you're still hungry, these are high-protein, low-calorie options:`,
+        ideas: MacroCore.suggestOver(state.foods, limit),
+      };
+    }
+    let ideas = MacroCore.suggestFill(left, state.foods, limit);
+    if (!ideas.length) ideas = MacroCore.suggestOver(state.foods, limit).filter((i) => i.totals.kcal <= k);
+    let headline;
+    if (p <= 0) headline = hideKcal() ? "Protein target hit. Nice work." : `Protein target hit. You've got ${int(k)} kcal left today.`;
+    else headline = hideKcal() ? `You've got ${p}g protein left today.` : `You've got ${p}g protein and ${int(k)} kcal left today.`;
+    return { over: false, headline: headline, ideas: ideas };
+  }
+
+  function ideaMacros(t) {
+    return `${int(t.protein_g)}g P${hideKcal() ? "" : ` · ${int(t.kcal)} kcal`}`;
+  }
+
+  function suggestionsHtml(limit, withMore) {
+    const s = ideasFor(limit);
+    if (!s) return "";
+    shownIdeas = s.ideas;
+    return `
+      <div class="fuel-panel fuel-ideas">
+        <span class="card__label card__label--red">What to eat next</span>
+        <p class="fuel-ideas__headline">${esc(s.headline)}</p>
+        ${s.ideas
+          .map(
+            (idea, i) => `
+          <div class="fuel-idea">
+            <span>
+              <span class="fuel-idea__label">${esc(idea.label)}</span>
+              <span class="fuel-entry__meta">${ideaMacros(idea.totals)}</span>
+            </span>
+            <button class="fuel-idea__log" type="button" data-act="log-idea" data-i="${i}">Log</button>
+          </div>`
+          )
+          .join("")}
+        ${withMore && s.ideas.length >= 3 ? `<button class="fuel-link" type="button" data-act="more-ideas">${state.moreIdeas ? "Fewer ideas" : "More ideas"}</button>` : ""}
+      </div>`;
+  }
+
+  async function logIdea(btn) {
+    const idea = shownIdeas[Number(btn.dataset.i)];
+    if (!idea || state.busy) return;
+    state.busy = true;
+    btn.disabled = true;
+    const meal = defaultMeal();
+    try {
+      const items = idea.items.map((p) => ({ name: p.name, grams: p.grams, per100: p.per100, source: "suggestion" }));
+      const ids = await addItems(items, meal);
+      toast(`Added to ${MEAL_SHORT[meal]}`, () => undoAdd(ids));
+    } catch (err) {
+      btn.disabled = false;
+      toast(err.message);
+    } finally {
+      state.busy = false;
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // Toast
@@ -537,20 +686,26 @@
   // Scan chooser + photos
   // ---------------------------------------------------------------------------
 
-  /** Photo and label scans need the API key on the server AND prepaid scans left. */
-  function canPhotoScan() {
-    return state.aiEnabled && (state.scanCredits == null || state.scanCredits > 0);
+  /** Fuel AI (photo/label scans, Ask Fuel): API key on the server AND a trial, plan or free month. */
+  function fuelAi() {
+    return state.aiEnabled && !!(state.plan && state.plan.access);
   }
 
-  function scansLeftText() {
-    if (!state.aiEnabled || state.scanCredits == null) return "";
-    const n = state.scanCredits;
-    return `${n} photo scan${n === 1 ? "" : "s"} left · barcodes are always free`;
+  function fmtDate(ymd) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(ymd || ""))) return "";
+    const [y, m, d] = ymd.split("-").map(Number);
+    return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-AU", { day: "numeric", month: "short", timeZone: "UTC" });
   }
 
-  /** "$10 = 200 scans", from the price Max set on the server. */
-  function topUpText() {
-    return `Top up with Max: $10 gets you ${int(1000 / state.scanPriceCents)} photo scans.`;
+  /** "Free trial · 5 days left", "Fuel AI · renews 23 Oct", … or "" when Fuel AI is off for everyone. */
+  function planText() {
+    const p = state.plan;
+    if (!state.aiEnabled || !p) return "";
+    if (p.kind === "paid") return p.until ? `Fuel AI · renews ${fmtDate(p.until)}` : "Fuel AI is on";
+    if (p.kind === "comp") return `Fuel AI · free until ${fmtDate(p.until)} (from Max)`;
+    if (p.kind === "trial") return `Fuel AI free trial · ${p.daysLeft} day${p.daysLeft === 1 ? "" : "s"} left`;
+    if (p.kind === "lapsed") return "Your Fuel AI subscription has ended";
+    return "Your Fuel AI free week has finished";
   }
 
   function openScanChooser() {
@@ -560,17 +715,17 @@
       openBarcode();
       return;
     }
-    const outOfScans = !canPhotoScan();
+    const locked = !fuelAi();
+    const sub = locked ? "Barcodes are free. Photo and label scans are part of Fuel AI." : planText();
     openSheet(
       `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Scan food</h2>
-       <p class="fuel-sheet__sub">${esc(scansLeftText())}</p>
-       ${outOfScans ? `<p class="fuel-error">You're out of photo scans. ${esc(topUpText())} Barcodes are always free.</p>` : ""}
+       <p class="fuel-sheet__sub">${esc(sub)}</p>
        <div class="fuel-modes">
-         <button class="fuel-mode" type="button" data-mode="meal" ${outOfScans ? "disabled" : ""}>${ICONS.camera}Photo<small>Snap your meal</small></button>
+         <button class="fuel-mode${locked ? " is-locked" : ""}" type="button" data-mode="meal">${ICONS.camera}Photo<small>${locked ? "Fuel AI" : "Snap your meal"}</small></button>
          <button class="fuel-mode" type="button" data-mode="barcode">${ICONS.barcode}Barcode<small>Packaged food</small></button>
-         <button class="fuel-mode" type="button" data-mode="label" ${outOfScans ? "disabled" : ""}>${ICONS.label}Label<small>Nutrition panel</small></button>
+         <button class="fuel-mode${locked ? " is-locked" : ""}" type="button" data-mode="label">${ICONS.label}Label<small>${locked ? "Fuel AI" : "Nutrition panel"}</small></button>
        </div>
-       ${outOfScans ? "" : '<button class="fuel-btn fuel-btn--quiet" type="button" data-mode="library">Choose a meal photo from your library</button>'}`,
+       ${locked ? "" : '<button class="fuel-btn fuel-btn--quiet" type="button" data-mode="library">Choose a meal photo from your library</button>'}`,
       (body) => {
         body.querySelectorAll("[data-mode]").forEach((b) =>
           b.addEventListener("click", () => {
@@ -578,12 +733,67 @@
             // input.click() has to happen inside this tap handler, or
             // iOS Safari won't open the camera.
             if (mode === "barcode") openBarcode();
+            else if (locked) openUpsell();
             else if (mode === "library") pickPhoto("meal", false);
             else pickPhoto(mode, true);
           })
         );
       }
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Fuel AI upsell (Stripe)
+  // ---------------------------------------------------------------------------
+
+  function openUpsell() {
+    const p = state.plan || {};
+    const ended = p.kind === "trial_over" || p.kind === "lapsed";
+    openSheet(
+      `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Fuel AI</h2>
+       <p class="fuel-sheet__sub">${esc(ended ? planText() + "." : "Your AI nutrition coach, in your pocket.")}</p>
+       <ul class="fuel-perks">
+         <li>${ICONS.camera}<span><b>Snap any meal</b> and get the protein, carbs, fat and calories.</span></li>
+         <li>${ICONS.label}<span><b>Scan nutrition labels</b> for anything without a barcode.</span></li>
+         <li>${ICONS.spark}<span><b>Ask Fuel</b>, your copilot: "What should I have for dinner?"</span></li>
+       </ul>
+       <p class="fuel-price"><b>$14.99</b> a month · cancel any time</p>
+       ${
+         p.upgradeUrl
+           ? `<a class="fuel-btn" href="${esc(p.upgradeUrl)}" target="_blank" rel="noopener" data-upgrade>Upgrade to Fuel AI</a>`
+           : '<p class="fuel-error">Fuel AI sign-ups open soon. Ask Max about it at your next session.</p>'
+       }
+       <button class="fuel-btn fuel-btn--quiet" type="button" data-refresh>Already paid? Tap to refresh</button>
+       <p class="fuel-disclaimer">Barcode scanning, your totals and "what to eat next" ideas stay free.</p>`,
+      (body) => {
+        const upgrade = body.querySelector("[data-upgrade]");
+        if (upgrade) upgrade.addEventListener("click", () => (state.awaitingUpgrade = true));
+        body.querySelector("[data-refresh]").addEventListener("click", (e) => refreshPlan(e.target));
+      }
+    );
+  }
+
+  /** Re-reads the plan (asking the server to check Stripe first). */
+  async function refreshPlan(btn) {
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Checking…";
+    }
+    try {
+      const data = await MacroApi.call("me", { date: state.viewDate, sync: true });
+      applyMe(data);
+      render();
+      if (fuelAi()) {
+        closeSheet();
+        toast("Fuel AI is on");
+      } else if (btn) {
+        btn.disabled = false;
+        btn.textContent = "Not showing yet. Tap to check again";
+      }
+    } catch (err) {
+      if (btn) btn.disabled = false;
+      toast(err.message);
+    }
   }
 
   function pickPhoto(mode, useCamera) {
@@ -635,13 +845,9 @@
       const image = await resizeImage(file);
       data = await MacroApi.call("analyseImage", { image: image, mode: mode }, { timeoutMs: 90000 });
     } catch (err) {
-      if (err.code === "no_credits") {
-        state.scanCredits = 0;
-        sheetError(
-          "Out of photo scans",
-          `${err.message} ${topUpText()}`,
-          '<button class="fuel-btn" type="button" data-retry="barcode">Scan a barcode instead</button>'
-        );
+      if (err.code === "no_plan") {
+        if (state.plan) state.plan.access = false;
+        openUpsell();
         return;
       }
       const again = `<button class="fuel-btn" type="button" data-retry="${mode}">Try another photo</button>`;
@@ -650,7 +856,6 @@
       return;
     }
     if (typeof data.scansLeft === "number") state.scansLeft = data.scansLeft;
-    if (typeof data.scanCredits === "number") state.scanCredits = data.scanCredits;
 
     if (mode === "label") {
       const l = data.label;
@@ -879,7 +1084,7 @@
         "Lookup failed",
         err.message,
         '<button class="fuel-btn" type="button" data-retry="barcode">Try again</button>' +
-          (canPhotoScan()
+          (fuelAi()
             ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-retry="label">Snap the nutrition label instead</button>'
             : "")
       );
@@ -891,7 +1096,7 @@
         `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Not in the database yet</h2>
          <p class="fuel-sheet__sub">Barcode ${esc(code)}${p.name ? ` · ${esc(p.name)}` : ""}</p>
          ${
-           canPhotoScan()
+           fuelAi()
              ? `<p class="fuel-disclaimer">No problem. Snap the nutrition panel on the pack and we'll read the numbers from that.</p>
                 <button class="fuel-btn" type="button" data-retry="label">Snap the nutrition label instead</button>
                 <button class="fuel-btn fuel-btn--ghost" type="button" data-retry="barcode">Scan something else</button>`
@@ -1086,9 +1291,8 @@
             add.textContent = "Adding…";
             try {
               const mealName = c.meal;
-              await addItems(items, mealName);
-              closeSheet();
-              toast(`Added to ${MEAL_SHORT[mealName]}`);
+              const ids = await addItems(items, mealName);
+              openAfterLog(mealName, ids);
             } catch (err) {
               add.disabled = false;
               add.textContent = `Add to ${where}`;
@@ -1096,6 +1300,153 @@
             }
           }
         });
+      }
+    );
+  }
+
+  /** Straight after logging: what's left today and what would fill it. */
+  function openAfterLog(mealName, ids) {
+    const ideas = isToday() ? suggestionsHtml(3, false) : "";
+    if (!ideas) {
+      closeSheet();
+      toast(`Added to ${MEAL_SHORT[mealName]}`, () => undoAdd(ids));
+      return;
+    }
+    openSheet(
+      `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Added to ${esc(MEAL_SHORT[mealName])}</h2>
+       ${ideas}
+       <button class="fuel-btn" type="button" data-close>Done</button>
+       <button class="fuel-btn fuel-btn--quiet" type="button" data-undo>Undo</button>`,
+      (body) => {
+        body.querySelector("[data-undo]").addEventListener("click", async () => {
+          closeSheet();
+          await undoAdd(ids);
+          toast("Removed");
+        });
+        body.addEventListener("click", async (e) => {
+          const btn = e.target.closest('[data-act="log-idea"]');
+          if (!btn) return;
+          await logIdea(btn);
+          closeSheet();
+        });
+      }
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Ask Fuel (Fuel AI): the AI copilot chat
+  // ---------------------------------------------------------------------------
+
+  const CHAT_STARTERS = ["What should I have for dinner?", "What can I get at Guzman?", "I'm hungry but I'm over. Help!"];
+  let chatFoods = []; // loggable foods in the conversation, by index
+
+  function chatHtml() {
+    chatFoods = [];
+    if (!state.chat.length) {
+      return `<p class="fuel-disclaimer">Ask anything about food and your macros today. Fuel can see what you've logged and what's left.</p>
+        <div class="fuel-serves">${CHAT_STARTERS.map((q) => `<button type="button" data-starter="${esc(q)}">${esc(q)}</button>`).join("")}</div>`;
+    }
+    return state.chat
+      .map((m) => {
+        if (m.role === "user") return `<div class="fuel-msg fuel-msg--me">${esc(m.content)}</div>`;
+        if (m.pending) return `<div class="fuel-msg"><span class="fuel-typing"><i></i><i></i><i></i></span></div>`;
+        const chips = (m.foods || [])
+          .map((f) => {
+            chatFoods.push(f);
+            return `<button class="fuel-chip" type="button" data-chat-log="${chatFoods.length - 1}">
+              <span class="fuel-chip__name">+ ${esc(Math.round(f.grams))}g ${esc(f.name)}</span>
+              <span class="fuel-chip__meta">${ideaMacros(f)}</span>
+            </button>`;
+          })
+          .join("");
+        return `<div class="fuel-msg${m.error ? " fuel-msg--error" : ""}">${esc(m.content).replace(/\n/g, "<br>")}</div>${
+          chips ? `<div class="fuel-chips fuel-chips--wrap">${chips}</div>` : ""
+        }`;
+      })
+      .join("");
+  }
+
+  function openChat() {
+    if (!fuelAi()) {
+      openUpsell();
+      return;
+    }
+    openSheet(
+      `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Ask Fuel</h2>
+       <p class="fuel-sheet__sub">${esc(planText())}</p>
+       <div class="fuel-chat" data-chat>${chatHtml()}</div>
+       <form class="fuel-inline" data-chat-form autocomplete="off">
+         <input class="fuel-input" name="q" maxlength="500" placeholder="Ask about food…" aria-label="Your question" />
+         <button class="fuel-btn" type="submit">Send</button>
+       </form>
+       <p class="fuel-disclaimer">General guidance, not medical advice.</p>`,
+      (body) => {
+        const box = body.querySelector("[data-chat]");
+        const form = body.querySelector("[data-chat-form]");
+        const paint = () => {
+          box.innerHTML = chatHtml();
+          box.scrollTop = box.scrollHeight;
+        };
+        const send = async (text) => {
+          const q = String(text || "").trim();
+          if (!q || state.busy) return;
+          state.busy = true;
+          state.chat.push({ role: "user", content: q });
+          const pending = { role: "assistant", pending: true };
+          state.chat.push(pending);
+          paint();
+          const history = state.chat
+            .filter((m) => !m.pending && !m.error)
+            .slice(-10)
+            .map((m) => ({ role: m.role, content: m.content }));
+          try {
+            const data = await MacroApi.call("chat", { date: state.viewDate, messages: history }, { timeoutMs: 60000 });
+            Object.assign(pending, { pending: false, content: data.reply, foods: data.foods || [] });
+          } catch (err) {
+            if (err.code === "no_plan") {
+              state.chat.pop();
+              state.busy = false;
+              if (state.plan) state.plan.access = false;
+              openUpsell();
+              return;
+            }
+            Object.assign(pending, { pending: false, error: true, content: err.message });
+          } finally {
+            state.busy = false;
+          }
+          paint();
+        };
+        form.addEventListener("submit", (e) => {
+          e.preventDefault();
+          const q = form.q.value;
+          form.q.value = "";
+          send(q);
+        });
+        box.addEventListener("click", async (e) => {
+          const starter = e.target.closest("[data-starter]");
+          if (starter) {
+            send(starter.dataset.starter);
+            return;
+          }
+          const logBtn = e.target.closest("[data-chat-log]");
+          if (logBtn && !state.busy) {
+            const f = chatFoods[Number(logBtn.dataset.chatLog)];
+            if (!f) return;
+            state.busy = true;
+            logBtn.disabled = true;
+            const meal = defaultMeal();
+            try {
+              const ids = await addItems([{ name: f.name, grams: f.grams, per100: f.per100, source: "suggestion" }], meal);
+              toast(`Added to ${MEAL_SHORT[meal]}`, () => undoAdd(ids));
+            } catch (err) {
+              logBtn.disabled = false;
+              toast(err.message);
+            } finally {
+              state.busy = false;
+            }
+          }
+        });
+        box.scrollTop = box.scrollHeight;
       }
     );
   }
@@ -1420,7 +1771,21 @@
        <label class="fuel-toggle">Hide calories, focus on protein <input type="checkbox" data-hide ${hideKcal() ? "checked" : ""} /></label>
        <button class="fuel-btn fuel-btn--ghost" type="button" data-s="targets">Daily targets</button>
        <button class="fuel-btn fuel-btn--ghost" type="button" data-s="favs">Favourites</button>
-       ${state.aiEnabled ? `<p class="fuel-disclaimer">${esc(scansLeftText())}. ${esc(topUpText())}</p>` : ""}
+       ${
+         state.aiEnabled && state.plan
+           ? `<div class="fuel-panel fuel-plan">
+                <span class="card__label card__label--red">Fuel AI</span>
+                <span class="fuel-plan__text">${esc(planText())}</span>
+                ${
+                  state.plan.kind === "paid" && state.plan.portalUrl
+                    ? `<a class="fuel-link" href="${esc(state.plan.portalUrl)}" target="_blank" rel="noopener">Manage subscription</a>`
+                    : state.plan.kind !== "paid" && state.plan.kind !== "comp"
+                    ? '<button class="fuel-link" type="button" data-s="upgrade">Upgrade to Fuel AI</button>'
+                    : ""
+                }
+              </div>`
+           : ""
+       }
        <p class="fuel-disclaimer">Not medical advice. If you have a medical condition, pregnancy or a history of disordered eating, talk to your GP or an Accredited Practising Dietitian.</p>
        <button class="fuel-btn fuel-btn--quiet" type="button" data-close>Done</button>`,
       (body) => {
@@ -1439,6 +1804,8 @@
           }
         });
         body.querySelector('[data-s="targets"]').addEventListener("click", openTargets);
+        const up = body.querySelector('[data-s="upgrade"]');
+        if (up) up.addEventListener("click", openUpsell);
         body.querySelector('[data-s="favs"]').addEventListener("click", openFavourites);
       }
     );
@@ -1451,6 +1818,11 @@
   // A phone left open overnight should roll over to the new day.
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "visible" || !state.loaded) return;
+    // Came back from the Stripe checkout tab: check whether it went through.
+    if (state.awaitingUpgrade) {
+      state.awaitingUpgrade = false;
+      refreshPlan(null);
+    }
     const today = MacroCore.sydneyDate();
     if (state.loadedOn && state.loadedOn !== today) {
       state.viewDate = today;

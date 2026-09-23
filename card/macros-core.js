@@ -300,6 +300,199 @@ const MacroCore = (function () {
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // Fuel AI plan: 7-day trial, Stripe subscription, or a free month from Max
+  // ---------------------------------------------------------------------------
+
+  const TRIAL_DAYS = 7;
+  // Stripe subscription statuses that still get Fuel AI. past_due is a card
+  // that failed but is still being retried, so it isn't cut off straight away.
+  const PAID_STATUSES = ["active", "trialing", "past_due"];
+
+  function isYmd_(s) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(String(s || ""));
+  }
+
+  function utcOf_(ymd) {
+    const p = String(ymd).split("-").map(Number);
+    return Date.UTC(p[0], p[1] - 1, p[2]);
+  }
+
+  /** "YYYY-MM-DD" plus n days. */
+  function addDays(ymd, n) {
+    return new Date(utcOf_(ymd) + n * 86400000).toISOString().slice(0, 10);
+  }
+
+  /** Whole days from a to b (b later = positive). */
+  function daysBetween(a, b) {
+    return Math.round((utcOf_(b) - utcOf_(a)) / 86400000);
+  }
+
+  /**
+   * Whether a member has Fuel AI today, and why. `m` has the Members-tab
+   * fields trial_started, plan_status, plan_until, comp_until (dates as
+   * "YYYY-MM-DD"); `today` is a Sydney date.
+   *
+   * kind: "paid" | "comp" (a free month from Max) | "trial" |
+   *       "trial_over" | "lapsed" (subscription ended) | "not_started"
+   */
+  function planState(m, today) {
+    m = m || {};
+    const status = String(m.plan_status || "");
+    if (PAID_STATUSES.indexOf(status) >= 0) {
+      return { access: true, kind: "paid", status: status, until: String(m.plan_until || "") };
+    }
+    const comp = String(m.comp_until || "");
+    if (isYmd_(comp) && comp >= today) {
+      return { access: true, kind: "comp", until: comp, daysLeft: daysBetween(today, comp) + 1 };
+    }
+    const start = String(m.trial_started || "");
+    if (isYmd_(start)) {
+      const end = addDays(start, TRIAL_DAYS);
+      if (today < end) return { access: true, kind: "trial", until: end, daysLeft: daysBetween(today, end) };
+      return { access: false, kind: status ? "lapsed" : "trial_over", status: status };
+    }
+    return { access: false, kind: "not_started" };
+  }
+
+  // ---------------------------------------------------------------------------
+  // "What to eat next": deterministic suggestions from the Foods list
+  // ---------------------------------------------------------------------------
+  //
+  // A food: { name, category, serve_g, serve_label, per100: { kcal,
+  // protein_g, carbs_g, fat_g } }. Categories: protein, carb, veg, fruit,
+  // cereal (breakfast), dairy, shake, snack, meal (takeaway), fat, drink.
+
+  // Two-item combos that make sense on a plate.
+  const PAIRS = [
+    ["protein", "carb"],
+    ["protein", "veg"],
+    ["dairy", "fruit"],
+    ["dairy", "cereal"],
+    ["dairy", "shake"],
+    ["shake", "fruit"],
+  ];
+  // Never suggested on their own: cooking oil, spreads, drinks.
+  const SKIP_CATEGORIES = { fat: true, drink: true };
+  // Over-limit mode may shrink these to fit under 150 kcal; others must fit as served.
+  const SHRINKABLE = { protein: true, dairy: true, veg: true, shake: true };
+  const OVER_MAX_KCAL = 150;
+
+  function portion_(food, grams) {
+    return {
+      name: food.name,
+      category: food.category,
+      grams: grams,
+      serve_label: grams === Number(food.serve_g) ? food.serve_label || "" : "",
+      per100: food.per100,
+    };
+  }
+
+  /** "200g chicken breast" or "Whey protein shake (1 scoop)". */
+  function portionLabel(p) {
+    return p.serve_label ? p.name + " (" + p.serve_label + ")" : Math.round(p.grams) + "g " + p.name;
+  }
+
+  function usable_(foods) {
+    return (foods || []).filter(
+      (f) => f && f.name && f.per100 && num_(f.per100.kcal) > 0 && Number(f.serve_g) > 0 && !SKIP_CATEGORIES[f.category]
+    );
+  }
+
+  /** Protein portions also come in a bigger size (150 g → 200 g). */
+  function sizesFor_(food) {
+    const g = Number(food.serve_g);
+    return food.category === "protein" ? [g, Math.round((g * 4) / 3 / 10) * 10] : [g];
+  }
+
+  /**
+   * How well a combo's totals `t` close the gap `r`: protein counts most,
+   * then carbs, then fat and using the calories left; overshooting a macro
+   * (especially fat) costs points. Higher is better.
+   */
+  function fillScore_(t, r) {
+    const share = (have, need) => (need > 0 ? Math.min(have, need) / need : 0);
+    const over = (have, need, floor) => Math.max(0, have - need) / Math.max(need, floor);
+    const proteinWeight = r.protein_g > 5 ? 3 : 0.5;
+    return (
+      proteinWeight * share(t.protein_g, r.protein_g) +
+      0.75 * share(t.carbs_g, r.carbs_g) +
+      0.5 * share(t.fat_g, r.fat_g) +
+      0.5 * (t.kcal / r.kcal) -
+      0.2 * over(t.protein_g, r.protein_g, 20) -
+      0.5 * over(t.carbs_g, r.carbs_g, 20) -
+      0.8 * over(t.fat_g, r.fat_g, 10)
+    );
+  }
+
+  /**
+   * Top foods and 2-food combos that best fill what's left today without
+   * going over the calories left. `remaining` = target minus eaten.
+   * Returns [{ items: [portion], totals, label }] — each food is used in at
+   * most one suggestion, so the list stays varied. Empty when no calories
+   * are left (use suggestOver then).
+   */
+  function suggestFill(remaining, foods, limit) {
+    const r = {
+      kcal: num_(remaining && remaining.kcal),
+      protein_g: Math.max(0, num_(remaining && remaining.protein_g)),
+      carbs_g: Math.max(0, num_(remaining && remaining.carbs_g)),
+      fat_g: Math.max(0, num_(remaining && remaining.fat_g)),
+    };
+    if (r.kcal <= 0) return [];
+    const pool = usable_(foods);
+    const candidates = [];
+    const consider = (parts) => {
+      const t = sumTotals(parts.map((p) => scale(p.per100, p.grams)));
+      if (t.kcal <= 0 || t.kcal > r.kcal) return;
+      candidates.push({ items: parts, totals: t, score: fillScore_(t, r) });
+    };
+    pool.forEach((f) => sizesFor_(f).forEach((g) => consider([portion_(f, g)])));
+    PAIRS.forEach((pair) => {
+      const firsts = pool.filter((f) => f.category === pair[0]);
+      const seconds = pool.filter((f) => f.category === pair[1]);
+      firsts.forEach((a) => seconds.forEach((b) => consider([portion_(a, Number(a.serve_g)), portion_(b, Number(b.serve_g))])));
+    });
+    candidates.sort((x, y) => y.score - x.score);
+    const picked = [];
+    const used = {};
+    for (let i = 0; i < candidates.length && picked.length < (limit || 5); i++) {
+      const c = candidates[i];
+      if (c.items.some((p) => used[p.name])) continue;
+      c.items.forEach((p) => (used[p.name] = true));
+      picked.push({ items: c.items, totals: c.totals, label: c.items.map(portionLabel).join(" + ") });
+    }
+    return picked;
+  }
+
+  /**
+   * Over the calorie target: high-protein, low-calorie options, each under
+   * 150 kcal a serve, ranked by grams of protein per 100 kcal.
+   */
+  function suggestOver(foods, limit) {
+    const out = [];
+    usable_(foods).forEach((f) => {
+      if (f.category === "meal") return;
+      const k100 = num_(f.per100.kcal);
+      let grams = Number(f.serve_g);
+      if ((k100 * grams) / 100 >= OVER_MAX_KCAL) {
+        if (!SHRINKABLE[f.category]) return;
+        grams = Math.floor(((OVER_MAX_KCAL - 1) / k100) * 10) * 10;
+      }
+      if (grams < 30) return;
+      const t = scale(f.per100, grams);
+      if (t.kcal >= OVER_MAX_KCAL) return;
+      out.push({ items: [portion_(f, grams)], totals: t, ratio: (num_(f.per100.protein_g) / k100) * 100 });
+    });
+    out.sort((a, b) => b.ratio - a.ratio);
+    return out.slice(0, limit || 5).map((c) => ({
+      items: c.items,
+      totals: c.totals,
+      label: portionLabel(c.items[0]),
+      proteinPer100kcal: round1(c.ratio),
+    }));
+  }
+
   return {
     ACTIVITY_FACTORS: ACTIVITY_FACTORS,
     KCAL_FLOOR: KCAL_FLOOR,
@@ -317,5 +510,12 @@ const MacroCore = (function () {
     checkCoachTargets: checkCoachTargets,
     parseServingGrams: parseServingGrams,
     normaliseOffProduct: normaliseOffProduct,
+    TRIAL_DAYS: TRIAL_DAYS,
+    addDays: addDays,
+    daysBetween: daysBetween,
+    planState: planState,
+    portionLabel: portionLabel,
+    suggestFill: suggestFill,
+    suggestOver: suggestOver,
   };
 })();

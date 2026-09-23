@@ -28,11 +28,12 @@ Click **Project Settings** (the gear icon on the left), then **Script Properties
 | `STAFF_PIN` | The same PIN you use for check-in. |
 | `MACRO_SHEET_ID` | The ID you copied in step 1. |
 | `MAIN_SHEET_ID` | `1dGQyIoJ2_XrkbvvPvM2JAY0xdeYQfsCnYHal8WZojUg` |
-| `DAILY_AI_LIMIT` | `25` (optional; 25 photo scans per client per day is the default). |
-| `CENTS_PER_SCAN` | Optional. What a client pays per photo scan, in cents. Defaults to `5`, so $10 = 200 scans. |
-| `FREE_SCANS` | Optional. Free photo scans for each new client. Defaults to `10`. |
+| `DAILY_AI_LIMIT` | Optional. Photo/label scans per client per day (default 25; 15 is plenty for paying clients). |
+| `CHAT_DAILY_LIMIT` | Optional. Ask Fuel messages per client per day (default 40). |
 
-You can leave out `ANTHROPIC_API_KEY` until you buy API credits. Until then photo and label scanning are hidden and clients use barcodes only.
+The three Stripe properties are covered in step 7.
+
+You can leave out `ANTHROPIC_API_KEY` until you buy API credits. Until then Fuel AI (photo/label scans and Ask Fuel) is hidden, and clients use barcodes and the free "what to eat next" ideas.
 
 Also set a monthly spend limit in console.anthropic.com → Settings → Limits. A photo scan costs roughly 1 US cent, and the **AI Usage** tab shows this month's total in cell N1.
 
@@ -41,7 +42,7 @@ Also set a monthly spend limit in console.anthropic.com → Settings → Limits.
 1. Go back to the editor.
 2. Pick **setupMacroSheets** in the function dropdown at the top, then press **Run**.
 3. Google will ask for permission. Click **Review permissions**, choose your account, then **Advanced** → **Go to MaxFit Macros**, then **Allow**.
-4. Open the MaxFit Macros sheet. It should now have 6 tabs: Members, Macro Targets, Food Logs, Favourites, Barcode Cache and AI Usage.
+4. Open the MaxFit Macros sheet. It should now have 6 tabs: Members, Macro Targets, Food Logs, Favourites, Barcode Cache and AI Usage. A **Foods** tab (about 80 Australian staples behind "what to eat next") appears by itself the first time a client opens FUEL. You can edit or add foods there any time.
 
 ## 5. Deploy it (first time only)
 
@@ -67,6 +68,30 @@ Paste the new code in and save. Then go to **Deploy** → **Manage deployments**
 
 **What clients need to do:** open the link once in Safari (iPhone) or Chrome (Android), then **Add to Home Screen again**. On iPhone, the old home-screen icon keeps its own storage and won't know the new link.
 
-**When a client pays you for photo scans:** on the coach page, tap **Add top-up** on their card, type the amount they paid (e.g. `10`) and tap **Add scans**. At 5c a scan, $10 gives them 200. Each successful photo or label scan uses 1; failed scans are free. Every top-up is recorded in the **Scan Credits** tab. If you type a wrong amount, enter a negative amount (e.g. `-10`), or just delete that row in the tab.
+**Fuel AI** (photo and label scans, plus the Ask Fuel chat) costs **$14.99 a month**. Each client gets a **7-day free trial** from the first time they open FUEL; after that it's locked until they subscribe through the Upgrade button (Stripe, step 7). On the coach page, each client shows their status: trial, paying, free month, or ended. **Give a free month** unlocks it for 30 days without payment, which is handy for friends, testing, or making up for a problem.
 
 Lost phone, or a link shared by mistake? Tap **New link** on the coach page. The old link stops working for FUEL straight away.
+
+## 7. Fuel AI on Stripe (do it in test mode first)
+
+Stripe moves its menus around. If you can't find something, type its name ("Payment Links", "Customer portal", "Restricted keys") into Stripe's search bar.
+
+1. Sign in to **stripe.com**, or create an account for MaxFit. Your business and bank details are yours to enter.
+2. Turn on **Test mode** (the switch at the top right), so nothing is really charged while we test.
+3. **Product catalogue → Add product.** Name it **Fuel AI**, choose **Recurring**, set the price to **14.99 AUD** and the period to **Monthly**, then save.
+4. **Payment Links → New.** Pick **Fuel AI**. On the **After payment** tab, choose **Don't show confirmation page → Redirect customers to your website**, and enter exactly:
+   `https://maxfit.now/card/?paid={CHECKOUT_SESSION_ID}`
+   Create the link and copy it. It starts with `https://buy.stripe.com/`.
+5. **Settings → Billing → Customer portal.** Turn it on and copy its **login link** (`https://billing.stripe.com/p/login/…`). This is where clients cancel or change their card.
+6. **Developers → API keys → Create restricted key.** Name it **MaxFit Macros**. Give it **Checkout Sessions: Read** and **Subscriptions: Read**, and leave everything else as None. Create it and copy the key (it starts with `rk_test_`). **Paste it only into Apps Script**: never into chat, email or anywhere else.
+7. In Apps Script → **Project Settings → Script Properties**, add:
+
+| Property | Value |
+|---|---|
+| `STRIPE_SECRET_KEY` | the restricted key from step 6 |
+| `STRIPE_FUEL_LINK` | the payment link from step 4 |
+| `STRIPE_PORTAL_LINK` | the portal login link from step 5 |
+
+8. Back in the editor, choose **installStripeSync** in the function dropdown and press **Run** (allow permissions if asked). From now on the backend checks Stripe every 15 minutes, and straight away whenever a client comes back from paying.
+9. **Test on yourself:** open your own FUEL tab, tap a locked feature → **Upgrade to Fuel AI**, and pay with Stripe's test card `4242 4242 4242 4242` (any future expiry date, any CVC). You should land back on the card with "Fuel AI is on", and the coach page should say "paying · renews …".
+10. **Go live:** turn Test mode off and repeat steps 3–6 in live mode (test products, links and keys don't carry over). Then replace the three Stripe Script Properties with the live values.

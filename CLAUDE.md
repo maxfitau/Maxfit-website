@@ -73,6 +73,8 @@ Build one phase at a time. **Stop after each phase for Max to test.** At the end
 
 **Phase 1 is built, and the backend was deployed 2026-09-23** (setup steps in `apps-script/macros/SETUP.md`). The web-app URL is in `MACROS_API_URL` in `card/macros-api.js`.
 
+**Phase 2 is built (2026-09-24), not yet deployed.** It adds the Fuel AI plan on Stripe, the "what to eat next" suggestions and the Ask Fuel chat, with backend version `2026-09-24a`. To deploy, Max re-pastes `Macros.gs` and `MacrosCore.gs`, picks **New version**, pushes the site, then does the Stripe setup (SETUP.md step 7), in test mode first.
+
 ### Architecture (decided with Max)
 
 - **Backend:** a separate Apps Script project called "MaxFit Macros" (`apps-script/macros/Macros.gs`) with its own URL and its own **private** Google Sheet. It never touches `Code.gs` or the public CRM sheet, except to read client names (`MAIN_SHEET_ID`).
@@ -85,18 +87,32 @@ Build one phase at a time. **Stop after each phase for Max to test.** At the end
   - Favourites
   - Barcode Cache (30 days for hits, 3 for misses)
   - AI Usage (tokens and est. USD per call; N1 holds this month's total)
-  - Scan Credits (a ledger: timestamp, slug, change, amount_aud, note, by). A client's balance is the sum of their `change` rows. It creates itself on first use (`tab_()` auto-creates any missing tab).
+  - Foods (curated list behind the suggestions). It seeds itself from `FOOD_SEED` in Macros.gs the first time `foodsList_()` runs, and Max edits it in the sheet. Categories: protein, carb, cereal, veg, fruit, dairy, shake, snack, meal, fat, drink.
+  - Members also carries plan columns: `trial_started`, `stripe_customer`, `stripe_subscription`, `plan_status`, `plan_until`, `comp_until`.
+  - `tab_()` creates any missing tab and appends any missing header column, so updates never need `setupMacroSheets()` again. New columns must go at the end of a `TABS` header list.
+  - The old `Scan Credits` tab (from this morning's per-scan credits, now removed) is unused.
 
   The text columns are formatted `@` (plain text) before values are written, so dates don't become Date objects and barcodes keep their leading 0.
 - **Actions** (POST `{action,…}`):
-  - Member: `me`, `getDay`, `analyseImage` (meal|label), `barcode`, `addEntries`, `updateEntry`, `deleteEntry`, `saveTargets`, `addFavourite`, `removeFavourite`, `setPrefs`.
-  - Coach: `coachList`, `coachSetTargets`, `issueKey`, `addCredit`.
+  - Member: `me` (`sync:true` asks Stripe first, at most once a minute), `getDay`, `analyseImage` (meal|label), `barcode`, `addEntries`, `updateEntry`, `deleteEntry`, `saveTargets`, `addFavourite`, `removeFavourite`, `setPrefs`, `chat`.
+  - Coach: `coachList`, `coachSetTargets`, `issueKey`, `coachGiveMonth`, `coachSyncStripe`.
+  - Public (no key): `stripeReturn {session_id}`.
 - **AI:** `claude-sonnet-5` through `UrlFetchApp`, with `output_config.format` json_schema (guaranteed JSON), `effort: "low"`, and the system prompt cached (`cache_control`; the prompt is kept over 1,024 tokens so it can cache). Rules:
   - A 25-scan/day limit is reserved under a lock *before* each call.
   - kcal is replaced by 4/4/9 when the model's figure is more than 15% off.
-  - `claude-haiku-4-5` is reserved for Phase 2 wording.
-  - **Clients prepay for photo scans** (Max's decision, 2026-09-23). Max records a payment on the coach page (`addCredit`, in dollars), which becomes scans at `CENTS_PER_SCAN` (default 5c, so $10 = 200). New clients get `FREE_SCANS` (default 10) when their link is created. `reserveScan_` takes 1 credit, plus a daily-limit slot, under a lock before calling Claude. `refundScan_` zeroes that ledger row if the call fails.
-  - With no `ANTHROPIC_API_KEY`, `me` returns `aiEnabled:false` and the card hides photo and label scanning (barcodes only). Max hasn't bought API credits yet.
+  - Ask Fuel chat: `claude-haiku-4-5`, JSON schema `{reply, foods[]}`, so any foods it mentions come with one-tap log chips. The server builds the context itself (targets, today's log, what's left, top suggestions). Chat history lives only on the phone (last 10 turns). `CHAT_DAILY_LIMIT` defaults to 40. Haiku 4.5 rejects `effort`, so it isn't sent.
+  - With no `ANTHROPIC_API_KEY`, `me` returns `aiEnabled:false` and the card hides all of Fuel AI (barcodes and suggestions only).
+- **Fuel AI plan** (Max's decisions, 2026-09-24):
+  - **A$14.99/month** through a Stripe Payment Link, with a **7-day free trial**. The trial starts the first time the client opens FUEL, but only while the API key is set.
+  - **Free:** barcodes, targets, totals, favourites and suggestions. **Paid:** photo/label scans and Ask Fuel.
+  - `MacroCore.planState` decides access: Stripe status active/trialing/past_due, or `comp_until` ≥ today (a free month from Max), or within the trial.
+  - `requireFuelAi_` enforces it on the server. `DAILY_AI_LIMIT` still caps photo scans.
+- **Stripe, no webhooks** (Apps Script can't read webhook signature headers, and it answers POSTs with a 302):
+  - The Upgrade button opens `STRIPE_FUEL_LINK?client_reference_id=fuel-<slug>`.
+  - `syncStripe_()` lists completed checkout sessions (matching `fuel-<slug>`) and then all subscriptions, using a **read-only restricted key**.
+  - It runs every 15 minutes (the `installStripeSync` trigger), when a client returns (the link redirects to `/card/?paid={CHECKOUT_SESSION_ID}`, so the card calls `stripeReturn`, which fetches that session from Stripe), and from the coach page's "Check Stripe now".
+  - The renewal date comes from `items.data[0].current_period_end`, where newer API versions put it, with a fallback to `current_period_end`.
+- **Suggestions (free, no AI):** `MacroCore.suggestFill` scores single foods and sensible pairs (protein+carb/veg, dairy+fruit/cereal, shake+fruit). Weights: protein 3, carbs 0.75, fat 0.5, calories used 0.5, with overshoot penalties. It never exceeds the calories left, and each food appears at most once. `suggestOver` gives serves under 150 kcal, ranked by protein per 100 kcal, shrinking lean proteins to fit. Both are unit-tested.
 - **Barcodes:** `BarcodeDetector` when available (Android Chrome). Otherwise ZXing, vendored at `card/vendor/zxing-browser.min.js` (@zxing/browser 0.2.1) and loaded lazily. There's also a typed-number fallback and a photo-of-barcode fallback. Open Food Facts is always called server-side and cached.
 
 ### UI files
@@ -112,6 +128,11 @@ Build one phase at a time. **Stop after each phase for Max to test.** At the end
 
 - **Unit tests:** open `card/tests/macros-core.test.html` (72 checks, including 4/4/9, scaling, the calculator, floors, the 1%/week cap, OFF parsing and Sydney dates).
 - **End-to-end without deploying:** a scratchpad harness runs the real `Macros.gs` in the browser with fake SpreadsheetApp/Utilities/etc., a mocked Claude, and real Open Food Facts. Don't commit harness files (`_test*.html`, `_mock-gas.js`, `_harness.js`, `_Macros.gs.js`).
+
+### Next up (needs Max)
+
+- **Training payments on Stripe:** Max wants them all on Stripe. That needs his price list (packs, memberships, group vs 1-on-1) and what each payment adds in Sessions Remaining. It touches `apps-script/Code.gs` and the live CRM. Referral payouts fire from a hand-edit `onEdit` trigger, and script writes don't fire `onEdit`, so a Stripe sync must call the payout logic directly.
+- **Idea:** time-of-day-aware suggestions, so it doesn't suggest fish and rice at 7am.
 
 ### Open questions for Max
 
