@@ -87,23 +87,32 @@
 
 <main id="top">
 
-<!-- Hero (doubles as the scroll-scrubbed intro stage) -->
-<div id="intro-spacer">
-<section class="hero" id="hero-pin">
-<div class="hero__shapes" aria-hidden="true">
-<div class="shape shape--ring"></div>
-<div class="shape shape--dot"></div>
-<div class="shape shape--plus"></div>
-<div class="shape shape--sq"></div>
-<div class="shape shape--chevron"></div>
+<!-- 01 · Hero — "Stuck In A Generic Program That Isn't Working?" split
+     across a vertical hairline, intro.mp4 scrubbing from a small card to
+     full-bleed as the section pins on scroll. Replaces the old
+     #intro-spacer/#hero-pin sticky-lerp mechanism (same video asset and
+     CTA copy, new GSAP/ScrollTrigger technique — see js/animations/hero.js).
+     Fully readable and usable with no JS/motion: the video frame is a
+     normal small card and everything else is simply visible. -->
+<section class="hero" id="hero">
+<div class="hero__hairline" aria-hidden="true"></div>
+
+<div class="hero__label-top">
+<span>Personal Trainer</span>
+<span>Inner West Sydney</span>
 </div>
-<div class="container hero__content hero__content--centered">
-<h2 class="hero__label">Personal Trainer · Inner West Sydney</h2>
-<h1 class="hero__problem">Stuck In A Generic Program That Isn't Working?</h1>
-<div class="hero__logo-wrap">
-<div class="hero__logo-underglow" aria-hidden="true"></div>
-<img src="assets/images/maxfit-logo.png" alt="Max Fit" class="hero__logo" width="1736" height="372" />
+<div class="hero__label-bottom">Maximum Fitness &middot; Minimum Fuss</div>
+
+<h1 class="hero__split">
+<span class="hero__split-half hero__split-half--left">Stuck In<br>A Generic</span>
+<span class="hero__split-half hero__split-half--right">Program<br>That Isn't<br>Working?</span>
+</h1>
+
+<div class="hero__video-frame" id="heroVideoFrame">
+<video class="hero__video" id="heroVideo" src="assets/videos/intro.mp4" poster="assets/images/intro-poster.jpg" muted playsinline preload="auto"></video>
 </div>
+
+<div class="hero__cta-wrap">
 <div class="hero__free-badge">
 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 12v9H4v-9M2 7h20v5H2zM12 22V7M12 7C10.5 3 5 3 5 7s7 0 7 0zM12 7c1.5-4 7-4 7 0s-7 0-7 0z"/></svg>
 Your first session is free
@@ -112,24 +121,7 @@ Your first session is free
 <a href="join.html" class="btn btn--primary" aria-label="Book your free personal training consultation in Inner West Sydney">Book your free consult</a>
 </div>
 </div>
-<div class="hero__scroll" aria-hidden="true">
-<span>Scroll</span>
-<span class="hero__scroll-line"></span>
-</div>
-
-<div id="preloader" aria-hidden="true">
-<video class="preloader__video" src="assets/videos/intro.mp4" poster="assets/images/intro-poster.jpg" muted playsinline preload="auto"></video>
-<div class="preloader__caption">
-Loading your fitness dreams
-<span class="preloader__dots"><span></span><span></span><span></span></span>
-</div>
-<div class="preloader__hint">
-<span>Scroll to begin</span>
-<span class="preloader__hint-line"></span>
-</div>
-</div>
 </section>
-</div>
 
 <!-- Hero follow-up: motto, pitch, and the 3-step plan — kept out of the
      pinned hero itself so the first screen on mobile stays to just the
@@ -1135,7 +1127,8 @@ Or email directly
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/SplitText.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/CustomEase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@studio-freight/lenis@1.0.42/dist/lenis.min.js"></script>
-<script src="js/animations/main.js?v=2026092301"></script>
-<script src="js/animations/preloader.js?v=2026092301"></script>
+<script src="js/animations/main.js?v=2026092302"></script>
+<script src="js/animations/preloader.js?v=2026092302"></script>
+<script src="js/animations/hero.js?v=2026092302"></script>
 </body>
 </html>
