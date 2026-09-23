@@ -24,7 +24,7 @@
  * or change rows carrying their own id.
  */
 
-const MACROS_VERSION = "2026-09-23a";
+const MACROS_VERSION = "2026-09-23b";
 const TIMEZONE = "Australia/Sydney";
 const MAIN_SESSIONS_GID = 1169726169; // "Sessions Remaining" in the CRM sheet
 const CARD_URL = "https://maxfit.now/card/";
@@ -428,6 +428,8 @@ function actionMe_(payload, member) {
     favourites: favouritesFor_(slug),
     scansLeft: Math.max(0, aiLimit_() - scansUsedToday_(slug)),
     scanLimit: aiLimit_(),
+    // No API key yet = photo/label scanning is off; the card hides those buttons.
+    aiEnabled: !!prop_("ANTHROPIC_API_KEY"),
   };
 }
 

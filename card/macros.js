@@ -47,6 +47,7 @@
     confirm: null,
     pendingPhotoMode: null,
     loadedOn: null,
+    aiEnabled: true,
   };
 
   // ---------------------------------------------------------------------------
@@ -191,6 +192,7 @@
       state.favourites = data.favourites || [];
       state.scansLeft = data.scansLeft;
       state.scanLimit = data.scanLimit || 25;
+      state.aiEnabled = data.aiEnabled !== false;
       state.loaded = true;
       state.loadedOn = MacroCore.sydneyDate();
       render();
@@ -532,11 +534,17 @@
   // ---------------------------------------------------------------------------
 
   function scansLeftText() {
-    if (state.scansLeft == null) return "";
+    if (state.scansLeft == null || !state.aiEnabled) return "";
     return `${state.scansLeft} of ${state.scanLimit} photo scans left today · barcodes are unlimited`;
   }
 
   function openScanChooser() {
+    // Photo and label scans need the Claude API key on the server. Without
+    // it, barcodes are the only way in, so skip straight to the scanner.
+    if (!state.aiEnabled) {
+      openBarcode();
+      return;
+    }
     openSheet(
       `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Scan food</h2>
        <p class="fuel-sheet__sub">${esc(scansLeftText())}</p>
@@ -843,7 +851,10 @@
       sheetError(
         "Lookup failed",
         err.message,
-        '<button class="fuel-btn" type="button" data-retry="barcode">Try again</button><button class="fuel-btn fuel-btn--ghost" type="button" data-retry="label">Snap the nutrition label instead</button>'
+        '<button class="fuel-btn" type="button" data-retry="barcode">Try again</button>' +
+          (state.aiEnabled
+            ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-retry="label">Snap the nutrition label instead</button>'
+            : "")
       );
       return;
     }
@@ -852,9 +863,14 @@
       openSheet(
         `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Not in the database yet</h2>
          <p class="fuel-sheet__sub">Barcode ${esc(code)}${p.name ? ` · ${esc(p.name)}` : ""}</p>
-         <p class="fuel-disclaimer">No problem. Snap the nutrition panel on the pack and we'll read the numbers from that.</p>
-         <button class="fuel-btn" type="button" data-retry="label">Snap the nutrition label instead</button>
-         <button class="fuel-btn fuel-btn--ghost" type="button" data-retry="barcode">Scan something else</button>`,
+         ${
+           state.aiEnabled
+             ? `<p class="fuel-disclaimer">No problem. Snap the nutrition panel on the pack and we'll read the numbers from that.</p>
+                <button class="fuel-btn" type="button" data-retry="label">Snap the nutrition label instead</button>
+                <button class="fuel-btn fuel-btn--ghost" type="button" data-retry="barcode">Scan something else</button>`
+             : `<p class="fuel-disclaimer">No problem. Some smaller brands aren't in the free food database yet.</p>
+                <button class="fuel-btn" type="button" data-retry="barcode">Scan something else</button>`
+         }`,
         (body) => {
           body.querySelectorAll("[data-retry]").forEach((b) =>
             b.addEventListener("click", () => (b.dataset.retry === "barcode" ? openBarcode() : pickPhoto("label", true)))
