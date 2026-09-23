@@ -71,7 +71,7 @@ Build one phase at a time. **Stop after each phase for Max to test.** At the end
 
 ## Macro tracker: implementation status
 
-**Phase 1 is built (2026-09-23).** Not yet deployed: Max has to follow `apps-script/macros/SETUP.md`, then paste the web-app URL into `MACROS_API_URL` in `card/macros-api.js`. Until then the FUEL tab says "coming soon".
+**Phase 1 is built, and the backend was deployed 2026-09-23** (setup steps in `apps-script/macros/SETUP.md`). The web-app URL is in `MACROS_API_URL` in `card/macros-api.js`.
 
 ### Architecture (decided with Max)
 

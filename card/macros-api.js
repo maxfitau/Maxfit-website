@@ -11,7 +11,7 @@
  * phone, alongside the id it belongs to, so the home-screen icon keeps
  * working. No API keys live here — Claude is only ever called server-side.
  */
-const MACROS_API_URL = "PASTE_MACROS_WEB_APP_URL_HERE";
+const MACROS_API_URL = "https://script.google.com/macros/s/AKfycbw5B8tpkFA1wEC8b3F9IKeiuWDjtVoW5IdXRE71D4FHvtc96RVYzLYlQPoQzfrjplNe/exec";
 
 const MACRO_KEY_STORAGE = "maxfitMacroKey";
 
