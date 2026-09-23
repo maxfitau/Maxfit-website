@@ -21,6 +21,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="styles.css?v=20260913b" />
+<link rel="stylesheet" href="macros.css?v=20260923a" />
 </head>
 <body>
 
@@ -30,6 +31,12 @@
     <span class="card__tag">Membership</span>
   </div>
 
+  <div class="card__tabs" role="tablist" aria-label="Card sections">
+    <button class="card__tab is-active" id="tabCard" type="button" role="tab" aria-selected="true" aria-controls="panelCard" data-tab="card">Card</button>
+    <button class="card__tab" id="tabFuel" type="button" role="tab" aria-selected="false" aria-controls="panelFuel" data-tab="fuel">Fuel</button>
+  </div>
+
+  <div class="card__panel" id="panelCard" role="tabpanel" aria-labelledby="tabCard">
   <div class="card__sessions-row">
     <div class="card__sessions">
       <span class="card__label card__label--red">Group Left</span>
@@ -79,7 +86,23 @@
     <div class="card__qr" id="qrCode"></div>
     <span class="card__scan-caption">Scan at Front Desk</span>
   </div>
+  </div>
+
+  <!-- Macro tracker — everything inside is drawn by macros.js -->
+  <section class="card__panel fuel" id="panelFuel" role="tabpanel" aria-labelledby="tabFuel" hidden></section>
 </main>
+
+<!-- Macro tracker bottom sheet, toast and camera inputs (macros.js) -->
+<div class="fuel-sheet" id="fuelSheet" hidden>
+  <div class="fuel-sheet__backdrop" data-close></div>
+  <div class="fuel-sheet__panel" role="dialog" aria-modal="true" aria-labelledby="fuelSheetTitle">
+    <div class="fuel-sheet__grip" aria-hidden="true"></div>
+    <div class="fuel-sheet__body" id="fuelSheetBody"></div>
+  </div>
+</div>
+<div class="fuel-toast" id="fuelToast" role="status" aria-live="polite" hidden></div>
+<input class="fuel-file" id="fuelPhotoInput" type="file" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true" />
+<input class="fuel-file" id="fuelLibraryInput" type="file" accept="image/*" tabindex="-1" aria-hidden="true" />
 
 <div class="status" id="status" hidden></div>
 
@@ -104,5 +127,8 @@
 <script src="vendor/qrcode.js"></script>
 <script src="sheet.js?v=20260913b"></script>
 <script src="app.js?v=20260913b"></script>
+<script src="macros-core.js?v=20260923a"></script>
+<script src="macros-api.js?v=20260923a"></script>
+<script src="macros.js?v=20260923a"></script>
 </body>
 </html>

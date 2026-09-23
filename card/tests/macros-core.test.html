@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>Macro Maths Tests</title>
+<style>
+  :root { --bg: #111; --fg: #fff; --dim: #999; --red: #e00000; }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg); font: 14px/1.4 -apple-system, system-ui, sans-serif; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  li { margin: 2px 0; }
+  .pass { color: var(--dim); }
+  .fail { color: var(--red); font-weight: 700; }
+  #summary { font-weight: 700; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+<h1>MacroCore unit tests</h1>
+<div id="summary">Running…</div>
+<ol id="results"></ol>
+
+<script src="../macros-core.js"></script>
+<script>
+  /*
+   * Unit tests for card/macros-core.js (the same file Apps Script runs as
+   * MacrosCore.gs). No node on this project, so tests run in the browser:
+   * open this page and every line should be grey. window.__testResults
+   * holds { passed, failed, failures } for automated checks.
+   */
+  const results = [];
+  function eq(name, actual, expected) {
+    const ok = JSON.stringify(actual) === JSON.stringify(expected);
+    results.push({ name, ok, actual, expected });
+  }
+  function near(name, actual, expected, tolerance) {
+    const ok = Math.abs(actual - expected) <= (tolerance == null ? 0.001 : tolerance);
+    results.push({ name, ok, actual, expected });
+  }
+  function truthy(name, value) {
+    results.push({ name, ok: !!value, actual: value, expected: true });
+  }
+
+  const C = MacroCore;
+
+  // --- 4 / 4 / 9 -----------------------------------------------------------
+  eq("kcalFrom 10P 20C 5F = 165", C.kcalFrom(10, 20, 5), 165);
+  eq("kcalFrom protein only", C.kcalFrom(25, 0, 0), 100);
+  eq("kcalFrom fat only", C.kcalFrom(0, 0, 10), 90);
+  eq("kcalFrom ignores blanks", C.kcalFrom("", undefined, null), 0);
+
+  // --- scaling by grams ------------------------------------------------------
+  const chicken = { kcal: 165, protein_g: 31, carbs_g: 0, fat_g: 3.6 };
+  eq("scale 150g chicken", C.scale(chicken, 150), { kcal: 248, protein_g: 46.5, carbs_g: 0, fat_g: 5.4 });
+  eq("scale 100g is per-100", C.scale(chicken, 100), { kcal: 165, protein_g: 31, carbs_g: 0, fat_g: 3.6 });
+  eq("scale 0g is zero", C.scale(chicken, 0), { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 });
+  eq("scale negative grams clamps to 0", C.scale(chicken, -50), { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 });
+  eq("per100From 200g item", C.per100From({ kcal: 330, protein_g: 62, carbs_g: 0, fat_g: 7.2 }, 200), chicken);
+  eq("per100From 0g is zero", C.per100From({ kcal: 330 }, 0), { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 });
+  const roundTrip = C.scale(C.per100From({ kcal: 430, protein_g: 48, carbs_g: 40, fat_g: 7 }, 350), 350);
+  eq("per100 → scale round-trips", roundTrip, { kcal: 430, protein_g: 48, carbs_g: 40, fat_g: 7 });
+
+  // --- AI kcal reconciliation -------------------------------------------------
+  eq("reconcile keeps kcal within 15%", C.reconcileKcal({ kcal: 210, protein_g: 30, carbs_g: 10, fat_g: 5 }), 210);
+  eq("reconcile replaces kcal >15% off", C.reconcileKcal({ kcal: 500, protein_g: 30, carbs_g: 10, fat_g: 5 }), 205);
+  eq("reconcile with no macros keeps stated", C.reconcileKcal({ kcal: 7, protein_g: 0, carbs_g: 0, fat_g: 0 }), 7);
+
+  // --- totals -----------------------------------------------------------------
+  eq(
+    "sumTotals adds and rounds",
+    C.sumTotals([
+      { kcal: 248, protein_g: 46.5, carbs_g: 0, fat_g: 5.4 },
+      { kcal: 195.4, protein_g: 4.1, carbs_g: 42.3, fat_g: 0.4 },
+    ]),
+    { kcal: 443, protein_g: 50.6, carbs_g: 42.3, fat_g: 5.8 }
+  );
+  eq("sumTotals empty", C.sumTotals([]), { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 });
+
+  // --- target calculator (Mifflin-St Jeor) --------------------------------------
+  near("BMR male 80kg 180cm 30y = 1780", C.bmr("M", 80, 180, 30), 1780);
+  near("BMR female 70kg 165cm 35y = 1395.25", C.bmr("F", 70, 165, 35), 1395.25);
+
+  // Male, maintain: TDEE 1780 × 1.55 = 2759 → 2760; P 1.8 g/kg = 144;
+  // F = max(48, 25% of 2760 / 9 = 76.7) = 77; C = (2760 − 576 − 693) / 4 = 373.
+  const a = C.calcTargets({ sex: "M", age: 30, heightCm: 180, weightKg: 80, activity: "moderate", goal: "maintain" });
+  eq("M maintain macros", [a.protein_g, a.carbs_g, a.fat_g], [144, 373, 77]);
+  eq("M maintain kcal = 4P+4C+9F", a.kcal, C.kcalFrom(144, 373, 77));
+  eq("M maintain tdee", a.tdee, 2759);
+  eq("M maintain no flags", a.flags, { floorApplied: false, rateCapped: false });
+
+  // Female, cut 15%: TDEE 1395.25 × 1.375 = 1918.5 → × 0.85 = 1630.7 → 1630;
+  // P 2.0 g/kg = 140; F = max(42, 45.3) = 45; C = (1630 − 560 − 405) / 4 = 166.
+  const b = C.calcTargets({ sex: "F", age: 35, heightCm: 165, weightKg: 70, activity: "light", goal: "cut" });
+  eq("F cut 15% macros", [b.protein_g, b.carbs_g, b.fat_g], [140, 166, 45]);
+  eq("F cut kcal = 4P+4C+9F", b.kcal, 1629);
+  truthy("F cut predicts a loss", b.weeklyChangeKg < 0);
+
+  // Lean gain +10%: TDEE 2759 × 1.10 = 3034.9 → 3030.
+  const g = C.calcTargets({ sex: "M", age: 30, heightCm: 180, weightKg: 80, activity: "moderate", goal: "gain", adjustPct: 10 });
+  near("M gain +10% kcal", g.kcal, 3030, 4);
+  eq("gain uses 1.8 g/kg protein", g.protein_g, 144);
+  const g2 = C.calcTargets({ sex: "M", age: 30, heightCm: 180, weightKg: 80, activity: "moderate", goal: "gain", adjustPct: 25 });
+  near("gain pct clamps to 10%", g2.kcal, 3030, 4);
+  const c2 = C.calcTargets({ sex: "M", age: 30, heightCm: 180, weightKg: 80, activity: "moderate", goal: "cut", adjustPct: 40 });
+  near("cut pct clamps to 20%", c2.kcal, 2210, 4); // 2759 × 0.8 = 2207 → 2210
+
+  // Floor: small older woman, cut 20% → 889 kcal → held at 1,200.
+  const f = C.calcTargets({ sex: "F", age: 60, heightCm: 150, weightKg: 45, activity: "sedentary", goal: "cut", adjustPct: 20 });
+  truthy("F floor applied", f.flags.floorApplied);
+  truthy("F never under 1,200", f.kcal >= 1200 && f.kcal <= 1204);
+  const fm = C.calcTargets({ sex: "M", age: 65, heightCm: 160, weightKg: 55, activity: "sedentary", goal: "cut", adjustPct: 20 });
+  truthy("M floor applied", fm.flags.floorApplied);
+  truthy("M never under 1,500", fm.kcal >= 1500 && fm.kcal <= 1504);
+
+  // 1%/week cap: 55 kg, very high TDEE, cut 20% → deficit 615 > cap 605.
+  const r = C.calcTargets({ sex: "M", age: 25, heightCm: 190, weightKg: 55, activity: "athlete", goal: "cut", adjustPct: 20 });
+  truthy("rate cap applied", r.flags.rateCapped);
+  truthy("weekly loss ≤ 1% bodyweight", -r.weeklyChangeKg <= 0.55 + 0.01);
+  eq("rate-capped kcal", r.kcal, 2469);
+
+  // Carbs can't go negative: protein and fat give way to their minimums first.
+  const big = C.calcTargets({ sex: "F", age: 70, heightCm: 150, weightKg: 150, activity: "sedentary", goal: "cut" });
+  truthy("carbs never negative", big.carbs_g >= 0);
+  truthy("fat ≥ 0.6 g/kg", big.fat_g >= 90);
+  truthy("protein ≥ 1.6 g/kg", big.protein_g >= 240);
+  eq("kcal still = 4P+4C+9F", big.kcal, C.kcalFrom(big.protein_g, big.carbs_g, big.fat_g));
+
+  // Protein range 1.6–2.2 g/kg.
+  eq("protein clamps high", C.calcTargets({ sex: "M", age: 30, heightCm: 180, weightKg: 80, activity: "moderate", goal: "maintain", proteinPerKg: 3 }).protein_g, 176);
+  eq("protein clamps low", C.calcTargets({ sex: "M", age: 30, heightCm: 180, weightKg: 80, activity: "moderate", goal: "maintain", proteinPerKg: 1 }).protein_g, 128);
+
+  // Validation.
+  eq("missing sex rejected", C.calcTargets({ age: 30, heightCm: 180, weightKg: 80, activity: "moderate", goal: "maintain" }).ok, false);
+  eq("height in metres rejected", C.calcTargets({ sex: "M", age: 30, heightCm: 1.8, weightKg: 80, activity: "moderate", goal: "maintain" }).ok, false);
+  eq("unknown activity rejected", C.calcTargets({ sex: "M", age: 30, heightCm: 180, weightKg: 80, activity: "couch", goal: "maintain" }).ok, false);
+
+  // Coach targets.
+  eq("coach targets kcal from grams", C.checkCoachTargets(150, 200, 60, "M").kcal, 1940);
+  eq("coach under F floor", C.checkCoachTargets(100, 100, 40, "F").belowFloor, true);
+  eq("coach at M floor ok", C.checkCoachTargets(150, 150, 34, "M").belowFloor, false);
+
+  // --- labels & Open Food Facts --------------------------------------------------
+  eq("serving '1 bar (68 g)'", C.parseServingGrams("1 bar (68 g)"), 68);
+  eq("serving '33 g (2 biscuits)'", C.parseServingGrams("33 g (2 biscuits)"), 33);
+  eq("serving '375ml'", C.parseServingGrams("375ml"), 375);
+  eq("serving '1 serving (250 ml)'", C.parseServingGrams("1 serving (250 ml)"), 250);
+  eq("serving '12,5 g'", C.parseServingGrams("12,5 g"), 12.5);
+  eq("serving with no amount", C.parseServingGrams("1 pouch"), null);
+
+  const off = C.normaliseOffProduct(
+    {
+      status: 1,
+      product: {
+        product_name: "Greek Yogurt Natural",
+        brands: "Chobani, Chobani Fit",
+        serving_size: "1 portion (160 g)",
+        serving_quantity: 160,
+        nutriments: { "energy-kcal_100g": 59, proteins_100g: 10.1, carbohydrates_100g: 4, fat_100g: 0.2 },
+      },
+    },
+    "9310653106204"
+  );
+  eq("OFF found", off.found, true);
+  eq("OFF brand is first brand", off.brand, "Chobani");
+  eq("OFF per100", off.per100, { kcal: 59, protein_g: 10.1, carbs_g: 4, fat_g: 0.2 });
+  eq("OFF serving grams", off.serving_g, 160);
+  eq("OFF quality ok", off.quality, "ok");
+
+  const kjOnly = C.normaliseOffProduct(
+    { status: 1, product: { product_name: "Bar", nutriments: { "energy-kj_100g": 1674, proteins_100g: 30, carbohydrates_100g: 40, fat_100g: 15 } } },
+    "123456"
+  );
+  near("OFF kJ-only → kcal", kjOnly.per100.kcal, 400.1, 0.1);
+  eq("OFF serving from text missing → null", kjOnly.serving_g, null);
+
+  eq("OFF not found", C.normaliseOffProduct({ status: 0 }, "9399999999994").found, false);
+  eq(
+    "OFF no nutrition → not found",
+    C.normaliseOffProduct({ status: 1, product: { product_name: "Mystery", nutriments: {} } }, "1").reason,
+    "no_nutrition"
+  );
+  eq(
+    "OFF suspicious numbers flagged",
+    C.normaliseOffProduct(
+      { status: 1, product: { product_name: "Odd", nutriments: { "energy-kcal_100g": 371, proteins_100g: 3.8, carbohydrates_100g: 20.4, fat_100g: 3.8 } } },
+      "9300652805048"
+    ).quality,
+    "check"
+  );
+  eq(
+    "OFF drink unit is ml",
+    C.normaliseOffProduct(
+      { status: 1, product: { product_name: "Zero", serving_size: "375ml", nutriments: { "energy-kcal_100g": 0.3, proteins_100g: 0, carbohydrates_100g: 0, fat_100g: 0 } } },
+      "1"
+    ).unit,
+    "ml"
+  );
+
+  // --- dates & meals ----------------------------------------------------------------
+  eq("Sydney date crosses midnight before UTC", C.sydneyDate(new Date("2026-09-22T15:30:00Z")), "2026-09-23");
+  eq("Sydney date during daylight saving", C.sydneyDate(new Date("2026-12-31T13:30:00Z")), "2027-01-01");
+  eq("7am is breakfast", C.mealForHour(7), "breakfast");
+  eq("1pm is lunch", C.mealForHour(13), "lunch");
+  eq("4pm is a snack", C.mealForHour(16), "snack");
+  eq("7pm is dinner", C.mealForHour(19), "dinner");
+  eq("11pm is a snack", C.mealForHour(23), "snack");
+
+  // --- report -------------------------------------------------------------------------
+  const failed = results.filter((x) => !x.ok);
+  document.getElementById("summary").textContent = `${results.length - failed.length} passed, ${failed.length} failed`;
+  document.getElementById("summary").className = failed.length ? "fail" : "pass";
+  document.getElementById("results").innerHTML = results
+    .map(
+      (x) =>
+        `<li class="${x.ok ? "pass" : "fail"}">${x.ok ? "✓" : "✗"} ${x.name}${x.ok ? "" : ` — got ${JSON.stringify(x.actual)}, expected ${JSON.stringify(x.expected)}`}</li>`
+    )
+    .join("");
+  window.__testResults = { passed: results.length - failed.length, failed: failed.length, failures: failed };
+</script>
+</body>
+</html>
