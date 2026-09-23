@@ -1,17 +1,19 @@
-/* 03 · Why it matters — ten public-health stats, each its own pinned
+/* 03 · Why it matters — public-health stats, each its own pinned
    beat: the number counts up, then blurs/melts (SVG goo filter) into
    the next one. Resolves to "Max Fit is built to keep you on the
    right side of these numbers," with sources in a footnote list.
 
-   Fails safe: with no GSAP, or reduced motion, every beat and the
-   resolve just show at once via plain CSS opacity, and every number
-   shows its final value immediately — nothing here is required to
-   read the section. */
+   Fails safe: .why-beat defaults to hidden and .why__resolve defaults
+   to visible in CSS, so a GSAP/CDN failure shows the resolve line
+   rather than nothing. Reduced motion gets a fuller, still-static
+   fallback below: every stat listed in a normal stack, each showing
+   its final value, per the brief's "every stat should show its final
+   value" rule — not just the resolve line, since GSAP is confirmed
+   available in that case, just not used for motion. */
 document.addEventListener("DOMContentLoaded", function () {
-  if (!window.MaxFitAnim || !window.MaxFitAnim.ready) return;
-
   var section = document.getElementById("why");
   if (!section) return;
+  if (!window.MaxFitAnim || !window.MaxFitAnim.ready) return;
 
   var beats = section.querySelectorAll(".why-beat");
   var stack = section.querySelector(".why__stack");
@@ -30,8 +32,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
   if (window.MaxFitAnim.prefersReducedMotion) {
     finalizeNumbers();
+    stack.classList.add("is-static");
     gsap.set(beats, { opacity: 1 });
     gsap.set(resolve, { opacity: 1 });
+    if (footnotes) gsap.set(footnotes, { opacity: 0.7 });
     return;
   }
 

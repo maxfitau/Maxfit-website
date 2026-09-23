@@ -186,74 +186,49 @@ Your first session is free
 </div>
 
 <!-- About -->
-<section class="section grow-in" id="about">
-<div class="container about__grid">
-<div class="reveal">
+<section class="about" id="about">
+
+<!-- Empathy first, per the brief's story order: the transformation
+     photo and "I've been where you are" lead, before any credential
+     is named. -->
+<div class="about__empathy reveal">
+<img class="about__transform-photo" src="assets/images/back%20transformation.jpg" alt="Max's own 3 year transformation" />
+<p class="about__empathy-line">I've been where you are.</p>
+</div>
+
+<div class="container about__body">
 <span class="eyebrow">About</span>
-<h2>Meet your coach</h2>
+<h2>Meet your guide</h2>
 
-<div class="bio-card">
-<div class="bio-card__summary">
-<img class="bio-card__avatar" src="assets/images/coach-headshot.png" alt="Max, Founder &amp; Coach" width="300" height="300" />
-<div>
-<p class="bio-card__name">Max, Founder &amp; Coach</p>
-<p class="bio-card__role">Tap to read the full bio</p>
-</div>
-<div class="bio-card__toggle" aria-hidden="true">
-<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-</div>
-</div>
-<div class="bio-card__body-wrap">
-<div class="bio-card__body">
-<div class="bio-card__body-inner">
-<div class="bio-card__facts">
-<span class="bio-card__fact">6 years training</span>
-<span class="bio-card__fact">Cert III &amp; IV Fitness · NHFA</span>
-<span class="bio-card__fact">Certified 2026</span>
-<span class="bio-card__fact">Psych (Hons) · UTS</span>
-</div>
-<p style="margin:0;">I've been training for 6 years, driven by a strong passion for fitness. What I love most is helping people fall in love with fitness the way I have, not just chasing results, but enjoying the process. I'm genuinely fascinated by what drives motivation, real connection, and the kind of conversations that shift someone's mindset. Those interests are drawing me toward a Bachelor of Psychology (Honours) at UTS, and they shape how I coach every day.</p>
-</div>
-</div>
+<div class="about__headshot-wrap">
+<div class="about__headshot-mask" id="aboutHeadshotMask">
+<img class="about__headshot" src="assets/images/coach-headshot.png" alt="Max, Founder &amp; Coach" width="300" height="300" />
 </div>
 </div>
 
+<div class="about__copy">
 <p>Most people trying to get fit have been here before: a generic program off an app, a burst of motivation, then life gets busy and it quietly falls apart. You're not lacking willpower, you just haven't had a plan built around you, with someone actually holding you to it.</p>
 <p>At Max Fit, training is simple, structured, and tailored to you. Backed by 6 years training myself and Certificate III &amp; IV in Fitness, I do the hard part for you, enhancing your results without the guesswork. Magical results. Except it's not magic, it's science.</p>
 <p>Whether you're training from home, in a gym, a park, or wherever life throws you, consistency always wins. I'm in your corner 100% of the time. Whether you're a beginner working out from home or you've had 10 years of experience stuck in old habits, we use science to find your maximal results.</p>
+<p>I've been training for 6 years, driven by a strong passion for fitness. What I love most is helping people fall in love with fitness the way I have, not just chasing results, but enjoying the process. I'm genuinely fascinated by what drives motivation, real connection, and the kind of conversations that shift someone's mindset. Those interests are drawing me toward a Bachelor of Psychology (Honours) at UTS, and they shape how I coach every day.</p>
 <p>Personally, I could be working a forgettable job just to get by. Instead I chose to build something real around what I love: fitness, and helping people grow. My interest in psychology, exploring motivation, connection, and mindset, is a big part of why. If you're ready to stop guessing and start seeing results, I'd love to help you get there.</p>
+</div>
 
-<blockquote class="pull-quote">
-<p>"Because everybody deserves the peace of mind that comes from a healthy body, and the ability to apply the same skills to crush whatever life throws at you."</p>
-<cite>Max, Founder &amp; Coach</cite>
-</blockquote>
-
-<div class="drag-strip" aria-label="Credentials, drag to explore">
-<div class="drag-strip__item">
-<h4>6 Years</h4>
-<p>Training experience</p>
-</div>
-<div class="drag-strip__item">
-<h4>Cert III &amp; IV</h4>
-<p>Fitness · NHFA, 2026</p>
-</div>
-<div class="drag-strip__item">
-<h4>Psych (Hons)</h4>
-<p>Enrolled · UTS · motivation, connection &amp; mindset</p>
-</div>
-<div class="drag-strip__item">
-<h4>Big 3 Focus</h4>
-<p>Look great. Feel amazing. Perform next level.</p>
-</div>
-<div class="drag-strip__item">
-<h4>Science-Based</h4>
-<p>Optimal programming, zero gimmicks</p>
-</div>
-</div>
-<div class="drag-hint">
-<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l-6 6 6 6M15 6l6 6-6 6"/></svg>
-Drag to explore
-</div>
+<table class="about__creds" aria-label="Credentials">
+<tr class="about__creds-row reveal">
+<td>6 yrs</td>
+<td>Training experience</td>
+</tr>
+<tr class="about__creds-row reveal">
+<td>Cert III &amp; IV</td>
+<td>Fitness &middot; NHFA, 2026</td>
+</tr>
+<tr class="about__creds-row reveal">
+<td>Hons</td>
+<td>Psychology &middot; UTS (enrolled)</td>
+</tr>
+</table>
+<p class="about__creds-note">Optimal programming. Zero gimmicks.</p>
 
 <div class="creds-links">
 <span class="creds-links__label">Verified qualifications</span>
@@ -272,12 +247,20 @@ First Aid Certificate
 </a>
 </div>
 </div>
+
+<img class="coach-photo reveal" src="assets/images/coach-photo.png" alt="Max, Founder &amp; Coach" />
 </div>
 
-<div class="reveal">
-<img class="coach-photo" src="assets/images/coach-photo.png" alt="Max, Founder &amp; Coach" />
+<!-- 02 · Manifesto — pinned: the motto, then the pull-quote reveals
+     word by word. -->
+<div class="manifesto" id="manifesto">
+<h3 class="manifesto__line">Maximum Fitness.<br>Minimum Fuss.</h3>
+<blockquote class="manifesto__quote">
+<p id="manifestoQuoteText">Because everybody deserves the peace of mind that comes from a healthy body, and the ability to apply the same skills to crush whatever life throws at you.</p>
+<cite>Max, Founder &amp; Coach</cite>
+</blockquote>
 </div>
-</div>
+</section>
 </section>
 
 <!-- Marquee: motto -->
@@ -1204,10 +1187,11 @@ Or email directly
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/SplitText.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/CustomEase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@studio-freight/lenis@1.0.42/dist/lenis.min.js"></script>
-<script src="js/animations/main.js?v=2026092303"></script>
-<script src="js/animations/preloader.js?v=2026092303"></script>
-<script src="js/animations/hero.js?v=2026092303"></script>
-<script src="js/animations/problem.js?v=2026092303"></script>
-<script src="js/animations/why.js?v=2026092303"></script>
+<script src="js/animations/main.js?v=2026092304"></script>
+<script src="js/animations/preloader.js?v=2026092304"></script>
+<script src="js/animations/hero.js?v=2026092304"></script>
+<script src="js/animations/problem.js?v=2026092304"></script>
+<script src="js/animations/why.js?v=2026092304"></script>
+<script src="js/animations/about.js?v=2026092304"></script>
 </body>
 </html>

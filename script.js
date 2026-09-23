@@ -54,28 +54,6 @@ document.addEventListener("DOMContentLoaded", function () {
     sections.forEach(function (section) { sectionObserver.observe(section); });
   }
 
-  /* ---------- Grow into frame on scroll ---------- */
-  var growEl = document.querySelector(".grow-in");
-
-  if (growEl && !prefersReducedMotion) {
-    var updateGrow = function () {
-      var rect = growEl.getBoundingClientRect();
-      var vh = window.innerHeight;
-      var start = vh;
-      var end = vh * 0.4;
-      var progress = (start - rect.top) / (start - end);
-      progress = Math.max(0, Math.min(1, progress));
-      var scale = 0.85 + progress * 0.15;
-      var opacity = 0.4 + progress * 0.6;
-      growEl.style.transform = "scale(" + scale.toFixed(3) + ")";
-      growEl.style.opacity = opacity.toFixed(3);
-    };
-
-    window.addEventListener("scroll", updateGrow, { passive: true });
-    window.addEventListener("resize", updateGrow);
-    updateGrow();
-  }
-
   /* ---------- Scroll reveal ---------- */
   var revealEls = document.querySelectorAll(".reveal, .reveal-scale, .reveal-fade");
 
@@ -144,16 +122,6 @@ document.addEventListener("DOMContentLoaded", function () {
     }, { threshold: 0.4 });
 
     counters.forEach(function (el) { counterObserver.observe(el); });
-  }
-
-  /* ---------- Expandable bio card ---------- */
-  var bioCard = document.querySelector(".bio-card");
-  var bioSummary = document.querySelector(".bio-card__summary");
-
-  if (bioCard && bioSummary) {
-    bioSummary.addEventListener("click", function () {
-      bioCard.classList.toggle("is-open");
-    });
   }
 
   /* ---------- Expandable program rows ---------- */
