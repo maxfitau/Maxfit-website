@@ -323,7 +323,25 @@ section {
    was no longer force-centred at 100vh — see .hero__split) it had no
    guaranteed clearance at all. */
 @media (min-width: 1024px) {
-  .hero { padding-top: calc(var(--nav-h) + 130px); }
+  .hero { padding-top: calc(var(--nav-h) + 32px); }
+}
+
+/* .hero__head wraps just the hairline, the two labels and the
+   headline — NOT the video/CTA card below. The hairline and labels
+   are absolutely positioned against it, so top: 0 / bottom: 0 spans
+   only this head area. Previously they were positioned against the
+   whole .hero section; once the hero grew taller than one screen
+   (headline + the video/CTA card below it, no longer force-centred
+   at 100vh), that same bottom: 0 stretched the hairline all the way
+   down through the video card — a stray vertical line cutting the
+   card in half. */
+.hero__head {
+  position: relative;
+  padding-top: 76px;
+}
+
+@media (max-width: 1023px) {
+  .hero__head { padding-top: 0; }
 }
 
 /* Vertical hairline ~37% from the left, in the style of the reference
@@ -354,14 +372,14 @@ section {
 }
 
 .hero__label-top {
-  top: calc(var(--nav-h) + 32px);
+  top: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
 .hero__label-bottom {
-  top: calc(var(--nav-h) + 88px);
+  top: 56px;
   color: var(--red);
 }
 
