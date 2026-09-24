@@ -94,7 +94,7 @@ Stripe moves its menus around. If you can't find something, type its name ("Paym
 
 8. Back in the editor, choose **installStripeSync** in the function dropdown and press **Run** (allow permissions if asked). From now on the backend checks Stripe every 15 minutes, and straight away whenever a client comes back from paying.
 9. **Test on yourself:** open your own FUEL tab, tap a locked feature → **Upgrade to Fuel AI**, and pay with Stripe's test card `4242 4242 4242 4242` (any future expiry date, any CVC). You should land back on the card with "Fuel AI is on", and the coach page should say "paying · renews …".
-10. **Go live:** turn Test mode off and repeat steps 3–6 in live mode (test products, links and keys don't carry over). Then replace the three Stripe Script Properties with the live values.
+10. **Go live:** turn Test mode off and repeat steps 3–6 in live mode (test products, links and keys don't carry over). Then replace the three Stripe Script Properties with the live values. Finally, in the Macros sheet's **Members** tab, clear `stripe_customer`, `stripe_subscription`, `plan_status` and `plan_until` on any row that paid in test mode (your own, for one). Live mode can't see test subscriptions, so those rows would otherwise stay "paying" until the test renewal date. Use **Give a free month** on the coach page if you want to keep Fuel AI on for yourself.
 
 ## 8. Progress and nutrition punches
 
