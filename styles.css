@@ -2614,7 +2614,6 @@ body.is-preloading { overflow: hidden; }
   grid-template-columns: repeat(3, 1fr);
   gap: 0;
   border-top: 1px solid var(--line);
-  margin-bottom: 48px;
 }
 
 .plan__step {
@@ -2646,8 +2645,6 @@ body.is-preloading { overflow: hidden; }
   font-size: 0.98rem;
   max-width: 320px;
 }
-
-.plan__cta { display: block; margin: 0 auto; width: fit-content; }
 
 @media (max-width: 900px) {
   .plan__list { grid-template-columns: 1fr; }
