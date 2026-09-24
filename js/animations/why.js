@@ -1,15 +1,16 @@
-/* 03 · Why it matters — public-health stats, each its own pinned
-   beat: the number counts up, then blurs/melts (SVG goo filter) into
-   the next one. Resolves to "Max Fit is built to keep you on the
-   right side of these numbers," with sources in a footnote list.
+/* 03 · Why it matters: public-health stats, each its own pinned
+   beat. The number counts up, then blurs/melts (SVG goo filter) into
+   the next one. Only after the last stat has melted away does "Max Fit
+   is built to keep you on the right side of these numbers" appear,
+   along with the sources footnote list.
 
-   Fails safe: .why-beat defaults to hidden and .why__resolve defaults
-   to visible in CSS, so a GSAP/CDN failure shows the resolve line
-   rather than nothing. Reduced motion gets a fuller, still-static
-   fallback below: every stat listed in a normal stack, each showing
-   its final value, per the brief's "every stat should show its final
-   value" rule — not just the resolve line, since GSAP is confirmed
-   available in that case, just not used for motion. */
+   Fails safe: .why-beat defaults to hidden and .why__resolve and
+   .why__footnotes default to visible in CSS, so a GSAP/CDN failure
+   shows the resolve line rather than nothing. The gsap.set() calls
+   below are what hide the resolve and footnotes, and they only run
+   once GSAP is confirmed working. Reduced motion gets a fuller, still
+   static fallback: every stat listed in a normal stack, each showing
+   its final value. */
 document.addEventListener("DOMContentLoaded", function () {
   var section = document.getElementById("why");
   if (!section) return;
@@ -41,6 +42,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
   gsap.set(beats, { opacity: 0 });
   gsap.set(beats[0], { opacity: 1 });
+  gsap.set(resolve, { opacity: 0 });
+  if (footnotes) gsap.set(footnotes, { opacity: 0 });
 
   var perBeat = 0.8; // screens of scroll per stat
   var totalBeats = beats.length;
@@ -93,4 +96,5 @@ document.addEventListener("DOMContentLoaded", function () {
 
   tl.to(resolve, { opacity: 1, duration: 0.4 });
   if (footnotes) tl.to(footnotes, { opacity: 0.7, duration: 0.3 }, "<");
+  tl.to({}, { duration: 0.6 });
 });

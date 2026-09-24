@@ -50,7 +50,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="styles.css?v=2026092502" />
+<link rel="stylesheet" href="styles.css?v=2026092503" />
 </head>
 <body>
 
@@ -601,9 +601,9 @@ First Aid Certificate
 </div>
 
 <div class="why-beat">
-<p class="why-beat__num"><span class="num" data-count="35" data-decimals="0">0</span>%</p>
-<p class="why-beat__text">is where that's projected to hit by 2030 if nothing changes.</p>
-<span class="why-beat__source">WHO, 2024</span>
+<p class="why-beat__num why-beat__num--text">1 in 5</p>
+<p class="why-beat__text">Australian adults (22.4%) meet the physical activity guidelines.</p>
+<span class="why-beat__source">ABS, Physical Activity 2022</span>
 </div>
 
 <div class="why-beat">
@@ -613,45 +613,15 @@ First Aid Certificate
 </div>
 
 <div class="why-beat">
-<p class="why-beat__num why-beat__num--text">1 in 5</p>
-<p class="why-beat__text">Australian adults (22.4%) meet the physical activity guidelines.</p>
-<span class="why-beat__source">ABS, Physical Activity 2022</span>
-</div>
-
-<div class="why-beat">
-<p class="why-beat__num"><span class="num" data-count="26.6" data-decimals="1">0</span>%</p>
-<p class="why-beat__text">of Australian adults do strength training twice a week.</p>
-<span class="why-beat__source">ABS, Physical Activity 2022</span>
-</div>
-
-<div class="why-beat">
-<p class="why-beat__num"><span class="num" data-count="46.9" data-decimals="1">0</span>%</p>
-<p class="why-beat__text">say their workday is mostly sitting.</p>
-<span class="why-beat__source">ABS, Physical Activity 2022</span>
-</div>
-
-<div class="why-beat">
 <p class="why-beat__num"><span class="num" data-count="3" data-decimals="0">0</span>&ndash;8%</p>
 <p class="why-beat__text">of your muscle mass can disappear every decade after 30 if you don't train it.</p>
 <span class="why-beat__source">Volpi et al., 2004</span>
 </div>
 
 <div class="why-beat">
-<p class="why-beat__num"><span class="num" data-count="10" data-decimals="0">0</span>&ndash;17%</p>
-<p class="why-beat__text">lower risk of death from any cause with muscle-strengthening work, peaking at about 30&ndash;60 min a week.</p>
-<span class="why-beat__source">Momma et al., BJSM 2022</span>
-</div>
-
-<div class="why-beat">
 <p class="why-beat__num"><span class="num" data-count="40" data-decimals="0">0</span>%</p>
 <p class="why-beat__text">lower all-cause mortality when strength and cardio are combined.</p>
 <span class="why-beat__source">Momma et al., BJSM 2022</span>
-</div>
-
-<div class="why-beat">
-<p class="why-beat__num why-beat__num--text">Strength training</p>
-<p class="why-beat__text">reduced depression symptoms moderately in a 218-trial analysis, with lower dropout than other treatments.</p>
-<span class="why-beat__source">Noetel et al., BMJ 2024</span>
 </div>
 
 </div>
@@ -665,7 +635,6 @@ First Aid Certificate
 <li>ABS, <cite>Physical Activity, 2022</cite></li>
 <li>Volpi, Nazemi &amp; Fujita, <cite>Muscle tissue changes with aging</cite>, 2004</li>
 <li>Momma et al., <cite>British Journal of Sports Medicine</cite>, 2022</li>
-<li>Noetel et al., <cite>BMJ</cite>, 2024</li>
 </ol>
 </section>
 
@@ -1201,7 +1170,7 @@ Or email directly
 </div>
 </div>
 
-<script src="script.js?v=2026092502"></script>
+<script src="script.js?v=2026092503"></script>
 
 <!-- Redesign: GSAP + Lenis from CDN, pinned versions. No build step —
      plain <script> tags, same pattern as the Google Fonts <link> above. -->
@@ -1210,10 +1179,14 @@ Or email directly
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/SplitText.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/CustomEase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@studio-freight/lenis@1.0.42/dist/lenis.min.js"></script>
-<script src="js/animations/main.js?v=2026092502"></script>
-<script src="js/animations/problem.js?v=2026092502"></script>
-<script src="js/animations/why.js?v=2026092502"></script>
-<script src="js/animations/about.js?v=2026092502"></script>
-<script src="js/animations/showcase.js?v=2026092502"></script>
+<script src="js/animations/main.js?v=2026092503"></script>
+<!-- Order matters: ScrollTrigger pins have to be created in the order they
+     appear down the page (Problem, then the Manifesto in about.js, then
+     Why it matters). A pin created before one above it computes its start
+     without that pin's extra scroll distance, and opens too early. -->
+<script src="js/animations/problem.js?v=2026092503"></script>
+<script src="js/animations/about.js?v=2026092503"></script>
+<script src="js/animations/why.js?v=2026092503"></script>
+<script src="js/animations/showcase.js?v=2026092503"></script>
 </body>
 </html>
