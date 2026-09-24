@@ -148,6 +148,9 @@
       '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 5v14M7 5v14M11 5v14M14 5v14M18 5v14M20 5v14"/></svg>',
     label:
       '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>',
+    search:
+      '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>',
+    plus: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
     gear:
       '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
     left: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>',
@@ -368,12 +371,31 @@
       </div>`;
   }
 
+  /**
+   * Typed-in numbers ("Enter the numbers") are per serve: grams 100 means
+   * 1 serve, and per100 holds the per-serve values. Everything else is grams.
+   */
+  function isServes(item) {
+    return item && item.source === "quick";
+  }
+
+  function servesText(grams) {
+    const n = Math.round(Number(grams)) / 100;
+    const shown = n === 0.5 ? "½" : String(n);
+    return `${shown} serve${n > 1 ? "s" : ""}`;
+  }
+
+  /** "150g", "250ml" or "1 serve". */
+  function amountText(item) {
+    return isServes(item) ? servesText(item.grams) : `${int(item.grams)}${item.unit || "g"}`;
+  }
+
   function chip(item, kind, index) {
     const m = MacroCore.scale(item.per100, item.grams);
     return `
       <button class="fuel-chip" type="button" data-act="quick" data-kind="${kind}" data-i="${index}">
         <span class="fuel-chip__name">${kind === "fav" ? `<span style="color:var(--red)">${ICONS.star}</span> ` : ""}${esc(item.name)}</span>
-        <span class="fuel-chip__meta">${int(item.grams)}g · ${int(m.protein_g)}P${hideKcal() ? "" : ` · ${int(m.kcal)} kcal`}</span>
+        <span class="fuel-chip__meta">${amountText(item)} · ${int(m.protein_g)}P${hideKcal() ? "" : ` · ${int(m.kcal)} kcal`}</span>
       </button>`;
   }
 
@@ -421,7 +443,7 @@
                 <button class="fuel-entry" type="button" data-act="edit" data-id="${esc(e.id)}">
                   <span>
                     <span class="fuel-entry__name">${esc(e.name)}</span>
-                    <span class="fuel-entry__meta">${int(e.grams)}g · ${int(e.carbs_g)}C · ${int(e.fat_g)}F${hideKcal() ? "" : ` · ${int(e.kcal)} kcal`}</span>
+                    <span class="fuel-entry__meta">${amountText(e)} · ${int(e.carbs_g)}C · ${int(e.fat_g)}F${hideKcal() ? "" : ` · ${int(e.kcal)} kcal`}</span>
                   </span>
                   <span class="fuel-entry__p">${int(e.protein_g)}<small>P</small></span>
                 </button>`
@@ -451,7 +473,7 @@
       </div>
       ${totalsHtml()}
       ${trendHtml()}
-      <button class="fuel-scan" type="button" data-act="scan">${ICONS.camera} Scan food</button>
+      <button class="fuel-scan" type="button" data-act="scan">${ICONS.camera} Add food</button>
       ${
         state.aiEnabled
           ? `<button class="fuel-btn fuel-btn--ghost fuel-ask" type="button" data-act="ask">${ICONS.spark} Ask Fuel${fuelAi() ? "" : ` ${ICONS.lock}`}</button>`
@@ -743,23 +765,25 @@
   }
 
   function openScanChooser() {
-    // Photo and label scans need the Claude API key on the server. Without
-    // it, barcodes are the only way in, so skip straight to the scanner.
-    if (!state.aiEnabled) {
-      openBarcode();
-      return;
-    }
-    const locked = !fuelAi();
-    const sub = locked ? "Barcodes are free. Photo and label scans are part of Fuel AI." : planText();
+    // Photo and label scans need the Claude API key on the server; without
+    // it only the free ways in (barcode and search) are shown.
+    const ai = state.aiEnabled;
+    const locked = ai && !fuelAi();
+    const sub = !ai
+      ? "Scan a barcode, or search for it and set the amount."
+      : locked
+      ? "Barcodes and search are free. Photo and label scans are part of Fuel AI."
+      : planText();
     openSheet(
-      `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Scan food</h2>
+      `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Add food</h2>
        <p class="fuel-sheet__sub">${esc(sub)}</p>
        <div class="fuel-modes">
-         <button class="fuel-mode${locked ? " is-locked" : ""}" type="button" data-mode="meal">${ICONS.camera}Photo<small>${locked ? "Fuel AI" : "Snap your meal"}</small></button>
+         ${ai ? `<button class="fuel-mode${locked ? " is-locked" : ""}" type="button" data-mode="meal">${ICONS.camera}Photo<small>${locked ? "Fuel AI" : "Snap your meal"}</small></button>` : ""}
          <button class="fuel-mode" type="button" data-mode="barcode">${ICONS.barcode}Barcode<small>Packaged food</small></button>
-         <button class="fuel-mode${locked ? " is-locked" : ""}" type="button" data-mode="label">${ICONS.label}Label<small>${locked ? "Fuel AI" : "Nutrition panel"}</small></button>
+         ${ai ? `<button class="fuel-mode${locked ? " is-locked" : ""}" type="button" data-mode="label">${ICONS.label}Label<small>${locked ? "Fuel AI" : "Nutrition panel"}</small></button>` : ""}
+         <button class="fuel-mode" type="button" data-mode="search">${ICONS.search}Search<small>Type it in</small></button>
        </div>
-       ${locked ? "" : '<button class="fuel-btn fuel-btn--quiet" type="button" data-mode="library">Choose a meal photo from your library</button>'}`,
+       ${ai && !locked ? '<button class="fuel-btn fuel-btn--quiet" type="button" data-mode="library">Choose a meal photo from your library</button>' : ""}`,
       (body) => {
         body.querySelectorAll("[data-mode]").forEach((b) =>
           b.addEventListener("click", () => {
@@ -767,11 +791,156 @@
             // input.click() has to happen inside this tap handler, or
             // iOS Safari won't open the camera.
             if (mode === "barcode") openBarcode();
+            else if (mode === "search") openSearch();
             else if (locked) openUpsell();
             else if (mode === "library") pickPhoto("meal", false);
             else pickPhoto(mode, true);
           })
         );
+      }
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Search and "Enter the numbers" (free, no AI)
+  // ---------------------------------------------------------------------------
+
+  /** Favourites, then recent foods, then Max's Foods list, each name once. */
+  function searchPool() {
+    const seen = {};
+    const out = [];
+    const add = (kind, name, item, meta) => {
+      const key = String(name).toLowerCase();
+      if (!name || seen[key]) return;
+      seen[key] = true;
+      out.push({ kind: kind, name: String(name), item: item, meta: meta });
+    };
+    const fromLog = (x) => ({ name: x.name, grams: x.grams, per100: x.per100, source: isServes(x) ? "quick" : "manual" });
+    (state.favourites || []).forEach((f) => add("fav", f.name, fromLog(f)));
+    (state.recent || []).forEach((r) => add("recent", r.name, fromLog(r)));
+    (state.foods || []).forEach((f) =>
+      add(
+        "food",
+        f.name,
+        { name: f.name, grams: f.serve_g || 100, per100: f.per100, serving_g: f.serve_g || 0, source: "manual" },
+        f.serve_label || ""
+      )
+    );
+    return out;
+  }
+
+  function searchRowHtml(row, i) {
+    const m = MacroCore.scale(row.item.per100, row.item.grams);
+    const amount = row.meta ? `${row.meta} (${amountText(row.item)})` : amountText(row.item);
+    return `
+      <button class="fuel-entry" type="button" data-pick="${i}">
+        <span>
+          <span class="fuel-entry__name">${row.kind === "fav" ? `<span style="color:var(--red)">${ICONS.star}</span> ` : ""}${esc(row.name)}</span>
+          <span class="fuel-entry__meta">${esc(amount)}${hideKcal() ? "" : ` · ${int(m.kcal)} kcal`}</span>
+        </span>
+        <span class="fuel-entry__p">${int(m.protein_g)}<small>P</small></span>
+      </button>`;
+  }
+
+  /**
+   * Search favourites, recent foods and Max's Foods list. opts.into = add the
+   * pick to the confirm sheet that's already open ("+ Add another food").
+   */
+  function openSearch(opts) {
+    const into = !!(opts && opts.into && state.confirm);
+    const pool = searchPool();
+    let shown = [];
+    openSheet(
+      `<h2 class="fuel-sheet__title" id="fuelSheetTitle">${into ? "Add another food" : "Search food"}</h2>
+       <input class="fuel-input" type="search" data-q placeholder="Chicken, rice, banana…" aria-label="Search foods" autocomplete="off" autocapitalize="off" spellcheck="false" />
+       <div class="fuel-panel fuel-search" data-results></div>
+       <button class="fuel-btn fuel-btn--ghost" type="button" data-quick>Can't find it? Enter the numbers</button>
+       <button class="fuel-btn fuel-btn--quiet" type="button" data-back>${into ? "Back" : "Cancel"}</button>`,
+      (body) => {
+        const q = body.querySelector("[data-q]");
+        const results = body.querySelector("[data-results]");
+        const draw = () => {
+          const words = q.value.toLowerCase().split(/\s+/).filter(Boolean);
+          if (words.length) {
+            shown = pool.filter((r) => words.every((w) => r.name.toLowerCase().indexOf(w) >= 0)).slice(0, 40);
+          } else {
+            const mine = pool.filter((r) => r.kind !== "food").slice(0, 8);
+            shown = mine.concat(pool.filter((r) => r.kind === "food"));
+          }
+          results.innerHTML = shown.length
+            ? shown.map(searchRowHtml).join("")
+            : `<p class="fuel-empty">Nothing called "${esc(q.value.trim())}" yet. Enter the numbers below.</p>`;
+        };
+        draw();
+        q.addEventListener("input", draw);
+        results.addEventListener("click", (e) => {
+          const b = e.target.closest("[data-pick]");
+          const row = b && shown[Number(b.dataset.pick)];
+          if (row) pickFood(Object.assign({}, row.item), into);
+        });
+        body.querySelector("[data-quick]").addEventListener("click", () => openQuickAdd({ into: into, name: q.value.trim() }));
+        body.querySelector("[data-back]").addEventListener("click", () => (into ? renderConfirm() : closeSheet()));
+      }
+    );
+  }
+
+  /** A food from search or "Enter the numbers": into the open confirm sheet, or a new one. */
+  function pickFood(item, into) {
+    if (into && state.confirm) {
+      const c = state.confirm;
+      c.items.push(Object.assign({}, item, { grams: Math.round(Number(item.grams) || 100) }));
+      if (c.source === "manual") c.title = "Your meal";
+      renderConfirm();
+    } else {
+      openConfirm({ title: item.name, source: "manual", items: [item] });
+    }
+  }
+
+  /** For food that isn't in the list: the numbers for one serve, off a menu or pack. */
+  function openQuickAdd(opts) {
+    const into = !!(opts && opts.into);
+    const kcalField = hideKcal()
+      ? ""
+      : `<label class="fuel-field"><span class="card__label">Calories</span><input class="fuel-input" name="kcal" type="number" inputmode="decimal" min="0" max="5000" placeholder="kcal" /></label>`;
+    openSheet(
+      `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Enter the numbers</h2>
+       <p class="fuel-sheet__sub">For one serve, as it says on the menu or pack. Leave out anything you don't know.</p>
+       <form class="fuel-form" data-quick-form autocomplete="off">
+         <label class="fuel-field"><span class="card__label">Food</span><input class="fuel-input" name="name" maxlength="80" placeholder="e.g. Chicken burrito bowl" value="${esc((opts && opts.name) || "")}" /></label>
+         ${kcalField}
+         <div class="fuel-fields3">
+           <label class="fuel-field"><span class="card__label">Protein</span><input class="fuel-input" name="protein_g" type="number" inputmode="decimal" min="0" max="500" placeholder="g" /></label>
+           <label class="fuel-field"><span class="card__label">Carbs</span><input class="fuel-input" name="carbs_g" type="number" inputmode="decimal" min="0" max="500" placeholder="g" /></label>
+           <label class="fuel-field"><span class="card__label">Fat</span><input class="fuel-input" name="fat_g" type="number" inputmode="decimal" min="0" max="500" placeholder="g" /></label>
+         </div>
+         <p class="fuel-error" data-quick-error hidden></p>
+         <button class="fuel-btn" type="submit">Next</button>
+       </form>
+       <button class="fuel-btn fuel-btn--quiet" type="button" data-back>Back</button>`,
+      (body) => {
+        const form = body.querySelector("[data-quick-form]");
+        const error = body.querySelector("[data-quick-error]");
+        const num = (name, max) => {
+          const el = form.elements[name];
+          const v = el ? Number(el.value) : 0;
+          return v > 0 ? Math.min(max, Math.round(v * 10) / 10) : 0;
+        };
+        form.addEventListener("submit", (e) => {
+          e.preventDefault();
+          const name = form.elements.name.value.trim();
+          const p = num("protein_g", 500);
+          const c = num("carbs_g", 500);
+          const f = num("fat_g", 500);
+          const kcal = num("kcal", 5000) || Math.round(4 * p + 4 * c + 9 * f);
+          const problem = !name ? "Give it a name." : !(kcal > 0) ? "Add the calories, or at least one of protein, carbs or fat." : "";
+          if (problem) {
+            error.textContent = problem;
+            error.hidden = false;
+            return;
+          }
+          pickFood({ name: name, grams: 100, per100: { kcal: kcal, protein_g: p, carbs_g: c, fat_g: f }, source: "quick" }, into);
+        });
+        body.querySelector("[data-back]").addEventListener("click", () => openSearch({ into: into }));
       }
     );
   }
@@ -843,10 +1012,36 @@
     state.pendingPhotoMode = null;
     if (!file || !mode) return;
     if (mode === "barcodeImage") decodeBarcodePhoto(file);
+    else if (mode === "meal") openPhotoNote(file);
     else analysePhoto(file, mode);
   }
   els.photoInput.addEventListener("change", onPhotoChosen);
   els.libraryInput.addEventListener("change", onPhotoChosen);
+
+  /** Before a meal photo goes to the AI: an optional note on what's in it and how much. */
+  function openPhotoNote(file) {
+    const url = URL.createObjectURL(file);
+    openSheet(
+      `<h2 class="fuel-sheet__title" id="fuelSheetTitle">What's in it?</h2>
+       <p class="fuel-sheet__sub">Optional, but it helps. Name the foods and any amounts you know.</p>
+       <img class="fuel-photo" src="${url}" alt="Your meal photo" />
+       <textarea class="fuel-input fuel-note" data-note rows="2" maxlength="300" placeholder="e.g. 200g chicken breast, 1 cup rice, cooked in olive oil" aria-label="What's in your meal"></textarea>
+       <button class="fuel-btn" type="button" data-go>Read my meal</button>
+       <button class="fuel-btn fuel-btn--quiet" type="button" data-retake>Retake photo</button>`,
+      (body) => {
+        const done = () => URL.revokeObjectURL(url);
+        body.querySelector("[data-go]").addEventListener("click", () => {
+          const note = body.querySelector("[data-note]").value.trim();
+          done();
+          analysePhoto(file, "meal", note);
+        });
+        body.querySelector("[data-retake]").addEventListener("click", () => {
+          done();
+          pickPhoto("meal", true);
+        });
+      }
+    );
+  }
 
   /** Shrinks a photo to 1024px on its long edge, JPEG 0.8, and returns the base64 (no data: prefix). */
   function resizeImage(file, maxEdge = 1024, quality = 0.8) {
@@ -872,12 +1067,14 @@
     });
   }
 
-  async function analysePhoto(file, mode) {
+  async function analysePhoto(file, mode, note) {
     sheetLoading(mode === "label" ? "Reading the label" : "Reading your meal");
     let data;
     try {
       const image = await resizeImage(file);
-      data = await MacroApi.call("analyseImage", { image: image, mode: mode }, { timeoutMs: 90000 });
+      const fields = { image: image, mode: mode };
+      if (note) fields.note = note;
+      data = await MacroApi.call("analyseImage", fields, { timeoutMs: 90000 });
     } catch (err) {
       if (err.code === "no_plan") {
         if (state.plan) state.plan.access = false;
@@ -1178,6 +1375,11 @@
   }
 
   function servesHtml(item, i) {
+    if (isServes(item)) {
+      return `<div class="fuel-serves">
+        ${[50, 100, 150, 200].map((g) => `<button type="button" data-serve="${i}" data-g="${g}">${servesText(g)}</button>`).join("")}
+      </div>`;
+    }
     if (!item.serving_g) {
       return item.source === "barcode" || item.source === "label"
         ? `<div class="fuel-serves"><button type="button" data-serve="${i}" data-g="100">100${item.unit || "g"}</button></div>`
@@ -1215,8 +1417,12 @@
         </div>
         ${servesHtml(item, i)}
         <div class="fuel-item__grams">
-          <input class="fuel-range" type="range" min="0" max="${max}" step="${step}" value="${Math.min(max, item.grams)}" data-range="${i}" aria-label="Amount" />
-          <label class="fuel-item__gin"><input class="fuel-input" type="number" inputmode="decimal" min="0" max="5000" step="1" value="${item.grams}" data-grams="${i}" aria-label="Grams" /><span>${esc(item.unit || "g")}</span></label>
+          ${
+            isServes(item)
+              ? `<label class="fuel-item__gin fuel-item__gin--serves"><input class="fuel-input" type="number" inputmode="decimal" min="0" max="50" step="0.5" value="${item.grams / 100}" data-grams="${i}" data-per="100" aria-label="Serves" /><span>serves</span></label>`
+              : `<input class="fuel-range" type="range" min="0" max="${max}" step="${step}" value="${Math.min(max, item.grams)}" data-range="${i}" aria-label="Amount" />
+          <label class="fuel-item__gin"><input class="fuel-input" type="number" inputmode="decimal" min="0" max="5000" step="1" value="${item.grams}" data-grams="${i}" aria-label="Grams" /><span>${esc(item.unit || "g")}</span></label>`
+          }
         </div>
         <div class="fuel-item__macros" data-macros="${i}">${macroLine(itemMacros(item), { bold: true })}</div>
         ${item.notes ? `<p class="fuel-item__note">${esc(item.notes)}</p>` : ""}
@@ -1231,6 +1437,7 @@
         : "Exact · from the product's label data (Open Food Facts).";
     }
     if (c.source === "label") return "Read from your label photo. Check the numbers match the pack.";
+    if (c.source === "manual") return "Set how much you had, then add it.";
     return "";
   }
 
@@ -1261,6 +1468,7 @@
       `<h2 class="fuel-sheet__title" id="fuelSheetTitle">${esc(c.title)}</h2>
        <p class="fuel-disclaimer">${esc(sourceNote(c))}</p>
        ${c.items.map(itemHtml).join("")}
+       <button class="fuel-btn fuel-btn--ghost fuel-add-more" type="button" data-more>${ICONS.plus} Add another food</button>
        <div class="fuel-field">
          <span class="card__label">Meal</span>
          <div class="fuel-seg" data-meals>
@@ -1284,14 +1492,15 @@
           c.items[i].grams = g;
           const range = body.querySelector(`[data-range="${i}"]`);
           const box = body.querySelector(`[data-grams="${i}"]`);
-          if (from !== "range") range.value = Math.min(Number(range.max), g);
-          if (from !== "box") box.value = g;
+          if (range && from !== "range") range.value = Math.min(Number(range.max), g);
+          if (from !== "box") box.value = g / (Number(box.dataset.per) || 1); // serves boxes show grams / 100
+          if (from) body.querySelectorAll(`[data-serve="${i}"]`).forEach((b) => b.classList.remove("is-on"));
           refresh(i);
         };
         body.addEventListener("input", (e) => {
           const t = e.target;
           if (t.dataset.range !== undefined) setGrams(Number(t.dataset.range), t.value, "range");
-          else if (t.dataset.grams !== undefined) setGrams(Number(t.dataset.grams), t.value, "box");
+          else if (t.dataset.grams !== undefined) setGrams(Number(t.dataset.grams), t.value * (Number(t.dataset.per) || 1), "box");
           else if (t.dataset.name !== undefined) c.items[Number(t.dataset.name)].name = t.value;
         });
         body.addEventListener("click", async (e) => {
@@ -1306,6 +1515,10 @@
           if (remove) {
             c.items.splice(Number(remove.dataset.remove), 1);
             renderConfirm();
+            return;
+          }
+          if (e.target.closest("[data-more]")) {
+            openSearch({ into: true });
             return;
           }
           const meal = e.target.closest("[data-meal]");
@@ -1850,12 +2063,17 @@
   function openEdit(entry) {
     const draft = { name: entry.name, grams: entry.grams, meal: entry.meal, per100: entry.per100 };
     const max = Math.min(2000, Math.max(50, Math.ceil((entry.grams * 2.5) / 10) * 10));
+    const serves = isServes(entry);
     openSheet(
       `<input class="fuel-item__name fuel-sheet__title" id="fuelSheetTitle" value="${esc(entry.name)}" data-ename aria-label="Food name" maxlength="80" />
        <div class="fuel-item">
          <div class="fuel-item__grams">
-           <input class="fuel-range" type="range" min="0" max="${max}" step="${max > 400 ? 5 : 1}" value="${Math.min(max, entry.grams)}" data-erange aria-label="Amount" />
-           <label class="fuel-item__gin"><input class="fuel-input" type="number" inputmode="decimal" min="0" max="5000" value="${entry.grams}" data-egrams aria-label="Grams" /><span>g</span></label>
+           ${
+             serves
+               ? `<label class="fuel-item__gin fuel-item__gin--serves"><input class="fuel-input" type="number" inputmode="decimal" min="0" max="50" step="0.5" value="${entry.grams / 100}" data-egrams aria-label="Serves" /><span>serves</span></label>`
+               : `<input class="fuel-range" type="range" min="0" max="${max}" step="${max > 400 ? 5 : 1}" value="${Math.min(max, entry.grams)}" data-erange aria-label="Amount" />
+           <label class="fuel-item__gin"><input class="fuel-input" type="number" inputmode="decimal" min="0" max="5000" value="${entry.grams}" data-egrams aria-label="Grams" /><span>g</span></label>`
+           }
          </div>
          <div class="fuel-item__macros" data-emacros>${macroLine(MacroCore.scale(entry.per100, entry.grams), { bold: true })}</div>
        </div>
@@ -1871,14 +2089,15 @@
         const range = body.querySelector("[data-erange]");
         const box = body.querySelector("[data-egrams]");
         const macros = body.querySelector("[data-emacros]");
+        const per = serves ? 100 : 1; // a serves box shows grams / 100
         const update = (g, from) => {
           draft.grams = Math.max(0, Math.min(5000, Number(g) || 0));
-          if (from !== "range") range.value = Math.min(Number(range.max), draft.grams);
-          if (from !== "box") box.value = draft.grams;
+          if (range && from !== "range") range.value = Math.min(Number(range.max), draft.grams);
+          if (from !== "box") box.value = draft.grams / per;
           macros.innerHTML = macroLine(MacroCore.scale(draft.per100, draft.grams), { bold: true });
         };
-        range.addEventListener("input", () => update(range.value, "range"));
-        box.addEventListener("input", () => update(box.value, "box"));
+        if (range) range.addEventListener("input", () => update(range.value, "range"));
+        box.addEventListener("input", () => update(box.value * per, "box"));
         body.querySelector("[data-ename]").addEventListener("input", (e) => (draft.name = e.target.value));
         body.querySelectorAll("[data-emeal]").forEach((b) =>
           b.addEventListener("click", () => {
@@ -1963,7 +2182,7 @@
                  .map(
                    (f) => `
            <div class="fuel-entry" style="cursor:default">
-             <span><span class="fuel-entry__name">${esc(f.name)}</span><span class="fuel-entry__meta">${int(f.grams)}g · ${macroLine(MacroCore.scale(f.per100, f.grams))}</span></span>
+             <span><span class="fuel-entry__name">${esc(f.name)}</span><span class="fuel-entry__meta">${amountText(f)} · ${macroLine(MacroCore.scale(f.per100, f.grams))}</span></span>
              <button class="fuel-item__remove" type="button" data-unfav="${esc(f.id)}" aria-label="Remove ${esc(f.name)}">${ICONS.x}</button>
            </div>`
                  )

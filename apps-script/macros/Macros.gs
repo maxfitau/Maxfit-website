@@ -49,7 +49,7 @@
  * or change rows carrying their own id.
  */
 
-const MACROS_VERSION = "2026-09-25a";
+const MACROS_VERSION = "2026-09-25b";
 const TIMEZONE = "Australia/Sydney";
 const MAIN_SESSIONS_GID = 1169726169; // "Sessions Remaining" in the CRM sheet
 const CARD_URL = "https://maxfit.now/card/";
@@ -136,7 +136,9 @@ const TABS = {
   },
 };
 
-const SOURCES = ["photo", "barcode", "label", "manual", "fridge", "suggestion"];
+// "quick" = typed-in numbers for one serve: grams 100 means 1 serve, and
+// per100 holds the per-serve values (so they can go past 100 g of macros).
+const SOURCES = ["photo", "barcode", "label", "manual", "fridge", "suggestion", "quick"];
 const CONFIDENCES = ["high", "medium", "low", ""];
 
 // ---------------------------------------------------------------------------
@@ -625,14 +627,18 @@ function cleanItem_(raw) {
   const grams = Math.round(n_(raw.grams, 0, 5000) * 10) / 10;
   if (!(grams > 0)) throw userError_("bad_item", '"' + name + '" needs a weight above 0 g.');
   const p = raw.per100 || {};
+  const quick = raw.source === "quick";
   const per100 = {
-    kcal: n_(p.kcal, 0, 950),
-    protein_g: n_(p.protein_g, 0, 100),
-    carbs_g: n_(p.carbs_g, 0, 100),
-    fat_g: n_(p.fat_g, 0, 100),
+    kcal: n_(p.kcal, 0, quick ? 5000 : 950),
+    protein_g: n_(p.protein_g, 0, quick ? 500 : 100),
+    carbs_g: n_(p.carbs_g, 0, quick ? 500 : 100),
+    fat_g: n_(p.fat_g, 0, quick ? 500 : 100),
   };
+  if (quick && !(per100.kcal > 0 || per100.protein_g + per100.carbs_g + per100.fat_g > 0)) {
+    throw userError_("bad_item", 'Add the calories or macros for "' + name + '".');
+  }
   // 100 g of food can't hold more than 100 g of macros (a little slack for label rounding).
-  if (per100.protein_g + per100.carbs_g + per100.fat_g > 105) {
+  if (!quick && per100.protein_g + per100.carbs_g + per100.fat_g > 105) {
     throw userError_("bad_item", 'The numbers for "' + name + '" don\'t add up. Check them against the label.');
   }
   const macros = MacroCore.scale(per100, grams);
@@ -1064,7 +1070,19 @@ function recordUsage_(rowNumber, usage, ok, model) {
   });
 }
 
-function callClaude_(image, mode) {
+/** The meal prompt, plus the client's own note about what's in the photo (if any). */
+function mealPrompt_(note) {
+  const clean = cleanText_(note, 300);
+  if (!clean) return MODE_PROMPTS.meal;
+  return (
+    MODE_PROMPTS.meal +
+    '\n\nThe person who ate this added a note describing it: "' +
+    clean.replace(/"/g, "'") +
+    '"\nTrust the note for what the foods are and any amounts it gives. Use the photo for everything else, and still list anything visible that the note leaves out.'
+  );
+}
+
+function callClaude_(image, mode, note) {
   const apiKey = prop_("ANTHROPIC_API_KEY");
   if (!apiKey) throw userError_("ai_off", "Photo scanning isn't switched on yet. Barcodes still work.");
   const body = {
@@ -1080,7 +1098,7 @@ function callClaude_(image, mode) {
         role: "user",
         content: [
           { type: "image", source: { type: "base64", media_type: "image/jpeg", data: image } },
-          { type: "text", text: MODE_PROMPTS[mode] },
+          { type: "text", text: mode === "meal" ? mealPrompt_(note) : MODE_PROMPTS[mode] },
         ],
       },
     ],
@@ -1117,7 +1135,7 @@ function actionAnalyseImage_(payload, member) {
   };
   let result;
   try {
-    result = callClaude_(image, mode);
+    result = callClaude_(image, mode, payload.note);
   } catch (err) {
     throw fail(null, "error", "Couldn't read that photo just now. Try again in a moment.");
   }
@@ -1747,7 +1765,10 @@ function chatContext_(member, date) {
   }
   if (day.entries.length) {
     lines.push("Logged today:");
-    day.entries.forEach((e) => lines.push("- " + e.meal + ": " + e.name + ", " + e.grams + " g (" + macrosText_(e, false) + ")"));
+    day.entries.forEach((e) => {
+      const amount = e.source === "quick" ? Math.round(e.grams) / 100 + " serve(s)" : e.grams + " g";
+      lines.push("- " + e.meal + ": " + e.name + ", " + amount + " (" + macrosText_(e, false) + ")");
+    });
   } else {
     lines.push("Nothing logged yet today.");
   }

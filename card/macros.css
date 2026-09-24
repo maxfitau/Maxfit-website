@@ -765,7 +765,7 @@ select.fuel-input {
 /* Scan-mode chooser */
 .fuel-modes {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 10px;
 }
 
@@ -887,6 +887,10 @@ select.fuel-input {
   gap: 4px;
   width: 92px;
   flex-shrink: 0;
+}
+
+.fuel-item__gin--serves {
+  width: 132px;
 }
 
 .fuel-item__gin .fuel-input {
@@ -1582,4 +1586,38 @@ a.fuel-btn {
   gap: 8px;
   border-top: 1px solid var(--line);
   padding-top: 12px;
+}
+
+/* Add food: photo note, search, enter the numbers */
+.fuel-photo {
+  display: block;
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+}
+
+.fuel-note {
+  resize: none;
+  line-height: 1.4;
+}
+
+.fuel-search {
+  max-height: 46vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.fuel-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fuel-add-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }

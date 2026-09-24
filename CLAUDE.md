@@ -101,7 +101,7 @@ Build one phase at a time. **Stop after each phase for Max to test.** At the end
   - A 25-scan/day limit is reserved under a lock *before* each call.
   - kcal is replaced by 4/4/9 when the model's figure is more than 15% off.
   - Ask Fuel chat: `claude-haiku-4-5`, JSON schema `{reply, foods[]}`, so any foods it mentions come with one-tap log chips. The server builds the context itself (targets, today's log, what's left, top suggestions). Chat history lives only on the phone (last 10 turns). `CHAT_DAILY_LIMIT` defaults to 40. Haiku 4.5 rejects `effort`, so it isn't sent.
-  - With no `ANTHROPIC_API_KEY`, `me` returns `aiEnabled:false` and the card hides all of Fuel AI (barcodes and suggestions only).
+  - With no `ANTHROPIC_API_KEY`, `me` returns `aiEnabled:false` and the card hides all of Fuel AI (barcodes, search and suggestions only).
 - **Fuel AI plan** (Max's decisions, 2026-09-24):
   - **A$9.99/month for members** (a $19.99 non-member price is planned for when non-clients can sign up) through a Stripe Payment Link, with a **7-day free trial**. The trial starts the first time the client opens FUEL, but only while the API key is set.
   - **Free:** barcodes, targets, totals, favourites and suggestions. **Paid:** photo/label scans and Ask Fuel.
@@ -113,6 +113,8 @@ Build one phase at a time. **Stop after each phase for Max to test.** At the end
   - It runs every 15 minutes (the `installStripeSync` trigger), when a client returns (the link redirects to `/card/?paid={CHECKOUT_SESSION_ID}`, so the card calls `stripeReturn`, which fetches that session from Stripe), and from the coach page's "Check Stripe now".
   - The renewal date comes from `items.data[0].current_period_end`, where newer API versions put it, with a fallback to `current_period_end`.
 - **Suggestions (free, no AI):** `MacroCore.suggestFill` scores single foods and sensible pairs (protein+carb/veg, dairy+fruit/cereal, shake+fruit). Weights: protein 3, carbs 0.75, fat 0.5, calories used 0.5, with overshoot penalties. It never exceeds the calories left, and each food appears at most once. `suggestOver` gives serves under 150 kcal, ranked by protein per 100 kcal, shrinking lean proteins to fit. Both are unit-tested.
+- **Manual logging (free, no AI):** Add food → **Search** looks through favourites, recent foods and Max's Foods tab (add rows there to grow it). **Enter the numbers** logs a food by its per-serve numbers, with source `quick`: `grams` 100 means 1 serve and `per100` holds the per-serve values, so the server skips its ≤105 g-per-100 g check for `quick`. The card shows these as serves (`amountText`). The confirm sheet's **+ Add another food** adds search results to any meal, photo ones included.
+- **Photo note:** after a meal photo, an optional "What's in it?" note (≤300 chars) goes to Claude with the image (`mealPrompt_`). It's trusted for what the foods are and any amounts it gives, and it costs no extra scan.
 - **Barcodes:** `BarcodeDetector` when available (Android Chrome). Otherwise ZXing, vendored at `card/vendor/zxing-browser.min.js` (@zxing/browser 0.2.1) and loaded lazily. There's also a typed-number fallback and a photo-of-barcode fallback. Open Food Facts is always called server-side and cached.
 
 ### UI files
