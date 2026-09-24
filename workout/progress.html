@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+<title>MaxFit — Strength Progress</title>
+<meta name="theme-color" content="#111111" />
+<meta name="robots" content="noindex" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="../card/styles.css?v=20260917a" />
+<link rel="stylesheet" href="styles.css?v=20260921a" />
+<link rel="stylesheet" href="progress.css?v=20260924a" />
+</head>
+<body>
+
+<main class="card progress" id="progress">
+  <div class="card__top">
+    <a class="workout__back" id="backLink" href="calendar.html" aria-label="Back">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </a>
+    <span class="card__tag">Strength Progress</span>
+  </div>
+
+  <div class="progress__picker-row" id="pickerRow" hidden>
+    <label class="card__label" for="exerciseSelect">Exercise</label>
+    <select class="progress__select" id="exerciseSelect"></select>
+  </div>
+
+  <div class="progress__empty" id="progressEmpty" hidden>
+    <p class="progress__empty-text">No workouts logged yet — once you've logged a few sessions, your strength trend will show up here.</p>
+  </div>
+
+  <div class="progress__content" id="progressContent" hidden>
+    <div class="progress__headline">
+      <span class="card__label card__label--red" id="metricLabel">Est. 1-Rep Max</span>
+      <span class="progress__headline-value" id="headlineValue">—</span>
+      <span class="progress__headline-delta" id="headlineDelta" hidden></span>
+    </div>
+
+    <div class="progress__chart-wrap" id="chartWrap" hidden></div>
+
+    <p class="progress__single-hint" id="singleHint" hidden>Log a few more sessions with this exercise to start seeing a trend.</p>
+
+    <p class="progress__note" id="progressNote"></p>
+  </div>
+
+  <p class="status" id="status" hidden></p>
+</main>
+
+<script src="../card/sheet.js?v=20260920a"></script>
+<script src="progress.js?v=20260924a"></script>
+</body>
+</html>
