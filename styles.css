@@ -2552,31 +2552,6 @@ body.is-preloading { overflow: hidden; }
 
 /* ---------- The Solution ---------- */
 
-.solution {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 24px;
-  padding: 100px 24px;
-  text-align: center;
-}
-
-.solution__logo {
-  width: min(56vw, 320px);
-  height: auto;
-}
-
-.solution__line {
-  margin: 0;
-  font-family: var(--font-head);
-  font-weight: 700;
-  font-size: clamp(1rem, 3vw, 1.3rem);
-  letter-spacing: 4px;
-  text-transform: uppercase;
-  color: var(--red);
-}
-
 /* ---------- Card showcase ---------- */
 
 .showcase__frame {
