@@ -5,8 +5,23 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
 <title>MaxFit — Membership Card</title>
 
-<!-- PWA / installability -->
-<link rel="manifest" href="manifest.json" />
+<!-- PWA / installability. The manifest is added for Android/desktop only.
+     On iPhone/iPad the home-screen app gets its own storage, separate from
+     Safari, and iOS opens the manifest's start_url (the bare /card/), so the
+     icon would forget whose card it is. With no manifest, iOS saves the exact
+     personal link (?id=…&k=…) the client added it from. The apple-* tags
+     below cover the icon, name and full-screen mode on iOS. -->
+<script>
+  (function () {
+    var ua = navigator.userAgent;
+    var ios = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1 && !/Android/.test(ua));
+    if (ios) return;
+    var link = document.createElement("link");
+    link.rel = "manifest";
+    link.href = "manifest.json";
+    document.head.appendChild(link);
+  })();
+</script>
 <meta name="theme-color" content="#111111" />
 <meta name="mobile-web-app-capable" content="yes" />
 
@@ -128,7 +143,7 @@
 <script src="sheet.js?v=20260925a"></script>
 <script src="app.js?v=20260925a"></script>
 <script src="macros-core.js?v=20260925a"></script>
-<script src="macros-api.js?v=20260923a"></script>
-<script src="macros.js?v=20260925b"></script>
+<script src="macros-api.js?v=20260925a"></script>
+<script src="macros.js?v=20260925c"></script>
 </body>
 </html>

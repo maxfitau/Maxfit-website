@@ -199,6 +199,30 @@
       </div>`;
   }
 
+  /**
+   * "Paste the link Max sent you": for a home-screen icon that opened without
+   * the personal link (an older iPhone icon keeps its own storage, separate
+   * from Safari). Saves it on this phone and reloads, so the card follows too.
+   */
+  function renderUnlock(message) {
+    renderNotice(
+      "Unlock Fuel",
+      esc(message),
+      `<form class="fuel-field" data-link-form autocomplete="off">
+         <span class="card__label">Your link from Max</span>
+         <input class="fuel-input" name="link" type="text" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="maxfit.now/card/?id=…" aria-label="Your link from Max" />
+         <button class="fuel-btn" type="submit">Unlock Fuel</button>
+         <p class="fuel-error" data-link-error hidden>That doesn't look like your MaxFit link. Copy the whole link from Max's message and try again.</p>
+       </form>`
+    );
+    const form = els.panelFuel.querySelector("[data-link-form]");
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      if (MacroApi.saveLink(form.elements.link.value)) window.location.reload();
+      else form.querySelector("[data-link-error]").hidden = false;
+    });
+  }
+
   function renderLoading(text) {
     els.panelFuel.innerHTML = `<div class="fuel-loading"><div class="fuel-spinner"></div><span class="fuel-loading__text">${esc(text || "Loading")}</span></div>`;
   }
@@ -235,10 +259,7 @@
         );
         return;
       }
-      renderNotice(
-        "Unlock Fuel",
-        "Macro tracking needs your personal link from Max. Open the link Max texts you, then add it to your home screen again so the icon remembers it."
-      );
+      renderUnlock("Macro tracking needs your personal link from Max. Paste it below to unlock Fuel on this phone. You only need to do this once.");
       return;
     }
     state.loading = true;
@@ -253,7 +274,7 @@
       if (returnedSession && state.plan && state.plan.kind === "paid") toast("Fuel AI is on. Welcome!");
     } catch (err) {
       if (err.code === "bad_key") {
-        renderNotice("Unlock Fuel", esc(err.message));
+        renderUnlock(err.message + " If Max has sent you one, paste it below.");
       } else {
         renderNotice("Couldn't load", esc(err.message), '<button class="fuel-btn fuel-btn--ghost" type="button" data-act="retry">Try again</button>');
       }

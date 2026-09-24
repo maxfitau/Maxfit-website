@@ -93,6 +93,39 @@ const MacroApi = (function () {
     return data;
   }
 
+  /**
+   * Saves a pasted card link (or just its 16-character key) on this phone,
+   * for a home-screen icon that opened without the personal link. Also sets
+   * the card's own saved id, so the CARD tab follows the same person.
+   * Returns false if the text doesn't look like a MaxFit link.
+   */
+  function saveLink(text) {
+    const raw = String(text || "").trim();
+    const idMatch = /[?&]id=([^&#\s]+)/.exec(raw);
+    const keyMatch = /[?&]k=([^&#\s]+)/.exec(raw);
+    let id = null;
+    let k = null;
+    try {
+      if (idMatch && keyMatch) {
+        id = decodeURIComponent(idMatch[1]);
+        k = decodeURIComponent(keyMatch[1]);
+      } else if (/^[a-f0-9]{16}$/i.test(raw)) {
+        id = localStorage.getItem("maxfitMemberId");
+        k = raw.toLowerCase();
+      }
+    } catch (err) {
+      return false;
+    }
+    if (!id || !k || !/^[a-z0-9]+$/.test(id)) return false;
+    try {
+      localStorage.setItem(MACRO_KEY_STORAGE, JSON.stringify({ id: id, k: k }));
+      localStorage.setItem("maxfitMemberId", id);
+    } catch (err) {
+      return false;
+    }
+    return true;
+  }
+
   /** A member request: adds id + key automatically. */
   function call(action, fields, options) {
     const who = identity();
@@ -104,5 +137,5 @@ const MacroApi = (function () {
     return post(Object.assign({ action: action, pin: pin }, fields || {}));
   }
 
-  return { configured: configured, identity: identity, call: call, coach: coach };
+  return { configured: configured, identity: identity, saveLink: saveLink, call: call, coach: coach };
 })();
