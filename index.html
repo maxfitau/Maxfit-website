@@ -88,12 +88,15 @@
 <main id="top">
 
 <!-- 01 · Hero — "Stuck In A Generic Program That Isn't Working?" split
-     across a vertical hairline, intro.mp4 scrubbing from a small card to
-     full-bleed as the section pins on scroll. Replaces the old
-     #intro-spacer/#hero-pin sticky-lerp mechanism (same video asset and
-     CTA copy, new GSAP/ScrollTrigger technique — see js/animations/hero.js).
-     Fully readable and usable with no JS/motion: the video frame is a
-     normal small card and everything else is simply visible. -->
+     across a vertical hairline. intro.mp4 plays as a normal small,
+     looping card (no scroll-scrub to full-bleed — that technique could
+     land on an arbitrary, confusing frame of the video mid-scroll, and
+     scrubbing a whole section's headline out from under it read as
+     more "broken" than "cinematic"). The video, free-session badge and
+     CTA are grouped into one bordered card so they read as a single
+     unit instead of three separately floating things.
+     Fully readable and usable with no JS/motion at all: it's just a
+     normal small video and everything else is simply visible. -->
 <section class="hero" id="hero">
 <div class="hero__hairline" aria-hidden="true"></div>
 
@@ -108,9 +111,10 @@
 <span class="hero__split-half hero__split-half--right">Program<br>That Isn't<br>Working?</span>
 </h1>
 
+<div class="hero__showcase">
 <div class="hero__video-slot">
 <div class="hero__video-frame" id="heroVideoFrame">
-<video class="hero__video" id="heroVideo" src="assets/videos/intro.mp4" poster="assets/images/intro-poster.jpg" muted playsinline preload="auto"></video>
+<video class="hero__video" id="heroVideo" src="assets/videos/intro.mp4" poster="assets/images/intro-poster.jpg" muted loop autoplay playsinline preload="auto"></video>
 </div>
 </div>
 
@@ -123,6 +127,7 @@ Your first session is free
 <a href="join.html" class="btn btn--primary" aria-label="Book your free personal training consultation in Inner West Sydney">Book your free consult</a>
 </div>
 </div>
+</div>
 </section>
 
 <!-- Hero follow-up: motto, pitch, and the 3-step plan — kept out of the
@@ -132,7 +137,7 @@ Your first session is free
 <section class="section section--tight hero-followup reveal">
 <div class="container">
 <p class="hero__tagline">Maximum Fitness <span class="accent">·</span> Minimum Fuss</p>
-<p class="hero__sub">Stop guessing with cookie-cutter plans. Get science-based coaching built around your goals, your body, and your schedule, so training finally feels simple and the results actually show up.</p>
+<p class="hero__sub">Get science-based coaching and nutrition advice from the newest, keenest personal trainer. The new age of personal training: your goals, your body, and your schedule, so training finally feels simple and the results actually show up.</p>
 <a href="#programs" class="btn btn--outline btn--sm hero-followup__cta">See programs</a>
 </div>
 </section>
@@ -145,10 +150,10 @@ Your first session is free
      at once, stacked normally. -->
 <section class="problem" id="problem">
 <div class="problem__stack">
-<p class="problem__line"><span class="problem__line-text">The 12-week challenge.</span><span class="problem__strike" aria-hidden="true"></span></p>
 <p class="problem__line"><span class="problem__line-text">The app you stopped opening.</span><span class="problem__strike" aria-hidden="true"></span></p>
 <p class="problem__line"><span class="problem__line-text">The January gym membership.</span><span class="problem__strike" aria-hidden="true"></span></p>
 <p class="problem__line"><span class="problem__line-text">The program built for someone else.</span><span class="problem__strike" aria-hidden="true"></span></p>
+<p class="problem__line"><span class="problem__line-text">The 12-week challenge.</span><span class="problem__strike" aria-hidden="true"></span></p>
 </div>
 <p class="problem__resolve">It was never you.<br>It was the plan.</p>
 </section>
@@ -185,16 +190,14 @@ Your first session is free
 <section class="about" id="about">
 
 <!-- Empathy first, per the brief's story order: the transformation
-     photo and "I've been where you are" lead, before any credential
-     is named. -->
+     photo leads, before any credential is named. -->
 <div class="about__empathy reveal">
 <img class="about__transform-photo" src="assets/images/back%20transformation.jpg" alt="Max's own 3 year transformation" />
-<p class="about__empathy-line">I've been where you are.</p>
 </div>
 
 <div class="container about__body">
 <span class="eyebrow">About</span>
-<h2>Meet your guide</h2>
+<h2>Meet your coach</h2>
 
 <div class="about__headshot-wrap">
 <div class="about__headshot-mask" id="aboutHeadshotMask">
@@ -213,7 +216,7 @@ Your first session is free
 <table class="about__creds" aria-label="Credentials">
 <tr class="about__creds-row reveal">
 <td>6 yrs</td>
-<td>Training experience</td>
+<td>Gym experience</td>
 </tr>
 <tr class="about__creds-row reveal">
 <td>Cert III &amp; IV</td>
@@ -270,7 +273,7 @@ First Aid Certificate
 <div class="section-head reveal">
 <span class="eyebrow">The MaxFit Card</span>
 <h2>Your whole membership, on your phone</h2>
-<p>Sessions, check-ins, macros, referrals — it's all on the card you already carry.</p>
+<p>Sessions, check-ins, macros, referrals: it's all on the card you already carry.</p>
 </div>
 <div class="showcase__frame reveal-scale" id="showcaseFrame">
 <video class="showcase__video" id="showcaseVideo" src="assets/videos/card-showcase.mp4" poster="assets/images/card-showcase-poster.jpg" muted loop playsinline preload="metadata" controls></video>
@@ -1046,7 +1049,7 @@ First Aid Certificate
 <div class="program__body-wrap">
 <div class="program__body">
 <div class="program__body-inner" style="display:block;">
-<p class="program__desc">I hold Certificate III &amp; IV in Fitness through NHFA, plus a current First Aid certificate, and have 6 years of personal training experience. I'm also working toward a Bachelor of Psychology (Honours) at UTS, which feeds directly into how I coach.</p>
+<p class="program__desc">I hold Certificate III &amp; IV in Fitness through NHFA, plus a current First Aid certificate, and I've spent 6 years training in the gym myself. I'm also working toward a Bachelor of Psychology (Honours) at UTS, which feeds directly into how I coach.</p>
 </div>
 </div>
 </div>
@@ -1125,7 +1128,7 @@ First Aid Certificate
       "name": "What qualifications does your personal trainer have?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Certificate III & IV in Fitness through NHFA, a current First Aid certificate, and 6 years of personal training experience. Currently working toward a Bachelor of Psychology (Honours) at UTS."
+        "text": "Certificate III & IV in Fitness through NHFA, a current First Aid certificate, and 6 years training in the gym himself. Currently working toward a Bachelor of Psychology (Honours) at UTS."
       }
     },
     {
@@ -1236,12 +1239,12 @@ Or email directly
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/SplitText.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/CustomEase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@studio-freight/lenis@1.0.42/dist/lenis.min.js"></script>
-<script src="js/animations/main.js?v=2026092401"></script>
-<script src="js/animations/preloader.js?v=2026092401"></script>
-<script src="js/animations/hero.js?v=2026092401"></script>
-<script src="js/animations/problem.js?v=2026092401"></script>
-<script src="js/animations/why.js?v=2026092401"></script>
-<script src="js/animations/about.js?v=2026092401"></script>
-<script src="js/animations/showcase.js?v=2026092401"></script>
+<script src="js/animations/main.js?v=2026092402"></script>
+<script src="js/animations/preloader.js?v=2026092402"></script>
+<script src="js/animations/hero.js?v=2026092402"></script>
+<script src="js/animations/problem.js?v=2026092402"></script>
+<script src="js/animations/why.js?v=2026092402"></script>
+<script src="js/animations/about.js?v=2026092402"></script>
+<script src="js/animations/showcase.js?v=2026092402"></script>
 </body>
 </html>

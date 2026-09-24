@@ -432,39 +432,41 @@ section {
 
 .hero__split-line { display: block; }
 
-/* The slot is a normal flow block that always reserves the video's
-   on-screen space — it never changes position, so nothing above or
-   below it can ever shift or overlap, with or without JS. The frame
-   inside it is absolutely positioned to fill the slot exactly (the
-   "small static card" everyone sees at rest). Only hero.js's pin-scrub
-   touches the frame itself (switching it to position: fixed at this
-   same on-screen rect, then animating that to full-bleed) — the slot
-   keeps holding its place in the layout the whole time, so that
-   reflow never touches the headline or the CTA below it. This
-   replaces the old design, which absolutely positioned the frame
-   directly against the whole .hero section at a guessed top: 66% —
-   on desktop that guess landed on top of the headline's last lines. */
-.hero__video-slot {
-  position: relative;
-  width: min(46vw, 480px);
-  aspect-ratio: 16 / 9;
+/* The video, free-session badge and CTA button used to be three
+   separately floating things (a card, then a gap, then a badge, then
+   a button) — Max read that as "randomly chucked there". Grouping
+   them into one bordered card, with a hairline divider between the
+   video and the badge/button, makes it read as one intentional unit:
+   watch the video, then act on it. */
+.hero__showcase {
+  max-width: 560px;
   margin: 56px auto 0;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-card);
 }
 
 @media (max-width: 1023px) {
-  .hero__video-slot {
-    width: min(80vw, 420px);
+  .hero__showcase {
+    max-width: min(90vw, 460px);
     margin: 24px auto 0;
+    padding: 20px;
   }
+}
+
+.hero__video-slot {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
 }
 
 .hero__video-frame {
   position: absolute;
   inset: 0;
-  border-radius: 16px;
+  border-radius: 10px;
   overflow: hidden;
   z-index: 1;
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
 }
 
 .hero__video {
@@ -483,7 +485,9 @@ section {
   align-items: center;
   gap: 16px;
   text-align: center;
-  margin: 40px 0 64px;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
 }
 
 .hero__tagline {
@@ -719,17 +723,8 @@ section {
 .about__transform-photo {
   width: min(100%, 360px);
   height: auto;
-  margin: 0 auto 20px;
+  margin: 0 auto;
   border-radius: var(--radius);
-}
-
-.about__empathy-line {
-  font-family: var(--font-head);
-  font-weight: 800;
-  font-size: clamp(1.6rem, 4.5vw, 2.6rem);
-  text-transform: uppercase;
-  color: var(--white);
-  margin: 0;
 }
 
 .about__body {
