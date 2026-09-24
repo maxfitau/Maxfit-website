@@ -1,7 +1,237 @@
 document.addEventListener("DOMContentLoaded", function () {
   var prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  // The old scroll-scrubbed hero intro lived here — replaced by
-  // js/animations/hero.js (GSAP/ScrollTrigger) as part of the redesign.
+  /* ---------- Intro: scroll-scrubbed preloader ----------
+     #hero-pin (the .hero section) sticks to the top of the viewport via
+     native CSS position: sticky while #intro-spacer scrolls underneath
+     it — the browser handles the pin/release itself, so there's no JS
+     state to keep in sync with scroll position. All this code does is
+     read scroll position within the spacer as a 0-1 progress value and
+     use it to scrub the intro video's currentTime and stage the hero
+     content in — so scrolling back up rewinds the whole thing, since
+     nothing here is a one-shot animation. */
+  var introSpacer = document.getElementById("intro-spacer");
+  var heroPin = document.getElementById("hero-pin");
+  var preloader = document.getElementById("preloader");
+  var preloaderVideo = preloader ? preloader.querySelector(".preloader__video") : null;
+  var preloaderCaption = preloader ? preloader.querySelector(".preloader__caption") : null;
+  var preloaderHint = preloader ? preloader.querySelector(".preloader__hint") : null;
+
+  var introEls = {
+    label: document.querySelector(".hero__label"),
+    problem: document.querySelector(".hero__problem"),
+    logo: document.querySelector(".hero__logo-wrap"),
+    badge: document.querySelector(".hero__free-badge"),
+    actions: document.querySelector(".hero__actions"),
+    scrollHint: document.querySelector(".hero__scroll")
+  };
+
+  // Falls back to a plain, non-pinned hero with everything simply visible —
+  // used for reduced-motion, missing markup, a video load error, or any
+  // unexpected error in the setup below, so the page never gets stuck.
+  function fallbackToStaticHero() {
+    if (introSpacer) introSpacer.classList.add("is-static");
+    if (heroPin) heroPin.classList.add("is-static");
+    if (preloader) preloader.remove();
+    Object.keys(introEls).forEach(function (key) {
+      var el = introEls[key];
+      if (el) {
+        el.style.opacity = "";
+        el.style.transform = "";
+      }
+    });
+  }
+
+  if (!introSpacer || !heroPin || !preloader || !preloaderVideo) {
+    fallbackToStaticHero();
+  } else if (prefersReducedMotion) {
+    fallbackToStaticHero();
+  } else {
+    try {
+      var videoReady = false;
+      var videoPrimed = false;
+      var primeVideo = function () {
+        if (videoPrimed) return;
+        videoPrimed = true;
+        // iOS Safari won't actually paint a frame from a programmatic
+        // currentTime seek on a video that has never played — it just
+        // stays black no matter what you set currentTime to. Priming it
+        // with an immediate play-then-pause (muted, so it's allowed
+        // without a user gesture) gets the decoder going once, after
+        // which our own scroll-driven seeks render normally.
+        var primeResult = preloaderVideo.play();
+        if (primeResult && typeof primeResult.then === "function") {
+          primeResult.then(function () {
+            preloaderVideo.pause();
+            videoReady = true;
+          }).catch(function () {
+            videoReady = true;
+          });
+        } else {
+          preloaderVideo.pause();
+          videoReady = true;
+        }
+      };
+      preloaderVideo.addEventListener("loadedmetadata", primeVideo);
+      // A cached video can finish loading its metadata before this script
+      // has attached the listener above, in which case the event never
+      // fires again and the scrub would silently never start.
+      if (preloaderVideo.readyState >= 1) primeVideo();
+      preloaderVideo.addEventListener("error", fallbackToStaticHero);
+
+      // The video's logo needs to land exactly where the real
+      // .hero__logo-wrap sits, at the same visible size, so the swap from
+      // video to live logo at the end of the intro doesn't jump or resize.
+      // Measured against the logo's resting position (transform cleared)
+      // since it's mid-reveal (translateY-animating) most of the time this
+      // runs. intro.mp4's frame has padding baked in around the drawn
+      // logo — it only fills ~66% of the frame width, vs. ~98% for the
+      // flush-cropped hero__logo.png — so matching the elements' outer
+      // box widths alone leaves the *visible* logos different sizes.
+      // VIDEO_CONTENT_SCALE corrects for that (measured directly from the
+      // two assets' pixel content, not a guess): scale the video element
+      // up so its actual drawn logo — not its padded frame — matches the
+      // real logo's size.
+      var VIDEO_CONTENT_SCALE = 1.496;
+      var heroLogoWrap = document.querySelector(".hero__logo-wrap");
+      var alignPreloaderVideo = function () {
+        if (!heroLogoWrap) return;
+        var prevTransform = heroLogoWrap.style.transform;
+        heroLogoWrap.style.transform = "none";
+        var containerRect = preloader.getBoundingClientRect();
+        var logoRect = heroLogoWrap.getBoundingClientRect();
+        heroLogoWrap.style.transform = prevTransform;
+
+        if (!logoRect.width || !containerRect.width) return;
+        preloaderVideo.style.left = (logoRect.left - containerRect.left + logoRect.width / 2) + "px";
+        preloaderVideo.style.top = (logoRect.top - containerRect.top + logoRect.height / 2) + "px";
+        preloaderVideo.style.width = (logoRect.width * VIDEO_CONTENT_SCALE) + "px";
+      };
+
+      // Progress ranges each hero element reveals across, staggered so
+      // they cascade in one after another as the intro finishes.
+      var bands = {
+        label: [0.50, 0.62],
+        problem: [0.56, 0.70],
+        logo: [0.62, 0.76],
+        badge: [0.76, 0.88],
+        actions: [0.82, 0.94],
+        scrollHint: [0.92, 1.00]
+      };
+
+      var bandProgress = function (range, p) {
+        var t = (p - range[0]) / (range[1] - range[0]);
+        return Math.max(0, Math.min(1, t));
+      };
+
+      // Cheap ease-out so each reveal decelerates into place instead of
+      // moving at a constant linear rate — reads as noticeably smoother
+      // even though the underlying scroll math is unchanged.
+      var easeOutCubic = function (t) {
+        return 1 - Math.pow(1 - t, 3);
+      };
+
+      var applyReveal = function (el, t) {
+        if (!el) return;
+        var eased = easeOutCubic(t);
+        el.style.opacity = eased.toFixed(3);
+        el.style.transform = "translateY(" + ((1 - eased) * 16).toFixed(2) + "px)";
+      };
+
+      Object.keys(introEls).forEach(function (key) {
+        applyReveal(introEls[key], 0);
+      });
+
+      var lastVideoTime = -1;
+
+      // The raw scroll position (targetProgress) updates instantly, but
+      // everything on screen tracks a lagged, lerped currentProgress
+      // instead — same damping technique as the cursor-dot follower above.
+      // That turns choppy trackpad/wheel deltas into one continuous glide.
+      var targetProgress = 0;
+      var currentProgress = 0;
+      var introSmoothing = 0.16;
+      var introRafRunning = false;
+
+      var readTargetProgress = function () {
+        var rect = introSpacer.getBoundingClientRect();
+        var vh = window.innerHeight;
+        var total = rect.height - vh;
+        var p = total > 0 ? -rect.top / total : 1;
+        targetProgress = Math.max(0, Math.min(1, p));
+      };
+
+      var applyIntroFrame = function (progress) {
+        if (videoReady && preloaderVideo.duration) {
+          var t = progress * preloaderVideo.duration;
+          if (Math.abs(t - lastVideoTime) > 0.005) {
+            preloaderVideo.currentTime = t;
+            lastVideoTime = t;
+          }
+        }
+
+        if (preloaderCaption) {
+          var captionOut = bandProgress([0.60, 0.85], progress);
+          preloaderCaption.style.opacity = (1 - easeOutCubic(captionOut)).toFixed(3);
+        }
+
+        if (preloaderHint) {
+          var hintOut = bandProgress([0.02, 0.12], progress);
+          preloaderHint.style.opacity = (1 - easeOutCubic(hintOut)).toFixed(3);
+        }
+
+        var overlayOut = bandProgress([0.55, 0.88], progress);
+        preloader.style.opacity = (1 - easeOutCubic(overlayOut)).toFixed(3);
+        preloader.style.pointerEvents = progress >= 0.88 ? "none" : "";
+
+        Object.keys(bands).forEach(function (key) {
+          applyReveal(introEls[key], bandProgress(bands[key], progress));
+        });
+      };
+
+      var introTick = function () {
+        currentProgress += (targetProgress - currentProgress) * introSmoothing;
+        if (Math.abs(targetProgress - currentProgress) < 0.0008) {
+          currentProgress = targetProgress;
+        }
+        applyIntroFrame(currentProgress);
+
+        if (currentProgress !== targetProgress) {
+          requestAnimationFrame(introTick);
+        } else {
+          introRafRunning = false;
+        }
+      };
+
+      var scheduleIntroUpdate = function () {
+        readTargetProgress();
+        if (!introRafRunning) {
+          introRafRunning = true;
+          requestAnimationFrame(introTick);
+        }
+      };
+
+      window.addEventListener("scroll", scheduleIntroUpdate, { passive: true });
+      window.addEventListener("resize", function () {
+        scheduleIntroUpdate();
+        alignPreloaderVideo();
+      });
+
+      // Wait a couple of frames before the very first read — right at
+      // DOMContentLoaded, mobile browsers (iOS Safari especially) haven't
+      // always finished settling layout/viewport size yet, and a
+      // getBoundingClientRect()/innerHeight read that's too early can come
+      // back with the wrong numbers, leaving the intro stuck un-pinned
+      // with the black overlay just sitting there until the next scroll.
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          scheduleIntroUpdate();
+          alignPreloaderVideo();
+        });
+      });
+    } catch (err) {
+      fallbackToStaticHero();
+    }
+  }
 
   /* ---------- Mobile nav ---------- */
   var toggle = document.querySelector(".nav__toggle");

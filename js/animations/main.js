@@ -33,11 +33,10 @@ window.MaxFitAnim = window.MaxFitAnim || {};
   window.MaxFitAnim.lenis = initSmoothScroll();
   window.MaxFitAnim.ready = true;
 
-  // Some sections (hero.js) create their pin asynchronously — after web
-  // fonts load, so SplitText measures real metrics — which means an
-  // earlier section's ScrollTrigger can compute its start/end against a
-  // page that's still missing that later pin-spacer's height. A couple
-  // of refreshes after the page settles re-syncs everyone against final
+  // Web fonts and images finish loading after the pins are created, and
+  // that can change section heights, so a ScrollTrigger's start/end can
+  // be computed against a page that has since shifted. A couple of
+  // refreshes after the page settles re-syncs everyone against final
   // layout, regardless of the order sections happened to initialize in.
   window.addEventListener("load", function () {
     ScrollTrigger.refresh();

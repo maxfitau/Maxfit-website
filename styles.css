@@ -42,6 +42,130 @@ body {
 
 img { max-width: 100%; display: block; }
 
+/* ---------- Intro: scroll-scrubbed preloader ---------- */
+
+/* Total scroll-through distance to fully release the hero is this height
+   minus one viewport (the hero stays pinned for that difference) — kept
+   short so real content (About/Programs) arrives within roughly one
+   normal scroll gesture, instead of forcing visitors through a long
+   locked intro before they reach anything they can act on. */
+#intro-spacer {
+  position: relative;
+  height: 160vh;
+}
+
+@media (max-width: 700px) {
+  #intro-spacer { height: 145vh; }
+}
+
+/* Native position: sticky pins #hero-pin to the top of the viewport while
+   #intro-spacer (taller than the viewport) scrolls underneath it, then
+   releases it in the same continuous, browser-native operation once the
+   spacer's bottom edge reaches it — no separate "released" positioning
+   scheme, so there's no coordinate-system seam to jump across and no JS
+   state to fall out of sync with scroll position. (A hand-rolled
+   fixed/absolute toggle was tried earlier to sidestep a Safari bug where
+   sticky is silently disabled by a non-visible-overflow ancestor, but
+   that bug traced back to `body { overflow-x: hidden }`, which is now
+   removed above — so sticky is safe to use directly again.) */
+#hero-pin {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+/* Applied by JS on reduced-motion or if the intro fails to set up
+   (missing video, script error) so the page falls back to a plain,
+   non-pinned hero instead of a broken/stuck scroll section. */
+#intro-spacer.is-static { height: auto; }
+#hero-pin.is-static { position: relative; }
+
+#preloader {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: #000;
+  overflow: hidden;
+}
+
+.preloader__video {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(90vw, 640px);
+  height: auto;
+  object-fit: contain;
+  background: #000;
+}
+
+.preloader__caption {
+  position: absolute;
+  bottom: 18%;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: clamp(1.05rem, 3vw, 1.5rem);
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  color: var(--white);
+  text-shadow: 0 2px 20px rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
+  opacity: 0;
+}
+
+.preloader__dots {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.preloader__dots span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--red);
+  animation: preloader-dot-pulse 1.1s ease-in-out infinite;
+}
+
+.preloader__dots span:nth-child(2) { animation-delay: 0.15s; }
+.preloader__dots span:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes preloader-dot-pulse {
+  0%, 80%, 100% { opacity: 0.25; transform: scale(0.8); }
+  40% { opacity: 1; transform: scale(1.15); }
+}
+
+.preloader__hint {
+  position: absolute;
+  bottom: 28px;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.75rem;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.preloader__hint-line {
+  width: 1px;
+  height: 36px;
+  background: linear-gradient(var(--red), transparent);
+  animation: scrollpulse 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preloader__hint-line { animation: none; }
+}
+
 a { color: inherit; text-decoration: none; }
 
 h1, h2, h3, h4 {
@@ -307,227 +431,151 @@ section {
 /* ---------- Hero ---------- */
 
 .hero {
-  position: relative;
   min-height: 100vh;
   min-height: 100svh;
-  overflow: hidden;
-  background: var(--bg);
-  padding: 0 24px;
-}
-
-/* Desktop only: reserve room above the headline for the absolutely
-   positioned labels + hairline (mobile puts those in normal flow
-   instead, via the media queries below, so needs no extra padding
-   here). Without this, the headline started at the very top of the
-   section and either the labels overlapped it or (once the headline
-   was no longer force-centred at 100vh — see .hero__split) it had no
-   guaranteed clearance at all. */
-@media (min-width: 1024px) {
-  .hero { padding-top: calc(var(--nav-h) + 32px); }
-}
-
-/* .hero__head wraps just the hairline, the two labels and the
-   headline — NOT the video/CTA card below. The hairline and labels
-   are absolutely positioned against it, so top: 0 / bottom: 0 spans
-   only this head area. Previously they were positioned against the
-   whole .hero section; once the hero grew taller than one screen
-   (headline + the video/CTA card below it, no longer force-centred
-   at 100vh), that same bottom: 0 stretched the hairline all the way
-   down through the video card — a stray vertical line cutting the
-   card in half. */
-.hero__head {
-  position: relative;
-  padding-top: 76px;
-}
-
-@media (max-width: 1023px) {
-  .hero__head { padding-top: 0; }
-}
-
-/* Vertical hairline ~37% from the left, in the style of the reference
-   site's Swiss-poster layout — headline halves sit either side of it. */
-.hero__hairline {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 37%;
-  width: 1px;
-  background: var(--line);
-  z-index: 1;
-}
-
-@media (max-width: 1023px) {
-  .hero__hairline { display: none; }
-}
-
-.hero__label-top,
-.hero__label-bottom {
-  position: absolute;
-  left: calc(37% + 28px);
-  font-size: 0.85rem;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  color: var(--dim);
-  z-index: 2;
-}
-
-.hero__label-top {
-  top: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-}
-
-.hero__label-bottom {
-  top: 56px;
-  color: var(--red);
-}
-
-/* Mobile: normal flow instead of guessing a padding-top on .hero__split
-   large enough to clear two absolutely-positioned labels of unknown
-   height — stacks naturally, however long the label text runs. */
-@media (max-width: 1023px) {
-  .hero__label-top,
-  .hero__label-bottom {
-    position: static;
-    left: auto;
-    right: auto;
-    padding: 0 24px;
-    margin-top: 12px;
-  }
-  .hero__label-top { padding-top: calc(var(--nav-h) + 20px); }
-}
-
-.hero__split {
-  position: relative;
-  z-index: 2;
-  display: flex;
-  align-items: flex-start;
   justify-content: center;
-  margin: 0;
-  gap: 0;
-}
-
-.hero__split-half {
-  font-family: var(--font-head);
-  font-weight: 800;
-  font-size: clamp(2.2rem, 7.5vw, 5.2rem);
-  line-height: 1.02;
-  letter-spacing: -0.01em;
-  color: var(--white);
-  overflow: hidden;
-}
-
-.hero__split-half--left {
-  flex: 1;
-  text-align: right;
-  padding-right: calc(63% - 37% + 24px);
-}
-
-.hero__split-half--right {
-  flex: 1;
-  text-align: left;
-  padding-left: 24px;
-}
-
-@media (max-width: 1023px) {
-  .hero__split {
-    flex-direction: column;
-    align-items: flex-start;
-    justify-content: flex-start;
-    min-height: 0;
-    gap: 8px;
-    padding-top: 24px;
-  }
-  .hero__split-half--left,
-  .hero__split-half--right {
-    flex: none;
-    text-align: left;
-    padding: 0;
-    font-size: clamp(2rem, 10vw, 3.2rem);
-  }
-}
-
-.hero__split-line { display: block; }
-
-/* The video, free-session badge and CTA button used to be three
-   separately floating things (a card, then a gap, then a badge, then
-   a button) — Max read that as "randomly chucked there". Grouping
-   them into one bordered card, with a hairline divider between the
-   video and the badge/button, makes it read as one intentional unit:
-   watch the video, then act on it. */
-.hero__showcase {
-  max-width: 560px;
-  margin: 56px auto 0;
-  padding: 24px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--bg-card);
-}
-
-@media (max-width: 1023px) {
-  .hero__showcase {
-    max-width: min(90vw, 460px);
-    margin: 24px auto 0;
-    padding: 20px;
-  }
-}
-
-.hero__video-slot {
+  padding: calc(var(--nav-h) + 40px) 0 80px;
   position: relative;
-  width: 100%;
-  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-top: none;
 }
 
-.hero__video-frame {
+/* Below this width the full hero content (problem headline, logo, motto,
+   sub, badge, actions, 3-step plan) can end up taller than the viewport.
+   justify-content: center then centers that overflow, pushing the top of
+   the headline above the visible area — cut off instead of just scrolled
+   past, since the hero sits inside a pinned/sticky spacer rather than a
+   normal scrollable block. Tightening sizes/spacing here keeps everything
+   inside one viewport on real phones instead of relying on scroll. */
+@media (max-width: 600px) {
+  .hero { padding: calc(var(--nav-h) + 20px) 0 40px; justify-content: flex-start; }
+}
+
+.hero__shapes {
   position: absolute;
   inset: 0;
-  border-radius: 10px;
-  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.shape {
+  position: absolute;
+  will-change: transform;
+  transition: transform 0.15s linear;
+}
+
+.shape--ring {
+  width: 130px;
+  height: 130px;
+  border: 2px solid var(--line-strong);
+  border-radius: 50%;
+  top: 18%;
+  right: 10%;
+}
+
+.shape--dot {
+  width: 18px;
+  height: 18px;
+  background: var(--red);
+  border-radius: 50%;
+  top: 62%;
+  right: 22%;
+}
+
+.shape--plus {
+  width: 46px;
+  height: 46px;
+  top: 30%;
+  left: 6%;
+}
+
+.shape--plus::before,
+.shape--plus::after {
+  content: "";
+  position: absolute;
+  background: var(--line-strong);
+}
+
+.shape--plus::before { width: 100%; height: 2px; top: 50%; transform: translateY(-50%); }
+.shape--plus::after { height: 100%; width: 2px; left: 50%; transform: translateX(-50%); }
+
+.shape--sq {
+  width: 60px;
+  height: 60px;
+  border: 2px solid var(--red);
+  top: 72%;
+  left: 12%;
+  transform: rotate(20deg);
+}
+
+.shape--chevron {
+  width: 300px;
+  height: 420px;
+  bottom: -80px;
+  right: -80px;
+  background: var(--red);
+  opacity: 0.16;
+  clip-path: polygon(0% 0%, 42% 0%, 100% 50%, 42% 100%, 0% 100%, 58% 50%);
+}
+
+.hero__content {
+  position: relative;
   z-index: 1;
 }
 
-/* intro.mp4 is natively an ultra-wide banner (1500x340, ~4.4:1), not
-   16:9 — object-fit: cover on a 16:9 box scaled it up to fill the
-   height and cropped most of its width, cutting the logo/wordmark it
-   shows off on both sides. contain shows the whole thing, letterboxed
-   top/bottom against the frame's own near-black background instead. */
-.hero__video {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  background: #000;
-}
-
-.hero__cta-wrap {
-  position: relative;
-  z-index: 3;
+.hero__content--centered {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
   text-align: center;
-  margin-top: 20px;
-  padding-top: 20px;
-  border-top: 1px solid var(--line);
 }
 
-.hero__tagline {
-  font-size: clamp(1.3rem, 3.4vw, 1.9rem);
-  letter-spacing: 4px;
-  margin: 0 0 28px;
-  color: var(--red);
-}
-
-.accent { color: var(--red); }
-
-.hero__sub {
-  font-size: 1.2rem;
+.hero__label {
+  font-family: inherit;
+  font-weight: 400;
+  font-size: 0.95rem;
+  letter-spacing: 2px;
+  text-transform: uppercase;
   color: var(--dim);
-  max-width: 480px;
-  margin-bottom: 36px;
+  margin: 0 0 20px;
+}
+
+.hero__problem {
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: clamp(1.9rem, 5vw, 3.1rem);
+  line-height: 1.1;
+  letter-spacing: 0.5px;
+  color: var(--white);
+  max-width: 720px;
+  margin: 0 0 24px;
+}
+
+.hero__logo-wrap {
+  position: relative;
+  width: min(92%, 560px);
+  margin-bottom: 20px;
+}
+
+.hero__logo {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.hero__logo-underglow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 65%;
+  aspect-ratio: 1;
+  background: radial-gradient(circle, rgba(224, 0, 0, 0.4), rgba(224, 0, 0, 0.12) 45%, transparent 72%);
+  z-index: -1;
+  pointer-events: none;
 }
 
 .hero__free-badge {
@@ -553,22 +601,38 @@ section {
   flex-wrap: wrap;
 }
 
-/* Kept out of the pinned hero (see index.html comment) so mobile's first
-   screen is just the headline, logo, and one CTA — this motto/pitch/steps
-   band arrives once you scroll, like any other section. */
-.hero-followup { text-align: center; }
-
-.hero-followup .hero__tagline,
-.hero-followup .hero__sub { margin-left: auto; margin-right: auto; }
-
-.hero-followup__cta { margin-top: 8px; }
-
 @media (max-width: 600px) {
-  .hero__tagline { font-size: clamp(1rem, 4.2vw, 1.4rem); letter-spacing: 2px; margin-bottom: 12px; }
-  .hero__sub { font-size: 0.98rem; margin-bottom: 18px; }
+  .hero__label { margin-bottom: 10px; }
+  .hero__problem { font-size: clamp(1.4rem, 7vw, 2rem); margin-bottom: 12px; }
+  .hero__logo-wrap { width: min(72%, 320px); margin-bottom: 10px; }
   .hero__free-badge { font-size: 0.95rem; margin-bottom: 16px; }
   .hero__actions { gap: 12px; }
   .hero__actions .btn { padding: 14px 26px; }
+}
+
+.hero__scroll {
+  position: absolute;
+  bottom: 28px;
+  left: 24px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.75rem;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.hero__scroll-line {
+  width: 1px;
+  height: 36px;
+  background: linear-gradient(var(--red), transparent);
+  animation: scrollpulse 2s ease-in-out infinite;
+}
+
+@keyframes scrollpulse {
+  0%, 100% { transform: scaleY(1); opacity: 0.6; }
+  50% { transform: scaleY(0.5); opacity: 1; }
 }
 
 .stakes-line {
@@ -2438,62 +2502,6 @@ body.vt-lightbox-open { overflow: hidden; }
   .why__footnotes { display: none; }
 }
 
-/* ---------- 00 · Preloader (redesign) ---------- */
-
-body.is-preloading { overflow: hidden; }
-
-#gsap-preloader {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  background: var(--bg);
-  overflow: hidden;
-}
-
-.gsap-preloader__count {
-  position: absolute;
-  left: 24px;
-  bottom: 0;
-  font-family: var(--font-head);
-  font-weight: 900;
-  font-size: clamp(4rem, 16vw, 11rem);
-  line-height: 0.85;
-  color: var(--white);
-}
-
-.gsap-preloader__hairline {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 50%;
-  height: 1px;
-  background: var(--line);
-  overflow: hidden;
-}
-
-.gsap-preloader__hairline span {
-  display: block;
-  width: 100%;
-  height: 100%;
-  background: var(--red);
-  transform: scaleX(0);
-  transform-origin: left center;
-}
-
-.gsap-preloader__chevron {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 80px;
-  height: 112px;
-  margin-left: -40px;
-  margin-top: -56px;
-  background: var(--red);
-  clip-path: polygon(0% 0%, 42% 0%, 100% 50%, 42% 100%, 0% 100%, 58% 50%);
-  transform: scale(1);
-  will-change: transform;
-}
-
 /* ---------- 01b · The Problem ---------- */
 
 .problem {
@@ -2560,8 +2568,6 @@ body.is-preloading { overflow: hidden; }
 @media (max-width: 700px) {
   .problem__line { font-size: clamp(1.1rem, 5.5vw, 1.6rem); white-space: normal; }
 }
-
-/* ---------- The Solution ---------- */
 
 /* ---------- Card showcase ---------- */
 

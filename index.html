@@ -50,19 +50,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="styles.css" />
+<link rel="stylesheet" href="styles.css?v=2026092501" />
 </head>
 <body>
-
-<!-- 00 · Preloader (redesign) — huge 0→100 counter bottom-left, a red
-     hairline growing across, then the brand chevron wipes it away. Skipped
-     via sessionStorage on repeat visits in the same session, and skipped
-     outright for prefers-reduced-motion (handled in js/animations/preloader.js). -->
-<div id="gsap-preloader" aria-hidden="true">
-<div class="gsap-preloader__count"><span id="gsapPreloaderNum">0</span>%</div>
-<div class="gsap-preloader__hairline"><span id="gsapPreloaderHairline"></span></div>
-<div class="gsap-preloader__chevron" id="gsapPreloaderChevron"></div>
-</div>
 
 <header class="site-header">
 <nav class="nav">
@@ -87,40 +77,23 @@
 
 <main id="top">
 
-<!-- 01 · Hero — "Stuck In A Generic Program That Isn't Working?" split
-     across a vertical hairline. intro.mp4 plays as a normal small,
-     looping card (no scroll-scrub to full-bleed — that technique could
-     land on an arbitrary, confusing frame of the video mid-scroll, and
-     scrubbing a whole section's headline out from under it read as
-     more "broken" than "cinematic"). The video, free-session badge and
-     CTA are grouped into one bordered card so they read as a single
-     unit instead of three separately floating things.
-     Fully readable and usable with no JS/motion at all: it's just a
-     normal small video and everything else is simply visible. -->
-<section class="hero" id="hero">
-<div class="hero__head">
-<div class="hero__hairline" aria-hidden="true"></div>
-
-<div class="hero__label-top">
-<span>Personal Trainer</span>
-<span>Inner West Sydney</span>
+<!-- Hero (doubles as the scroll-scrubbed intro stage) -->
+<div id="intro-spacer">
+<section class="hero" id="hero-pin">
+<div class="hero__shapes" aria-hidden="true">
+<div class="shape shape--ring"></div>
+<div class="shape shape--dot"></div>
+<div class="shape shape--plus"></div>
+<div class="shape shape--sq"></div>
+<div class="shape shape--chevron"></div>
 </div>
-<div class="hero__label-bottom">Maximum Fitness &middot; Minimum Fuss</div>
-
-<h1 class="hero__split">
-<span class="hero__split-half hero__split-half--left">Stuck In<br>A Generic</span>
-<span class="hero__split-half hero__split-half--right">Program<br>That Isn't<br>Working?</span>
-</h1>
+<div class="container hero__content hero__content--centered">
+<h2 class="hero__label">Personal Trainer · Inner West Sydney</h2>
+<h1 class="hero__problem">Stuck In A Generic Program That Isn't Working?</h1>
+<div class="hero__logo-wrap">
+<div class="hero__logo-underglow" aria-hidden="true"></div>
+<img src="assets/images/maxfit-logo.png" alt="Max Fit" class="hero__logo" width="1736" height="372" />
 </div>
-
-<div class="hero__showcase">
-<div class="hero__video-slot">
-<div class="hero__video-frame" id="heroVideoFrame">
-<video class="hero__video" id="heroVideo" src="assets/videos/intro.mp4" poster="assets/images/intro-poster.jpg" muted loop autoplay playsinline preload="auto"></video>
-</div>
-</div>
-
-<div class="hero__cta-wrap">
 <div class="hero__free-badge">
 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 12v9H4v-9M2 7h20v5H2zM12 22V7M12 7C10.5 3 5 3 5 7s7 0 7 0zM12 7c1.5-4 7-4 7 0s-7 0-7 0z"/></svg>
 Your first session is free
@@ -129,8 +102,24 @@ Your first session is free
 <a href="join.html" class="btn btn--primary" aria-label="Book your free personal training consultation in Inner West Sydney">Book your free consult</a>
 </div>
 </div>
+<div class="hero__scroll" aria-hidden="true">
+<span>Scroll</span>
+<span class="hero__scroll-line"></span>
+</div>
+
+<div id="preloader" aria-hidden="true">
+<video class="preloader__video" src="assets/videos/intro.mp4" poster="assets/images/intro-poster.jpg" muted playsinline preload="auto"></video>
+<div class="preloader__caption">
+Loading your fitness dreams
+<span class="preloader__dots"><span></span><span></span><span></span></span>
+</div>
+<div class="preloader__hint">
+<span>Scroll to begin</span>
+<span class="preloader__hint-line"></span>
+</div>
 </div>
 </section>
+</div>
 
 <!-- 04b · The Plan — sits directly under the hero's "Book your free
      consult" button, per Max. The 3-step copy is the same as it always
@@ -160,17 +149,6 @@ Your first session is free
 <p class="plan__desc">Real coaching, real accountability, and progress you can actually feel.</p>
 </div>
 </div>
-</div>
-</section>
-
-<!-- Hero follow-up: the motto and pitch, kept out of the hero itself so
-     the first screen stays to just the headline, video and one clear
-     CTA, with everything else arriving as you scroll. -->
-<section class="section section--tight hero-followup reveal">
-<div class="container">
-<p class="hero__tagline">Maximum Fitness <span class="accent">·</span> Minimum Fuss</p>
-<p class="hero__sub">Get science-based coaching and nutrition advice from the newest, keenest personal trainer. The new age of personal training: your goals, your body, and your schedule, so training finally feels simple and the results actually show up.</p>
-<a href="#programs" class="btn btn--outline btn--sm hero-followup__cta">See programs</a>
 </div>
 </section>
 
@@ -1216,7 +1194,7 @@ Or email directly
 </div>
 </div>
 
-<script src="script.js"></script>
+<script src="script.js?v=2026092501"></script>
 
 <!-- Redesign: GSAP + Lenis from CDN, pinned versions. No build step —
      plain <script> tags, same pattern as the Google Fonts <link> above. -->
@@ -1225,12 +1203,10 @@ Or email directly
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/SplitText.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/CustomEase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@studio-freight/lenis@1.0.42/dist/lenis.min.js"></script>
-<script src="js/animations/main.js?v=2026092402"></script>
-<script src="js/animations/preloader.js?v=2026092402"></script>
-<script src="js/animations/hero.js?v=2026092402"></script>
-<script src="js/animations/problem.js?v=2026092402"></script>
-<script src="js/animations/why.js?v=2026092402"></script>
-<script src="js/animations/about.js?v=2026092402"></script>
-<script src="js/animations/showcase.js?v=2026092402"></script>
+<script src="js/animations/main.js?v=2026092501"></script>
+<script src="js/animations/problem.js?v=2026092501"></script>
+<script src="js/animations/why.js?v=2026092501"></script>
+<script src="js/animations/about.js?v=2026092501"></script>
+<script src="js/animations/showcase.js?v=2026092501"></script>
 </body>
 </html>
