@@ -1,6 +1,5 @@
 document.addEventListener("DOMContentLoaded", function () {
   var prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
   /* ---------- Intro: scroll-scrubbed preloader ----------
      #hero-pin (the .hero section) sticks to the top of the viewport via
      native CSS position: sticky while #intro-spacer scrolls underneath
@@ -17,9 +16,12 @@ document.addEventListener("DOMContentLoaded", function () {
   var preloaderCaption = preloader ? preloader.querySelector(".preloader__caption") : null;
   var preloaderHint = preloader ? preloader.querySelector(".preloader__hint") : null;
 
+  // The headline (with its small label) is the first thing on screen and
+  // fades out as the intro starts; everything in introEls reveals after
+  // the intro video, ending on just the logo, badge and CTA.
+  var leadEl = document.querySelector(".hero__lead");
+
   var introEls = {
-    label: document.querySelector(".hero__label"),
-    problem: document.querySelector(".hero__problem"),
     logo: document.querySelector(".hero__logo-wrap"),
     badge: document.querySelector(".hero__free-badge"),
     actions: document.querySelector(".hero__actions"),
@@ -33,6 +35,10 @@ document.addEventListener("DOMContentLoaded", function () {
     if (introSpacer) introSpacer.classList.add("is-static");
     if (heroPin) heroPin.classList.add("is-static");
     if (preloader) preloader.remove();
+    if (leadEl) {
+      leadEl.style.opacity = "";
+      leadEl.style.transform = "";
+    }
     Object.keys(introEls).forEach(function (key) {
       var el = introEls[key];
       if (el) {
@@ -49,7 +55,10 @@ document.addEventListener("DOMContentLoaded", function () {
   } else {
     try {
       var videoReady = false;
-      preloaderVideo.addEventListener("loadedmetadata", function () {
+      var videoPrimed = false;
+      var primeVideo = function () {
+        if (videoPrimed) return;
+        videoPrimed = true;
         // iOS Safari won't actually paint a frame from a programmatic
         // currentTime seek on a video that has never played — it just
         // stays black no matter what you set currentTime to. Priming it
@@ -68,7 +77,12 @@ document.addEventListener("DOMContentLoaded", function () {
           preloaderVideo.pause();
           videoReady = true;
         }
-      });
+      };
+      preloaderVideo.addEventListener("loadedmetadata", primeVideo);
+      // A cached video can finish loading its metadata before this script
+      // has attached the listener above, in which case the event never
+      // fires again and the scrub would silently never start.
+      if (preloaderVideo.readyState >= 1) primeVideo();
       preloaderVideo.addEventListener("error", fallbackToStaticHero);
 
       // The video's logo needs to land exactly where the real
@@ -103,8 +117,6 @@ document.addEventListener("DOMContentLoaded", function () {
       // Progress ranges each hero element reveals across, staggered so
       // they cascade in one after another as the intro finishes.
       var bands = {
-        label: [0.50, 0.62],
-        problem: [0.56, 0.70],
         logo: [0.62, 0.76],
         badge: [0.76, 0.88],
         actions: [0.82, 0.94],
@@ -153,31 +165,51 @@ document.addEventListener("DOMContentLoaded", function () {
         targetProgress = Math.max(0, Math.min(1, p));
       };
 
+      // Scroll progress (0-1) runs in two phases. The first LEAD_END of it
+      // is just the headline fading out, with the black stage otherwise
+      // still. Everything after that is the original intro, re-based to
+      // its own 0-1 (introProgress) so its timings are unchanged.
+      var LEAD_END = 0.14;
+
       var applyIntroFrame = function (progress) {
+        var introProgress = bandProgress([LEAD_END, 1], progress);
+
+        if (leadEl) {
+          var leadOut = easeOutCubic(bandProgress([0.02, LEAD_END], progress));
+          leadEl.style.opacity = (1 - leadOut).toFixed(3);
+          leadEl.style.transform = "translateY(" + (-leadOut * 24).toFixed(2) + "px)";
+        }
+
         if (videoReady && preloaderVideo.duration) {
-          var t = progress * preloaderVideo.duration;
+          var t = introProgress * preloaderVideo.duration;
           if (Math.abs(t - lastVideoTime) > 0.005) {
             preloaderVideo.currentTime = t;
             lastVideoTime = t;
           }
         }
 
+        // Held back until the headline is on its way out, so the video's
+        // first frame (a chevron at the left edge) doesn't sit behind it.
+        var videoIn = easeOutCubic(bandProgress([0.08, LEAD_END + 0.04], progress));
+        preloaderVideo.style.opacity = videoIn.toFixed(3);
+
         if (preloaderCaption) {
-          var captionOut = bandProgress([0.60, 0.85], progress);
-          preloaderCaption.style.opacity = (1 - easeOutCubic(captionOut)).toFixed(3);
+          var captionIn = easeOutCubic(bandProgress([0.10, LEAD_END + 0.06], progress));
+          var captionOut = bandProgress([0.60, 0.85], introProgress);
+          preloaderCaption.style.opacity = (captionIn * (1 - easeOutCubic(captionOut))).toFixed(3);
         }
 
         if (preloaderHint) {
-          var hintOut = bandProgress([0.02, 0.12], progress);
+          var hintOut = bandProgress([0.02, 0.10], progress);
           preloaderHint.style.opacity = (1 - easeOutCubic(hintOut)).toFixed(3);
         }
 
-        var overlayOut = bandProgress([0.55, 0.88], progress);
+        var overlayOut = bandProgress([0.55, 0.88], introProgress);
         preloader.style.opacity = (1 - easeOutCubic(overlayOut)).toFixed(3);
-        preloader.style.pointerEvents = progress >= 0.88 ? "none" : "";
+        preloader.style.pointerEvents = introProgress >= 0.88 ? "none" : "";
 
         Object.keys(bands).forEach(function (key) {
-          applyReveal(introEls[key], bandProgress(bands[key], progress));
+          applyReveal(introEls[key], bandProgress(bands[key], introProgress));
         });
       };
 
@@ -277,28 +309,6 @@ document.addEventListener("DOMContentLoaded", function () {
     sections.forEach(function (section) { sectionObserver.observe(section); });
   }
 
-  /* ---------- Grow into frame on scroll ---------- */
-  var growEl = document.querySelector(".grow-in");
-
-  if (growEl && !prefersReducedMotion) {
-    var updateGrow = function () {
-      var rect = growEl.getBoundingClientRect();
-      var vh = window.innerHeight;
-      var start = vh;
-      var end = vh * 0.4;
-      var progress = (start - rect.top) / (start - end);
-      progress = Math.max(0, Math.min(1, progress));
-      var scale = 0.85 + progress * 0.15;
-      var opacity = 0.4 + progress * 0.6;
-      growEl.style.transform = "scale(" + scale.toFixed(3) + ")";
-      growEl.style.opacity = opacity.toFixed(3);
-    };
-
-    window.addEventListener("scroll", updateGrow, { passive: true });
-    window.addEventListener("resize", updateGrow);
-    updateGrow();
-  }
-
   /* ---------- Scroll reveal ---------- */
   var revealEls = document.querySelectorAll(".reveal, .reveal-scale, .reveal-fade");
 
@@ -367,16 +377,6 @@ document.addEventListener("DOMContentLoaded", function () {
     }, { threshold: 0.4 });
 
     counters.forEach(function (el) { counterObserver.observe(el); });
-  }
-
-  /* ---------- Expandable bio card ---------- */
-  var bioCard = document.querySelector(".bio-card");
-  var bioSummary = document.querySelector(".bio-card__summary");
-
-  if (bioCard && bioSummary) {
-    bioSummary.addEventListener("click", function () {
-      bioCard.classList.toggle("is-open");
-    });
   }
 
   /* ---------- Expandable program rows ---------- */
@@ -463,24 +463,6 @@ document.addEventListener("DOMContentLoaded", function () {
         });
       });
     }
-  }
-
-  /* ---------- Hero shapes: scroll parallax ---------- */
-  if (!prefersReducedMotion) {
-    var scrollShapes = document.querySelectorAll(".hero .shape");
-    var heroForParallax = document.querySelector(".hero");
-    window.addEventListener("scroll", function () {
-      // .hero is pinned (position: sticky) during the intro scrub, so its
-      // own rect.top stays at 0 the whole time the intro is running and
-      // only goes negative once it un-pins and scrolls with the page —
-      // using that instead of window.scrollY keeps the shapes still while
-      // pinned instead of flinging them off-screen from the spacer scroll.
-      var offset = heroForParallax ? -heroForParallax.getBoundingClientRect().top : 0;
-      scrollShapes.forEach(function (shape, i) {
-        var speed = 0.06 + i * 0.02;
-        shape.style.marginTop = -(offset * speed) + "px";
-      });
-    }, { passive: true });
   }
 
   /* ---------- Client video testimonials ----------
