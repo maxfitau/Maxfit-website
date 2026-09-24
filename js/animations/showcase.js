@@ -1,17 +1,20 @@
-/* Card showcase — the video plays itself, muted and looping, only
-   while it's actually on screen, and pauses the moment it scrolls
-   out (battery/data, and it stops being a random paused frame the
-   rest of the time). The mute button is the one bit of real
-   interaction: tap to unmute, tap again to re-mute.
+/* Card showcase: the video plays itself, muted and looping, only while
+   it's actually on screen, and pauses the moment it scrolls out
+   (battery/data, and it stops being a random paused frame the rest of
+   the time).
 
-   Fails safe: the <video> has native controls and autoplay is never
-   promised, so with no IntersectionObserver support (practically
-   none left) or if this file fails to load, it's just a normal video
-   a visitor presses play on themselves. */
+   There is intentionally no unmute control. The original soundtrack is
+   copyrighted music, so the video is silent by design (and the audio
+   track has been stripped from the file itself too).
+
+   Fails safe: with no IntersectionObserver support or if this file
+   fails to load, the video simply shows its poster frame. */
 document.addEventListener("DOMContentLoaded", function () {
   var video = document.getElementById("showcaseVideo");
-  var muteBtn = document.getElementById("showcaseMuteBtn");
   if (!video) return;
+
+  video.muted = true;
+  video.volume = 0;
 
   if ("IntersectionObserver" in window) {
     var observer = new IntersectionObserver(
@@ -28,13 +31,5 @@ document.addEventListener("DOMContentLoaded", function () {
       { threshold: 0.4 }
     );
     observer.observe(video);
-  }
-
-  if (muteBtn) {
-    muteBtn.addEventListener("click", function () {
-      video.muted = !video.muted;
-      muteBtn.setAttribute("aria-pressed", video.muted ? "false" : "true");
-      muteBtn.setAttribute("aria-label", video.muted ? "Unmute video" : "Mute video");
-    });
   }
 });

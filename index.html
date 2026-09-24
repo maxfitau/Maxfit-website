@@ -50,7 +50,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="styles.css?v=2026092503" />
+<link rel="stylesheet" href="styles.css?v=2026092504" />
 </head>
 <body>
 
@@ -262,13 +262,14 @@ First Aid Certificate
 </div>
 </section>
 
-<!-- Card showcase — Max's pre-made MaxFit Card promo video, sitting
-     right under "meet your coach" as the concrete proof of what
-     working with him looks like day to day. It plays itself, muted
-     and looping, only while it's actually on screen (paused the rest
-     of the time, for battery/data), and scales in as it arrives.
-     Fully readable/usable with no JS at all: a normal <video> with
-     native controls, no autoplay promise to keep. -->
+<!-- Card showcase: Max's pre-made MaxFit Card promo video, sitting right
+     under "meet your coach" as the concrete proof of what working with him
+     looks like day to day. It plays itself, muted and looping, only while
+     it's actually on screen (paused the rest of the time, for battery and
+     data), and scales in as it arrives. It is deliberately silent and has no
+     controls, so nobody can unmute it: the original soundtrack is copyrighted
+     music, and the audio track has been removed from the file itself as well.
+     With no JS it just shows its poster frame. -->
 <section class="section section--tight showcase" id="card-showcase">
 <div class="container">
 <div class="section-head reveal">
@@ -277,11 +278,7 @@ First Aid Certificate
 <p>Sessions, check-ins, macros, referrals: it's all on the card you already carry.</p>
 </div>
 <div class="showcase__frame reveal-scale" id="showcaseFrame">
-<video class="showcase__video" id="showcaseVideo" src="assets/videos/card-showcase.mp4" poster="assets/images/card-showcase-poster.jpg" muted loop playsinline preload="metadata" controls></video>
-<button class="showcase__mute" id="showcaseMuteBtn" type="button" aria-label="Unmute video" aria-pressed="false">
-<svg class="showcase__mute-icon showcase__mute-icon--off" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
-<svg class="showcase__mute-icon showcase__mute-icon--on" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 6a9 9 0 0 1 0 12"/></svg>
-</button>
+<video class="showcase__video" id="showcaseVideo" src="assets/videos/card-showcase.mp4" poster="assets/images/card-showcase-poster.jpg" muted loop playsinline preload="metadata" aria-label="MaxFit Card walkthrough, no sound"></video>
 </div>
 </div>
 </section>
@@ -1170,7 +1167,7 @@ Or email directly
 </div>
 </div>
 
-<script src="script.js?v=2026092503"></script>
+<script src="script.js?v=2026092504"></script>
 
 <!-- Redesign: GSAP + Lenis from CDN, pinned versions. No build step —
      plain <script> tags, same pattern as the Google Fonts <link> above. -->
@@ -1179,14 +1176,14 @@ Or email directly
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/SplitText.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/CustomEase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@studio-freight/lenis@1.0.42/dist/lenis.min.js"></script>
-<script src="js/animations/main.js?v=2026092503"></script>
+<script src="js/animations/main.js?v=2026092504"></script>
 <!-- Order matters: ScrollTrigger pins have to be created in the order they
      appear down the page (Problem, then the Manifesto in about.js, then
      Why it matters). A pin created before one above it computes its start
      without that pin's extra scroll distance, and opens too early. -->
-<script src="js/animations/problem.js?v=2026092503"></script>
-<script src="js/animations/about.js?v=2026092503"></script>
-<script src="js/animations/why.js?v=2026092503"></script>
-<script src="js/animations/showcase.js?v=2026092503"></script>
+<script src="js/animations/problem.js?v=2026092504"></script>
+<script src="js/animations/about.js?v=2026092504"></script>
+<script src="js/animations/why.js?v=2026092504"></script>
+<script src="js/animations/showcase.js?v=2026092504"></script>
 </body>
 </html>

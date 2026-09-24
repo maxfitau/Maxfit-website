@@ -2649,28 +2649,6 @@ body.vt-lightbox-open { overflow: hidden; }
   object-fit: cover;
 }
 
-.showcase__mute {
-  position: absolute;
-  right: 16px;
-  bottom: 16px;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: rgba(17, 17, 17, 0.7);
-  border: 1px solid var(--line-strong);
-  color: var(--white);
-  cursor: pointer;
-  backdrop-filter: blur(4px);
-}
-
-.showcase__mute-icon--on { display: none; }
-.showcase__mute[aria-pressed="true"] .showcase__mute-icon--off { display: none; }
-.showcase__mute[aria-pressed="true"] .showcase__mute-icon--on { display: block; }
-
 /* ---------- 04b · The Plan ---------- */
 
 .plan__list {
