@@ -11,7 +11,7 @@
  *   settings — hide calories, Fuel AI plan, disclaimer
  *   suggest  — "what to eat next" from Max's Foods list (free, no AI)
  *   chat     — Ask Fuel, the AI copilot (Fuel AI plan)
- *   upsell   — Fuel AI: 7-day trial, then $14.99/month via Stripe
+ *   upsell   — Fuel AI: 7-day trial, then $9.99/month (members) via Stripe
  *   progress — weight trend vs goal, calorie target steps, last 14 days
  *              with green days and the nutrition punches (free)
  *
@@ -770,7 +770,7 @@
          <li>${ICONS.label}<span><b>Scan nutrition labels</b> for anything without a barcode.</span></li>
          <li>${ICONS.spark}<span><b>Ask Fuel</b>, your copilot: "What should I have for dinner?"</span></li>
        </ul>
-       <p class="fuel-price"><b>$14.99</b> a month · cancel any time</p>
+       <p class="fuel-price"><b>$9.99</b> a month · cancel any time</p>
        ${
          p.upgradeUrl
            ? `<a class="fuel-btn" href="${esc(p.upgradeUrl)}" target="_blank" rel="noopener" data-upgrade>Upgrade to Fuel AI</a>`

@@ -68,7 +68,7 @@ Paste the new code in and save. Then go to **Deploy** → **Manage deployments**
 
 **What clients need to do:** open the link once in Safari (iPhone) or Chrome (Android), then **Add to Home Screen again**. On iPhone, the old home-screen icon keeps its own storage and won't know the new link.
 
-**Fuel AI** (photo and label scans, plus the Ask Fuel chat) costs **$14.99 a month**. Each client gets a **7-day free trial** from the first time they open FUEL; after that it's locked until they subscribe through the Upgrade button (Stripe, step 7). On the coach page, each client shows their status: trial, paying, free month, or ended. **Give a free month** unlocks it for 30 days without payment, which is handy for friends, testing, or making up for a problem.
+**Fuel AI** (photo and label scans, plus the Ask Fuel chat) costs **$9.99 a month** for members. Each client gets a **7-day free trial** from the first time they open FUEL; after that it's locked until they subscribe through the Upgrade button (Stripe, step 7). On the coach page, each client shows their status: trial, paying, free month, or ended. **Give a free month** unlocks it for 30 days without payment, which is handy for friends, testing, or making up for a problem.
 
 Lost phone, or a link shared by mistake? Tap **New link** on the coach page. The old link stops working for FUEL straight away.
 
@@ -78,7 +78,7 @@ Stripe moves its menus around. If you can't find something, type its name ("Paym
 
 1. Sign in to **stripe.com**, or create an account for MaxFit. Your business and bank details are yours to enter.
 2. Turn on **Test mode** (the switch at the top right), so nothing is really charged while we test.
-3. **Product catalogue → Add product.** Name it **Fuel AI**, choose **Recurring**, set the price to **14.99 AUD** and the period to **Monthly**, then save.
+3. **Product catalogue → Add product.** Name it **Fuel AI**, choose **Recurring**, set the price to **9.99 AUD** (the "Members" price) and the period to **Monthly**, then save.
 4. **Payment Links → New.** Pick **Fuel AI**. On the **After payment** tab, choose **Don't show confirmation page → Redirect customers to your website**, and enter exactly:
    `https://maxfit.now/card/?paid={CHECKOUT_SESSION_ID}`
    Create the link and copy it. It starts with `https://buy.stripe.com/`.

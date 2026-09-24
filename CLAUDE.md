@@ -103,7 +103,7 @@ Build one phase at a time. **Stop after each phase for Max to test.** At the end
   - Ask Fuel chat: `claude-haiku-4-5`, JSON schema `{reply, foods[]}`, so any foods it mentions come with one-tap log chips. The server builds the context itself (targets, today's log, what's left, top suggestions). Chat history lives only on the phone (last 10 turns). `CHAT_DAILY_LIMIT` defaults to 40. Haiku 4.5 rejects `effort`, so it isn't sent.
   - With no `ANTHROPIC_API_KEY`, `me` returns `aiEnabled:false` and the card hides all of Fuel AI (barcodes and suggestions only).
 - **Fuel AI plan** (Max's decisions, 2026-09-24):
-  - **A$14.99/month** through a Stripe Payment Link, with a **7-day free trial**. The trial starts the first time the client opens FUEL, but only while the API key is set.
+  - **A$9.99/month for members** (a $19.99 non-member price is planned for when non-clients can sign up) through a Stripe Payment Link, with a **7-day free trial**. The trial starts the first time the client opens FUEL, but only while the API key is set.
   - **Free:** barcodes, targets, totals, favourites and suggestions. **Paid:** photo/label scans and Ask Fuel.
   - `MacroCore.planState` decides access: Stripe status active/trialing/past_due, or `comp_until` ≥ today (a free month from Max), or within the trial.
   - `requireFuelAi_` enforces it on the server. `DAILY_AI_LIMIT` still caps photo scans.
