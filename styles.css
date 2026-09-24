@@ -48,14 +48,16 @@ img { max-width: 100%; display: block; }
    minus one viewport (the hero stays pinned for that difference) — kept
    short so real content (About/Programs) arrives within roughly one
    normal scroll gesture, instead of forcing visitors through a long
-   locked intro before they reach anything they can act on. */
+   locked intro before they reach anything they can act on. The first
+   ~14% of that distance is the headline fading out before the intro
+   video starts (see script.js). */
 #intro-spacer {
   position: relative;
-  height: 160vh;
+  height: 190vh;
 }
 
 @media (max-width: 700px) {
-  #intro-spacer { height: 145vh; }
+  #intro-spacer { height: 175vh; }
 }
 
 /* Native position: sticky pins #hero-pin to the top of the viewport while
@@ -97,6 +99,7 @@ img { max-width: 100%; display: block; }
   height: auto;
   object-fit: contain;
   background: #000;
+  opacity: 0;
 }
 
 .preloader__caption {
@@ -450,7 +453,7 @@ section {
    normal scrollable block. Tightening sizes/spacing here keeps everything
    inside one viewport on real phones instead of relying on scroll. */
 @media (max-width: 600px) {
-  .hero { padding: calc(var(--nav-h) + 20px) 0 40px; justify-content: flex-start; }
+  .hero { padding: calc(var(--nav-h) + 20px) 0 40px; }
 }
 
 .hero__shapes {
@@ -530,6 +533,61 @@ section {
   flex-direction: column;
   align-items: center;
   text-align: center;
+}
+
+.hero__lead {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: calc(var(--nav-h) + 24px) 24px 96px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.hero__lead .hero__label {
+  margin-bottom: 22px;
+  animation: lead-in 0.8s var(--ease) 0.1s both;
+}
+
+.hero__lead .hero__problem {
+  max-width: 980px;
+  margin: 0;
+  font-size: clamp(2.3rem, 7vw, 5.2rem);
+  line-height: 1.04;
+  animation: lead-in 0.9s var(--ease) 0.25s both;
+}
+
+@keyframes lead-in {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero__lead .hero__label,
+  .hero__lead .hero__problem { animation: none; }
+}
+
+/* Reduced-motion / no-JS / failed-intro fallback: no black stage, so the
+   lead drops back into normal flow above the logo, at the original size. */
+#hero-pin.is-static .hero__lead {
+  position: relative;
+  inset: auto;
+  z-index: 1;
+  padding: 0 24px;
+  margin-bottom: 24px;
+  pointer-events: auto;
+}
+
+#hero-pin.is-static .hero__lead .hero__label { margin-bottom: 16px; }
+
+#hero-pin.is-static .hero__lead .hero__problem {
+  max-width: 720px;
+  font-size: clamp(1.9rem, 5vw, 3.1rem);
+  line-height: 1.1;
 }
 
 .hero__label {

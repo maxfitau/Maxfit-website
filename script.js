@@ -16,9 +16,12 @@ document.addEventListener("DOMContentLoaded", function () {
   var preloaderCaption = preloader ? preloader.querySelector(".preloader__caption") : null;
   var preloaderHint = preloader ? preloader.querySelector(".preloader__hint") : null;
 
+  // The headline (with its small label) is the first thing on screen and
+  // fades out as the intro starts; everything in introEls reveals after
+  // the intro video, ending on just the logo, badge and CTA.
+  var leadEl = document.querySelector(".hero__lead");
+
   var introEls = {
-    label: document.querySelector(".hero__label"),
-    problem: document.querySelector(".hero__problem"),
     logo: document.querySelector(".hero__logo-wrap"),
     badge: document.querySelector(".hero__free-badge"),
     actions: document.querySelector(".hero__actions"),
@@ -32,6 +35,10 @@ document.addEventListener("DOMContentLoaded", function () {
     if (introSpacer) introSpacer.classList.add("is-static");
     if (heroPin) heroPin.classList.add("is-static");
     if (preloader) preloader.remove();
+    if (leadEl) {
+      leadEl.style.opacity = "";
+      leadEl.style.transform = "";
+    }
     Object.keys(introEls).forEach(function (key) {
       var el = introEls[key];
       if (el) {
@@ -110,8 +117,6 @@ document.addEventListener("DOMContentLoaded", function () {
       // Progress ranges each hero element reveals across, staggered so
       // they cascade in one after another as the intro finishes.
       var bands = {
-        label: [0.50, 0.62],
-        problem: [0.56, 0.70],
         logo: [0.62, 0.76],
         badge: [0.76, 0.88],
         actions: [0.82, 0.94],
@@ -160,31 +165,51 @@ document.addEventListener("DOMContentLoaded", function () {
         targetProgress = Math.max(0, Math.min(1, p));
       };
 
+      // Scroll progress (0-1) runs in two phases. The first LEAD_END of it
+      // is just the headline fading out, with the black stage otherwise
+      // still. Everything after that is the original intro, re-based to
+      // its own 0-1 (introProgress) so its timings are unchanged.
+      var LEAD_END = 0.14;
+
       var applyIntroFrame = function (progress) {
+        var introProgress = bandProgress([LEAD_END, 1], progress);
+
+        if (leadEl) {
+          var leadOut = easeOutCubic(bandProgress([0.02, LEAD_END], progress));
+          leadEl.style.opacity = (1 - leadOut).toFixed(3);
+          leadEl.style.transform = "translateY(" + (-leadOut * 24).toFixed(2) + "px)";
+        }
+
         if (videoReady && preloaderVideo.duration) {
-          var t = progress * preloaderVideo.duration;
+          var t = introProgress * preloaderVideo.duration;
           if (Math.abs(t - lastVideoTime) > 0.005) {
             preloaderVideo.currentTime = t;
             lastVideoTime = t;
           }
         }
 
+        // Held back until the headline is on its way out, so the video's
+        // first frame (a chevron at the left edge) doesn't sit behind it.
+        var videoIn = easeOutCubic(bandProgress([0.08, LEAD_END + 0.04], progress));
+        preloaderVideo.style.opacity = videoIn.toFixed(3);
+
         if (preloaderCaption) {
-          var captionOut = bandProgress([0.60, 0.85], progress);
-          preloaderCaption.style.opacity = (1 - easeOutCubic(captionOut)).toFixed(3);
+          var captionIn = easeOutCubic(bandProgress([0.10, LEAD_END + 0.06], progress));
+          var captionOut = bandProgress([0.60, 0.85], introProgress);
+          preloaderCaption.style.opacity = (captionIn * (1 - easeOutCubic(captionOut))).toFixed(3);
         }
 
         if (preloaderHint) {
-          var hintOut = bandProgress([0.02, 0.12], progress);
+          var hintOut = bandProgress([0.02, 0.10], progress);
           preloaderHint.style.opacity = (1 - easeOutCubic(hintOut)).toFixed(3);
         }
 
-        var overlayOut = bandProgress([0.55, 0.88], progress);
+        var overlayOut = bandProgress([0.55, 0.88], introProgress);
         preloader.style.opacity = (1 - easeOutCubic(overlayOut)).toFixed(3);
-        preloader.style.pointerEvents = progress >= 0.88 ? "none" : "";
+        preloader.style.pointerEvents = introProgress >= 0.88 ? "none" : "";
 
         Object.keys(bands).forEach(function (key) {
-          applyReveal(introEls[key], bandProgress(bands[key], progress));
+          applyReveal(introEls[key], bandProgress(bands[key], introProgress));
         });
       };
 
