@@ -12,6 +12,8 @@
  *   suggest  — "what to eat next" from Max's Foods list (free, no AI)
  *   chat     — Ask Fuel, the AI copilot (Fuel AI plan)
  *   upsell   — Fuel AI: 7-day trial, then $14.99/month via Stripe
+ *   progress — weight trend vs goal, calorie target steps, last 14 days
+ *              with green days and the nutrition punches (free)
  *
  * Talks to the server only through MacroApi (macros-api.js); maths come
  * from MacroCore (macros-core.js). Photos are shrunk to 1024px JPEG in the
@@ -56,6 +58,9 @@
     moreIdeas: false,
     chat: [], // Ask Fuel messages, this visit only: { role, content, foods? }
     awaitingUpgrade: false,
+    weightTrend: null, // { kg, date, change7 } from the server
+    progress: null, // the last `progress` response
+    progressRange: 84, // days shown on the weight chart; 0 = all
   };
 
   // Back from Stripe checkout: the Payment Link redirects to
@@ -150,6 +155,8 @@
     x: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
     spark:
       '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></svg>',
+    chart:
+      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19V5M4 19h16"/><path d="M7 15l4-4 3 3 5-6"/></svg>',
     lock: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
     star: '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l3 6.9 7.5.7-5.7 5 1.7 7.4L12 18l-6.5 4 1.7-7.4-5.7-5 7.5-.7z"/></svg>',
   };
@@ -207,6 +214,7 @@
     state.scanLimit = data.scanLimit || 25;
     state.aiEnabled = data.aiEnabled !== false;
     state.plan = data.plan || null;
+    state.weightTrend = data.weightTrend || null;
   }
 
   async function load(opts) {
@@ -415,9 +423,13 @@
           <span class="fuel__day-label">${esc(dayLabel(state.viewDate))}</span>
           <button class="fuel__day-btn" type="button" data-act="next" aria-label="Next day" ${today ? "disabled" : ""}>${ICONS.right}</button>
         </div>
-        <button class="fuel__icon-btn" type="button" data-act="settings" aria-label="Fuel settings">${ICONS.gear}</button>
+        <span class="fuel__head-btns">
+          <button class="fuel__icon-btn" type="button" data-act="progress" aria-label="Your progress">${ICONS.chart}</button>
+          <button class="fuel__icon-btn" type="button" data-act="settings" aria-label="Fuel settings">${ICONS.gear}</button>
+        </span>
       </div>
       ${totalsHtml()}
+      ${trendHtml()}
       <button class="fuel-scan" type="button" data-act="scan">${ICONS.camera} Scan food</button>
       ${
         state.aiEnabled
@@ -443,6 +455,7 @@
     else if (act === "next") changeDay(1);
     else if (act === "scan") openScanChooser();
     else if (act === "ask") openChat();
+    else if (act === "progress") openProgress();
     else if (act === "more-ideas") {
       state.moreIdeas = !state.moreIdeas;
       render();
@@ -1452,6 +1465,360 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Progress (free): weight vs goal, calorie target steps, last 14 days
+  // ---------------------------------------------------------------------------
+
+  const SVGNS = "http://www.w3.org/2000/svg";
+  const W = 330; // chart viewBox width
+
+  function svg(parent, tag, attrs, text) {
+    const el = document.createElementNS(SVGNS, tag);
+    Object.keys(attrs || {}).forEach((k) => el.setAttribute(k, attrs[k]));
+    if (text != null) el.textContent = text;
+    parent.appendChild(el);
+    return el;
+  }
+
+  function shortDate(ymd) {
+    const [y, m, d] = ymd.split("-").map(Number);
+    return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+  }
+
+  function kgText(kg) {
+    return (Math.round(kg * 10) / 10).toFixed(1);
+  }
+
+  /** "74.2 kg · ↓0.4 kg this week" under the totals, once there are weigh-ins. */
+  function trendHtml() {
+    const t = state.weightTrend;
+    if (!t || !isToday()) return "";
+    let change = "";
+    if (t.change7 != null && Math.abs(t.change7) >= 0.1) change = ` · ${t.change7 < 0 ? "↓" : "↑"}${kgText(Math.abs(t.change7))} kg this week`;
+    else if (t.change7 != null) change = " · steady this week";
+    return `<button class="fuel-trend" type="button" data-act="progress">
+      <span class="card__label">Weight trend</span>
+      <span class="fuel-trend__val">${kgText(t.kg)} kg${esc(change)}</span>
+      ${ICONS.right}
+    </button>`;
+  }
+
+  /** Nice round y-axis ticks between lo and hi. */
+  function ticks(lo, hi, count) {
+    const span = hi - lo || 1;
+    const raw = span / (count || 3);
+    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((m) => m >= raw) || raw;
+    const out = [];
+    for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(Math.round(v * 100) / 100);
+    return out;
+  }
+
+  function drawWeightChart(box, readout) {
+    const p = state.progress;
+    const all = p.weights || [];
+    const trendAll = MacroCore.movingAverage(all, 7);
+    const today = p.today;
+    const from = state.progressRange ? MacroCore.addDays(today, -state.progressRange) : all.length ? all[0].date : today;
+    const pts = all.filter((w) => w.date >= from);
+    const trend = trendAll.filter((w) => w.date >= from);
+    if (!pts.length) {
+      box.innerHTML = `<p class="fuel-empty">Log a weigh-in and your trend line starts here. Weigh yourself first thing in the morning for the fairest comparison.</p>`;
+      return;
+    }
+    // Pace line from the first trend point in view, peeking up to 2 weeks
+    // past today — enough to see where it's heading without squashing the data.
+    const g = p.goal || {};
+    const pace = MacroCore.goalPace(trend[0].date, trend[0].kg, g.weekly_rate_kg, g.goal_weight_kg, MacroCore.addDays(today, 14));
+    const x0 = pts[0].date;
+    const x1 = pace.length && pace[1].date > today ? pace[1].date : today;
+    const values = pts.map((q) => q.kg).concat(trend.map((q) => q.kg), pace.map((q) => q.kg));
+    // The goal gets its own line only when it's close; otherwise it's named in the header.
+    const goalNear = g.goal_weight_kg && Math.abs(g.goal_weight_kg - trend[trend.length - 1].kg) <= 3;
+    if (goalNear) values.push(g.goal_weight_kg);
+    const lo = Math.floor(Math.min.apply(null, values) - 0.5);
+    const hi = Math.ceil(Math.max.apply(null, values) + 0.5);
+    const H = 160, L = 34, R = W - 8, T = 10, B = H - 24;
+    const span = Math.max(1, MacroCore.daysBetween(x0, x1));
+    const x = (d) => L + ((R - L) * MacroCore.daysBetween(x0, d)) / span;
+    const y = (v) => T + ((B - T) * (hi - v)) / (hi - lo || 1);
+    const root = svg(box, "svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img", "aria-label": "Weight trend" });
+    ticks(lo, hi, 3).forEach((v) => {
+      svg(root, "line", { x1: L, x2: R, y1: y(v), y2: y(v), class: "fuel-grid" });
+      svg(root, "text", { x: L - 6, y: y(v) + 4, "text-anchor": "end" }, v);
+    });
+    if (goalNear) {
+      svg(root, "line", { x1: L, x2: R, y1: y(g.goal_weight_kg), y2: y(g.goal_weight_kg), class: "fuel-goal" });
+      svg(root, "text", { x: R, y: y(g.goal_weight_kg) - 5, "text-anchor": "end", class: "fuel-chart__strong" }, `Goal ${kgText(g.goal_weight_kg)} kg`);
+    }
+    if (pace.length) svg(root, "line", { x1: x(pace[0].date), y1: y(pace[0].kg), x2: x(pace[1].date), y2: y(pace[1].kg), class: "fuel-pace" });
+    pts.forEach((q) => svg(root, "circle", { cx: x(q.date), cy: y(q.kg), r: 2.6, class: "fuel-dot" }));
+    if (trend.length > 1) {
+      svg(root, "polyline", { points: trend.map((q) => `${x(q.date)},${y(q.kg)}`).join(" "), class: "fuel-line" });
+    }
+    const last = trend[trend.length - 1];
+    svg(root, "circle", { cx: x(last.date), cy: y(last.kg), r: 4.5, class: "fuel-dot--now" });
+    svg(root, "text", { x: L, y: H - 6 }, shortDate(x0));
+    svg(root, "text", { x: x(today), y: H - 6, "text-anchor": x1 > today ? "middle" : "end" }, "Today");
+    if (x1 > today) svg(root, "text", { x: R, y: H - 6, "text-anchor": "end" }, pace[1].goalReached ? "Goal" : shortDate(x1));
+    // Tap/hover targets bigger than the dots.
+    pts.forEach((q) => {
+      const avg = trendAll.find((t) => t.date === q.date);
+      const hit = svg(root, "circle", { cx: x(q.date), cy: y(q.kg), r: 11, class: "fuel-hit" });
+      const show = () => (readout.textContent = `${shortDate(q.date)} · ${kgText(q.kg)} kg${avg ? ` · 7-day average ${kgText(avg.kg)} kg` : ""}${q.by === "coach" ? " · logged by Max" : ""}`);
+      hit.addEventListener("pointerenter", show);
+      hit.addEventListener("click", show);
+    });
+  }
+
+  function drawTargetChart(box) {
+    const p = state.progress;
+    const hide = hideKcal();
+    const key = hide ? "protein_g" : "kcal";
+    const today = p.today;
+    // Several changes on one day: only the last one counts.
+    const hist = [];
+    (p.history || []).forEach((h) => {
+      if (hist.length && hist[hist.length - 1].effective_date === h.effective_date) hist[hist.length - 1] = h;
+      else hist.push(h);
+    });
+    if (!hist.length) {
+      box.innerHTML = `<p class="fuel-empty">Your target history starts when you set targets.</p>`;
+      return;
+    }
+    const from = MacroCore.addDays(today, -84);
+    const end = MacroCore.addDays(today, 4); // a little room so today's target shows as a step
+    // Steps: each row runs until the next one (the current one to `end`).
+    const steps = [];
+    hist.forEach((h, i) => {
+      const until = i + 1 < hist.length ? hist[i + 1].effective_date : end;
+      if (until < from || !(h[key] > 0)) return;
+      steps.push({ a: h.effective_date < from ? from : h.effective_date, b: until, v: h[key] });
+    });
+    if (!steps.length) {
+      box.innerHTML = `<p class="fuel-empty">No targets set right now.</p>`;
+      return;
+    }
+    const x0 = steps[0].a;
+    const vals = steps.map((st) => st.v);
+    const lo = Math.min.apply(null, vals) * 0.92;
+    const hi = Math.max.apply(null, vals) * 1.06;
+    const H = 110, L = 34, R = W - 8, T = 16, B = H - 22;
+    const span = Math.max(1, MacroCore.daysBetween(x0, end));
+    const x = (d) => L + ((R - L) * MacroCore.daysBetween(x0, d)) / span;
+    const y = (v) => T + ((B - T) * (hi - v)) / (hi - lo || 1);
+    const root = svg(box, "svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img", "aria-label": hide ? "Protein target over time" : "Calorie target over time" });
+    let d = "";
+    steps.forEach((st, i) => {
+      d += `${i ? " L" : "M"}${x(st.a)},${y(st.v)} L${x(st.b)},${y(st.v)}`;
+    });
+    svg(root, "path", { d: d, class: "fuel-line fuel-line--step" });
+    // Label each step that's wide enough; the current one always, at the right edge.
+    steps.forEach((st, i) => {
+      const label = hide ? `${int(st.v)}g` : int(st.v);
+      const last = i === steps.length - 1;
+      if (last) svg(root, "text", { x: R, y: y(st.v) - 6, "text-anchor": "end", class: "fuel-chart__strong" }, `${label} now`);
+      else if (x(st.b) - x(st.a) >= 44) svg(root, "text", { x: (x(st.a) + x(st.b)) / 2, y: y(st.v) - 6, "text-anchor": "middle" }, label);
+    });
+    svg(root, "text", { x: L, y: H - 6 }, shortDate(x0));
+    svg(root, "text", { x: x(today), y: H - 6, "text-anchor": "end" }, "Today");
+  }
+
+  function drawDaysChart(box, readout) {
+    const p = state.progress;
+    const days = p.days || [];
+    const hide = hideKcal();
+    const maxV = Math.max.apply(null, days.map((d) => Math.max(d.kcal, (d.target_kcal || 0) * 1.1)).concat([1])) * 1.05;
+    const H = 150, L = hide ? 8 : 34, R = W - 8, T = 8, B = H - 22;
+    const slot = (R - L) / days.length;
+    const bw = Math.min(14, slot - 6);
+    const y = (v) => B - ((B - T) * v) / maxV;
+    const root = svg(box, "svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img", "aria-label": "Daily calories, last 14 days" });
+    if (!hide) {
+      ticks(0, maxV, 2).forEach((v) => svg(root, "text", { x: L - 6, y: y(v) + 4, "text-anchor": "end" }, v >= 1000 ? `${Math.round(v / 100) / 10}k` : v));
+    }
+    days.forEach((d, i) => {
+      const sx = L + slot * i;
+      if (d.target_kcal) {
+        svg(root, "rect", { x: sx, y: y(d.target_kcal * 1.1), width: slot, height: y(d.target_kcal * 0.9) - y(d.target_kcal * 1.1), class: "fuel-band" });
+        svg(root, "line", { x1: sx, x2: sx + slot, y1: y(d.target_kcal), y2: y(d.target_kcal), class: "fuel-target" });
+      }
+    });
+    days.forEach((d, i) => {
+      const bx = L + slot * i + (slot - bw) / 2;
+      if (d.kcal > 0) {
+        const top = y(d.kcal);
+        const h = Math.max(4, B - top);
+        svg(root, "path", { d: `M${bx},${B} V${B - h + 4} q0,-4 4,-4 h${bw - 8} q4,0 4,4 V${B} Z`, class: d.green ? "fuel-bar fuel-bar--green" : "fuel-bar" });
+      } else {
+        svg(root, "line", { x1: bx, x2: bx + bw, y1: B - 1, y2: B - 1, class: "fuel-grid" });
+      }
+      const hit = svg(root, "rect", { x: L + slot * i, y: T, width: slot, height: B - T, class: "fuel-hit" });
+      const show = () => {
+        const kc = d.kcal > 0 ? (hide && d.target_kcal ? `${Math.round((d.kcal / d.target_kcal) * 100)}% of target` : `${int(d.kcal)} kcal`) : "nothing logged";
+        readout.textContent = `${shortDate(d.date)} · ${kc}${d.kcal > 0 ? ` · ${int(d.protein_g)}g protein` : ""}${d.green ? " · green day" : ""}`;
+      };
+      hit.addEventListener("pointerenter", show);
+      hit.addEventListener("click", show);
+    });
+    svg(root, "line", { x1: L, x2: R, y1: B, y2: B, class: "fuel-grid" });
+    svg(root, "text", { x: L, y: H - 6 }, shortDate(days[0].date));
+    svg(root, "text", { x: R, y: H - 6, "text-anchor": "end" }, "Today");
+  }
+
+  function weekDotsHtml(week, today) {
+    const names = ["M", "T", "W", "T", "F", "S", "S"];
+    return week.days
+      .map((d, i) => {
+        let cls = "fuel-wdot";
+        if (d.green) cls += " is-green";
+        else if (d.date > today) cls += " is-future";
+        else if (d.date === today) cls += " is-today";
+        else if (d.logged) cls += " is-logged";
+        return `<span class="fuel-wday"><span class="${cls}"></span><span>${names[i]}</span></span>`;
+      })
+      .join("");
+  }
+
+  function punchText(p) {
+    const need = p.punchEvery || 5;
+    const lw = p.lastWeek;
+    const tw = p.thisWeek;
+    const daysLeft = tw.days.filter((d) => d.date >= p.today).length;
+    const lines = [];
+    if (lw.earnsPunch) {
+      lines.push(lw.awarded ? `Last week: ${lw.greenDays} green days = +1 punch.` : `Last week: ${lw.greenDays} green days. Your punch lands on your card by tomorrow morning.`);
+    } else if (lw.greenDays > 0) {
+      lines.push(`Last week: ${lw.greenDays} green day${lw.greenDays === 1 ? "" : "s"}.`);
+    }
+    if (tw.greenDays >= need) lines.push("This week's punch is in the bag. Nice work.");
+    else if (need - tw.greenDays <= daysLeft) {
+      const more = need - tw.greenDays;
+      lines.push(`This week: ${more} more green day${more === 1 ? "" : "s"} earns a punch.`);
+    } else lines.push("Fresh start Monday. Every green day still counts.");
+    return lines.join(" ");
+  }
+
+  function pegsHtml(loyalty) {
+    if (!loyalty) return "";
+    const filled = loyalty.owed ? 10 : (loyalty.attended + loyalty.punches) % 10;
+    let pegs = "";
+    for (let i = 0; i < 10; i++) {
+      pegs += `<div class="card__loyalty-peg${i < filled ? " card__loyalty-peg--filled" : i === 9 ? " card__loyalty-peg--next" : ""}"></div>`;
+    }
+    return `
+      <div class="fuel-punch">
+        <div class="card__loyalty-head">
+          <span class="card__label card__label--red">Sessions to free</span>
+          <span class="card__loyalty-count">${loyalty.owed ? "Free session ready" : `${filled}/10`}</span>
+        </div>
+        <div class="card__loyalty-bar">${pegs}</div>
+        <span class="fuel-row__note">${int(loyalty.attended)} class${loyalty.attended === 1 ? "" : "es"} + ${int(loyalty.punches)} nutrition punch${loyalty.punches === 1 ? "" : "es"}</span>
+      </div>`;
+  }
+
+  async function openProgress() {
+    sheetLoading("Loading your progress");
+    try {
+      const data = await MacroApi.call("progress", {});
+      state.progress = data.progress;
+      renderProgress();
+    } catch (err) {
+      sheetError("Couldn't load your progress", err.message, "");
+    }
+  }
+
+  function renderProgress() {
+    const p = state.progress;
+    const tw = p.thisWeek;
+    const green14 = p.days.filter((d) => d.green).length;
+    const lastTrend = MacroCore.movingAverage(p.weights || [], 7).pop();
+    const ranges = [[28, "4 wks"], [84, "12 wks"], [0, "All"]];
+    openSheet(
+      `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Progress</h2>
+       ${
+         p.hideWeight
+           ? '<div class="fuel-panel"><span class="card__label card__label--red">Weight</span><p class="fuel-empty">Weight is hidden. You can turn it back on in Fuel settings.</p></div>'
+           : `<div class="fuel-panel fuel-chartcard">
+                <span class="card__label card__label--red">Weight</span>
+                <div class="fuel-chartcard__head">
+                  <span class="fuel-row__nums">${lastTrend ? kgText(lastTrend.kg) : "–"}<span class="fuel-row__unit">kg</span></span>
+                  <span class="fuel-row__note">${lastTrend ? "7-day average" : "No weigh-ins yet"}${p.goal && p.goal.goal_weight_kg ? ` · goal ${kgText(p.goal.goal_weight_kg)} kg` : ""}</span>
+                </div>
+                <form class="fuel-inline" data-weight-form autocomplete="off">
+                  <input class="fuel-input" name="kg" type="number" inputmode="decimal" step="0.1" min="30" max="300" placeholder="Today's weight (kg)" aria-label="Today's weight in kg" />
+                  <button class="fuel-btn" type="submit">Log</button>
+                </form>
+                <div class="fuel-seg" data-range>${ranges.map(([d, l]) => `<button type="button" data-days="${d}" class="${state.progressRange === d ? "is-on" : ""}">${l}</button>`).join("")}</div>
+                <div class="fuel-chart" data-weight-chart></div>
+                <p class="fuel-readout" data-weight-readout>Tap a dot for the details.</p>
+                <p class="fuel-legend"><span class="fuel-key fuel-key--line"></span>7-day average <span class="fuel-key fuel-key--dot"></span>weigh-ins ${p.goal && p.goal.weekly_rate_kg ? '<span class="fuel-key fuel-key--pace"></span>goal pace' : ""}</p>
+              </div>`
+       }
+       <div class="fuel-panel fuel-chartcard">
+         <span class="card__label card__label--red">${hideKcal() ? "Your protein target" : "Your calorie target"}</span>
+         <div class="fuel-chart" data-target-chart></div>
+       </div>
+       <div class="fuel-panel fuel-chartcard">
+         <span class="card__label card__label--red">Last 14 days</span>
+         <div class="fuel-chartcard__head">
+           <span class="fuel-row__nums">${green14}<span class="fuel-row__unit">green days</span></span>
+           <span class="fuel-row__note">protein hit and ${hideKcal() ? "on target" : "calories within 10%"}</span>
+         </div>
+         <div class="fuel-chart" data-days-chart></div>
+         <p class="fuel-readout" data-days-readout>Tap a day for the details.</p>
+         <div class="fuel-week">
+           <span class="fuel-row__note">This week · ${tw.greenDays}/7 green</span>
+           <span class="fuel-week__dots">${weekDotsHtml(tw, p.today)}</span>
+         </div>
+         <p class="fuel-punch__text">${esc(punchText(p))}</p>
+         ${pegsHtml(p.loyalty)}
+       </div>
+       <button class="fuel-btn fuel-btn--quiet" type="button" data-close>Done</button>`,
+      (body) => {
+        const wBox = body.querySelector("[data-weight-chart]");
+        if (wBox) drawWeightChart(wBox, body.querySelector("[data-weight-readout]"));
+        drawTargetChart(body.querySelector("[data-target-chart]"));
+        drawDaysChart(body.querySelector("[data-days-chart]"), body.querySelector("[data-days-readout]"));
+        const range = body.querySelector("[data-range]");
+        if (range) {
+          range.addEventListener("click", (e) => {
+            const b = e.target.closest("[data-days]");
+            if (!b) return;
+            state.progressRange = Number(b.dataset.days);
+            range.querySelectorAll("button").forEach((x) => x.classList.toggle("is-on", x === b));
+            wBox.innerHTML = "";
+            drawWeightChart(wBox, body.querySelector("[data-weight-readout]"));
+          });
+        }
+        const form = body.querySelector("[data-weight-form]");
+        if (form) {
+          form.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const kg = Number(form.kg.value);
+            if (!(kg >= 30 && kg <= 300)) {
+              toast("Enter your weight in kg");
+              return;
+            }
+            const btn = form.querySelector("button");
+            btn.disabled = true;
+            try {
+              const data = await MacroApi.call("logWeight", { kg: kg, date: MacroCore.sydneyDate() });
+              state.progress.weights = data.weights;
+              state.weightTrend = data.weightTrend;
+              render();
+              renderProgress();
+              toast("Weight logged");
+            } catch (err) {
+              btn.disabled = false;
+              toast(err.message);
+            }
+          });
+        }
+      }
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // Edit an entry
   // ---------------------------------------------------------------------------
 
@@ -1642,6 +2009,7 @@
       activity: prev.activity || "moderate",
       goal: prev.goal || "maintain",
       adjustPct: prev.adjustPct == null ? null : prev.adjustPct,
+      goalWeightKg: (g && g.goal_weight_kg) || "",
     };
 
     openSheet(
@@ -1672,6 +2040,7 @@
        <div class="fuel-field" data-pace-wrap>
          <span class="card__label">Pace</span>
          <div class="fuel-seg" data-group="adjustPct"></div>
+         <label class="fuel-field" style="margin-top:6px"><span class="card__label">Goal weight kg (optional)</span><input class="fuel-input" name="goalWeightKg" type="number" inputmode="decimal" step="0.1" value="${esc(form.goalWeightKg)}" placeholder="For your progress chart" /></label>
        </div>
        <div data-preview></div>
        <button class="fuel-btn" type="button" data-save-targets>Save targets</button>
@@ -1769,6 +2138,7 @@
     openSheet(
       `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Fuel settings</h2>
        <label class="fuel-toggle">Hide calories, focus on protein <input type="checkbox" data-hide ${hideKcal() ? "checked" : ""} /></label>
+       <label class="fuel-toggle">Hide weight <input type="checkbox" data-hide-weight ${state.member && state.member.hide_weight ? "checked" : ""} /></label>
        <button class="fuel-btn fuel-btn--ghost" type="button" data-s="targets">Daily targets</button>
        <button class="fuel-btn fuel-btn--ghost" type="button" data-s="favs">Favourites</button>
        ${
@@ -1800,6 +2170,22 @@
             state.member.hide_kcal = !want;
             e.target.checked = !want;
             render();
+            toast(err.message);
+          }
+        });
+        body.querySelector("[data-hide-weight]").addEventListener("change", async (e) => {
+          const want = e.target.checked;
+          try {
+            const data = await MacroApi.call("setPrefs", { hide_weight: want });
+            state.member = data.member;
+            if (want) state.weightTrend = null;
+            else {
+              const me = await MacroApi.call("me", { date: state.viewDate });
+              applyMe(me);
+            }
+            render();
+          } catch (err) {
+            e.target.checked = !want;
             toast(err.message);
           }
         });

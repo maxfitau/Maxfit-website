@@ -33,7 +33,7 @@ const GROCERY_SHEET_NAME = "Grocery Items";
 // Changes whenever this file does, and is shown when you open the deployed
 // URL in a browser (see doGet) — the quick way to tell whether a redeploy
 // actually took, instead of guessing from behaviour.
-const BACKEND_VERSION = "2026-09-20a";
+const BACKEND_VERSION = "2026-09-25a";
 
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -328,6 +328,7 @@ function handleCheckIn_(payload) {
     groupSessions: findColumn_(header, "Group Sessions Remaining"),
     paidInClasses: findColumn_(header, "Paid In Classes"),
     tokensOwed: findColumn_(header, "Tokens Owed"),
+    freeOwed: findColumn_(header, "Free Session Owed"), // set by the MaxFit Macros script
   };
 
   if (col.checkInToken < 0) {
@@ -387,6 +388,12 @@ function handleCheckIn_(payload) {
 
   if (col.lastAttended >= 0) {
     sheet.getRange(rowIndex + 1, col.lastAttended + 1).setValue(today);
+  }
+
+  // A nutrition punch (FUEL) completed their card and this is the free
+  // session it earned — it's been used now.
+  if (freeSession && col.freeOwed >= 0 && String(row[col.freeOwed] || "").trim().toUpperCase() === "Y") {
+    sheet.getRange(rowIndex + 1, col.freeOwed + 1).setValue("");
   }
 
   let totalAttended = null;

@@ -282,10 +282,15 @@ function renderQR(value) {
   els.qr.innerHTML = qr.createSvgTag({ scalable: true });
 }
 
-/** 1-in-10 loyalty punchcard — mirrors the auto-tick logic on checkin.html. */
-function renderLoyalty(totalAttended) {
-  const progress = totalAttended % 10;
-  els.loyaltyCount.textContent = `${progress}/10`;
+/**
+ * 1-in-10 loyalty punchcard — mirrors the auto-tick logic on checkin.html.
+ * `punches` is class visits plus nutrition punches (5 green days in FUEL =
+ * 1). `freeOwed` means a nutrition punch just completed a card, so the
+ * free session is waiting for their next check-in.
+ */
+function renderLoyalty(punches, freeOwed) {
+  const progress = freeOwed ? 10 : punches % 10;
+  els.loyaltyCount.textContent = freeOwed ? "Free session ready" : `${progress}/10`;
   els.loyaltyBar.innerHTML = "";
   for (let i = 0; i < 10; i++) {
     const peg = document.createElement("div");
@@ -361,7 +366,7 @@ async function render(data) {
   els.name.textContent = data.memberName;
   els.tier.textContent = data.tier;
   renderQR(data.checkInUrl);
-  renderLoyalty(data.totalAttended);
+  renderLoyalty(data.totalAttended + (data.nutritionPunches || 0), !!data.freeOwed);
 
   const { count: assignedCount, names: workoutNames, todayName } = await assignedWorkoutSummary_(data.clientSlug);
   if (assignedCount > 0) {
@@ -439,6 +444,8 @@ async function fetchMemberData(id) {
     groupSessionsRemaining: parseSessions(match[col.groupSessions], "N/A"),
     oneOnOneSessionsRemaining: parseSessions(match[col.oneOnOneSessions], "N/A"),
     totalAttended: parseSessions(match[col.totalAttended], 0),
+    nutritionPunches: col.nutritionPunches >= 0 ? parseSessions(match[col.nutritionPunches], 0) : 0,
+    freeOwed: col.freeOwed >= 0 && String(match[col.freeOwed] || "").trim().toUpperCase() === "Y",
     checkInUrl: `https://maxfit.now/checkin.html?token=${encodeURIComponent(token)}`,
     programType: programType === "self-guided" ? "self-guided" : "group",
     classLabel: col.class >= 0 ? match[col.class] : undefined,

@@ -10,6 +10,8 @@
  *   - hand targets back to the client's own calculator
  *   - see each client's Fuel AI status (trial / paying / free month),
  *     give a free month, and ask the backend to check Stripe now
+ *   - log a client's weight after a session, set their goal weight and
+ *     pace, and see this week's green days and their nutrition punches
  */
 (function () {
   const body = document.getElementById("coachBody");
@@ -120,11 +122,14 @@
         </div>
         <span class="coach-client__meta">${esc(targetsText(c))}</span>
         ${c.hasKey && aiEnabled ? `<span class="coach-client__meta">${esc(planText(c.plan))}</span>` : ""}
+        ${c.hasKey ? `<span class="coach-client__meta">${esc(progressText(c))}</span>` : ""}
         ${c.link ? `<div class="coach-link">${esc(c.link)}</div>` : ""}
         <div class="coach-actions">
           ${c.link ? '<button class="fuel-btn" type="button" data-a="copy">Copy link</button>' : '<button class="fuel-btn" type="button" data-a="issue">Create Fuel link</button>'}
           <button class="fuel-btn fuel-btn--ghost" type="button" data-a="targets">Set targets</button>
           ${c.hasKey && aiEnabled ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="giveMonth">Give a free month</button>' : ""}
+          ${c.hasKey ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="weight">Log weight</button>' : ""}
+          ${c.hasKey && c.targets ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="goal">Set goal</button>' : ""}
           ${c.link ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="rotate">New link</button>' : ""}
         </div>
         ${
@@ -146,6 +151,29 @@
             : ""
         }
         ${
+          form === "weight"
+            ? `<div class="coach-form">
+                <div class="fuel-fields2">
+                  <label class="fuel-field"><span class="card__label">Weight kg</span><input class="fuel-input" name="kg" type="number" inputmode="decimal" step="0.1" placeholder="${c.lastWeight ? esc(c.lastWeight.kg) : "e.g. 74.2"}" /></label>
+                  <label class="fuel-field"><span class="card__label">Date</span><input class="fuel-input" name="date" type="date" value="${esc(MacroCore.sydneyDate())}" /></label>
+                </div>
+                <div class="coach-actions"><button class="fuel-btn" type="button" data-a="saveWeight">Save weight</button></div>
+              </div>`
+            : ""
+        }
+        ${
+          form === "goal"
+            ? `<div class="coach-form">
+                <div class="fuel-fields2">
+                  <label class="fuel-field"><span class="card__label">Goal weight kg</span><input class="fuel-input" name="goal_weight_kg" type="number" inputmode="decimal" step="0.1" value="${c.targets && c.targets.goal_weight_kg ? esc(c.targets.goal_weight_kg) : ""}" /></label>
+                  <label class="fuel-field"><span class="card__label">Pace kg / week</span><input class="fuel-input" name="weekly_rate_kg" type="number" inputmode="decimal" step="0.05" value="${c.targets && c.targets.weekly_rate_kg ? esc(Math.abs(c.targets.weekly_rate_kg)) : ""}" placeholder="0.5" /></label>
+                </div>
+                <span class="coach-client__meta">Up or down follows the goal. Keep it under about 1% of their bodyweight a week.</span>
+                <div class="coach-actions"><button class="fuel-btn" type="button" data-a="saveGoal">Save goal</button></div>
+              </div>`
+            : ""
+        }
+        ${
           form === "issue" || form === "rotate"
             ? `<div class="coach-form">
                 <span class="coach-client__meta">${form === "rotate" ? "Their old link will stop working for Fuel." : "Pick their sex for the calorie floor, then create the link."}</span>
@@ -155,6 +183,16 @@
             : ""
         }
       </div>`;
+  }
+
+  /** Weight, this week's green days and nutrition punches, in one line. */
+  function progressText(c) {
+    const bits = [];
+    if (c.lastWeight) bits.push(`Weight ${c.lastWeight.kg} kg (${c.lastWeight.date.slice(8)}/${c.lastWeight.date.slice(5, 7)})`);
+    if (c.greenThisWeek != null) bits.push(`${c.greenThisWeek}/7 green days this week`);
+    if (c.punches) bits.push(`${c.punches} nutrition punch${c.punches === 1 ? "" : "es"}`);
+    if (c.freeOwed) bits.push("free session earned");
+    return bits.join(" · ") || "No weigh-ins or green days yet";
   }
 
   /** A client's Fuel AI status in a few words. */
@@ -258,7 +296,7 @@
       }
       return;
     }
-    if (a === "issue" || a === "rotate" || a === "targets") {
+    if (a === "issue" || a === "rotate" || a === "targets" || a === "weight" || a === "goal") {
       open[slug] = open[slug] === a ? null : a;
       render();
       return;
@@ -294,6 +332,28 @@
         open[slug] = null;
         await load();
         toast(`Saved ${c.name}'s targets`);
+      } else if (a === "saveWeight") {
+        const el = formFor(slug);
+        const data = await MacroApi.coach("coachLogWeight", pin, {
+          slug: slug,
+          kg: el.querySelector('[name="kg"]').value,
+          date: el.querySelector('[name="date"]').value,
+        });
+        c.lastWeight = data.lastWeight;
+        open[slug] = null;
+        render();
+        toast(`Saved ${c.name}'s weight`);
+      } else if (a === "saveGoal") {
+        const el = formFor(slug);
+        const data = await MacroApi.coach("coachSetGoal", pin, {
+          slug: slug,
+          goal_weight_kg: el.querySelector('[name="goal_weight_kg"]').value,
+          weekly_rate_kg: el.querySelector('[name="weekly_rate_kg"]').value,
+        });
+        c.targets = Object.assign({}, c.targets, { goal_weight_kg: data.goal_weight_kg, weekly_rate_kg: data.weekly_rate_kg });
+        open[slug] = null;
+        render();
+        toast(`Saved ${c.name}'s goal`);
       } else if (a === "giveMonth") {
         const data = await MacroApi.coach("coachGiveMonth", pin, { slug: slug });
         c.plan = data.plan;

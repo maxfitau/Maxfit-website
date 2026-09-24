@@ -107,6 +107,10 @@ function fetchSheet() {
           programDoc: findColumn(header, "Program Doc"),
           checkInToken: findColumn(header, "Check-in Token"),
           totalAttended: findColumn(header, "Total Classes Attended"),
+          // Added by the Macros backend: punches earned with FUEL (5 green
+          // days in a week = 1), and "Y" when one of those completed a card.
+          nutritionPunches: findColumn(header, "Nutrition Punches"),
+          freeOwed: findColumn(header, "Free Session Owed"),
         };
         return { rows, col };
       });

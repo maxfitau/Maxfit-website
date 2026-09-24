@@ -34,13 +34,22 @@
  * from checkout, and from the coach page. The Upgrade button passes
  * client_reference_id=fuel-<slug>, which is how a payment finds its client.
  *
+ * Progress (free for everyone): weights (logged by the client or Max),
+ * target history, green days (protein ≥ 90% and kcal within ±10%), and
+ * NUTRITION PUNCHES — 5 green days in a Monday–Sunday week adds 1 to
+ * "Nutrition Punches" on the CRM's Sessions Remaining tab (awardPunches,
+ * daily trigger from installPunchTrigger). The card and check-in page add
+ * those to Total Classes Attended; when a nutrition punch completes a card
+ * of 10, "Free Session Owed" = Y and the check-in page offers the free
+ * session (Code.gs clears it when it's used).
+ *
  * Who can do what: every member action needs the member's id AND their
  * secret key (the &k= part of their card link), checked against the
  * Members tab. Coach actions need STAFF_PIN. A member can only ever read
  * or change rows carrying their own id.
  */
 
-const MACROS_VERSION = "2026-09-24a";
+const MACROS_VERSION = "2026-09-25a";
 const TIMEZONE = "Australia/Sydney";
 const MAIN_SESSIONS_GID = 1169726169; // "Sessions Remaining" in the CRM sheet
 const CARD_URL = "https://maxfit.now/card/";
@@ -64,12 +73,16 @@ const TABS = {
     headers: [
       "slug", "name", "sex", "key", "hide_kcal", "created_at",
       "trial_started", "stripe_customer", "stripe_subscription", "plan_status", "plan_until", "comp_until",
+      "hide_weight",
     ],
     text: ["slug", "key", "trial_started", "plan_until", "comp_until"],
   },
   targets: {
     name: "Macro Targets",
-    headers: ["slug", "kcal", "protein_g", "carbs_g", "fat_g", "set_by", "calc_inputs", "coach_approved", "updated_at"],
+    headers: [
+      "slug", "kcal", "protein_g", "carbs_g", "fat_g", "set_by", "calc_inputs", "coach_approved", "updated_at",
+      "goal_weight_kg", "weekly_rate_kg",
+    ],
     text: ["slug"],
   },
   logs: {
@@ -100,6 +113,21 @@ const TABS = {
       "cache_write", "cache_read", "est_cost_usd", "ok",
     ],
     text: ["log_date", "slug"],
+  },
+  weights: {
+    name: "Weights",
+    headers: ["id", "slug", "date", "kg", "by", "created_at"],
+    text: ["id", "slug", "date"],
+  },
+  targetHistory: {
+    name: "Target History",
+    headers: ["slug", "effective_date", "kcal", "protein_g", "carbs_g", "fat_g", "set_by", "created_at"],
+    text: ["slug", "effective_date"],
+  },
+  punches: {
+    name: "Punch Awards",
+    headers: ["slug", "week_start", "green_days", "awarded_at"],
+    text: ["slug", "week_start"],
   },
   foods: {
     name: "Foods",
@@ -159,6 +187,9 @@ const MEMBER_ACTIONS = {
   removeFavourite: actionRemoveFavourite_,
   setPrefs: actionSetPrefs_,
   chat: actionChat_,
+  progress: actionProgress_,
+  logWeight: actionLogWeight_,
+  deleteWeight: actionDeleteWeight_,
 };
 
 const COACH_ACTIONS = {
@@ -167,6 +198,8 @@ const COACH_ACTIONS = {
   issueKey: actionIssueKey_,
   coachGiveMonth: actionCoachGiveMonth_,
   coachSyncStripe: actionCoachSyncStripe_,
+  coachLogWeight: actionCoachLogWeight_,
+  coachSetGoal: actionCoachSetGoal_,
 };
 
 // No key or PIN: only safe, idempotent things. stripeReturn looks up a
@@ -413,6 +446,8 @@ function targetsFor_(slug) {
     set_by: row.set_by,
     calc_inputs: inputs,
     updated_at: row.updated_at,
+    goal_weight_kg: Number(row.goal_weight_kg) || null,
+    weekly_rate_kg: Number(row.weekly_rate_kg) || null,
   };
 }
 
@@ -563,9 +598,10 @@ function actionMe_(payload, member) {
   }
   const logRows = readRows_("logs");
   return {
-    member: { slug: slug, name: member.name, sex: member.sex, hide_kcal: member.hide_kcal === "Y" },
+    member: memberPayload_(member),
     targets: targetsFor_(slug),
     day: dayFor_(slug, validDate_(payload.date), logRows),
+    weightTrend: member.hide_weight === "Y" ? null : weightTrend_(slug),
     recent: recentFor_(slug, logRows),
     favourites: favouritesFor_(slug),
     foods: foodsList_(),
@@ -730,10 +766,15 @@ function actionSaveTargets_(payload, member) {
       }),
       coach_approved: "",
       updated_at: nowStamp_(),
+      // Pace for the Progress weight chart (negative = losing), and an
+      // optional goal weight the pace line stops at.
+      weekly_rate_kg: result.weeklyChangeKg,
+      goal_weight_kg: cleanGoalKg_(inputs.goalWeightKg),
     };
     const existing = readRows_("targets").find((t) => String(t.slug) === slug);
     if (existing) updateRow_("targets", existing._row, row);
     else appendRow_("targets", row);
+    recordTargetHistory_(slug, row, "calculator");
     if (member.sex !== inputs.sex) updateRow_("members", member._row, { sex: inputs.sex });
   });
   return { targets: targetsFor_(slug), calc: result };
@@ -772,9 +813,22 @@ function actionRemoveFavourite_(payload, member) {
 }
 
 function actionSetPrefs_(payload, member) {
-  const hide = payload.hide_kcal ? "Y" : "N";
-  updateRow_("members", member._row, { hide_kcal: hide });
-  return { member: { slug: String(member.slug), name: member.name, sex: member.sex, hide_kcal: hide === "Y" } };
+  const changes = {};
+  if (payload.hide_kcal !== undefined) changes.hide_kcal = payload.hide_kcal ? "Y" : "N";
+  if (payload.hide_weight !== undefined) changes.hide_weight = payload.hide_weight ? "Y" : "N";
+  if (Object.keys(changes).length) updateRow_("members", member._row, changes);
+  Object.assign(member, changes);
+  return { member: memberPayload_(member) };
+}
+
+function memberPayload_(member) {
+  return {
+    slug: String(member.slug),
+    name: member.name,
+    sex: member.sex,
+    hide_kcal: member.hide_kcal === "Y",
+    hide_weight: member.hide_weight === "Y",
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1194,7 +1248,25 @@ function actionCoachList_() {
       fat_g: Number(t.fat_g),
       set_by: t.set_by,
       coach_approved: t.coach_approved === "Y",
+      goal_weight_kg: Number(t.goal_weight_kg) || null,
+      weekly_rate_kg: Number(t.weekly_rate_kg) || null,
     };
+  });
+  const weightRows = readRows_("weights");
+  const crm = crmIndex_();
+  const history = readRows_("targetHistory");
+  const thisMonday = MacroCore.mondayOf(todaySydney_());
+  Object.keys(bySlug).forEach((s) => {
+    const mine = weightRows.filter((w) => String(w.slug) === s).sort((a, b) => (String(a.date) < String(b.date) ? -1 : 1));
+    const last = mine[mine.length - 1];
+    bySlug[s].lastWeight = last ? { date: String(last.date), kg: Number(last.kg) } : null;
+    const c = crm.bySlug[s];
+    bySlug[s].punches = c ? c.punches : 0;
+    bySlug[s].freeOwed = c ? c.owed : false;
+    if (bySlug[s].hasKey) {
+      const week = MacroCore.weekSummary(dayTotalsFor_(s, thisMonday, logs), historyFor_(s, history), thisMonday);
+      bySlug[s].greenThisWeek = week.greenDays;
+    }
   });
   const clients = Object.keys(bySlug)
     .map((s) => Object.assign({ lastLog: lastLog[s] || "" }, bySlug[s]))
@@ -1245,6 +1317,7 @@ function actionCoachSetTargets_(payload) {
     withLock_(() => {
       const row = readRows_("targets").find((t) => String(t.slug) === slug);
       if (row) tab_("targets").deleteRow(row._row);
+      recordTargetHistory_(slug, { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 }, "cleared");
     });
     return { targets: null };
   }
@@ -1272,6 +1345,7 @@ function actionCoachSetTargets_(payload) {
     const existing = readRows_("targets").find((t) => String(t.slug) === slug);
     if (existing) updateRow_("targets", existing._row, row);
     else appendRow_("targets", row);
+    recordTargetHistory_(slug, row, "coach");
     if (sex && sex !== member.sex) updateRow_("members", member._row, { sex: sex });
   });
   return { targets: targetsFor_(slug) };
@@ -1745,4 +1819,337 @@ function actionChat_(payload, member) {
     foods: foods,
     chatsLeft: Math.max(0, chatLimit_() - usageToday_(slug, ["chat"])),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Progress: weights, target history, green days, nutrition punches
+// ---------------------------------------------------------------------------
+
+function cleanGoalKg_(value) {
+  const n = Number(value);
+  return n >= 30 && n <= 300 ? Math.round(n * 10) / 10 : "";
+}
+
+/** Appends a row to Target History, so past days are judged against the target they had. */
+function recordTargetHistory_(slug, row, setBy) {
+  appendRow_("targetHistory", {
+    slug: slug,
+    effective_date: todaySydney_(),
+    kcal: Number(row.kcal) || 0,
+    protein_g: Number(row.protein_g) || 0,
+    carbs_g: Number(row.carbs_g) || 0,
+    fat_g: Number(row.fat_g) || 0,
+    set_by: setBy,
+    created_at: nowStamp_(),
+  });
+}
+
+/**
+ * A member's target history, oldest first. Members whose targets predate
+ * the history tab get one row seeded from their current target, dated the
+ * day it was last set.
+ */
+function historyFor_(slug, rows) {
+  let mine = (rows || readRows_("targetHistory")).filter((h) => String(h.slug) === slug);
+  if (!mine.length) {
+    const t = readRows_("targets").find((r) => String(r.slug) === slug);
+    if (t && Number(t.kcal) > 0) {
+      const since = /^\d{4}-\d{2}-\d{2}/.test(String(t.updated_at)) ? String(t.updated_at).slice(0, 10) : todaySydney_();
+      const seed = {
+        slug: slug,
+        effective_date: since,
+        kcal: Number(t.kcal),
+        protein_g: Number(t.protein_g),
+        carbs_g: Number(t.carbs_g),
+        fat_g: Number(t.fat_g),
+        set_by: String(t.set_by || "") + " (seeded)",
+        created_at: nowStamp_(),
+      };
+      appendRow_("targetHistory", seed);
+      mine = [seed];
+    }
+  }
+  return mine
+    .map((h) => ({
+      effective_date: String(h.effective_date),
+      kcal: Number(h.kcal) || 0,
+      protein_g: Number(h.protein_g) || 0,
+      carbs_g: Number(h.carbs_g) || 0,
+      fat_g: Number(h.fat_g) || 0,
+      set_by: String(h.set_by || ""),
+    }))
+    .sort((a, b) => (a.effective_date < b.effective_date ? -1 : a.effective_date > b.effective_date ? 1 : 0));
+}
+
+/** { "YYYY-MM-DD": totals } for a member's logs on or after fromDate. */
+function dayTotalsFor_(slug, fromDate, logRows) {
+  const byDate = {};
+  (logRows || readRows_("logs")).forEach((r) => {
+    if (String(r.slug) !== slug) return;
+    const d = String(r.log_date);
+    if (d < fromDate) return;
+    (byDate[d] = byDate[d] || []).push({ kcal: r.kcal, protein_g: r.protein_g, carbs_g: r.carbs_g, fat_g: r.fat_g });
+  });
+  const out = {};
+  Object.keys(byDate).forEach((d) => (out[d] = MacroCore.sumTotals(byDate[d])));
+  return out;
+}
+
+/** A member's weigh-ins, oldest first. */
+function weightsFor_(slug, rows) {
+  return (rows || readRows_("weights"))
+    .filter((w) => String(w.slug) === slug && Number(w.kg) > 0)
+    .map((w) => ({ date: String(w.date), kg: Number(w.kg), by: String(w.by || "") }))
+    .sort((a, b) => (a.date < b.date ? -1 : 1));
+}
+
+/** Latest 7-day-average weight and how it moved over the past week, or null. */
+function weightTrend_(slug) {
+  const since = MacroCore.addDays(todaySydney_(), -60);
+  const trend = MacroCore.movingAverage(weightsFor_(slug).filter((w) => w.date >= since), 7);
+  if (!trend.length) return null;
+  const last = trend[trend.length - 1];
+  const weekAgo = MacroCore.addDays(last.date, -7);
+  const earlier = trend.filter((p) => p.date <= weekAgo).pop();
+  return {
+    kg: MacroCore.round1(last.kg),
+    date: last.date,
+    change7: earlier ? MacroCore.round1(last.kg - earlier.kg) : null,
+  };
+}
+
+// --- CRM (the main MaxFit sheet): loyalty counts ---------------------------------
+
+const CRM_PUNCH_COLUMNS = ["Nutrition Punches", "Free Session Owed"];
+
+/** The CRM's Sessions Remaining tab, with the two loyalty columns added if missing. */
+function crmSheet_() {
+  const id = prop_("MAIN_SHEET_ID");
+  if (!id) return null;
+  const sheet = SpreadsheetApp.openById(id).getSheets().find((s) => s.getSheetId() === MAIN_SESSIONS_GID);
+  if (!sheet) return null;
+  const width = Math.max(1, sheet.getLastColumn());
+  const header = sheet.getRange(1, 1, 1, width).getValues()[0].map((h) => String(h).trim());
+  while (header.length && header[header.length - 1] === "") header.pop();
+  CRM_PUNCH_COLUMNS.forEach((name) => {
+    if (header.some((h) => h.toLowerCase() === name.toLowerCase())) return;
+    header.push(name);
+    sheet.getRange(1, header.length).setValue(name);
+  });
+  return sheet;
+}
+
+/** Loyalty numbers for every CRM client, by name slug. */
+function crmIndex_() {
+  const sheet = crmSheet_();
+  const out = { sheet: sheet, bySlug: {}, col: {} };
+  if (!sheet) return out;
+  const values = sheet.getDataRange().getValues();
+  const header = values[0].map((h) => String(h).trim().toLowerCase());
+  const col = {
+    name: header.indexOf("name"),
+    attended: header.indexOf("total classes attended"),
+    punches: header.indexOf("nutrition punches"),
+    owed: header.indexOf("free session owed"),
+  };
+  out.col = col;
+  if (col.name < 0) return out;
+  for (let r = 1; r < values.length; r++) {
+    const slug = slugify_(values[r][col.name]);
+    if (!slug) continue;
+    out.bySlug[slug] = {
+      row: r + 1,
+      attended: col.attended >= 0 ? Number(values[r][col.attended]) || 0 : 0,
+      punches: col.punches >= 0 ? Number(values[r][col.punches]) || 0 : 0,
+      owed: col.owed >= 0 && String(values[r][col.owed]).trim().toUpperCase() === "Y",
+    };
+  }
+  return out;
+}
+
+// --- member actions -----------------------------------------------------------------
+
+function actionProgress_(payload, member) {
+  const slug = String(member.slug);
+  const today = todaySydney_();
+  const thisMonday = MacroCore.mondayOf(today);
+  const lastMonday = MacroCore.addDays(thisMonday, -7);
+  const history = historyFor_(slug);
+  const dayTotals = dayTotalsFor_(slug, MacroCore.addDays(thisMonday, -21));
+  const slim = (w) => ({
+    weekStart: w.weekStart,
+    greenDays: w.greenDays,
+    earnsPunch: w.earnsPunch,
+    days: w.days.map((d) => ({ date: d.date, logged: d.logged, green: d.green })),
+  });
+  const days = [];
+  for (let i = 13; i >= 0; i--) {
+    const date = MacroCore.addDays(today, -i);
+    const totals = dayTotals[date] || { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 };
+    const target = MacroCore.targetOn(history, date);
+    days.push({
+      date: date,
+      kcal: totals.kcal,
+      protein_g: totals.protein_g,
+      target_kcal: target ? target.kcal : null,
+      green: MacroCore.isGreenDay(totals, target),
+    });
+  }
+  const targets = targetsFor_(slug);
+  const crm = crmIndex_().bySlug[slug] || null;
+  const lastWeek = slim(MacroCore.weekSummary(dayTotals, history, lastMonday));
+  lastWeek.awarded = readRows_("punches").some((p) => String(p.slug) === slug && String(p.week_start) === lastMonday);
+  const hideWeight = member.hide_weight === "Y";
+  return {
+    progress: {
+      today: today,
+      hideWeight: hideWeight,
+      weights: hideWeight ? [] : weightsFor_(slug),
+      history: history,
+      days: days,
+      thisWeek: slim(MacroCore.weekSummary(dayTotals, history, thisMonday)),
+      lastWeek: lastWeek,
+      goal: {
+        goal_weight_kg: targets ? targets.goal_weight_kg : null,
+        weekly_rate_kg: targets ? targets.weekly_rate_kg : null,
+        kind: targets && targets.calc_inputs ? targets.calc_inputs.goal : null,
+      },
+      loyalty: crm ? { attended: crm.attended, punches: crm.punches, owed: crm.owed } : null,
+      punchEvery: MacroCore.GREEN_DAYS_FOR_PUNCH,
+    },
+  };
+}
+
+function cleanWeightInput_(payload) {
+  const kg = Math.round(Number(payload.kg) * 10) / 10;
+  if (!(kg >= 30 && kg <= 300)) throw userError_("bad_weight", "Enter your weight in kg (between 30 and 300).");
+  const today = todaySydney_();
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(payload.date || "")) ? String(payload.date) : today;
+  if (date > today) throw userError_("bad_date", "That date's in the future.");
+  if (date < MacroCore.addDays(today, -366)) throw userError_("bad_date", "That's more than a year ago.");
+  return { kg: kg, date: date };
+}
+
+/** One weigh-in per member per day: a second one that day replaces the first. */
+function upsertWeight_(slug, date, kg, by) {
+  withLock_(() => {
+    const existing = readRows_("weights").find((w) => String(w.slug) === slug && String(w.date) === date);
+    if (existing) updateRow_("weights", existing._row, { kg: kg, by: by, created_at: nowStamp_() });
+    else appendRow_("weights", { id: Utilities.getUuid(), slug: slug, date: date, kg: kg, by: by, created_at: nowStamp_() });
+  });
+}
+
+function actionLogWeight_(payload, member) {
+  const slug = String(member.slug);
+  const w = cleanWeightInput_(payload);
+  upsertWeight_(slug, w.date, w.kg, "client");
+  return { weights: weightsFor_(slug), weightTrend: weightTrend_(slug) };
+}
+
+function actionDeleteWeight_(payload, member) {
+  const slug = String(member.slug);
+  const date = String(payload.date || "");
+  withLock_(() => {
+    const row = readRows_("weights").find((w) => String(w.slug) === slug && String(w.date) === date);
+    if (row) tab_("weights").deleteRow(row._row);
+  });
+  return { weights: weightsFor_(slug), weightTrend: weightTrend_(slug) };
+}
+
+// --- coach actions ----------------------------------------------------------------------
+
+function actionCoachLogWeight_(payload) {
+  const slug = slugify_(payload.slug);
+  if (!readRows_("members").some((m) => String(m.slug) === slug)) {
+    throw userError_("no_member", "Create this client's Fuel link first.");
+  }
+  const w = cleanWeightInput_(payload);
+  upsertWeight_(slug, w.date, w.kg, "coach");
+  const last = weightsFor_(slug).pop();
+  return { slug: slug, lastWeight: last ? { date: last.date, kg: last.kg } : null };
+}
+
+/** Max sets a goal weight and a pace in kg/week; the direction follows the goal. */
+function actionCoachSetGoal_(payload) {
+  const slug = slugify_(payload.slug);
+  const row = readRows_("targets").find((t) => String(t.slug) === slug);
+  if (!row) throw userError_("no_targets", "Set this client's targets first.");
+  const goal = cleanGoalKg_(payload.goal_weight_kg);
+  const pace = Math.abs(Number(payload.weekly_rate_kg) || 0);
+  if (pace > 2) throw userError_("bad_rate", "Keep the pace under 2 kg a week.");
+  let rate = "";
+  if (pace > 0) {
+    const latest = weightsFor_(slug).pop();
+    let sign = -1;
+    if (goal && latest) sign = goal > latest.kg ? 1 : -1;
+    else {
+      let calc = null;
+      try {
+        calc = row.calc_inputs ? JSON.parse(row.calc_inputs) : null;
+      } catch (err) {
+        calc = null;
+      }
+      if (calc && calc.goal === "gain") sign = 1;
+    }
+    rate = Math.round(sign * pace * 100) / 100;
+  }
+  updateRow_("targets", row._row, { goal_weight_kg: goal, weekly_rate_kg: rate });
+  return { slug: slug, goal_weight_kg: goal || null, weekly_rate_kg: rate === "" ? null : rate };
+}
+
+// --- weekly nutrition punches -----------------------------------------------------------
+
+/**
+ * For each Fuel member, looks at the last two finished Monday–Sunday weeks;
+ * any week with 5+ green days that hasn't been awarded adds 1 to their
+ * "Nutrition Punches" in the CRM (and sets "Free Session Owed" when that
+ * completes a card of 10). Safe to run any time and as often as you like.
+ */
+function awardPunches_() {
+  const thisMonday = MacroCore.mondayOf(todaySydney_());
+  const weeks = [MacroCore.addDays(thisMonday, -14), MacroCore.addDays(thisMonday, -7)];
+  const members = readRows_("members");
+  const logs = readRows_("logs");
+  const history = readRows_("targetHistory");
+  const awarded = [];
+  withLock_(() => {
+    const done = readRows_("punches").map((p) => String(p.slug) + "|" + String(p.week_start));
+    const crm = crmIndex_();
+    if (!crm.sheet || crm.col.punches < 0) return;
+    members.forEach((m) => {
+      const slug = String(m.slug);
+      const client = crm.bySlug[slug];
+      if (!client) return;
+      const mine = historyFor_(slug, history); // once per member: it may seed a row
+      weeks.forEach((weekStart) => {
+        if (done.indexOf(slug + "|" + weekStart) >= 0) return;
+        const week = MacroCore.weekSummary(dayTotalsFor_(slug, weekStart, logs), mine, weekStart);
+        if (!week.earnsPunch) return;
+        client.punches += 1;
+        crm.sheet.getRange(client.row, crm.col.punches + 1).setValue(client.punches);
+        if ((client.attended + client.punches) % 10 === 0 && crm.col.owed >= 0) {
+          crm.sheet.getRange(client.row, crm.col.owed + 1).setValue("Y");
+          client.owed = true;
+        }
+        appendRow_("punches", { slug: slug, week_start: weekStart, green_days: week.greenDays, awarded_at: nowStamp_() });
+        done.push(slug + "|" + weekStart);
+        awarded.push({ slug: slug, weekStart: weekStart, greenDays: week.greenDays, freeSessionOwed: client.owed });
+      });
+    });
+  });
+  return awarded;
+}
+
+/** Run by the daily trigger (and safe to run by hand from the editor). */
+function awardPunches() {
+  return JSON.stringify(awardPunches_());
+}
+
+/** Run ONCE from the editor: checks for earned nutrition punches every morning. */
+function installPunchTrigger() {
+  ScriptApp.getProjectTriggers()
+    .filter((t) => t.getHandlerFunction() === "awardPunches")
+    .forEach((t) => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger("awardPunches").timeBased().everyDays(1).atHour(3).create();
+  return "Nutrition punches will be checked every morning.";
 }

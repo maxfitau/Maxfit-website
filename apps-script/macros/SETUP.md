@@ -95,3 +95,14 @@ Stripe moves its menus around. If you can't find something, type its name ("Paym
 8. Back in the editor, choose **installStripeSync** in the function dropdown and press **Run** (allow permissions if asked). From now on the backend checks Stripe every 15 minutes, and straight away whenever a client comes back from paying.
 9. **Test on yourself:** open your own FUEL tab, tap a locked feature → **Upgrade to Fuel AI**, and pay with Stripe's test card `4242 4242 4242 4242` (any future expiry date, any CVC). You should land back on the card with "Fuel AI is on", and the coach page should say "paying · renews …".
 10. **Go live:** turn Test mode off and repeat steps 3–6 in live mode (test products, links and keys don't carry over). Then replace the three Stripe Script Properties with the live values.
+
+## 8. Progress and nutrition punches
+
+The Progress screen (weight trend, calorie target, last 14 days) is free for everyone and needs no setup: its tabs (**Weights**, **Target History**, **Punch Awards**) create themselves.
+
+**Nutrition punches:** 5 green days in a Monday–Sunday week earns 1 punch on the client's loyalty card. A green day means protein at least 90% of target and calories within ±10%. Punches are added to a new **Nutrition Punches** column on your Sessions Remaining tab (it appears by itself, next to a **Free Session Owed** column). The card and the check-in page add them to Total Classes Attended. When a nutrition punch completes a card, the check-in page pre-ticks "Free Session (earned with Fuel!)".
+
+1. In the **MaxFit Macros** editor, choose **installPunchTrigger** in the function dropdown and press **Run**, once. From then on it checks every morning around 3am. It's safe to run **awardPunches** by hand at any time; it never gives the same week twice.
+2. The **check-in** script (the *other* Apps Script project, `apps-script/Code.gs`) also changed slightly, so it can clear "Free Session Owed" once that free session is used. Paste the new Code.gs in, save, then go to **Manage deployments → pencil → New version → Deploy**. Opening its URL should show version `2026-09-25a`.
+
+**Weights:** clients log their own weight on the Progress screen, and you can log it from the coach page (**Log weight**) after a session. **Set goal** on the coach page sets a goal weight and a pace (kg per week). The pace line on the client's chart follows it, going up or down depending on the goal.

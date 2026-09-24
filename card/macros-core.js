@@ -493,6 +493,108 @@ const MacroCore = (function () {
     }));
   }
 
+  // ---------------------------------------------------------------------------
+  // Progress: green days, weekly punches, weight trend, goal pace
+  // ---------------------------------------------------------------------------
+
+  // A "green day": protein at least 90% of target AND calories within ±10%.
+  const GREEN_PROTEIN_SHARE = 0.9;
+  const GREEN_KCAL_BAND = 0.1;
+  // 5 green days in a Monday–Sunday week earns 1 punch on the loyalty card.
+  const GREEN_DAYS_FOR_PUNCH = 5;
+
+  /** The Monday (YYYY-MM-DD) of the week containing ymd. */
+  function mondayOf(ymd) {
+    const dow = new Date(utcOf_(ymd)).getUTCDay(); // 0 = Sunday
+    return addDays(ymd, -((dow + 6) % 7));
+  }
+
+  /**
+   * The target that applied on `date`: the latest history row effective on
+   * or before it. history: [{ effective_date, kcal, protein_g, … }].
+   * null before the first target (or when the latest row is a "cleared" one).
+   */
+  function targetOn(history, date) {
+    let best = null;
+    (history || []).forEach((h) => {
+      if (isYmd_(h.effective_date) && h.effective_date <= date && (!best || h.effective_date >= best.effective_date)) best = h;
+    });
+    return best && num_(best.kcal) > 0 ? best : null;
+  }
+
+  function isGreenDay(totals, target) {
+    if (!target || !totals) return false;
+    const tk = num_(target.kcal);
+    const tp = num_(target.protein_g);
+    const k = num_(totals.kcal);
+    if (tk <= 0 || k <= 0) return false;
+    const eps = 1e-9;
+    return num_(totals.protein_g) + eps >= GREEN_PROTEIN_SHARE * tp && Math.abs(k - tk) <= GREEN_KCAL_BAND * tk + eps;
+  }
+
+  /**
+   * One Monday–Sunday week. dayTotals: { "YYYY-MM-DD": totals }.
+   * Returns { weekStart, days: [{ date, logged, green, target }], greenDays, earnsPunch }.
+   */
+  function weekSummary(dayTotals, history, weekStart) {
+    const days = [];
+    let green = 0;
+    for (let i = 0; i < 7; i++) {
+      const date = addDays(weekStart, i);
+      const totals = (dayTotals || {})[date] || null;
+      const target = targetOn(history, date);
+      const isGreen = isGreenDay(totals, target);
+      if (isGreen) green++;
+      days.push({ date: date, logged: !!(totals && num_(totals.kcal) > 0), green: isGreen, target: target });
+    }
+    return { weekStart: weekStart, days: days, greenDays: green, earnsPunch: green >= GREEN_DAYS_FOR_PUNCH };
+  }
+
+  /**
+   * Smoothed weight: for each weigh-in, the average of weigh-ins in the
+   * `windowDays` calendar days up to and including it (so gaps in logging
+   * don't distort it). points: [{ date, kg }] in any order.
+   */
+  function movingAverage(points, windowDays) {
+    const sorted = (points || []).filter((p) => isYmd_(p.date) && num_(p.kg) > 0).slice().sort((a, b) => (a.date < b.date ? -1 : 1));
+    const w = windowDays || 7;
+    return sorted.map((p) => {
+      const from = addDays(p.date, -(w - 1));
+      const inWindow = sorted.filter((q) => q.date >= from && q.date <= p.date);
+      const avg = inWindow.reduce((sum, q) => sum + num_(q.kg), 0) / inWindow.length;
+      return { date: p.date, kg: Math.round(avg * 100) / 100 };
+    });
+  }
+
+  /**
+   * The goal pace line: from (startDate, startKg) at weeklyRateKg per week
+   * (negative = losing), stopping at goalKg if it's in that direction.
+   * Returns [start, end] points, where end is the goal date or `toDate`,
+   * whichever comes first — or [] when there's no rate.
+   */
+  function goalPace(startDate, startKg, weeklyRateKg, goalKg, toDate) {
+    const rate = num_(weeklyRateKg);
+    const kg0 = num_(startKg);
+    if (!isYmd_(startDate) || kg0 <= 0 || rate === 0) return [];
+    let endDate = isYmd_(toDate) ? toDate : addDays(startDate, 84);
+    let reached = false;
+    const goal = num_(goalKg);
+    if (goal > 0 && (goal - kg0) * rate > 0) {
+      const daysToGoal = Math.ceil(((goal - kg0) / rate) * 7);
+      const goalDate = addDays(startDate, daysToGoal);
+      if (goalDate <= endDate) {
+        endDate = goalDate;
+        reached = true;
+      }
+    }
+    const days = daysBetween(startDate, endDate);
+    const endKg = reached ? goal : kg0 + (rate * days) / 7;
+    return [
+      { date: startDate, kg: round1(kg0) },
+      { date: endDate, kg: round1(endKg), goalReached: reached },
+    ];
+  }
+
   return {
     ACTIVITY_FACTORS: ACTIVITY_FACTORS,
     KCAL_FLOOR: KCAL_FLOOR,
@@ -517,5 +619,12 @@ const MacroCore = (function () {
     portionLabel: portionLabel,
     suggestFill: suggestFill,
     suggestOver: suggestOver,
+    GREEN_DAYS_FOR_PUNCH: GREEN_DAYS_FOR_PUNCH,
+    mondayOf: mondayOf,
+    targetOn: targetOn,
+    isGreenDay: isGreenDay,
+    weekSummary: weekSummary,
+    movingAverage: movingAverage,
+    goalPace: goalPace,
   };
 })();

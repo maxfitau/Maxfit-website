@@ -129,10 +129,25 @@ Build one phase at a time. **Stop after each phase for Max to test.** At the end
 - **Unit tests:** open `card/tests/macros-core.test.html` (72 checks, including 4/4/9, scaling, the calculator, floors, the 1%/week cap, OFF parsing and Sydney dates).
 - **End-to-end without deploying:** a scratchpad harness runs the real `Macros.gs` in the browser with fake SpreadsheetApp/Utilities/etc., a mocked Claude, and real Open Food Facts. Don't commit harness files (`_test*.html`, `_mock-gas.js`, `_harness.js`, `_Macros.gs.js`).
 
+**Progress (built 2026-09-24, backend version `2026-09-25a`, not yet deployed):**
+- A free Progress sheet in FUEL (chart button next to the gear), drawn as hand-made SVG with no chart library:
+  1. weight: dots, a 7-day average line, and a goal-pace line that projects up to 14 days ahead; the goal line only shows within 3 kg;
+  2. calorie target steps from Target History (protein instead when calories are hidden);
+  3. the last 14 days as bars against a ±10% band, red for green days, with this week's dots and the loyalty pegs.
+- The home screen shows a "Weight trend" line. Settings has "Hide weight".
+- **Tabs:** Weights (one per client per day; client or coach), Target History (a row appended on every target change; seeded from `updated_at` if missing), and Punch Awards (makes each week idempotent). Macro Targets gains `goal_weight_kg` and `weekly_rate_kg` (the calculator stores its `weeklyChangeKg`; the coach's "Set goal" infers the direction from the goal vs the latest weight). Members gains `hide_weight`.
+- **Maths** (MacroCore, unit-tested): `mondayOf`, `targetOn`, `isGreenDay` (protein at least 90% AND calories within ±10%, inclusive), `weekSummary` (5+ green days = punch), `movingAverage` (7 calendar days), `goalPace`.
+- **Punches:** `awardPunches_()` (daily trigger `installPunchTrigger`, around 3am) checks the last two finished weeks. For each unawarded week with 5+ green days, it adds +1 to **CRM "Nutrition Punches"**. If `(Total Classes Attended + Nutrition Punches) % 10 === 0`, it sets **"Free Session Owed" = Y**. The Macros backend creates both CRM columns at the end of Sessions Remaining.
+  - `card/app.js` shows attended + punches, and "Free session ready" when owed.
+  - `checkin.js` uses the combined count for the milestone and pre-ticks when owed.
+  - `Code.gs` `handleCheckIn_` clears owed on a free check-in (check-in backend `2026-09-25a`).
+- **Test harness:** it now fakes the CRM too (shared between pages) and has `_test_checkin.html`, which runs the real Code.gs.
+
 ### Next up (needs Max)
 
 - **Training payments on Stripe:** Max wants them all on Stripe. That needs his price list (packs, memberships, group vs 1-on-1) and what each payment adds in Sessions Remaining. It touches `apps-script/Code.gs` and the live CRM. Referral payouts fire from a hand-edit `onEdit` trigger, and script writes don't fire `onEdit`, so a Stripe sync must call the payout logic directly.
 - **Idea:** time-of-day-aware suggestions, so it doesn't suggest fish and rice at 7am.
+- **Still to come:** Phase 3 fridge scan, and the rest of Phase 4 (milestone toasts, web push, coach dashboard).
 
 ### Open questions for Max
 

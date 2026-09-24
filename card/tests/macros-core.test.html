@@ -269,6 +269,62 @@
   truthy("over: chicken shrunk to fit (90g, <150 kcal)", chickenOver && chickenOver.items[0].grams === 90);
   truthy("over: top options are the lean proteins", ["Prawns", "Whey", "Tuna", "Egg whites"].some((n) => over[0].label.includes(n)));
 
+  // --- Progress: green days, weeks, weight trend, goal pace ------------------------------------
+  eq("mondayOf a Thursday", C.mondayOf("2026-09-24"), "2026-09-21");
+  eq("mondayOf a Monday", C.mondayOf("2026-09-21"), "2026-09-21");
+  eq("mondayOf a Sunday belongs to the week before", C.mondayOf("2026-09-27"), "2026-09-21");
+
+  const hist = [
+    { effective_date: "2026-09-01", kcal: 2100, protein_g: 150, carbs_g: 220, fat_g: 60 },
+    { effective_date: "2026-09-15", kcal: 1800, protein_g: 140, carbs_g: 170, fat_g: 55 },
+    { effective_date: "2026-09-15", kcal: 1850, protein_g: 140, carbs_g: 180, fat_g: 55 },
+  ];
+  eq("targetOn before any target", C.targetOn(hist, "2026-08-31"), null);
+  eq("targetOn first step", C.targetOn(hist, "2026-09-10").kcal, 2100);
+  eq("targetOn: a same-day change uses the later row", C.targetOn(hist, "2026-09-15").kcal, 1850);
+  eq("targetOn after a clear is null", C.targetOn(hist.concat([{ effective_date: "2026-09-20", kcal: 0 }]), "2026-09-22"), null);
+
+  const T = { kcal: 2000, protein_g: 150 };
+  eq("green: on target", C.isGreenDay({ kcal: 2000, protein_g: 150 }, T), true);
+  eq("green: protein exactly 90%", C.isGreenDay({ kcal: 2000, protein_g: 135 }, T), true);
+  eq("not green: protein 89.9%", C.isGreenDay({ kcal: 2000, protein_g: 134.85 }, T), false);
+  eq("green: kcal exactly +10%", C.isGreenDay({ kcal: 2200, protein_g: 150 }, T), true);
+  eq("green: kcal exactly -10%", C.isGreenDay({ kcal: 1800, protein_g: 150 }, T), true);
+  eq("not green: kcal +10.1%", C.isGreenDay({ kcal: 2202, protein_g: 150 }, T), false);
+  eq("not green: nothing logged", C.isGreenDay({ kcal: 0, protein_g: 0 }, T), false);
+  eq("not green: no target", C.isGreenDay({ kcal: 2000, protein_g: 150 }, null), false);
+
+  const wkHist = [{ effective_date: "2026-09-01", kcal: 2000, protein_g: 150 }];
+  const onT = { kcal: 1990, protein_g: 152 };
+  const offT = { kcal: 2600, protein_g: 150 };
+  const five = { "2026-09-21": onT, "2026-09-22": onT, "2026-09-23": offT, "2026-09-24": onT, "2026-09-25": onT, "2026-09-27": onT, "2026-09-28": onT };
+  const w5 = C.weekSummary(five, wkHist, "2026-09-21");
+  eq("week: 5 green of 7 earns a punch", [w5.greenDays, w5.earnsPunch], [5, true]);
+  eq("week: Monday after is not counted", w5.days.map((d) => d.date)[6], "2026-09-27");
+  eq("week: a missed day is logged-but-not-green", [w5.days[2].logged, w5.days[2].green], [true, false]);
+  eq("week: an empty day is not logged", w5.days[5].logged, false);
+  const four = Object.assign({}, five, { "2026-09-27": offT });
+  eq("week: 4 green of 7 doesn't earn", C.weekSummary(four, wkHist, "2026-09-21").earnsPunch, false);
+
+  const ma = C.movingAverage([
+    { date: "2026-09-03", kg: 80 },
+    { date: "2026-09-01", kg: 81 },
+    { date: "2026-09-02", kg: 79 },
+    { date: "2026-09-10", kg: 78 },
+  ], 7);
+  eq("trend: sorted by date", ma.map((p) => p.date), ["2026-09-01", "2026-09-02", "2026-09-03", "2026-09-10"]);
+  eq("trend: averages the last 7 days", ma[2].kg, 80);
+  eq("trend: a gap drops old weigh-ins", ma[3].kg, 78);
+
+  const cut = C.goalPace("2026-09-01", 80, -0.5, 78, "2026-12-01");
+  eq("pace: cut reaches goal in 4 weeks", [cut[1].date, cut[1].kg, cut[1].goalReached], ["2026-09-29", 78, true]);
+  const cutShort = C.goalPace("2026-09-01", 80, -0.5, 70, "2026-09-15");
+  eq("pace: stops at the chart's end if the goal's further out", [cutShort[1].date, cutShort[1].kg, cutShort[1].goalReached], ["2026-09-15", 79, false]);
+  const gain = C.goalPace("2026-09-01", 70, 0.25, 72, "2027-01-01");
+  eq("pace: lean gain goes up", [gain[1].date, gain[1].kg], ["2026-10-27", 72]);
+  eq("pace: goal in the wrong direction is ignored", C.goalPace("2026-09-01", 80, -0.5, 85, "2026-09-15")[1].kg, 79);
+  eq("pace: no rate, no line", C.goalPace("2026-09-01", 80, 0, 75, "2026-12-01").length, 0);
+
   // --- report -------------------------------------------------------------------------
   const failed = results.filter((x) => !x.ok);
   document.getElementById("summary").textContent = `${results.length - failed.length} passed, ${failed.length} failed`;
