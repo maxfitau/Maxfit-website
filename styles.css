@@ -487,12 +487,18 @@ section {
   z-index: 1;
 }
 
+/* intro.mp4 is natively an ultra-wide banner (1500x340, ~4.4:1), not
+   16:9 — object-fit: cover on a 16:9 box scaled it up to fill the
+   height and cropped most of its width, cutting the logo/wordmark it
+   shows off on both sides. contain shows the whole thing, letterboxed
+   top/bottom against the frame's own near-black background instead. */
 .hero__video {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  background: #000;
 }
 
 .hero__cta-wrap {
@@ -730,19 +736,6 @@ section {
   max-width: 420px;
   height: auto;
   margin: 32px 0;
-}
-
-.about__empathy {
-  position: relative;
-  text-align: center;
-  padding: 64px 24px 0;
-}
-
-.about__transform-photo {
-  width: min(100%, 360px);
-  height: auto;
-  margin: 0 auto;
-  border-radius: var(--radius);
 }
 
 .about__body {
