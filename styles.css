@@ -2415,6 +2415,18 @@ body.vt-lightbox-open { overflow: hidden; }
   font-size: 0.8rem;
   letter-spacing: 1px;
 }
+
+.price-card__was {
+  font-family: var(--font-head);
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--white);
+  margin-right: 10px;
+  text-decoration-line: line-through;
+  text-decoration-thickness: 3px;
+  text-decoration-color: var(--red);
+}
+
 /* ---------- 03 · Why it matters (showpiece) ---------- */
 
 .why__goo-defs {
