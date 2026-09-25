@@ -1621,3 +1621,154 @@ a.fuel-btn {
   justify-content: center;
   gap: 8px;
 }
+
+/* Plans: Silver / Gold / Platinum, and the AI meter. Brand colours only:
+   Silver is outlined grey, Gold outlined red, Platinum filled red. */
+.fuel-tier {
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 12px;
+  line-height: 1;
+  padding: 5px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--grey);
+  white-space: nowrap;
+}
+
+.fuel-tier--gold {
+  color: var(--white);
+  border-color: var(--red);
+}
+
+.fuel-tier--platinum {
+  color: var(--on-red);
+  background: var(--red);
+  border-color: var(--red);
+}
+
+.fuel-meter {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fuel-meter__head,
+.fuel-meter__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.fuel-meter__bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.fuel-meter__bar span {
+  display: block;
+  height: 100%;
+  background: var(--red);
+  border-radius: 999px;
+}
+
+.fuel-meter__text {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--grey);
+  margin: 0;
+}
+
+.fuel-plans {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fuel-plan-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--fuel-radius);
+  padding: 14px;
+}
+
+.fuel-plan-card.is-current {
+  border-color: var(--red);
+}
+
+.fuel-plan-card p {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--grey);
+  margin: 0;
+  line-height: 1.45;
+}
+
+.fuel-plan-card p b {
+  color: var(--white);
+}
+
+.fuel-plan-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.fuel-plan-card__price {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.fuel-plan-card__price b {
+  font-family: var(--font-head);
+  font-size: 20px;
+  color: var(--white);
+}
+
+.fuel-plan-card__badge {
+  align-self: flex-start;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 12px;
+  color: var(--grey);
+}
+
+.fuel-plan-card p.fuel-plan-card__note {
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.fuel-plans__manage {
+  align-self: center;
+}
+
+/* Five add-food tiles: the odd one out spans the row. */
+.fuel-modes .fuel-mode:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
+.fuel-save-meal {
+  display: flex;
+  flex-direction: column;
+}
+
+.fuel-save-meal__done {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--grey);
+  text-align: center;
+  margin: 0;
+}

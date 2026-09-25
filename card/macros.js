@@ -46,14 +46,14 @@
     viewDate: MacroCore.sydneyDate(),
     recent: [],
     favourites: [],
-    scansLeft: null,
-    scanLimit: 25,
+    meals: [], // saved meals: { id, name, items }
+    aiToday: null, // { tier, used, limit, left } from the server
     busy: false,
     confirm: null,
     pendingPhotoMode: null,
     loadedOn: null,
     aiEnabled: true,
-    plan: null, // { access, kind, until, daysLeft, upgradeUrl, portalUrl } from the server
+    plan: null, // { access, tier, kind, until, daysLeft, upgradeUrl, platinumUrl, portalUrl } from the server
     foods: [],
     moreIdeas: false,
     chat: [], // Ask Fuel messages, this visit only: { role, content, foods? }
@@ -148,6 +148,10 @@
       '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 5v14M7 5v14M11 5v14M14 5v14M18 5v14M20 5v14"/></svg>',
     label:
       '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>',
+    pen:
+      '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>',
+    bowl:
+      '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11h18a9 9 0 0 1-18 0z"/><path d="M8 7c0-1 1-2 2-2M13 7c0-1 1-2 2-2"/></svg>',
     search:
       '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>',
     plus: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
@@ -236,9 +240,9 @@
     state.day = data.day;
     state.recent = data.recent || [];
     state.favourites = data.favourites || [];
+    state.meals = data.meals || [];
     state.foods = data.foods || [];
-    state.scansLeft = data.scansLeft;
-    state.scanLimit = data.scanLimit || 25;
+    state.aiToday = data.aiToday || null;
     state.aiEnabled = data.aiEnabled !== false;
     state.plan = data.plan || null;
     state.weightTrend = data.weightTrend || null;
@@ -274,7 +278,7 @@
       state.loaded = true;
       state.loadedOn = MacroCore.sydneyDate();
       render();
-      if (returnedSession && state.plan && state.plan.kind === "paid") toast("Fuel AI is on. Welcome!");
+      if (returnedSession && state.plan && state.plan.kind === "paid") toast(`${TIER_NAMES[tier()]} is on. Welcome!`);
     } catch (err) {
       if (err.code === "bad_key") {
         renderUnlock(err.message + " If Max has sent you one, paste it below.");
@@ -399,12 +403,26 @@
       </button>`;
   }
 
+  function mealTotals(meal) {
+    return MacroCore.sumTotals(meal.items.map((it) => MacroCore.scale(it.per100, it.grams)));
+  }
+
+  function mealChip(meal, index) {
+    const t = mealTotals(meal);
+    return `
+      <button class="fuel-chip" type="button" data-act="meal" data-i="${index}">
+        <span class="fuel-chip__name"><span style="color:var(--red)">${ICONS.bowl}</span> ${esc(meal.name)}</span>
+        <span class="fuel-chip__meta">${meal.items.length} food${meal.items.length === 1 ? "" : "s"} · ${int(t.protein_g)}P${hideKcal() ? "" : ` · ${int(t.kcal)} kcal`}</span>
+      </button>`;
+  }
+
   function quickHtml() {
     const favs = state.favourites || [];
+    const meals = state.meals || [];
     const recents = (state.recent || []).filter(
       (r) => !favs.some((f) => f.name.toLowerCase() === String(r.name).toLowerCase())
     );
-    if (!favs.length && !recents.length) return "";
+    if (!favs.length && !recents.length && !meals.length) return "";
     return `
       <div class="fuel-section">
         <div class="fuel-section__head">
@@ -412,6 +430,7 @@
           ${favs.length ? '<button class="fuel-link" type="button" data-act="favs">Favourites</button>' : ""}
         </div>
         <div class="fuel-chips">
+          ${meals.map(mealChip).join("")}
           ${favs.map((f, i) => chip(f, "fav", i)).join("")}
           ${recents.map((r) => chip(r, "recent", state.recent.indexOf(r))).join("")}
         </div>
@@ -479,6 +498,7 @@
           ? `<button class="fuel-btn fuel-btn--ghost fuel-ask" type="button" data-act="ask">${ICONS.spark} Ask Fuel${fuelAi() ? "" : ` ${ICONS.lock}`}</button>`
           : ""
       }
+      ${aiMeterHtml()}
       ${today ? suggestionsHtml(state.moreIdeas ? 5 : 3, true) : ""}
       ${quickHtml()}
       ${entriesHtml()}
@@ -506,7 +526,11 @@
     else if (act === "settings") openSettings();
     else if (act === "targets") openTargets();
     else if (act === "favs") openFavourites();
-    else if (act === "edit") {
+    else if (act === "plans") openUpsell();
+    else if (act === "meal") {
+      const meal = state.meals[Number(btn.dataset.i)];
+      if (meal) openSavedMeal(meal);
+    } else if (act === "edit") {
       const entry = state.day.entries.find((x) => x.id === btn.dataset.id);
       if (entry) openEdit(entry);
     } else if (act === "quick") {
@@ -731,6 +755,7 @@
           b.addEventListener("click", () => {
             const kind = b.dataset.retry;
             if (kind === "barcode") openBarcode();
+            else if (kind === "describe") openDescribe(lastDescribed);
             else pickPhoto(kind, true);
           })
         );
@@ -742,9 +767,69 @@
   // Scan chooser + photos
   // ---------------------------------------------------------------------------
 
-  /** Fuel AI (photo/label scans, Ask Fuel): API key on the server AND a trial, plan or free month. */
+  /** Fuel AI (scans, Describe it, Ask Fuel): API key on the server AND Gold or Platinum (paid, free month or trial). */
   function fuelAi() {
     return state.aiEnabled && !!(state.plan && state.plan.access);
+  }
+
+  const TIER_NAMES = { silver: "Silver", gold: "Gold", platinum: "Platinum" };
+  const TIER_PRICES = { gold: "$9.99", platinum: "$14.99" };
+
+  function tier() {
+    return (state.plan && state.plan.tier) || (fuelAi() ? "gold" : "silver");
+  }
+
+  /** Gold/Platinum with none of today's AI uses left. */
+  function aiUsedUp() {
+    return fuelAi() && !!state.aiToday && state.aiToday.left <= 0;
+  }
+
+  /** After any AI call: the server's fresh count, onto the meter. */
+  function setAiToday(ai) {
+    if (!ai) return;
+    state.aiToday = ai;
+    if (state.plan && ai.tier) state.plan.tier = ai.tier;
+    render();
+  }
+
+  /** "7 of 10 AI uses left today". */
+  function aiLeftText() {
+    const a = state.aiToday;
+    if (!a || !a.limit) return "";
+    return a.left > 0 ? `${a.left} of ${a.limit} AI uses left today` : `All ${a.limit} AI uses used today · back at midnight`;
+  }
+
+  /** The meter under Add food: how much AI is left today, and the way up. */
+  function aiMeterHtml() {
+    if (!state.aiEnabled || !state.plan) return "";
+    if (!fuelAi()) {
+      return `
+        <div class="fuel-panel fuel-meter">
+          <div class="fuel-meter__head">
+            <span class="card__label">AI today</span>
+            <span class="fuel-tier fuel-tier--silver">Silver</span>
+          </div>
+          <p class="fuel-meter__text">Photo scans, Describe it and Ask Fuel come with Gold.</p>
+          <button class="fuel-link" type="button" data-act="plans">See plans</button>
+        </div>`;
+    }
+    const a = state.aiToday || { used: 0, limit: 0, left: 0 };
+    const pct = a.limit ? Math.min(100, Math.round((a.used / a.limit) * 100)) : 0;
+    const t = tier();
+    return `
+      <div class="fuel-panel fuel-meter">
+        <div class="fuel-meter__head">
+          <span class="card__label">AI today</span>
+          <span class="fuel-tier fuel-tier--${t}">${TIER_NAMES[t]}${state.plan.kind === "trial" ? " trial" : ""}</span>
+        </div>
+        <div class="fuel-meter__bar" role="progressbar" aria-valuemin="0" aria-valuemax="${a.limit}" aria-valuenow="${a.used}" aria-label="AI uses today">
+          <span style="width:${pct}%"></span>
+        </div>
+        <div class="fuel-meter__foot">
+          <span class="fuel-meter__text">${esc(aiLeftText())}</span>
+          ${t !== "platinum" ? '<button class="fuel-link" type="button" data-act="plans">Get more</button>' : ""}
+        </div>
+      </div>`;
   }
 
   function fmtDate(ymd) {
@@ -753,37 +838,43 @@
     return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-AU", { day: "numeric", month: "short", timeZone: "UTC" });
   }
 
-  /** "Free trial · 5 days left", "Fuel AI · renews 23 Oct", … or "" when Fuel AI is off for everyone. */
+  /** "Gold free trial · 5 days left", "Platinum · renews 23 Oct", … or "" when Fuel AI is off for everyone. */
   function planText() {
     const p = state.plan;
     if (!state.aiEnabled || !p) return "";
-    if (p.kind === "paid") return p.until ? `Fuel AI · renews ${fmtDate(p.until)}` : "Fuel AI is on";
-    if (p.kind === "comp") return `Fuel AI · free until ${fmtDate(p.until)} (from Max)`;
-    if (p.kind === "trial") return `Fuel AI free trial · ${p.daysLeft} day${p.daysLeft === 1 ? "" : "s"} left`;
-    if (p.kind === "lapsed") return "Your Fuel AI subscription has ended";
-    return "Your Fuel AI free week has finished";
+    const name = TIER_NAMES[p.tier] || "Gold";
+    if (p.kind === "paid") return p.until ? `${name} · renews ${fmtDate(p.until)}` : `${name} is on`;
+    if (p.kind === "comp") return `${name} · free until ${fmtDate(p.until)} (from Max)`;
+    if (p.kind === "trial") return `Gold free trial · ${p.daysLeft} day${p.daysLeft === 1 ? "" : "s"} left`;
+    if (p.kind === "lapsed") return "Your subscription has ended, so you're on Silver";
+    if (p.kind === "trial_over") return "Your free week of Gold has finished, so you're on Silver";
+    return "Silver";
   }
 
   function openScanChooser() {
-    // Photo and label scans need the Claude API key on the server; without
-    // it only the free ways in (barcode and search) are shown.
+    // Photo, label and Describe it need the Claude API key on the server;
+    // without it only the free ways in (barcode and search) are shown.
     const ai = state.aiEnabled;
     const locked = ai && !fuelAi();
+    const usedUp = aiUsedUp();
     const sub = !ai
       ? "Scan a barcode, or search for it and set the amount."
       : locked
-      ? "Barcodes and search are free. Photo and label scans are part of Fuel AI."
-      : planText();
+      ? "Barcodes, search and saved meals are free. Photo, label and Describe it come with Gold."
+      : [planText(), aiLeftText()].filter(Boolean).join(" · ");
+    const aiTag = (label) => (locked ? "Gold" : usedUp ? "None left today" : label);
+    const aiClass = locked || usedUp ? " is-locked" : "";
     openSheet(
       `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Add food</h2>
        <p class="fuel-sheet__sub">${esc(sub)}</p>
        <div class="fuel-modes">
-         ${ai ? `<button class="fuel-mode${locked ? " is-locked" : ""}" type="button" data-mode="meal">${ICONS.camera}Photo<small>${locked ? "Fuel AI" : "Snap your meal"}</small></button>` : ""}
+         ${ai ? `<button class="fuel-mode${aiClass}" type="button" data-mode="meal">${ICONS.camera}Photo<small>${aiTag("Snap your meal")}</small></button>` : ""}
+         ${ai ? `<button class="fuel-mode${aiClass}" type="button" data-mode="describe">${ICONS.pen}Describe<small>${aiTag("Type what you ate")}</small></button>` : ""}
+         ${ai ? `<button class="fuel-mode${aiClass}" type="button" data-mode="label">${ICONS.label}Label<small>${aiTag("Nutrition panel")}</small></button>` : ""}
          <button class="fuel-mode" type="button" data-mode="barcode">${ICONS.barcode}Barcode<small>Packaged food</small></button>
-         ${ai ? `<button class="fuel-mode${locked ? " is-locked" : ""}" type="button" data-mode="label">${ICONS.label}Label<small>${locked ? "Fuel AI" : "Nutrition panel"}</small></button>` : ""}
-         <button class="fuel-mode" type="button" data-mode="search">${ICONS.search}Search<small>Type it in</small></button>
+         <button class="fuel-mode" type="button" data-mode="search">${ICONS.search}Search<small>Foods &amp; saved meals</small></button>
        </div>
-       ${ai && !locked ? '<button class="fuel-btn fuel-btn--quiet" type="button" data-mode="library">Choose a meal photo from your library</button>' : ""}`,
+       ${ai && !locked && !usedUp ? '<button class="fuel-btn fuel-btn--quiet" type="button" data-mode="library">Choose a meal photo from your library</button>' : ""}`,
       (body) => {
         body.querySelectorAll("[data-mode]").forEach((b) =>
           b.addEventListener("click", () => {
@@ -792,7 +883,8 @@
             // iOS Safari won't open the camera.
             if (mode === "barcode") openBarcode();
             else if (mode === "search") openSearch();
-            else if (locked) openUpsell();
+            else if (locked || usedUp) openUpsell(usedUp ? { reason: "limit" } : undefined);
+            else if (mode === "describe") openDescribe();
             else if (mode === "library") pickPhoto("meal", false);
             else pickPhoto(mode, true);
           })
@@ -801,14 +893,63 @@
     );
   }
 
+  /** "Describe it": type what you ate, and the AI estimates it (1 AI use, the cheaper text model). */
+  function openDescribe(text) {
+    openSheet(
+      `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Describe it</h2>
+       <p class="fuel-sheet__sub">What did you eat? Add amounts or where it's from if you know them.</p>
+       <textarea class="fuel-input fuel-note" data-describe rows="3" maxlength="300" placeholder="e.g. Chicken wrap from Subway and a large flat white" aria-label="What you ate">${esc(text || "")}</textarea>
+       <button class="fuel-btn" type="button" data-go>Work it out</button>
+       <p class="fuel-disclaimer">${esc(aiLeftText())}</p>`,
+      (body) => {
+        const box = body.querySelector("[data-describe]");
+        body.querySelector("[data-go]").addEventListener("click", () => {
+          const t = box.value.trim();
+          if (!t) {
+            box.focus();
+            return;
+          }
+          describeMeal(t);
+        });
+      }
+    );
+  }
+
+  let lastDescribed = ""; // so "Try again" keeps what they typed
+
+  async function describeMeal(text) {
+    lastDescribed = text;
+    sheetLoading("Working it out");
+    let data;
+    try {
+      data = await MacroApi.call("describe", { text: text }, { timeoutMs: 60000 });
+    } catch (err) {
+      if (err.code === "no_plan" || err.code === "limit") {
+        if (err.code === "no_plan" && state.plan) state.plan.access = false;
+        openUpsell({ reason: err.code === "limit" ? "limit" : "", message: err.message });
+        return;
+      }
+      sheetError("Hmm", err.message, '<button class="fuel-btn" type="button" data-retry="describe">Try again</button>');
+      return;
+    }
+    setAiToday(data.aiToday);
+    const meal = data.meal;
+    if (!meal.items.length) {
+      sheetError("Nothing to log", meal.meal_guess || "Couldn't find any food in that.", '<button class="fuel-btn" type="button" data-retry="describe">Try again</button>');
+      return;
+    }
+    openConfirm({ title: meal.meal_guess || "Your meal", source: "describe", items: meal.items });
+  }
+
   // ---------------------------------------------------------------------------
   // Search and "Enter the numbers" (free, no AI)
   // ---------------------------------------------------------------------------
 
-  /** Favourites, then recent foods, then Max's Foods list, each name once. */
+  /** Saved meals, favourites, recent foods, then Max's Foods list, each name once. */
   function searchPool() {
     const seen = {};
     const out = [];
+    (state.meals || []).forEach((m) => out.push({ kind: "meal", name: m.name, meal: m }));
     const add = (kind, name, item, meta) => {
       const key = String(name).toLowerCase();
       if (!name || seen[key]) return;
@@ -830,6 +971,17 @@
   }
 
   function searchRowHtml(row, i) {
+    if (row.kind === "meal") {
+      const t = mealTotals(row.meal);
+      return `
+      <button class="fuel-entry" type="button" data-pick="${i}">
+        <span>
+          <span class="fuel-entry__name"><span style="color:var(--red)">${ICONS.bowl}</span> ${esc(row.name)}</span>
+          <span class="fuel-entry__meta">Saved meal · ${row.meal.items.length} food${row.meal.items.length === 1 ? "" : "s"}${hideKcal() ? "" : ` · ${int(t.kcal)} kcal`}</span>
+        </span>
+        <span class="fuel-entry__p">${int(t.protein_g)}<small>P</small></span>
+      </button>`;
+    }
     const m = MacroCore.scale(row.item.per100, row.item.grams);
     const amount = row.meta ? `${row.meta} (${amountText(row.item)})` : amountText(row.item);
     return `
@@ -876,7 +1028,8 @@
         results.addEventListener("click", (e) => {
           const b = e.target.closest("[data-pick]");
           const row = b && shown[Number(b.dataset.pick)];
-          if (row) pickFood(Object.assign({}, row.item), into);
+          if (row && row.kind === "meal") openSavedMeal(row.meal, into);
+          else if (row) pickFood(Object.assign({}, row.item), into);
         });
         body.querySelector("[data-quick]").addEventListener("click", () => openQuickAdd({ into: into, name: q.value.trim() }));
         body.querySelector("[data-back]").addEventListener("click", () => (into ? renderConfirm() : closeSheet()));
@@ -888,11 +1041,25 @@
   function pickFood(item, into) {
     if (into && state.confirm) {
       const c = state.confirm;
+      // A one-food confirm is titled after that food; with more, it's a meal.
+      if (c.items.length === 1 && c.title === c.items[0].name) c.title = "Your meal";
       c.items.push(Object.assign({}, item, { grams: Math.round(Number(item.grams) || 100) }));
-      if (c.source === "manual") c.title = "Your meal";
       renderConfirm();
     } else {
       openConfirm({ title: item.name, source: "manual", items: [item] });
+    }
+  }
+
+  /** A saved meal into the confirm sheet, so today's amounts can differ. */
+  function openSavedMeal(meal, into) {
+    const items = meal.items.map((it) => Object.assign({}, it, { per100: Object.assign({}, it.per100) }));
+    if (into && state.confirm) {
+      const c = state.confirm;
+      if (c.items.length === 1 && c.title === c.items[0].name) c.title = "Your meal";
+      items.forEach((it) => c.items.push(Object.assign(it, { grams: Math.round(Number(it.grams) || 100) })));
+      renderConfirm();
+    } else {
+      openConfirm({ title: meal.name, source: "manual", items: items, savedMealId: meal.id });
     }
   }
 
@@ -949,28 +1116,68 @@
   // Fuel AI upsell (Stripe)
   // ---------------------------------------------------------------------------
 
-  function openUpsell() {
+  /**
+   * The plans: Silver (free), Gold and Platinum. opts.reason "limit" = they
+   * just ran out of today's AI uses (opts.message is the server's wording).
+   */
+  function openUpsell(opts) {
+    opts = opts || {};
     const p = state.plan || {};
-    const ended = p.kind === "trial_over" || p.kind === "lapsed";
+    const t = tier();
+    const paying = p.kind === "paid";
+    const perDay = p.aiPerDay || { gold: 10, platinum: 25 };
+    const sub =
+      opts.reason === "limit"
+        ? opts.message || "That's all your AI uses for today."
+        : p.kind === "trial_over" || p.kind === "lapsed"
+        ? planText() + "."
+        : "Your AI nutrition coach, in your pocket. Cancel any time.";
+    const badge = (text) => `<span class="fuel-plan-card__badge">${esc(text)}</span>`;
+    const buy = (url, label) =>
+      url ? `<a class="fuel-btn" href="${esc(url)}" target="_blank" rel="noopener" data-upgrade>${esc(label)}</a>` : "";
+
+    let goldAction = "";
+    if (t === "gold" && paying) goldAction = badge("Your plan");
+    else if (t === "gold" && p.kind === "trial") goldAction = badge(`Free trial · ${p.daysLeft} day${p.daysLeft === 1 ? "" : "s"} left`) + buy(p.upgradeUrl, "Keep Gold");
+    else if (t === "gold" && p.kind === "comp") goldAction = badge(`Free from Max until ${fmtDate(p.until)}`) + buy(p.upgradeUrl, "Get Gold");
+    else if (!(paying && t === "platinum")) goldAction = buy(p.upgradeUrl, "Get Gold");
+
+    let platAction = "";
+    if (t === "platinum" && paying) platAction = badge("Your plan");
+    else if (t === "platinum" && p.kind === "comp") platAction = badge(`Free from Max until ${fmtDate(p.until)}`);
+    else if (paying && t === "gold") {
+      platAction = p.portalUrl
+        ? `<a class="fuel-btn" href="${esc(p.portalUrl)}" target="_blank" rel="noopener" data-upgrade>Switch to Platinum</a>
+           <p class="fuel-plan-card__note">Opens Stripe's billing page: choose Update plan, then Fuel Platinum. Stripe adjusts your bill for the rest of the month.</p>`
+        : "";
+    } else platAction = buy(p.platinumUrl, "Get Platinum");
+
+    const noLinks = !p.upgradeUrl && !p.platinumUrl && !paying;
     openSheet(
-      `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Fuel AI</h2>
-       <p class="fuel-sheet__sub">${esc(ended ? planText() + "." : "Your AI nutrition coach, in your pocket.")}</p>
-       <ul class="fuel-perks">
-         <li>${ICONS.camera}<span><b>Snap any meal</b> and get the protein, carbs, fat and calories.</span></li>
-         <li>${ICONS.label}<span><b>Scan nutrition labels</b> for anything without a barcode.</span></li>
-         <li>${ICONS.spark}<span><b>Ask Fuel</b>, your copilot: "What should I have for dinner?"</span></li>
-       </ul>
-       <p class="fuel-price"><b>$9.99</b> a month · cancel any time</p>
-       ${
-         p.upgradeUrl
-           ? `<a class="fuel-btn" href="${esc(p.upgradeUrl)}" target="_blank" rel="noopener" data-upgrade>Upgrade to Fuel AI</a>`
-           : '<p class="fuel-error">Fuel AI sign-ups open soon. Ask Max about it at your next session.</p>'
-       }
-       <button class="fuel-btn fuel-btn--quiet" type="button" data-refresh>Already paid? Tap to refresh</button>
-       <p class="fuel-disclaimer">Barcode scanning, your totals and "what to eat next" ideas stay free.</p>`,
+      `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Fuel plans</h2>
+       <p class="fuel-sheet__sub">${esc(sub)}</p>
+       <div class="fuel-plans">
+         <div class="fuel-plan-card${t === "silver" ? " is-current" : ""}">
+           <div class="fuel-plan-card__head"><span class="fuel-tier fuel-tier--silver">Silver</span><span class="fuel-plan-card__price">Free</span></div>
+           <p>Barcodes, search, saved meals, typed-in numbers, what-to-eat ideas and your progress.</p>
+           ${t === "silver" ? badge("Your plan") : ""}
+         </div>
+         <div class="fuel-plan-card${t === "gold" ? " is-current" : ""}">
+           <div class="fuel-plan-card__head"><span class="fuel-tier fuel-tier--gold">Gold</span><span class="fuel-plan-card__price"><b>${TIER_PRICES.gold}</b> a month</span></div>
+           <p><b>${perDay.gold} AI uses a day:</b> snap a meal, scan a label, Describe it, and Ask Fuel.</p>
+           ${goldAction}
+         </div>
+         <div class="fuel-plan-card${t === "platinum" ? " is-current" : ""}">
+           <div class="fuel-plan-card__head"><span class="fuel-tier fuel-tier--platinum">Platinum</span><span class="fuel-plan-card__price"><b>${TIER_PRICES.platinum}</b> a month</span></div>
+           <p><b>${perDay.platinum} AI uses a day.</b> Everything in Gold, with room to log every meal and snack.</p>
+           ${platAction}
+         </div>
+       </div>
+       ${noLinks ? '<p class="fuel-error">Sign-ups open soon. Ask Max about it at your next session.</p>' : ""}
+       ${paying && p.portalUrl ? `<a class="fuel-link fuel-plans__manage" href="${esc(p.portalUrl)}" target="_blank" rel="noopener">Manage or cancel your subscription</a>` : ""}
+       <button class="fuel-btn fuel-btn--quiet" type="button" data-refresh>Already paid? Tap to refresh</button>`,
       (body) => {
-        const upgrade = body.querySelector("[data-upgrade]");
-        if (upgrade) upgrade.addEventListener("click", () => (state.awaitingUpgrade = true));
+        body.querySelectorAll("[data-upgrade]").forEach((a) => a.addEventListener("click", () => (state.awaitingUpgrade = true)));
         body.querySelector("[data-refresh]").addEventListener("click", (e) => refreshPlan(e.target));
       }
     );
@@ -986,9 +1193,9 @@
       const data = await MacroApi.call("me", { date: state.viewDate, sync: true });
       applyMe(data);
       render();
-      if (fuelAi()) {
+      if (state.plan && state.plan.kind === "paid") {
         closeSheet();
-        toast("Fuel AI is on");
+        toast(`${TIER_NAMES[tier()]} is on`);
       } else if (btn) {
         btn.disabled = false;
         btn.textContent = "Not showing yet. Tap to check again";
@@ -1076,9 +1283,9 @@
       if (note) fields.note = note;
       data = await MacroApi.call("analyseImage", fields, { timeoutMs: 90000 });
     } catch (err) {
-      if (err.code === "no_plan") {
-        if (state.plan) state.plan.access = false;
-        openUpsell();
+      if (err.code === "no_plan" || err.code === "limit") {
+        if (err.code === "no_plan" && state.plan) state.plan.access = false;
+        openUpsell({ reason: err.code === "limit" ? "limit" : "", message: err.message });
         return;
       }
       const again = `<button class="fuel-btn" type="button" data-retry="${mode}">Try another photo</button>`;
@@ -1086,7 +1293,7 @@
       sheetError("Hmm", err.message, again + alt);
       return;
     }
-    if (typeof data.scansLeft === "number") state.scansLeft = data.scansLeft;
+    setAiToday(data.aiToday);
 
     if (mode === "label") {
       const l = data.label;
@@ -1399,7 +1606,7 @@
   }
 
   function confidenceTag(item) {
-    if (item.source !== "photo") return "";
+    if (item.source !== "photo" && item.source !== "describe") return "";
     if (item.confidence === "low") return '<span class="fuel-tag fuel-tag--red">Unsure</span>';
     if (item.confidence === "medium") return '<span class="fuel-tag">Estimate</span>';
     return "";
@@ -1438,6 +1645,7 @@
     }
     if (c.source === "label") return "Read from your label photo. Check the numbers match the pack.";
     if (c.source === "manual") return "Set how much you had, then add it.";
+    if (c.source === "describe") return "Estimated from your description, so check the amounts. A photo or a search is usually closer.";
     return "";
   }
 
@@ -1480,6 +1688,9 @@
          <span class="fuel-sum__nums" data-sum>${macroLine(confirmTotals(c))}</span>
        </div>
        <button class="fuel-btn" type="button" data-add>Add to ${esc(where)}</button>
+       <div class="fuel-save-meal" data-save-area>
+         <button class="fuel-btn fuel-btn--quiet" type="button" data-save-meal>☆ Save as a meal for next time</button>
+       </div>
        <button class="fuel-btn fuel-btn--quiet" type="button" data-close>Cancel</button>`,
       (body) => {
         const refresh = (i) => {
@@ -1519,6 +1730,38 @@
           }
           if (e.target.closest("[data-more]")) {
             openSearch({ into: true });
+            return;
+          }
+          if (e.target.closest("[data-save-meal]")) {
+            const generic = /^(your meal|food)$/i.test(String(c.title).trim());
+            const area = body.querySelector("[data-save-area]");
+            area.innerHTML = `
+              <form class="fuel-inline" data-save-form autocomplete="off">
+                <input class="fuel-input" name="mealName" maxlength="60" placeholder="Name it, e.g. Protein smoothie" value="${esc(generic ? "" : c.title)}" aria-label="Meal name" />
+                <button class="fuel-btn" type="submit">Save</button>
+              </form>`;
+            const form = area.querySelector("[data-save-form]");
+            form.elements.mealName.focus();
+            form.addEventListener("submit", async (ev) => {
+              ev.preventDefault();
+              const name = form.elements.mealName.value.trim();
+              const items = c.items.filter((it) => Number(it.grams) > 0 && String(it.name).trim());
+              if (!name || !items.length) {
+                form.elements.mealName.focus();
+                return;
+              }
+              const saveBtn = form.querySelector("button");
+              saveBtn.disabled = true;
+              try {
+                const data = await MacroApi.call("saveMeal", { name: name, items: items.map(payloadItem) });
+                state.meals = data.meals || [];
+                area.innerHTML = `<p class="fuel-save-meal__done">★ Saved as "${esc(name)}". It's under Tap to log again.</p>`;
+                render();
+              } catch (err) {
+                saveBtn.disabled = false;
+                toast(err.message);
+              }
+            });
             return;
           }
           const meal = e.target.closest("[data-meal]");
@@ -1620,7 +1863,7 @@
     }
     openSheet(
       `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Ask Fuel</h2>
-       <p class="fuel-sheet__sub">${esc(planText())}</p>
+       <p class="fuel-sheet__sub" data-chat-left>${esc(aiLeftText() || planText())}</p>
        <div class="fuel-chat" data-chat>${chatHtml()}</div>
        <form class="fuel-inline" data-chat-form autocomplete="off">
          <input class="fuel-input" name="q" maxlength="500" placeholder="Ask about food…" aria-label="Your question" />
@@ -1649,12 +1892,16 @@
           try {
             const data = await MacroApi.call("chat", { date: state.viewDate, messages: history }, { timeoutMs: 60000 });
             Object.assign(pending, { pending: false, content: data.reply, foods: data.foods || [] });
+            setAiToday(data.aiToday);
+            const left = body.querySelector("[data-chat-left]");
+            if (left) left.textContent = aiLeftText();
           } catch (err) {
-            if (err.code === "no_plan") {
+            if (err.code === "no_plan" || err.code === "limit") {
               state.chat.pop();
+              state.chat.pop(); // their question too: it didn't go anywhere
               state.busy = false;
-              if (state.plan) state.plan.access = false;
-              openUpsell();
+              if (err.code === "no_plan" && state.plan) state.plan.access = false;
+              openUpsell({ reason: err.code === "limit" ? "limit" : "", message: err.message });
               return;
             }
             Object.assign(pending, { pending: false, error: true, content: err.message });
@@ -2172,9 +2419,28 @@
 
   function openFavourites() {
     const list = state.favourites;
+    const meals = state.meals || [];
     openSheet(
       `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Favourites</h2>
        <p class="fuel-sheet__sub">Tap a favourite on the Fuel screen to log it in one go. Add more from any logged item.</p>
+       <span class="card__label">Saved meals</span>
+       <div class="fuel-panel">
+         ${
+           meals.length
+             ? meals
+                 .map((m) => {
+                   const t = mealTotals(m);
+                   return `
+           <div class="fuel-entry" style="cursor:default">
+             <span><span class="fuel-entry__name">${esc(m.name)}</span><span class="fuel-entry__meta">${esc(m.items.map((it) => it.name).join(", "))} · ${macroLine(t)}</span></span>
+             <button class="fuel-item__remove" type="button" data-unmeal="${esc(m.id)}" aria-label="Delete ${esc(m.name)}">${ICONS.x}</button>
+           </div>`;
+                 })
+                 .join("")
+             : '<p class="fuel-empty">No saved meals yet. Build one with Add food, then tap "Save as a meal".</p>'
+         }
+       </div>
+       <span class="card__label">Foods</span>
        <div class="fuel-panel">
          ${
            list.length
@@ -2192,6 +2458,20 @@
        </div>
        <button class="fuel-btn fuel-btn--quiet" type="button" data-close>Done</button>`,
       (body) => {
+        body.querySelectorAll("[data-unmeal]").forEach((b) =>
+          b.addEventListener("click", async () => {
+            b.disabled = true;
+            try {
+              const data = await MacroApi.call("deleteMeal", { mealId: b.dataset.unmeal });
+              state.meals = data.meals || [];
+              render();
+              openFavourites();
+            } catch (err) {
+              b.disabled = false;
+              toast(err.message);
+            }
+          })
+        );
         body.querySelectorAll("[data-unfav]").forEach((b) =>
           b.addEventListener("click", async () => {
             b.disabled = true;
@@ -2380,19 +2660,19 @@
        <label class="fuel-toggle">Hide calories, focus on protein <input type="checkbox" data-hide ${hideKcal() ? "checked" : ""} /></label>
        <label class="fuel-toggle">Hide weight <input type="checkbox" data-hide-weight ${state.member && state.member.hide_weight ? "checked" : ""} /></label>
        <button class="fuel-btn fuel-btn--ghost" type="button" data-s="targets">Daily targets</button>
-       <button class="fuel-btn fuel-btn--ghost" type="button" data-s="favs">Favourites</button>
+       <button class="fuel-btn fuel-btn--ghost" type="button" data-s="favs">Favourites &amp; saved meals</button>
        ${
          state.aiEnabled && state.plan
            ? `<div class="fuel-panel fuel-plan">
-                <span class="card__label card__label--red">Fuel AI</span>
+                <span class="card__label card__label--red">Your plan</span>
                 <span class="fuel-plan__text">${esc(planText())}</span>
+                ${fuelAi() ? `<span class="fuel-plan__text">${esc(aiLeftText())}</span>` : ""}
                 ${
                   state.plan.kind === "paid" && state.plan.portalUrl
                     ? `<a class="fuel-link" href="${esc(state.plan.portalUrl)}" target="_blank" rel="noopener">Manage subscription</a>`
-                    : state.plan.kind !== "paid" && state.plan.kind !== "comp"
-                    ? '<button class="fuel-link" type="button" data-s="upgrade">Upgrade to Fuel AI</button>'
                     : ""
                 }
+                <button class="fuel-link" type="button" data-s="upgrade">See plans</button>
               </div>`
            : ""
        }

@@ -329,30 +329,37 @@ const MacroCore = (function () {
   }
 
   /**
-   * Whether a member has Fuel AI today, and why. `m` has the Members-tab
-   * fields trial_started, plan_status, plan_until, comp_until (dates as
-   * "YYYY-MM-DD"); `today` is a Sydney date.
+   * Whether a member has Fuel AI today, at which tier, and why. `m` has
+   * the Members-tab fields trial_started, plan_status, plan_until,
+   * comp_until (dates as "YYYY-MM-DD"), plan_tier and comp_tier; `today`
+   * is a Sydney date.
    *
+   * tier: "silver" (free, no AI) | "gold" | "platinum". The free week is Gold.
    * kind: "paid" | "comp" (a free month from Max) | "trial" |
    *       "trial_over" | "lapsed" (subscription ended) | "not_started"
    */
   function planState(m, today) {
     m = m || {};
     const status = String(m.plan_status || "");
-    if (PAID_STATUSES.indexOf(status) >= 0) {
-      return { access: true, kind: "paid", status: status, until: String(m.plan_until || "") };
-    }
+    const tierOf = (t) => (t === "platinum" ? "platinum" : "gold");
     const comp = String(m.comp_until || "");
-    if (isYmd_(comp) && comp >= today) {
-      return { access: true, kind: "comp", until: comp, daysLeft: daysBetween(today, comp) + 1 };
+    const compState =
+      isYmd_(comp) && comp >= today
+        ? { access: true, tier: tierOf(m.comp_tier), kind: "comp", until: comp, daysLeft: daysBetween(today, comp) + 1 }
+        : null;
+    if (PAID_STATUSES.indexOf(status) >= 0) {
+      const paid = { access: true, tier: tierOf(m.plan_tier), kind: "paid", status: status, until: String(m.plan_until || "") };
+      // A free Platinum month from Max tops up a paying Gold client.
+      return compState && compState.tier === "platinum" && paid.tier === "gold" ? compState : paid;
     }
+    if (compState) return compState;
     const start = String(m.trial_started || "");
     if (isYmd_(start)) {
       const end = addDays(start, TRIAL_DAYS);
-      if (today < end) return { access: true, kind: "trial", until: end, daysLeft: daysBetween(today, end) };
-      return { access: false, kind: status ? "lapsed" : "trial_over", status: status };
+      if (today < end) return { access: true, tier: "gold", kind: "trial", until: end, daysLeft: daysBetween(today, end) };
+      return { access: false, tier: "silver", kind: status ? "lapsed" : "trial_over", status: status };
     }
-    return { access: false, kind: "not_started" };
+    return { access: false, tier: "silver", kind: "not_started" };
   }
 
   // ---------------------------------------------------------------------------

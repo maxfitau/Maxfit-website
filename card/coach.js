@@ -8,8 +8,9 @@
  *   - set a client's targets in grams (kcal = 4P + 4C + 9F), approving
  *     anything under the 1,500 / 1,200 kcal floor explicitly
  *   - hand targets back to the client's own calculator
- *   - see each client's Fuel AI status (trial / paying / free month),
- *     give a free month, and ask the backend to check Stripe now
+ *   - see each client's plan (Silver / Gold / Platinum: trial, paying or
+ *     free month), give a free month of Gold or Platinum, and ask the
+ *     backend to check Stripe now
  *   - log a client's weight after a session, set their goal weight and
  *     pace, and see this week's green days and their nutrition punches
  */
@@ -127,7 +128,7 @@
         <div class="coach-actions">
           ${c.link ? '<button class="fuel-btn" type="button" data-a="copy">Copy link</button>' : '<button class="fuel-btn" type="button" data-a="issue">Create Fuel link</button>'}
           <button class="fuel-btn fuel-btn--ghost" type="button" data-a="targets">Set targets</button>
-          ${c.hasKey && aiEnabled ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="giveMonth">Give a free month</button>' : ""}
+          ${c.hasKey && aiEnabled ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="giveMonth" data-tier="gold">Free month of Gold</button><button class="fuel-btn fuel-btn--ghost" type="button" data-a="giveMonth" data-tier="platinum">Free month of Platinum</button>' : ""}
           ${c.hasKey ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="weight">Log weight</button>' : ""}
           ${c.hasKey && c.targets ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="goal">Set goal</button>' : ""}
           ${c.link ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="rotate">New link</button>' : ""}
@@ -203,12 +204,13 @@
       const [y, m, d] = ymd.split("-").map(Number);
       return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-AU", { day: "numeric", month: "short", timeZone: "UTC" });
     };
-    if (p.kind === "paid") return `Fuel AI: paying${p.until ? ` · renews ${date(p.until)}` : ""}${p.status === "past_due" ? " · card failed, Stripe retrying" : ""}`;
-    if (p.kind === "comp") return `Fuel AI: free month · until ${date(p.until)}`;
-    if (p.kind === "trial") return `Fuel AI: free trial · ${p.daysLeft} day${p.daysLeft === 1 ? "" : "s"} left`;
-    if (p.kind === "lapsed") return "Fuel AI: subscription ended";
-    if (p.kind === "trial_over") return "Fuel AI: trial finished, not subscribed";
-    return "Fuel AI: trial starts when they first open Fuel";
+    const tier = p.tier === "platinum" ? "Platinum" : "Gold";
+    if (p.kind === "paid") return `${tier}: paying${p.until ? ` · renews ${date(p.until)}` : ""}${p.status === "past_due" ? " · card failed, Stripe retrying" : ""}`;
+    if (p.kind === "comp") return `${tier}: free month · until ${date(p.until)}`;
+    if (p.kind === "trial") return `Gold: free trial · ${p.daysLeft} day${p.daysLeft === 1 ? "" : "s"} left`;
+    if (p.kind === "lapsed") return "Silver: subscription ended";
+    if (p.kind === "trial_over") return "Silver: trial finished, not subscribed";
+    return "Silver: Gold trial starts when they first open Fuel";
   }
 
   function render() {
@@ -355,10 +357,10 @@
         render();
         toast(`Saved ${c.name}'s goal`);
       } else if (a === "giveMonth") {
-        const data = await MacroApi.coach("coachGiveMonth", pin, { slug: slug });
+        const data = await MacroApi.coach("coachGiveMonth", pin, { slug: slug, tier: btn.dataset.tier });
         c.plan = data.plan;
         render();
-        toast(`${c.name} has Fuel AI free until ${planText(data.plan).split("until ")[1] || "next month"}`);
+        toast(`${c.name} has ${btn.dataset.tier === "platinum" ? "Platinum" : "Gold"} free until ${planText(data.plan).split("until ")[1] || "next month"}`);
       } else if (a === "clearTargets") {
         await MacroApi.coach("coachSetTargets", pin, { slug: slug, clear: true });
         open[slug] = null;

@@ -16,17 +16,21 @@
  *   STAFF_PIN          — same PIN as the check-in script (coach view)
  *   MACRO_SHEET_ID     — id of the private "MaxFit Macros" sheet
  *   MAIN_SHEET_ID      — the CRM sheet (read-only here, for client names)
- *   DAILY_AI_LIMIT     — optional, photo/label scans per member per day (default 25)
- *   CHAT_DAILY_LIMIT   — optional, Ask Fuel messages per member per day (default 40)
+ *   GOLD_DAILY_AI      — optional, AI uses per day on Gold (default 10)
+ *   PLATINUM_DAILY_AI  — optional, AI uses per day on Platinum (default 25)
  *   STRIPE_SECRET_KEY  — Stripe RESTRICTED key, read-only on Checkout
  *                        Sessions and Subscriptions
- *   STRIPE_FUEL_LINK   — the Stripe Payment Link for Fuel AI ($14.99/month)
- *   STRIPE_PORTAL_LINK — Stripe customer-portal login link (manage/cancel)
+ *   STRIPE_FUEL_LINK   — the Stripe Payment Link for Fuel Gold ($9.99/month)
+ *   STRIPE_PLATINUM_LINK — the Payment Link for Fuel Platinum ($14.99/month)
+ *   STRIPE_PORTAL_LINK — Stripe customer-portal login link (manage, switch
+ *                        Gold ↔ Platinum, cancel)
  *
- * Fuel AI (photo/label scans + the Ask Fuel chat) is a paid add-on: a
- * 7-day free trial from the first time a client opens FUEL, then a Stripe
- * subscription, or a free month Max gives from the coach page. Barcodes,
- * targets, totals and "what to eat next" suggestions are free for everyone.
+ * Plans: Silver is free (barcodes, search, saved meals, typed-in numbers,
+ * targets, totals, suggestions, progress). Gold and Platinum add Fuel AI:
+ * photo and label scans, Describe it, and Ask Fuel, from one daily pool of
+ * AI uses. New clients get 7 days of Gold from the first time they open
+ * FUEL; after that it's a Stripe subscription or a free month from Max. A
+ * subscription's tier comes from its price's lookup key ("fuel_platinum").
  *
  * Stripe is never called by webhook (Apps Script can't read webhook
  * headers to verify them). Instead syncStripe() asks Stripe's API: every
@@ -49,7 +53,7 @@
  * or change rows carrying their own id.
  */
 
-const MACROS_VERSION = "2026-09-25b";
+const MACROS_VERSION = "2026-09-26a";
 const TIMEZONE = "Australia/Sydney";
 const MAIN_SESSIONS_GID = 1169726169; // "Sessions Remaining" in the CRM sheet
 const CARD_URL = "https://maxfit.now/card/";
@@ -73,7 +77,7 @@ const TABS = {
     headers: [
       "slug", "name", "sex", "key", "hide_kcal", "created_at",
       "trial_started", "stripe_customer", "stripe_subscription", "plan_status", "plan_until", "comp_until",
-      "hide_weight",
+      "hide_weight", "plan_tier", "comp_tier",
     ],
     text: ["slug", "key", "trial_started", "plan_until", "comp_until"],
   },
@@ -129,6 +133,11 @@ const TABS = {
     headers: ["slug", "week_start", "green_days", "awarded_at"],
     text: ["slug", "week_start"],
   },
+  meals: {
+    name: "Saved Meals",
+    headers: ["id", "slug", "name", "items", "created_at"],
+    text: ["id", "slug", "items"],
+  },
   foods: {
     name: "Foods",
     headers: ["name", "category", "serve_g", "serve_label", "kcal_100g", "protein_100g", "carbs_100g", "fat_100g"],
@@ -138,7 +147,7 @@ const TABS = {
 
 // "quick" = typed-in numbers for one serve: grams 100 means 1 serve, and
 // per100 holds the per-serve values (so they can go past 100 g of macros).
-const SOURCES = ["photo", "barcode", "label", "manual", "fridge", "suggestion", "quick"];
+const SOURCES = ["photo", "barcode", "label", "manual", "fridge", "suggestion", "quick", "describe"];
 const CONFIDENCES = ["high", "medium", "low", ""];
 
 // ---------------------------------------------------------------------------
@@ -189,6 +198,9 @@ const MEMBER_ACTIONS = {
   removeFavourite: actionRemoveFavourite_,
   setPrefs: actionSetPrefs_,
   chat: actionChat_,
+  describe: actionDescribe_,
+  saveMeal: actionSaveMeal_,
+  deleteMeal: actionDeleteMeal_,
   progress: actionProgress_,
   logWeight: actionLogWeight_,
   deleteWeight: actionDeleteWeight_,
@@ -517,26 +529,31 @@ function favouritesFor_(slug) {
     }));
 }
 
-function aiLimit_() {
-  const n = Number(prop_("DAILY_AI_LIMIT"));
-  return n > 0 ? n : 25;
+// Daily AI uses per tier: one pool for photo and label scans, Describe it
+// and Ask Fuel messages. Override with GOLD_DAILY_AI / PLATINUM_DAILY_AI.
+const DEFAULT_DAILY_AI = { gold: 10, platinum: 25 };
+
+function dailyAiFor_(tier) {
+  if (!DEFAULT_DAILY_AI[tier]) return 0; // silver
+  const n = Number(prop_(tier === "platinum" ? "PLATINUM_DAILY_AI" : "GOLD_DAILY_AI"));
+  return n > 0 ? Math.round(n) : DEFAULT_DAILY_AI[tier];
 }
 
-function chatLimit_() {
-  const n = Number(prop_("CHAT_DAILY_LIMIT"));
-  return n > 0 ? n : 40;
-}
-
-/** AI Usage rows for this member today, counting only the given kinds. */
-function usageToday_(slug, kinds) {
+/** Today's AI uses, leaving out calls that failed before Claude billed anything. */
+function aiUsedToday_(slug) {
   const today = todaySydney_();
-  return readRows_("usage").filter(
-    (u) => String(u.slug) === slug && String(u.log_date) === today && kinds.indexOf(String(u.kind)) >= 0
-  ).length;
+  return readRows_("usage").filter((u) => {
+    const ok = String(u.ok);
+    return String(u.slug) === slug && String(u.log_date) === today && ok !== "error" && ok.indexOf("http_") !== 0;
+  }).length;
 }
 
-function scansUsedToday_(slug) {
-  return usageToday_(slug, ["meal", "label"]);
+/** { tier, used, limit, left } for the meter on the card. */
+function aiToday_(member) {
+  const plan = planFor_(member);
+  const limit = plan.access ? dailyAiFor_(plan.tier) : 0;
+  const used = aiUsedToday_(String(member.slug));
+  return { tier: plan.tier, used: used, limit: limit, left: Math.max(0, limit - used) };
 }
 
 /** Photo scanning and Ask Fuel need a Claude API key on the server. */
@@ -551,6 +568,8 @@ function planFor_(member) {
       plan_status: member.plan_status,
       plan_until: member.plan_until,
       comp_until: member.comp_until,
+      plan_tier: member.plan_tier,
+      comp_tier: member.comp_tier,
     },
     todaySydney_()
   );
@@ -560,20 +579,24 @@ function planFor_(member) {
 function requireFuelAi_(member) {
   if (!aiOn_()) throw userError_("ai_off", "Fuel AI isn't switched on yet. Barcodes still work.");
   if (!planFor_(member).access) {
-    throw userError_("no_plan", "That's part of Fuel AI. Barcodes and suggestions stay free.");
+    throw userError_("no_plan", "That's part of Fuel Gold. Barcodes, search and saved meals stay free.");
   }
 }
 
-function upgradeUrl_(slug) {
-  const link = prop_("STRIPE_FUEL_LINK");
+/** A Payment Link that tells Stripe which client is paying. */
+function upgradeUrl_(slug, property) {
+  const link = prop_(property || "STRIPE_FUEL_LINK");
   if (!link) return "";
   return link + (link.indexOf("?") >= 0 ? "&" : "?") + "client_reference_id=fuel-" + slug;
 }
 
 function planPayload_(member) {
+  const slug = String(member.slug);
   return Object.assign({}, planFor_(member), {
-    upgradeUrl: upgradeUrl_(String(member.slug)),
+    upgradeUrl: upgradeUrl_(slug, "STRIPE_FUEL_LINK"), // Gold
+    platinumUrl: upgradeUrl_(slug, "STRIPE_PLATINUM_LINK"),
     portalUrl: prop_("STRIPE_PORTAL_LINK") || "",
+    aiPerDay: { gold: dailyAiFor_("gold"), platinum: dailyAiFor_("platinum") },
   });
 }
 
@@ -606,10 +629,9 @@ function actionMe_(payload, member) {
     weightTrend: member.hide_weight === "Y" ? null : weightTrend_(slug),
     recent: recentFor_(slug, logRows),
     favourites: favouritesFor_(slug),
+    meals: mealsFor_(slug),
     foods: foodsList_(),
-    scansLeft: Math.max(0, aiLimit_() - scansUsedToday_(slug)),
-    scanLimit: aiLimit_(),
-    chatLimit: chatLimit_(),
+    aiToday: aiToday_(member),
     // No API key yet = Fuel AI is off; the card hides photo scans and Ask Fuel.
     aiEnabled: aiOn_(),
     plan: planPayload_(member),
@@ -818,6 +840,55 @@ function actionRemoveFavourite_(payload, member) {
   return { favourites: favouritesFor_(slug) };
 }
 
+// ---------------------------------------------------------------------------
+// Saved meals: a named set of items ("Protein smoothie") logged in one go
+// ---------------------------------------------------------------------------
+
+const MAX_SAVED_MEALS = 30;
+
+function mealsFor_(slug) {
+  return readRows_("meals")
+    .filter((r) => String(r.slug) === slug)
+    .map((r) => {
+      let items = [];
+      try {
+        items = JSON.parse(String(r.items || "[]"));
+      } catch (err) {
+        items = [];
+      }
+      return { id: String(r.id), name: String(r.name), items: Array.isArray(items) ? items : [] };
+    })
+    .filter((m) => m.items.length);
+}
+
+function actionSaveMeal_(payload, member) {
+  const slug = String(member.slug);
+  const name = cleanText_(payload.name, 60);
+  if (!name) throw userError_("bad_meal", "Give the meal a name.");
+  const raw = Array.isArray(payload.items) ? payload.items : [];
+  if (!raw.length) throw userError_("bad_meal", "Add at least one food first.");
+  if (raw.length > 20) throw userError_("bad_meal", "A saved meal can hold up to 20 foods.");
+  const items = raw.map(cleanItem_).map((it) => ({ name: it.name, grams: it.grams, per100: it.per100, source: it.source }));
+  withLock_(() => {
+    const mine = readRows_("meals").filter((r) => String(r.slug) === slug);
+    const dup = mine.find((r) => String(r.name).toLowerCase() === name.toLowerCase());
+    const row = { slug: slug, name: name, items: JSON.stringify(items) };
+    if (dup) updateRow_("meals", dup._row, row);
+    else if (mine.length >= MAX_SAVED_MEALS) throw userError_("too_many", "That's " + MAX_SAVED_MEALS + " saved meals. Delete one first.");
+    else appendRow_("meals", Object.assign({ id: Utilities.getUuid(), created_at: nowStamp_() }, row));
+  });
+  return { meals: mealsFor_(slug) };
+}
+
+function actionDeleteMeal_(payload, member) {
+  const slug = String(member.slug);
+  withLock_(() => {
+    const row = readRows_("meals").find((r) => String(r.slug) === slug && String(r.id) === String(payload.mealId));
+    if (row) tab_("meals").deleteRow(row._row);
+  });
+  return { meals: mealsFor_(slug) };
+}
+
 function actionSetPrefs_(payload, member) {
   const changes = {};
   if (payload.hide_kcal !== undefined) changes.hide_kcal = payload.hide_kcal ? "Y" : "N";
@@ -953,6 +1024,11 @@ const FOOD_SYSTEM_PROMPT = [
   "- \"medium\": the food is clear but the amount is an estimate — the usual case for plated meals.",
   "- \"low\": the food is unclear, mostly hidden, mixed into something else, or the amount could easily be off by half or more. Say why in notes.",
   "",
+  "Written descriptions",
+  "- Sometimes the client types what they ate instead of sending a photo (\"chicken wrap from Subway and a flat white\"). Return the same items format as for a meal photo.",
+  "- Trust any amounts they give. Where they don't give one, use a typical Australian portion for that food or venue and set confidence to \"medium\" (or \"low\" if it could easily be off by half).",
+  "- Add cooking oil, spreads, dressings or milk in coffee as separate items only when they're mentioned or almost certainly there, and say so in notes.",
+  "",
   "Nutrition labels",
   "- Australian labels have a Nutrition Information Panel with 'Avg Quantity per Serving' and 'per 100 g' (or 'per 100 mL') columns.",
   "- Always return the per-100 g (or per-100 mL) column as per100. If only the per-serve column is readable, divide by the serving size to get per-100 values and say so in notes.",
@@ -1027,16 +1103,15 @@ const MODE_PROMPTS = {
  * both slip past the daily limit. kind is "meal" / "label" (photo scans)
  * or "chat". Returns the AI Usage row number, filled in by recordUsage_.
  */
-function reserveAi_(slug, kind, model) {
+function reserveAi_(member, kind, model) {
+  const slug = String(member.slug);
   return withLock_(() => {
-    if (kind === "chat") {
-      if (usageToday_(slug, ["chat"]) >= chatLimit_()) {
-        throw userError_("limit", "That's all the Ask Fuel messages for today. It resets at midnight.");
-      }
-    } else if (scansUsedToday_(slug) >= aiLimit_()) {
+    const today = aiToday_(member);
+    if (today.left <= 0) {
+      const more = today.tier === "platinum" ? "" : " Platinum gives you " + dailyAiFor_("platinum") + " a day.";
       throw userError_(
         "limit",
-        "You've used all " + aiLimit_() + " photo scans for today. Barcodes still work, and scans reset at midnight."
+        "That's all " + today.limit + " AI uses for today. They reset at midnight, and barcodes, search and saved meals still work." + more
       );
     }
     return appendRow_("usage", {
@@ -1128,7 +1203,7 @@ function actionAnalyseImage_(payload, member) {
   if (image.length > 2000000) throw userError_("too_big", "That photo is too large. Try again.");
   requireFuelAi_(member);
 
-  const usageRow = reserveAi_(slug, mode, VISION_MODEL);
+  const usageRow = reserveAi_(member, mode, VISION_MODEL);
   const fail = (usage, ok, message) => {
     recordUsage_(usageRow, usage, ok);
     return userError_("ai_failed", message);
@@ -1156,9 +1231,67 @@ function actionAnalyseImage_(payload, member) {
   }
   recordUsage_(usageRow, data.usage, "Y");
 
-  const counts = { scansLeft: Math.max(0, aiLimit_() - scansUsedToday_(slug)) };
+  const counts = { aiToday: aiToday_(member) };
   if (mode === "label") return Object.assign({ mode: mode, label: cleanLabel_(parsed), ai: parsed }, counts);
   return Object.assign({ mode: mode, meal: cleanAiMeal_(parsed), ai: parsed }, counts);
+}
+
+/** "Describe it": the client types what they ate and Claude (the cheaper text model) estimates it. */
+function actionDescribe_(payload, member) {
+  const text = cleanText_(payload.text, 300);
+  if (!text) throw userError_("no_text", "Type what you ate first.");
+  requireFuelAi_(member);
+  const usageRow = reserveAi_(member, "describe", TEXT_MODEL);
+  const failMessage = "Couldn't work that out just now. Try again in a moment, or search for it instead.";
+  let res;
+  try {
+    res = UrlFetchApp.fetch("https://api.anthropic.com/v1/messages", {
+      method: "post",
+      contentType: "application/json",
+      headers: { "x-api-key": prop_("ANTHROPIC_API_KEY"), "anthropic-version": "2023-06-01" },
+      payload: JSON.stringify({
+        model: TEXT_MODEL,
+        max_tokens: 2000,
+        system: [{ type: "text", text: FOOD_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+        output_config: { format: { type: "json_schema", schema: MEAL_SCHEMA } },
+        messages: [
+          {
+            role: "user",
+            content:
+              'Estimate every food in this written description of what someone ate (no photo): "' +
+              text.replace(/"/g, "'") +
+              '"',
+          },
+        ],
+      }),
+      muteHttpExceptions: true,
+    });
+  } catch (err) {
+    recordUsage_(usageRow, null, "error", TEXT_MODEL);
+    throw userError_("ai_failed", failMessage);
+  }
+  let data = {};
+  try {
+    data = JSON.parse(res.getContentText());
+  } catch (err) {
+    data = {};
+  }
+  if (res.getResponseCode() !== 200 || data.stop_reason === "refusal" || data.stop_reason === "max_tokens") {
+    recordUsage_(usageRow, data.usage, res.getResponseCode() !== 200 ? "http_" + res.getResponseCode() : data.stop_reason, TEXT_MODEL);
+    console.error("Describe error", res.getResponseCode(), JSON.stringify(data).slice(0, 500));
+    throw userError_("ai_failed", failMessage);
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse((data.content || []).find((b) => b.type === "text").text);
+  } catch (err) {
+    recordUsage_(usageRow, data.usage, "bad_json", TEXT_MODEL);
+    throw userError_("ai_failed", failMessage);
+  }
+  recordUsage_(usageRow, data.usage, "Y", TEXT_MODEL);
+  const meal = cleanAiMeal_(parsed);
+  meal.items.forEach((it) => (it.source = "describe"));
+  return { meal: meal, aiToday: aiToday_(member) };
 }
 
 /** AI meal → items the confirm sheet can edit: grams, per-100g values, and kcal that agree with 4/4/9. */
@@ -1380,8 +1513,10 @@ function actionCoachGiveMonth_(payload) {
     // Stack onto an existing free month rather than overlapping it.
     const from = current && current >= today ? MacroCore.addDays(current, 1) : today;
     const until = MacroCore.addDays(from, 29);
-    updateRow_("members", member._row, { comp_until: until });
+    const tier = payload.tier === "platinum" ? "platinum" : "gold";
+    updateRow_("members", member._row, { comp_until: until, comp_tier: tier });
     member.comp_until = until;
+    member.comp_tier = tier;
     plan = planFor_(member);
   });
   return { slug: slug, plan: plan };
@@ -1455,10 +1590,16 @@ function applySubscription_(member, sub) {
   const item = sub.items && sub.items.data && sub.items.data[0];
   const end = sub.current_period_end || (item && item.current_period_end);
   const until = end ? Utilities.formatDate(new Date(end * 1000), TIMEZONE, "yyyy-MM-dd") : "";
-  if (String(member.plan_status) === sub.status && String(member.plan_until) === until) return false;
-  updateRow_("members", member._row, { plan_status: sub.status, plan_until: until });
+  // The Platinum price has the lookup key "fuel_platinum"; anything else is Gold.
+  const lookup = String((item && item.price && item.price.lookup_key) || "");
+  const tier = lookup.indexOf("platinum") >= 0 ? "platinum" : "gold";
+  if (String(member.plan_status) === sub.status && String(member.plan_until) === until && String(member.plan_tier) === tier) {
+    return false;
+  }
+  updateRow_("members", member._row, { plan_status: sub.status, plan_until: until, plan_tier: tier });
   member.plan_status = sub.status;
   member.plan_until = until;
+  member.plan_tier = tier;
   return true;
 }
 
@@ -1780,7 +1921,7 @@ function actionChat_(payload, member) {
   requireFuelAi_(member);
   const history = cleanHistory_(payload.messages);
   const context = chatContext_(member, validDate_(payload.date));
-  const usageRow = reserveAi_(slug, "chat", TEXT_MODEL);
+  const usageRow = reserveAi_(member, "chat", TEXT_MODEL);
 
   let res;
   try {
@@ -1838,7 +1979,7 @@ function actionChat_(payload, member) {
   return {
     reply: String(parsed.reply || "").trim().slice(0, 1500), // keeps line breaks; the card escapes it
     foods: foods,
-    chatsLeft: Math.max(0, chatLimit_() - usageToday_(slug, ["chat"])),
+    aiToday: aiToday_(member),
   };
 }
 

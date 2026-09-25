@@ -68,7 +68,7 @@ Paste the new code in and save. Then go to **Deploy** → **Manage deployments**
 
 **What clients need to do:** open the link once in Safari (iPhone) or Chrome (Android), then **Add to Home Screen again**. On iPhone, the old home-screen icon keeps its own storage and won't know the new link.
 
-**Fuel AI** (photo and label scans, plus the Ask Fuel chat) costs **$9.99 a month** for members. Each client gets a **7-day free trial** from the first time they open FUEL; after that it's locked until they subscribe through the Upgrade button (Stripe, step 7). On the coach page, each client shows their status: trial, paying, free month, or ended. **Give a free month** unlocks it for 30 days without payment, which is handy for friends, testing, or making up for a problem.
+**Plans.** **Silver** is free: barcodes, search, saved meals, typed-in numbers, targets, ideas and progress. **Gold** ($9.99 a month, 10 AI uses a day) and **Platinum** ($14.99, 25 a day) add Fuel AI: photo and label scans, Describe it, and Ask Fuel, all from one daily pool that resets at midnight. The card shows each client how many they have left. New clients get **7 days of Gold** from the first time they open FUEL. On the coach page each client shows their plan, and **Free month of Gold / Platinum** unlocks it for 30 days without payment. To change the daily numbers, add `GOLD_DAILY_AI` or `PLATINUM_DAILY_AI` in Script Properties; no redeploy is needed.
 
 Lost phone, or a link shared by mistake? Tap **New link** on the coach page. The old link stops working for FUEL straight away.
 
@@ -78,22 +78,25 @@ Stripe moves its menus around. If you can't find something, type its name ("Paym
 
 1. Sign in to **stripe.com**, or create an account for MaxFit. Your business and bank details are yours to enter.
 2. Turn on **Test mode** (the switch at the top right), so nothing is really charged while we test.
-3. **Product catalogue → Add product.** Name it **Fuel AI**, choose **Recurring**, set the price to **9.99 AUD** (the "Members" price) and the period to **Monthly**, then save.
-4. **Payment Links → New.** Pick **Fuel AI**. On the **After payment** tab, choose **Don't show confirmation page → Redirect customers to your website**, and enter exactly:
+3. **Product catalogue → Add product**, twice, both **Recurring** and **Monthly**:
+   - **Fuel Gold** at **9.99 AUD**, with the price's **lookup key** (under Advanced) set to `fuel_gold`.
+   - **Fuel Platinum** at **14.99 AUD**, with lookup key `fuel_platinum`. The backend reads this key to know a subscription is Platinum.
+4. **Payment Links → New**, one for each plan. Don't add a free trial in Stripe. On the **After payment** tab, choose **Don't show confirmation page → Redirect customers to your website**, and enter exactly:
    `https://maxfit.now/card/?paid={CHECKOUT_SESSION_ID}`
-   Create the link and copy it. It starts with `https://buy.stripe.com/`.
-5. **Settings → Billing → Customer portal.** Turn it on and copy its **login link** (`https://billing.stripe.com/p/login/…`). This is where clients cancel or change their card.
+   Copy both links. They start with `https://buy.stripe.com/`.
+5. **Settings → Billing → Customer portal.** Turn it on, allow cancelling at the end of the billing period, and under **Subscriptions** let customers **switch plans** between Fuel Gold and Fuel Platinum. That's how a paying Gold client moves up: the card sends them here, never to a second payment link, so nobody pays twice. Copy the portal's **login link** (`https://billing.stripe.com/p/login/…`).
 6. **Developers → API keys → Create restricted key.** Name it **MaxFit Macros**. Give it **Checkout Sessions: Read** and **Subscriptions: Read**, and leave everything else as None. Create it and copy the key (it starts with `rk_test_`). **Paste it only into Apps Script**: never into chat, email or anywhere else.
 7. In Apps Script → **Project Settings → Script Properties**, add:
 
 | Property | Value |
 |---|---|
 | `STRIPE_SECRET_KEY` | the restricted key from step 6 |
-| `STRIPE_FUEL_LINK` | the payment link from step 4 |
+| `STRIPE_FUEL_LINK` | the Gold payment link from step 4 |
+| `STRIPE_PLATINUM_LINK` | the Platinum payment link from step 4 |
 | `STRIPE_PORTAL_LINK` | the portal login link from step 5 |
 
 8. Back in the editor, choose **installStripeSync** in the function dropdown and press **Run** (allow permissions if asked). From now on the backend checks Stripe every 15 minutes, and straight away whenever a client comes back from paying.
-9. **Test on yourself:** open your own FUEL tab, tap a locked feature → **Upgrade to Fuel AI**, and pay with Stripe's test card `4242 4242 4242 4242` (any future expiry date, any CVC). You should land back on the card with "Fuel AI is on", and the coach page should say "paying · renews …".
+9. **Test on yourself:** open your own FUEL tab → **See plans** → **Get Gold** (or Platinum), and pay with Stripe's test card `4242 4242 4242 4242` (any future expiry date, any CVC). You should land back on the card with "Gold is on", and the coach page should say "Gold: paying · renews …".
 10. **Go live:** turn Test mode off and repeat steps 3–6 in live mode (test products, links and keys don't carry over). Then replace the three Stripe Script Properties with the live values. Finally, in the Macros sheet's **Members** tab, clear `stripe_customer`, `stripe_subscription`, `plan_status` and `plan_until` on any row that paid in test mode (your own, for one). Live mode can't see test subscriptions, so those rows would otherwise stay "paying" until the test renewal date. Use **Give a free month** on the coach page if you want to keep Fuel AI on for yourself.
 
 ## 8. Progress and nutrition punches
