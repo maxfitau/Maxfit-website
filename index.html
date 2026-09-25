@@ -50,7 +50,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="styles.css" />
+<link rel="stylesheet" href="styles.css?v=2026092504" />
 </head>
 <body>
 
@@ -68,12 +68,12 @@
 <li><a href="#pricing">Pricing</a></li>
 <li><a href="#results">Results</a></li>
 <li><a href="#faq">FAQ</a></li>
-<li><a href="join.html" class="nav__cta btn btn--primary btn--sm" aria-label="Book your free personal training consultation in Inner West Sydney">Book Now</a></li>
+<li><a href="join.html" class="nav__cta btn btn--primary btn--sm" aria-label="Book your free personal training session in Inner West Sydney">Book Now</a></li>
 </ul>
 </nav>
 </header>
 
-<a href="join.html" class="btn btn--primary float-cta" aria-label="Book your free personal training consultation in Inner West Sydney">Book now</a>
+<a href="join.html" class="btn btn--primary float-cta" aria-label="Book your free personal training session in Inner West Sydney">Book now</a>
 
 <main id="top">
 
@@ -87,9 +87,16 @@
 <div class="shape shape--sq"></div>
 <div class="shape shape--chevron"></div>
 </div>
-<div class="container hero__content hero__content--centered">
+<!-- The first thing you see: the problem, on the black stage. It fades out
+     as you start scrolling and the intro plays, leaving just the logo. Sits
+     above #preloader (z-index) so the overlay doesn't hide it; in the
+     reduced-motion / no-JS fallback it drops into normal flow above the
+     logo instead. -->
+<div class="hero__lead">
 <h2 class="hero__label">Personal Trainer · Inner West Sydney</h2>
 <h1 class="hero__problem">Stuck In A Generic Program That Isn't Working?</h1>
+</div>
+<div class="container hero__content hero__content--centered">
 <div class="hero__logo-wrap">
 <div class="hero__logo-underglow" aria-hidden="true"></div>
 <img src="assets/images/maxfit-logo.png" alt="Max Fit" class="hero__logo" width="1736" height="372" />
@@ -99,7 +106,7 @@
 Your first session is free
 </div>
 <div class="hero__actions">
-<a href="join.html" class="btn btn--primary" aria-label="Book your free personal training consultation in Inner West Sydney">Book your free consult</a>
+<a href="join.html" class="btn btn--primary" aria-label="Book your free personal training session in Inner West Sydney">Book your free session</a>
 </div>
 </div>
 <div class="hero__scroll" aria-hidden="true">
@@ -121,121 +128,107 @@ Loading your fitness dreams
 </section>
 </div>
 
-<!-- Hero follow-up: motto, pitch, and the 3-step plan — kept out of the
-     pinned hero itself so the first screen on mobile stays to just the
-     headline, logo, and one clear CTA, with everything else arriving as
-     you scroll instead of all competing for the same screen. -->
-<section class="section section--tight hero-followup reveal">
+<!-- 04b · The Plan — sits directly under the hero's "Book your free
+     session" button, per Max. The 3-step copy is the same as it always
+     was, just promoted from a small row to its own full-width beat.
+     No CTA button of its own: step 01 is that same button, which is
+     right above. -->
+<section class="section section--tight plan" id="plan">
 <div class="container">
-<p class="hero__tagline">Maximum Fitness <span class="accent">·</span> Minimum Fuss</p>
-<p class="hero__sub">Stop guessing with cookie-cutter plans. Get science-based coaching built around your goals, your body, and your schedule, so training finally feels simple and the results actually show up.</p>
-<div class="hero__steps" aria-label="How it works">
-<div class="hero__step">
-<span class="hero__step-num">1</span>
-<span class="hero__step-text">Book your free consult</span>
+<div class="section-head reveal">
+<span class="eyebrow">How it works</span>
+<h2>Three steps. That's it.</h2>
 </div>
-<div class="hero__step-arrow" aria-hidden="true">&rarr;</div>
-<div class="hero__step">
-<span class="hero__step-num">2</span>
-<span class="hero__step-text">Get your custom plan</span>
+<div class="plan__list">
+<div class="plan__step reveal">
+<span class="plan__num">01</span>
+<h3 class="plan__title">Book your free session</h3>
+<p class="plan__desc">No pressure, no sales pitch. Just a chat about where you're at and what you want.</p>
 </div>
-<div class="hero__step-arrow" aria-hidden="true">&rarr;</div>
-<div class="hero__step">
-<span class="hero__step-num">3</span>
-<span class="hero__step-text">Start training, see results</span>
+<div class="plan__step reveal">
+<span class="plan__num">02</span>
+<h3 class="plan__title">Get your custom plan</h3>
+<p class="plan__desc">Built around your body, your goals, and your schedule. Not a generic template.</p>
+</div>
+<div class="plan__step reveal">
+<span class="plan__num">03</span>
+<h3 class="plan__title">Start training, see results</h3>
+<p class="plan__desc">Real coaching, real accountability, and progress you can actually feel.</p>
 </div>
 </div>
-<a href="#programs" class="btn btn--outline btn--sm hero-followup__cta">See programs</a>
 </div>
+</section>
+
+<!-- 01b · The Problem — a pinned beat naming what visitors have already
+     tried, each line crossing itself off as the next appears, resolving
+     to the real point. Copy is Max's own from the redesign brief (no
+     existing content moved out of anywhere for this one). Fully
+     readable with no JS/motion: all 4 lines plus the resolve just show
+     at once, stacked normally. -->
+<section class="problem" id="problem">
+<div class="problem__stack">
+<p class="problem__line"><span class="problem__line-text">The app you stopped opening.</span><span class="problem__strike" aria-hidden="true"></span></p>
+<p class="problem__line"><span class="problem__line-text">The January gym membership.</span><span class="problem__strike" aria-hidden="true"></span></p>
+<p class="problem__line"><span class="problem__line-text">The program built for someone else.</span><span class="problem__strike" aria-hidden="true"></span></p>
+<p class="problem__line"><span class="problem__line-text">The 12-week challenge.</span><span class="problem__strike" aria-hidden="true"></span></p>
+</div>
+<p class="problem__resolve">It was never you.<br>It was the plan.</p>
 </section>
 
 <!-- Marquee: opening sale -->
 <div class="marquee marquee--dark">
 <div class="marquee__track" style="animation-duration: 55s;">
-<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>Activation Fee Free</span><span class="dot"></span><span>Save Up To 31</span><span class="dot"></span></div>
-<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>Activation Fee Free</span><span class="dot"></span><span>Save Up To 31</span><span class="dot"></span></div>
-<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>Activation Fee Free</span><span class="dot"></span><span>Save Up To 31</span><span class="dot"></span></div>
-<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>Activation Fee Free</span><span class="dot"></span><span>Save Up To 31</span><span class="dot"></span></div>
-<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>Activation Fee Free</span><span class="dot"></span><span>Save Up To 31</span><span class="dot"></span></div>
-<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>Activation Fee Free</span><span class="dot"></span><span>Save Up To 31</span><span class="dot"></span></div>
-<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>Activation Fee Free</span><span class="dot"></span><span>Save Up To 31</span><span class="dot"></span></div>
-<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>Activation Fee Free</span><span class="dot"></span><span>Save Up To 31</span><span class="dot"></span></div>
-<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>Activation Fee Free</span><span class="dot"></span><span>Save Up To 31</span><span class="dot"></span></div>
-<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>Activation Fee Free</span><span class="dot"></span><span>Save Up To 31</span><span class="dot"></span></div>
-<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>Activation Fee Free</span><span class="dot"></span><span>Save Up To 31</span><span class="dot"></span></div>
-<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>Activation Fee Free</span><span class="dot"></span><span>Save Up To 31</span><span class="dot"></span></div>
+<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>$99 Activation Fee Waived</span><span class="dot"></span></div>
+<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>$99 Activation Fee Waived</span><span class="dot"></span></div>
+<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>$99 Activation Fee Waived</span><span class="dot"></span></div>
+<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>$99 Activation Fee Waived</span><span class="dot"></span></div>
+<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>$99 Activation Fee Waived</span><span class="dot"></span></div>
+<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>$99 Activation Fee Waived</span><span class="dot"></span></div>
+<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>$99 Activation Fee Waived</span><span class="dot"></span></div>
+<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>$99 Activation Fee Waived</span><span class="dot"></span></div>
+<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>$99 Activation Fee Waived</span><span class="dot"></span></div>
+<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>$99 Activation Fee Waived</span><span class="dot"></span></div>
+<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>$99 Activation Fee Waived</span><span class="dot"></span></div>
+<div class="marquee__item"><span>Opening Sale</span><span class="dot"></span><span>First 10 Members</span><span class="dot"></span><span>$99 Activation Fee Waived</span><span class="dot"></span></div>
 </div>
 </div>
 
 <!-- About -->
-<section class="section grow-in" id="about">
-<div class="container about__grid">
-<div class="reveal">
+<section class="about" id="about">
+
+<div class="container about__body">
 <span class="eyebrow">About</span>
 <h2>Meet your coach</h2>
 
-<div class="bio-card">
-<div class="bio-card__summary">
-<img class="bio-card__avatar" src="assets/images/coach-headshot.png" alt="Max, Founder &amp; Coach" width="300" height="300" />
-<div>
-<p class="bio-card__name">Max, Founder &amp; Coach</p>
-<p class="bio-card__role">Tap to read the full bio</p>
-</div>
-<div class="bio-card__toggle" aria-hidden="true">
-<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-</div>
-</div>
-<div class="bio-card__body-wrap">
-<div class="bio-card__body">
-<div class="bio-card__body-inner">
-<div class="bio-card__facts">
-<span class="bio-card__fact">6 years training</span>
-<span class="bio-card__fact">Cert III &amp; IV Fitness · NHFA</span>
-<span class="bio-card__fact">Certified 2026</span>
-<span class="bio-card__fact">Psych (Hons) · UTS</span>
-</div>
-<p style="margin:0;">I've been training for 6 years, driven by a strong passion for fitness. What I love most is helping people fall in love with fitness the way I have, not just chasing results, but enjoying the process. I'm genuinely fascinated by what drives motivation, real connection, and the kind of conversations that shift someone's mindset. Those interests are drawing me toward a Bachelor of Psychology (Honours) at UTS, and they shape how I coach every day.</p>
-</div>
-</div>
+<div class="about__headshot-wrap">
+<div class="about__headshot-mask" id="aboutHeadshotMask">
+<img class="about__headshot" src="assets/images/coach-headshot.png" alt="Max, Founder &amp; Coach" width="300" height="300" />
 </div>
 </div>
 
+<div class="about__copy">
 <p>Most people trying to get fit have been here before: a generic program off an app, a burst of motivation, then life gets busy and it quietly falls apart. You're not lacking willpower, you just haven't had a plan built around you, with someone actually holding you to it.</p>
 <p>At Max Fit, training is simple, structured, and tailored to you. Backed by 6 years training myself and Certificate III &amp; IV in Fitness, I do the hard part for you, enhancing your results without the guesswork. Magical results. Except it's not magic, it's science.</p>
 <p>Whether you're training from home, in a gym, a park, or wherever life throws you, consistency always wins. I'm in your corner 100% of the time. Whether you're a beginner working out from home or you've had 10 years of experience stuck in old habits, we use science to find your maximal results.</p>
+<p>I've been training for 6 years, driven by a strong passion for fitness. What I love most is helping people fall in love with fitness the way I have, not just chasing results, but enjoying the process. I'm genuinely fascinated by what drives motivation, real connection, and the kind of conversations that shift someone's mindset. Those interests are drawing me toward a Bachelor of Psychology (Honours) at UTS, and they shape how I coach every day.</p>
 <p>Personally, I could be working a forgettable job just to get by. Instead I chose to build something real around what I love: fitness, and helping people grow. My interest in psychology, exploring motivation, connection, and mindset, is a big part of why. If you're ready to stop guessing and start seeing results, I'd love to help you get there.</p>
+</div>
 
-<blockquote class="pull-quote">
-<p>"Because everybody deserves the peace of mind that comes from a healthy body, and the ability to apply the same skills to crush whatever life throws at you."</p>
-<cite>Max, Founder &amp; Coach</cite>
-</blockquote>
-
-<div class="drag-strip" aria-label="Credentials, drag to explore">
-<div class="drag-strip__item">
-<h4>6 Years</h4>
-<p>Training experience</p>
-</div>
-<div class="drag-strip__item">
-<h4>Cert III &amp; IV</h4>
-<p>Fitness · NHFA, 2026</p>
-</div>
-<div class="drag-strip__item">
-<h4>Psych (Hons)</h4>
-<p>Enrolled · UTS · motivation, connection &amp; mindset</p>
-</div>
-<div class="drag-strip__item">
-<h4>Big 3 Focus</h4>
-<p>Look great. Feel amazing. Perform next level.</p>
-</div>
-<div class="drag-strip__item">
-<h4>Science-Based</h4>
-<p>Optimal programming, zero gimmicks</p>
-</div>
-</div>
-<div class="drag-hint">
-<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l-6 6 6 6M15 6l6 6-6 6"/></svg>
-Drag to explore
-</div>
+<table class="about__creds" aria-label="Credentials">
+<tr class="about__creds-row reveal">
+<td>6 yrs</td>
+<td>Gym experience</td>
+</tr>
+<tr class="about__creds-row reveal">
+<td>Cert III &amp; IV</td>
+<td>Fitness &middot; NHFA, 2026</td>
+</tr>
+<tr class="about__creds-row reveal">
+<td>Hons</td>
+<td>Psychology &middot; UTS (enrolled)</td>
+</tr>
+</table>
+<p class="about__creds-note">Optimal programming. Zero gimmicks.</p>
 
 <div class="creds-links">
 <span class="creds-links__label">Verified qualifications</span>
@@ -254,10 +247,38 @@ First Aid Certificate
 </a>
 </div>
 </div>
+
+<img class="coach-photo reveal" src="assets/images/coach-photo.png" alt="Max, Founder &amp; Coach" />
 </div>
 
-<div class="reveal">
-<img class="coach-photo" src="assets/images/coach-photo.png" alt="Max, Founder &amp; Coach" />
+<!-- 02 · Manifesto — pinned: the motto, then the pull-quote reveals
+     word by word. -->
+<div class="manifesto" id="manifesto">
+<h3 class="manifesto__line">Maximum Fitness.<br>Minimum Fuss.</h3>
+<blockquote class="manifesto__quote">
+<p id="manifestoQuoteText">Because everybody deserves the peace of mind that comes from a healthy body, and the ability to apply the same skills to crush whatever life throws at you.</p>
+<cite>Max, Founder &amp; Coach</cite>
+</blockquote>
+</div>
+</section>
+
+<!-- Card showcase: Max's pre-made MaxFit Card promo video, sitting right
+     under "meet your coach" as the concrete proof of what working with him
+     looks like day to day. It plays itself, muted and looping, only while
+     it's actually on screen (paused the rest of the time, for battery and
+     data), and scales in as it arrives. It is deliberately silent and has no
+     controls, so nobody can unmute it: the original soundtrack is copyrighted
+     music, and the audio track has been removed from the file itself as well.
+     With no JS it just shows its poster frame. -->
+<section class="section section--tight showcase" id="card-showcase">
+<div class="container">
+<div class="section-head reveal">
+<span class="eyebrow">The MaxFit Card</span>
+<h2>Your whole membership, on your phone</h2>
+<p>Sessions, check-ins, macros, referrals: it's all on the card you already carry.</p>
+</div>
+<div class="showcase__frame reveal-scale" id="showcaseFrame">
+<video class="showcase__video" id="showcaseVideo" src="assets/videos/card-showcase.mp4" poster="assets/images/card-showcase-poster.jpg" muted loop playsinline preload="metadata" aria-label="MaxFit Card walkthrough, no sound"></video>
 </div>
 </div>
 </section>
@@ -485,10 +506,10 @@ First Aid Certificate
 
 <div class="sale-banner reveal">
 <span class="sale-banner__tag">Opening sale</span>
-<p class="sale-banner__head">Save up to 31 per session</p>
+<p class="sale-banner__head">$99 activation fee waived for our first 10 members</p>
 <ul class="sale-banner__list">
 <li>Opening-sale prices for our <strong>first 10 members only</strong>. Once the slots fill, pricing goes back to regular.</li>
-<li>Membership activation fee <s>normally charged</s> <strong class="sale-banner__free">FREE</strong> for the first 10</li>
+<li>Membership activation fee <s>$99</s> <strong class="sale-banner__free">FREE</strong> for the first 10</li>
 </ul>
 </div>
 
@@ -555,33 +576,63 @@ First Aid Certificate
 </section>
 
 <!-- Why it matters: trimmed public-health stats tied back to the program -->
-<section class="section section--tight why" id="why">
-<div class="container">
-<div class="section-head reveal">
+<section class="why" id="why">
+<svg class="why__goo-defs" aria-hidden="true" focusable="false">
+<filter id="why-goo">
+<feGaussianBlur in="SourceGraphic" stdDeviation="0" result="why-goo-blur" />
+<feColorMatrix in="why-goo-blur" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 19 -9" />
+</filter>
+</svg>
+
+<div class="why__head">
 <span class="eyebrow">Why it matters</span>
 <h2>Most people aren't training enough</h2>
 </div>
 
-<div class="why-grid">
-<div class="why-card reveal" data-count="31">
-<div class="why-card__num"><span class="num">0</span>%</div>
-<p class="why-card__text">of adults worldwide (nearly 1 in 3) weren't getting enough physical activity in 2022, up about 5 points since 2010 and projected to hit 35% by 2030.</p>
-<span class="why-card__src">WHO, 2024</span>
-</div>
-<div class="why-card reveal" data-count="20">
-<div class="why-card__num"><span class="num">0</span>&ndash;30%</div>
-<p class="why-card__text">higher risk of death for adults who don't get enough physical activity compared with those who do.</p>
-<span class="why-card__src">WHO, 2024</span>
-</div>
-<div class="why-card reveal" data-count="26.6" data-decimals="1">
-<div class="why-card__num"><span class="num">0</span>%</div>
-<p class="why-card__text">of Australian adults aged 18&ndash;64 (about 1 in 4) did strength or toning exercise on two or more days in the past week.</p>
-<span class="why-card__src">ABS, 2022</span>
-</div>
+<div class="why__stack">
+
+<div class="why-beat">
+<p class="why-beat__num"><span class="num" data-count="31" data-decimals="0">0</span>%</p>
+<p class="why-beat__text">of adults worldwide don't do enough physical activity. That's 1.8 billion people.</p>
+<span class="why-beat__source">WHO, 2024</span>
 </div>
 
-<p class="why__tie reveal">Max Fit is built to keep you on the right side of those numbers. Every plan is structured, science-based, and tailored to you, with strength work built in and regular check-ins so you stay consistent. You won't be guessing, and you won't be doing it alone.</p>
+<div class="why-beat">
+<p class="why-beat__num why-beat__num--text">1 in 5</p>
+<p class="why-beat__text">Australian adults (22.4%) meet the physical activity guidelines.</p>
+<span class="why-beat__source">ABS, Physical Activity 2022</span>
 </div>
+
+<div class="why-beat">
+<p class="why-beat__num"><span class="num" data-count="20" data-decimals="0">0</span>&ndash;30%</p>
+<p class="why-beat__text">higher risk of death for people who aren't active enough.</p>
+<span class="why-beat__source">WHO fact sheet</span>
+</div>
+
+<div class="why-beat">
+<p class="why-beat__num"><span class="num" data-count="3" data-decimals="0">0</span>&ndash;8%</p>
+<p class="why-beat__text">of your muscle mass can disappear every decade after 30 if you don't train it.</p>
+<span class="why-beat__source">Volpi et al., 2004</span>
+</div>
+
+<div class="why-beat">
+<p class="why-beat__num"><span class="num" data-count="40" data-decimals="0">0</span>%</p>
+<p class="why-beat__text">lower all-cause mortality when strength and cardio are combined.</p>
+<span class="why-beat__source">Momma et al., BJSM 2022</span>
+</div>
+
+</div>
+
+<div class="why__resolve">
+<p class="why__resolve-text">Max Fit is built to keep you on the right side of these numbers.</p>
+</div>
+
+<ol class="why__footnotes">
+<li>WHO, <cite>Physical activity</cite> fact sheet, 2024</li>
+<li>ABS, <cite>Physical Activity, 2022</cite></li>
+<li>Volpi, Nazemi &amp; Fujita, <cite>Muscle tissue changes with aging</cite>, 2004</li>
+<li>Momma et al., <cite>British Journal of Sports Medicine</cite>, 2022</li>
+</ol>
 </section>
 
 <p class="stakes-line">Every week you put off training is a week further from the body and energy you actually want. Here's what training with Max Fit gets you instead:</p>
@@ -935,7 +986,7 @@ First Aid Certificate
 <div class="program__body-wrap">
 <div class="program__body">
 <div class="program__body-inner" style="display:block;">
-<p class="program__desc">I hold Certificate III &amp; IV in Fitness through NHFA, plus a current First Aid certificate, and have 6 years of personal training experience. I'm also working toward a Bachelor of Psychology (Honours) at UTS, which feeds directly into how I coach.</p>
+<p class="program__desc">I hold Certificate III &amp; IV in Fitness through NHFA, plus a current First Aid certificate, and I've spent 6 years training in the gym myself. I'm also working toward a Bachelor of Psychology (Honours) at UTS, which feeds directly into how I coach.</p>
 </div>
 </div>
 </div>
@@ -1014,7 +1065,7 @@ First Aid Certificate
       "name": "What qualifications does your personal trainer have?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Certificate III & IV in Fitness through NHFA, a current First Aid certificate, and 6 years of personal training experience. Currently working toward a Bachelor of Psychology (Honours) at UTS."
+        "text": "Certificate III & IV in Fitness through NHFA, a current First Aid certificate, and 6 years training in the gym himself. Currently working toward a Bachelor of Psychology (Honours) at UTS."
       }
     },
     {
@@ -1058,9 +1109,9 @@ Your first session is free
 <div class="book__actions reveal">
 <a href="join.html" class="btn btn--primary">
 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
-Book your free consult
+Book your free session
 </a>
-<a href="mailto:maxfrenchfitness@gmail.com?subject=Booking%20enquiry%20%E2%80%94%20Max%20Fit&body=Hi%20Max%2C%0A%0AI'd%20like%20to%20get%20started.%20Here's%20a%20bit%20about%20me%3A%0A%0AProgram%20I'm%20interested%20in%3A%20%0APreferred%20times%3A%20%0AMy%20goals%3A%20" class="btn btn--outline btn--sm">
+<a href="mailto:maxfrenchfitness@gmail.com?subject=Booking%20enquiry%3A%20Max%20Fit&body=Hi%20Max%2C%0A%0AI'd%20like%20to%20get%20started.%20Here's%20a%20bit%20about%20me%3A%0A%0AProgram%20I'm%20interested%20in%3A%20%0APreferred%20times%3A%20%0AMy%20goals%3A%20" class="btn btn--outline btn--sm">
 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><path d="m22 6-10 7L2 6"/></svg>
 Or email directly
 </a>
@@ -1116,6 +1167,23 @@ Or email directly
 </div>
 </div>
 
-<script src="script.js"></script>
+<script src="script.js?v=2026092504"></script>
+
+<!-- Redesign: GSAP + Lenis from CDN, pinned versions. No build step —
+     plain <script> tags, same pattern as the Google Fonts <link> above. -->
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/ScrollTrigger.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/SplitText.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/CustomEase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@studio-freight/lenis@1.0.42/dist/lenis.min.js"></script>
+<script src="js/animations/main.js?v=2026092504"></script>
+<!-- Order matters: ScrollTrigger pins have to be created in the order they
+     appear down the page (Problem, then the Manifesto in about.js, then
+     Why it matters). A pin created before one above it computes its start
+     without that pin's extra scroll distance, and opens too early. -->
+<script src="js/animations/problem.js?v=2026092504"></script>
+<script src="js/animations/about.js?v=2026092504"></script>
+<script src="js/animations/why.js?v=2026092504"></script>
+<script src="js/animations/showcase.js?v=2026092504"></script>
 </body>
 </html>
