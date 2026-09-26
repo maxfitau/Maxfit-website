@@ -82,6 +82,17 @@
     <svg class="card__upcoming-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 17L17 7M17 7H8M17 7V16"/></svg>
   </a>
 
+  <!-- Shown by app.js for real members only (not the demo card). -->
+  <div id="bookWrap" hidden>
+    <a class="card__upcoming" id="bookLink" href="book.html">
+      <div class="card__upcoming-text">
+        <span class="card__label">1-on-1 Sessions</span>
+        <span class="card__upcoming-value">Book a session</span>
+      </div>
+      <svg class="card__upcoming-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+    </a>
+  </div>
+
   <div class="card__loyalty">
     <div class="card__loyalty-head">
       <span class="card__label card__label--red">Sessions to Free</span>
@@ -141,7 +152,7 @@
 
 <script src="vendor/qrcode.js"></script>
 <script src="sheet.js?v=20260925a"></script>
-<script src="app.js?v=20260925a"></script>
+<script src="app.js?v=20260926a"></script>
 <script src="macros-core.js?v=20260926a"></script>
 <script src="macros-api.js?v=20260925a"></script>
 <script src="macros.js?v=20260926a"></script>

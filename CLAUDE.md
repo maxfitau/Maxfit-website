@@ -39,6 +39,20 @@ Max French runs MaxFit, a personal-training business in Inner West Sydney with *
 - **Progress:** thin red bars in the same style as the loyalty punch card (`.card__loyalty-peg`).
 - **Tone:** supportive everywhere. No shaming, no red "failure" screens, and clients can hide calorie numbers.
 
+## Booking (1-on-1 sessions, built 2026-09-26)
+
+Clients book from the card: **Book a session** (Card tab) opens `card/book.html` (`book.js`, `book.css`), a day grid then a time list, then confirm. Max chose: 1-on-1 only, hours set in a sheet, cancelling up to 24 hours before.
+
+- **Backend (`Code.gs`):** actions `bookingInfo` (read-only), `bookSession` and `cancelBooking`. All rules run server-side, and booking re-checks everything under `withLock_` and flushes before releasing it.
+- **Who is asking:** a client's slug and Check-in Token are both readable in the public CRM, so they prove nothing. Each client instead has a personal **booking code** (6 characters, no I/L/O/0/1) in the private *Clients* tab. Max texts it to them (the tab has a ready-made text), and they type it once per phone; `book.js` keeps it in `localStorage` under `maxfitBookCode`. Five wrong codes for one slug lock that slug for 15 minutes (`CacheService`), unknown slugs count too, and a right code clears the count. Settings > "Require booking code" = No falls back to slug + Check-in Token. `issueBookingCodes()` fills in codes for new CRM clients (`setupBooking()` runs it too).
+- **Private data:** bookings live in a separate **private** sheet, "MaxFit Bookings", which `setupBooking()` creates (its id is the `BOOKING_SHEET_ID` Script Property). The public CRM must not hold them, and the card never reads that sheet.
+- **Tabs there:** *Availability* (On, Day, Start, End, Session Minutes, Buffer Minutes; the examples ship switched off), *Time Off* (From, To), *Settings* (Notify email, Min notice hours 12, Book ahead days 28, Cancel notice hours 24, Require session left Yes, Max active bookings 6, Require booking code Yes, Contact link), *Clients* (Name, Slug, Booking Code, Text to send), *Bookings* (Status "Booked" holds a slot and anything else frees it) and *Upcoming* (a formula). Columns are found by header name. Cells are read with `getDisplayValues()`, because Sheets turns typed times and dates into Date values.
+- **Message Max:** Settings > "Contact link" is a `https:`, `sms:`, `tel:` or `mailto:` link with `{message}` where a ready-typed message goes. It is only returned to someone who has entered a valid code, never in an error reply, so Max's number isn't handed to whoever asks. Blank hides the buttons.
+- **Rules:** booking never touches "1 on 1 Remaining" (check-in still does that), but a client can't hold more bookings than sessions left (unless Require session left is No or the plan is unlimited). Cancelling is measured in real elapsed time, so daylight saving can't shift it.
+- **Self-test:** `bookingSelfTest()` (run from the editor) tries the whole flow on real Google in a reused scratch spreadsheet, then emails PASSED or FAILED. It points at the scratch sheet only through the per-run global `bookingSheetOverride_`, so a real client's request can never be redirected, and it only reads the CRM.
+- **Testing:** the real `Code.gs` runs in the browser against fake Sheets/Utilities/MailApp/CacheService with a Sydney clock (213 checks, including deliberately broken copies to prove the checks catch things), and the page runs against a stubbed backend. Don't commit those harness files.
+- **Not built yet:** "add to calendar", the next booking on the card itself, and today's bookings on the check-in page.
+
 ## Macro tracker: phase plan
 
 Build one phase at a time. **Stop after each phase for Max to test.** At the end of each phase: works on iPhone Safari and Android Chrome installed to the home screen, camera permission flows tested, 5 food photos + 5 barcodes + 1 fridge photo tested with JSON and screenshots shown, macro maths unit-tested, no API keys in client code, a clean console, this file updated, and a commit with a clear message.
@@ -160,3 +174,4 @@ Build one phase at a time. **Stop after each phase for Max to test.** At the end
 
 - **Phase 4:** should nutrition punches add to "Total Classes Attended" (which would inflate attendance) or go in a new column?
 - Panel radius: the brief says 14px, but the existing card uses 18px/10px. FUEL uses 14px.
+- **Public CRM holds contact details (found 2026-09-26, not yet decided):** the shared CRM sheet has *Phone* and *Email* columns in Sessions Remaining (5 of 9 clients had a phone and 4 of 9 an email) and a *Leads* tab with a phone and email on every row, all readable by anyone with the link. That contradicts the "never hold private data" rule in Stack above. No page reads those columns, so they could move to a private sheet; the sign-up handler (`handleSignup_`, and `isEmailAlreadyPresent_`'s duplicate check) would need to follow. Ask Max before changing his CRM.

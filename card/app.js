@@ -191,6 +191,8 @@ const els = {
   upcomingLabel: document.getElementById("upcomingLabel"),
   upcomingValue: document.getElementById("upcomingValue"),
   upcomingLink: document.getElementById("upcomingLink"),
+  bookWrap: document.getElementById("bookWrap"),
+  bookLink: document.getElementById("bookLink"),
   loyaltyCount: document.getElementById("loyaltyCount"),
   loyaltyBar: document.getElementById("loyaltyBar"),
   picker: document.getElementById("picker"),
@@ -368,6 +370,12 @@ async function render(data) {
   renderQR(data.checkInUrl);
   renderLoyalty(data.totalAttended + (data.nutritionPunches || 0), !!data.freeOwed);
 
+  // Booking is for real members: the demo card has no membership to book against.
+  if (!data.isDemo) {
+    els.bookLink.href = `book.html?id=${encodeURIComponent(data.clientSlug)}`;
+    els.bookWrap.hidden = false;
+  }
+
   const { count: assignedCount, names: workoutNames, todayName } = await assignedWorkoutSummary_(data.clientSlug);
   if (assignedCount > 0) {
     els.upcomingLabel.textContent = "Today's Workout";
@@ -429,6 +437,7 @@ async function fetchMemberData(id) {
   if (!match) {
     return {
       ...DEMO_MEMBER,
+      isDemo: true,
       clientSlug: wantedSlug || "demo",
       checkInUrl: `https://maxfit.now/checkin.html?token=${id || "DEMO-0000"}`,
     };

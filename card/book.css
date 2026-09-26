@@ -1,0 +1,434 @@
+/* ==========================================================================
+   MAX FIT · book a session
+   Loads on top of card/styles.css — same shell, fonts and palette as the card.
+   ========================================================================== */
+
+/* This page can run taller than a phone screen. card/styles.css centres the
+   card vertically, and centring an overflowing flex item pushes its top half
+   above y=0, out of reach — so, like the workout pages, top-align instead. */
+body {
+  align-items: flex-start;
+}
+
+.book {
+  gap: 20px;
+  padding-bottom: max(40px, calc(env(safe-area-inset-bottom, 0px) + 32px));
+}
+
+/* Rules below set display on several of these, which would otherwise beat the
+   hidden attribute. */
+.book [hidden] {
+  display: none !important;
+}
+
+.book button:focus-visible,
+.book a:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+}
+
+.book__back {
+  color: var(--grey);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: -6px 0 -6px -6px;
+  border-radius: 8px;
+}
+
+.book__back:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* ---- Loading, notices ---- */
+
+.book__state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.book__state-text {
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--grey);
+  margin: 0;
+}
+
+.book__notice-title {
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  font-size: 26px;
+  color: var(--white);
+  margin: 0;
+}
+
+.book__content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.book__intro {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--grey);
+  margin: 0;
+}
+
+.book__intro:empty {
+  display: none;
+}
+
+.book__section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.book__hint {
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--dim);
+  margin: 0;
+}
+
+.book__link {
+  align-self: flex-start;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--white);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.book__link:active {
+  color: var(--red);
+}
+
+/* ---- Booking code ---- */
+
+.book__code-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.book__code-input {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 28px;
+  letter-spacing: 0.3em;
+  text-align: center;
+  text-transform: uppercase;
+  color: var(--white);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 14px 10px;
+  width: 100%;
+  min-width: 0;
+}
+
+.book__code-input:focus {
+  outline: none;
+  border-color: var(--red);
+}
+
+/* ---- Buttons ---- */
+
+.book__btn {
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 16px;
+  color: var(--on-red);
+  background: var(--red);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  width: 100%;
+  cursor: pointer;
+}
+
+.book__btn:active {
+  background: var(--red-dim);
+}
+
+.book__btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.book__btn--ghost {
+  color: var(--grey);
+  background: transparent;
+  border: 1px solid var(--line);
+}
+
+.book__btn--ghost:active {
+  color: var(--white);
+  background: transparent;
+  border-color: var(--red);
+}
+
+.book__btn--small {
+  width: auto;
+  padding: 9px 12px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+/* ---- Your bookings ---- */
+
+.book__mine {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.book__mine-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+}
+
+.book__mine-when {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.book__mine-day {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 17px;
+  color: var(--white);
+}
+
+.book__mine-time {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--grey);
+}
+
+.book__mine-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.book__mine-note {
+  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--dim);
+  padding-top: 4px;
+}
+
+/* ---- Day and time pickers ---- */
+
+.book__weekdays,
+.book__grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+
+.book__weekdays {
+  margin-bottom: -4px;
+  text-align: center;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--dim);
+}
+
+.book__day {
+  aspect-ratio: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 15px;
+  line-height: 1.1;
+  color: var(--white);
+  background: rgba(224, 0, 0, 0.16);
+  border: 1px solid var(--red);
+  border-radius: var(--radius-sm);
+  padding: 0;
+  cursor: pointer;
+}
+
+.book__day:active {
+  background: rgba(224, 0, 0, 0.3);
+}
+
+.book__day--off {
+  color: var(--dim);
+  background: var(--bg);
+  border-color: var(--line);
+  opacity: 0.6;
+  cursor: default;
+}
+
+.book__day--today {
+  box-shadow: inset 0 0 0 2px var(--grey);
+}
+
+.book__day.is-selected {
+  color: var(--on-red);
+  background: var(--red);
+}
+
+.book__day-month {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 9px;
+  line-height: 1;
+  color: var(--grey);
+}
+
+.book__day.is-selected .book__day-month {
+  color: var(--on-red);
+}
+
+.book__times-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.book__times {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.book__time {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 14px;
+  white-space: nowrap;
+  color: var(--white);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px 4px;
+  cursor: pointer;
+}
+
+.book__time:active {
+  border-color: var(--red);
+}
+
+.book__time.is-selected {
+  color: var(--on-red);
+  background: var(--red);
+  border-color: var(--red);
+}
+
+.book__time:disabled,
+.book__day:disabled:not(.book__day--off) {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* ---- Confirming ---- */
+
+.book__confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--bg);
+  border: 1px solid var(--red);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+}
+
+.book__confirm-when {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 20px;
+  line-height: 1.2;
+  color: var(--white);
+  margin: 0;
+}
+
+.book__confirm-note {
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--dim);
+  margin: 0;
+}
+
+/* ---- Messages ---- */
+
+.book__message,
+.book__success {
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--grey);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  margin: 0;
+}
+
+.book__success {
+  color: var(--white);
+  font-weight: 600;
+  background: rgba(224, 0, 0, 0.08);
+  border-color: rgba(224, 0, 0, 0.3);
+}
+
+.book__error {
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--red);
+  text-align: center;
+  margin: 0;
+}
+
+@media (max-width: 340px) {
+  .book__mine-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .book__mine-actions {
+    justify-content: flex-start;
+  }
+}

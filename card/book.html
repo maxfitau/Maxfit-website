@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+<title>MaxFit — Book a Session</title>
+<meta name="theme-color" content="#111111" />
+<meta name="robots" content="noindex" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css?v=20260913b" />
+<link rel="stylesheet" href="book.css?v=20260926b" />
+</head>
+<body>
+
+<main class="card book" id="book">
+  <div class="card__top">
+    <a class="book__back" id="backLink" href="./" aria-label="Back to my card">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+    </a>
+    <span class="card__tag">Book a Session</span>
+  </div>
+
+  <div class="book__state" id="bookLoading" role="status">
+    <p class="book__state-text">Loading times…</p>
+  </div>
+
+  <div class="book__state" id="bookNotice" hidden>
+    <p class="book__notice-title" id="noticeTitle"></p>
+    <p class="book__state-text" id="noticeText"></p>
+    <button class="book__btn book__btn--ghost" id="noticeRetry" type="button" hidden>Try again</button>
+  </div>
+
+  <div class="book__state" id="bookCode" hidden>
+    <p class="book__notice-title">Enter your booking code</p>
+    <p class="book__state-text">Max texts you a personal code. You only need to enter it once on this phone.</p>
+    <form class="book__code-form" id="codeForm" autocomplete="off">
+      <label class="card__label" for="codeInput">Booking code</label>
+      <input class="book__code-input" id="codeInput" type="text" inputmode="text" autocapitalize="characters" autocorrect="off" spellcheck="false" maxlength="12" placeholder="ABC234" aria-describedby="codeError" />
+      <button class="book__btn" id="codeSubmit" type="submit">Continue</button>
+      <p class="book__error" id="codeError" role="alert" hidden></p>
+    </form>
+    <p class="book__hint">Don't have a code yet? Message Max and he'll send it.</p>
+  </div>
+
+  <div class="book__content" id="bookContent" hidden>
+    <p class="book__intro" id="bookIntro"></p>
+
+    <section class="book__section" id="mineSection" aria-labelledby="mineLabel" hidden>
+      <span class="card__label card__label--red" id="mineLabel">Your bookings</span>
+      <div class="book__mine" id="mineList"></div>
+    </section>
+
+    <p class="book__message" id="bookMessage" role="status" hidden></p>
+
+    <section class="book__section" id="pickSection" aria-labelledby="pickLabel" hidden>
+      <span class="card__label card__label--red" id="pickLabel">Pick a day</span>
+      <div class="book__weekdays" aria-hidden="true"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span></div>
+      <div class="book__grid" id="dayGrid"></div>
+
+      <div class="book__times-wrap" id="timesWrap" hidden>
+        <span class="card__label" id="timesLabel">Pick a time</span>
+        <div class="book__times" id="timesGrid"></div>
+      </div>
+
+      <div class="book__confirm" id="confirmBox" hidden>
+        <p class="book__confirm-when" id="confirmWhen"></p>
+        <p class="book__confirm-note" id="confirmNote"></p>
+        <button class="book__btn" id="confirmBtn" type="button">Confirm booking</button>
+        <button class="book__btn book__btn--ghost" id="confirmBack" type="button">Choose another time</button>
+      </div>
+    </section>
+
+    <p class="book__success" id="bookSuccess" role="status" hidden></p>
+    <p class="book__error" id="bookError" role="alert" hidden></p>
+  </div>
+</main>
+
+<script src="sheet.js?v=20260925a"></script>
+<script src="book.js?v=20260926b"></script>
+</body>
+</html>
