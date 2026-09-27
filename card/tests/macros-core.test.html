@@ -220,7 +220,7 @@
   eq("free month until today: on", C.planState({ trial_started: "2026-01-01", comp_until: "2026-09-24" }, "2026-09-24").access, true);
   eq("free month ended yesterday: off", C.planState({ trial_started: "2026-01-01", comp_until: "2026-09-23" }, "2026-09-24").access, false);
   eq("never opened Fuel: not started", C.planState({}, "2026-09-24").kind, "not_started");
-  eq("tiers: trial is Gold", C.planState({ trial_started: "2026-09-24" }, "2026-09-25").tier, "gold");
+  eq("tiers: trial is Diamond", C.planState({ trial_started: "2026-09-24" }, "2026-09-25").tier, "diamond");
   eq("tiers: trial over is Silver", C.planState({ trial_started: "2026-01-01" }, "2026-09-24").tier, "silver");
   eq("tiers: paying with no tier recorded is Gold", C.planState({ plan_status: "active" }, "2026-09-24").tier, "gold");
   eq("tiers: paying Platinum", C.planState({ plan_status: "active", plan_tier: "platinum" }, "2026-09-24").tier, "platinum");
@@ -228,6 +228,15 @@
   eq("tiers: free month of Platinum", C.planState({ comp_until: "2026-10-20", comp_tier: "platinum" }, "2026-09-24").tier, "platinum");
   eq("tiers: a free Platinum month tops up paying Gold", C.planState({ plan_status: "active", plan_tier: "gold", comp_until: "2026-10-20", comp_tier: "platinum" }, "2026-09-24").tier, "platinum");
   eq("tiers: a free Gold month doesn't downgrade paying Platinum", C.planState({ plan_status: "active", plan_tier: "platinum", comp_until: "2026-10-20", comp_tier: "gold" }, "2026-09-24").tier, "platinum");
+  eq("tiers: paying Diamond", C.planState({ plan_status: "active", plan_tier: "diamond" }, "2026-09-24").tier, "diamond");
+  eq("tiers: an unknown tier on file counts as Gold", C.planState({ plan_status: "active", plan_tier: "bronze" }, "2026-09-24").tier, "gold");
+  eq("tiers: free month of Diamond", C.planState({ comp_until: "2026-10-20", comp_tier: "diamond" }, "2026-09-24").tier, "diamond");
+  eq("tiers: a free Diamond month tops up paying Platinum", C.planState({ plan_status: "active", plan_tier: "platinum", comp_until: "2026-10-20", comp_tier: "diamond" }, "2026-09-24").tier, "diamond");
+  eq("tiers: a free Platinum month doesn't downgrade paying Diamond", C.planState({ plan_status: "active", plan_tier: "diamond", comp_until: "2026-10-20", comp_tier: "platinum" }, "2026-09-24").tier, "diamond");
+  eq("tiers: a free Gold month doesn't replace paying Gold", C.planState({ plan_status: "active", plan_tier: "gold", comp_until: "2026-10-20", comp_tier: "gold" }, "2026-09-24").kind, "paid");
+  eq("tiers: rank order", ["silver", "gold", "platinum", "diamond"].map(C.tierRank), [0, 1, 2, 3]);
+  eq("interval: yearly plan", C.planState({ plan_status: "active", plan_tier: "gold", plan_interval: "year" }, "2026-09-24").interval, "year");
+  eq("interval: monthly when blank", C.planState({ plan_status: "active", plan_tier: "gold" }, "2026-09-24").interval, "month");
 
   // --- What to eat next -------------------------------------------------------------------------
   // A slice of the seeded Foods list (per 100 g).

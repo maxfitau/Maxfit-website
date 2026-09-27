@@ -47,13 +47,13 @@
     recent: [],
     favourites: [],
     meals: [], // saved meals: { id, name, items }
-    aiToday: null, // { tier, used, limit, left } from the server
+    aiToday: null, // { tier, used, limit, left, unlimited } from the server
     busy: false,
     confirm: null,
     pendingPhotoMode: null,
     loadedOn: null,
     aiEnabled: true,
-    plan: null, // { access, tier, kind, until, daysLeft, upgradeUrl, platinumUrl, portalUrl } from the server
+    plan: null, // { access, tier, kind, until, daysLeft, interval, links: { gold: { month, year }, … }, portalUrl, aiPerDay } from the server
     foods: [],
     moreIdeas: false,
     chat: [], // Ask Fuel messages, this visit only: { role, content, foods? }
@@ -767,24 +767,31 @@
   // Scan chooser + photos
   // ---------------------------------------------------------------------------
 
-  /** Fuel AI (scans, Describe it): API key on the server AND Gold or Platinum (paid, free month or trial). */
+  /** Fuel AI (scans, Describe it): API key on the server AND Gold, Platinum or Diamond (paid, free month or trial). */
   function fuelAi() {
     return state.aiEnabled && !!(state.plan && state.plan.access);
   }
 
-  const TIER_NAMES = { silver: "Silver", gold: "Gold", platinum: "Platinum" };
-  const TIER_PRICES = { gold: "$9.99", platinum: "$14.99" };
+  const TIER_NAMES = { silver: "Silver", gold: "Gold", platinum: "Platinum", diamond: "Diamond" };
+  // What the plans sheet shows. Yearly is 3 months free (pay for 9, get 12);
+  // `save` is 12 months minus the yearly price. Keep in step with Stripe.
+  const TIER_PRICES = {
+    gold: { month: "$5.99", year: "$53.99", save: "$17.89" },
+    platinum: { month: "$9.99", year: "$89.99", save: "$29.89" },
+    diamond: { month: "$14.99", year: "$134.99", save: "$44.89" },
+  };
+  const PAID_TIERS = ["gold", "platinum", "diamond"];
 
   function tier() {
     return (state.plan && state.plan.tier) || (fuelAi() ? "gold" : "silver");
   }
 
-  /** Ask Fuel is Platinum only (paying, or a free Platinum month from Max). */
+  /** Ask Fuel is Platinum and Diamond (paying, a free month from Max, or the free week). */
   function askFuelOn() {
-    return fuelAi() && tier() === "platinum";
+    return fuelAi() && MacroCore.tierRank(tier()) >= MacroCore.tierRank("platinum");
   }
 
-  /** Gold/Platinum with none of today's AI uses left. */
+  /** Any paid plan with none of today's AI uses left (Diamond: its fair-use ceiling). */
   function aiUsedUp() {
     return fuelAi() && !!state.aiToday && state.aiToday.left <= 0;
   }
@@ -797,10 +804,11 @@
     render();
   }
 
-  /** "7 of 10 AI uses left today". */
+  /** "3 of 5 AI uses left today", or on Diamond "Unlimited · 4 used today". */
   function aiLeftText() {
     const a = state.aiToday;
     if (!a || !a.limit) return "";
+    if (a.unlimited) return a.left > 0 ? `Unlimited · ${a.used} used today` : "Fair-use limit reached today · back at midnight";
     return a.left > 0 ? `${a.left} of ${a.limit} AI uses left today` : `All ${a.limit} AI uses used today · back at midnight`;
   }
 
@@ -821,38 +829,48 @@
     const a = state.aiToday || { used: 0, limit: 0, left: 0 };
     const pct = a.limit ? Math.min(100, Math.round((a.used / a.limit) * 100)) : 0;
     const t = tier();
+    // Diamond has no count to run down: a full, sparkling bar instead.
+    const bar = a.unlimited
+      ? '<div class="fuel-meter__bar" role="img" aria-label="Unlimited AI today"><span style="width:100%"></span></div>'
+      : `<div class="fuel-meter__bar" role="progressbar" aria-valuemin="0" aria-valuemax="${a.limit}" aria-valuenow="${a.used}" aria-label="AI uses today">
+          <span style="width:${pct}%"></span>
+        </div>`;
     return `
       <div class="fuel-panel fuel-meter fuel-meter--${t}">
         <div class="fuel-meter__head">
           <span class="card__label">AI today</span>
           <span class="fuel-tier fuel-tier--${t}">${TIER_NAMES[t]}${state.plan.kind === "trial" ? " trial" : ""}</span>
         </div>
-        <div class="fuel-meter__bar" role="progressbar" aria-valuemin="0" aria-valuemax="${a.limit}" aria-valuenow="${a.used}" aria-label="AI uses today">
-          <span style="width:${pct}%"></span>
-        </div>
+        ${bar}
         <div class="fuel-meter__foot">
           <span class="fuel-meter__text">${esc(aiLeftText())}</span>
-          ${t !== "platinum" ? '<button class="fuel-link" type="button" data-act="plans">Get more</button>' : ""}
+          ${t !== "diamond" ? '<button class="fuel-link" type="button" data-act="plans">Get more</button>' : ""}
         </div>
       </div>`;
   }
 
+  /** "23 Oct", or "23 Oct 2027" when it isn't this year (yearly plans). */
   function fmtDate(ymd) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(ymd || ""))) return "";
     const [y, m, d] = ymd.split("-").map(Number);
-    return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-AU", { day: "numeric", month: "short", timeZone: "UTC" });
+    const opts = { day: "numeric", month: "short", timeZone: "UTC" };
+    if (String(y) !== MacroCore.sydneyDate().slice(0, 4)) opts.year = "numeric";
+    return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-AU", opts);
   }
 
-  /** "Gold free trial · 5 days left", "Platinum · renews 23 Oct", … or "" when Fuel AI is off for everyone. */
+  /** "Diamond free trial · 5 days left", "Platinum · renews 23 Oct", … or "" when Fuel AI is off for everyone. */
   function planText() {
     const p = state.plan;
     if (!state.aiEnabled || !p) return "";
     const name = TIER_NAMES[p.tier] || "Gold";
-    if (p.kind === "paid") return p.until ? `${name} · renews ${fmtDate(p.until)}` : `${name} is on`;
+    if (p.kind === "paid") {
+      const yearly = p.interval === "year" ? " · yearly" : "";
+      return p.until ? `${name} · renews ${fmtDate(p.until)}${yearly}` : `${name} is on${yearly}`;
+    }
     if (p.kind === "comp") return `${name} · free until ${fmtDate(p.until)} (from Max)`;
-    if (p.kind === "trial") return `Gold free trial · ${p.daysLeft} day${p.daysLeft === 1 ? "" : "s"} left`;
+    if (p.kind === "trial") return `${name} free trial · ${p.daysLeft} day${p.daysLeft === 1 ? "" : "s"} left`;
     if (p.kind === "lapsed") return "Your subscription has ended, so you're on Silver";
-    if (p.kind === "trial_over") return "Your free week of Gold has finished, so you're on Silver";
+    if (p.kind === "trial_over") return "Your free week has finished, so you're on Silver";
     return "Silver";
   }
 
@@ -1122,72 +1140,120 @@
   // ---------------------------------------------------------------------------
 
   /**
-   * The plans: Silver (free), Gold and Platinum. opts.reason "limit" = they
-   * just ran out of today's AI uses (opts.message is the server's wording);
-   * "ask" = they tapped Ask Fuel, which is Platinum only.
+   * The plans: Silver (free), Gold, Platinum and Diamond, each monthly or
+   * yearly (3 months free). opts.reason "limit" = they just ran out of
+   * today's AI uses (opts.message is the server's wording); "ask" = they
+   * tapped Ask Fuel, which needs Platinum or Diamond.
+   *
+   * Anyone not paying buys through that plan's Payment Link. A paying
+   * client changes plan (or monthly ↔ yearly) in Stripe's billing page,
+   * never through a second checkout, so nobody pays twice.
    */
+  let plansInterval = null; // the Monthly / Yearly switch while the sheet is open
+
   function openUpsell(opts) {
     opts = opts || {};
     const p = state.plan || {};
     const t = tier();
     const paying = p.kind === "paid";
-    const perDay = p.aiPerDay || { gold: 10, platinum: 25 };
+    const perDay = p.aiPerDay || { gold: 5, platinum: 10, diamond: 20 };
+    const links = p.links || {};
+    const hasYear = PAID_TIERS.some((k) => links[k] && links[k].year);
+    plansInterval = hasYear && paying && p.interval === "year" ? "year" : "month";
     const sub =
       opts.reason === "limit"
         ? opts.message || "That's all your AI uses for today."
         : opts.reason === "ask"
-        ? "Ask Fuel, your AI nutrition coach, comes with Platinum."
+        ? "Ask Fuel, your AI nutrition coach, comes with Platinum and Diamond."
         : p.kind === "trial_over" || p.kind === "lapsed"
         ? planText() + "."
         : "Your AI nutrition coach, in your pocket. Cancel any time.";
     const badge = (text) => `<span class="fuel-plan-card__badge">${esc(text)}</span>`;
-    const buy = (url, label, t) =>
-      url ? `<a class="fuel-btn fuel-btn--${t}" href="${esc(url)}" target="_blank" rel="noopener" data-upgrade>${esc(label)}</a>` : "";
+    const days = (n) => `${n} day${n === 1 ? "" : "s"} left`;
+    const portalBtn = (k, label) =>
+      p.portalUrl ? `<a class="fuel-btn fuel-btn--${k}" href="${esc(p.portalUrl)}" target="_blank" rel="noopener" data-upgrade>${esc(label)}</a>` : "";
 
-    let goldAction = "";
-    if (t === "gold" && paying) goldAction = badge("Your plan");
-    else if (t === "gold" && p.kind === "trial") goldAction = badge(`Free trial · ${p.daysLeft} day${p.daysLeft === 1 ? "" : "s"} left`) + buy(p.upgradeUrl, "Keep Gold", "gold");
-    else if (t === "gold" && p.kind === "comp") goldAction = badge(`Free from Max until ${fmtDate(p.until)}`) + buy(p.upgradeUrl, "Get Gold", "gold");
-    else if (!(paying && t === "platinum")) goldAction = buy(p.upgradeUrl, "Get Gold", "gold");
+    const DESCRIPTIONS = {
+      gold: `<p><b>${perDay.gold} AI uses a day:</b> snap a meal, scan a label or Describe it.</p>`,
+      platinum: `<p><b>${perDay.platinum} AI uses a day, plus Ask Fuel</b>, your AI nutrition coach: what to eat next, what to order when you're out, and help when you're over.</p>`,
+      diamond: `<p><b>Unlimited AI and Ask Fuel.</b> Log every meal, snack and question without counting.</p>
+        <p class="fuel-plan-card__note">Fair use: up to ${perDay.diamond} AI uses a day.</p>`,
+    };
 
-    let platAction = "";
-    if (t === "platinum" && paying) platAction = badge("Your plan");
-    else if (t === "platinum" && p.kind === "comp") platAction = badge(`Free from Max until ${fmtDate(p.until)}`);
-    else if (paying && t === "gold") {
-      platAction = p.portalUrl
-        ? `<a class="fuel-btn fuel-btn--platinum" href="${esc(p.portalUrl)}" target="_blank" rel="noopener" data-upgrade>Switch to Platinum</a>
-           <p class="fuel-plan-card__note">Opens Stripe's billing page: choose Update plan, then Fuel Platinum. Stripe adjusts your bill for the rest of the month.</p>`
-        : "";
-    } else platAction = buy(p.platinumUrl, "Get Platinum", "platinum");
+    function action(k, iv) {
+      const name = TIER_NAMES[k];
+      const url = links[k] && links[k][iv];
+      const buy = (label) =>
+        url ? `<a class="fuel-btn fuel-btn--${k}" href="${esc(url)}" target="_blank" rel="noopener" data-upgrade>${esc(label)}</a>` : "";
+      if (paying) {
+        if (k === t) {
+          const mine = badge(p.interval === "year" ? "Your plan · yearly" : "Your plan · monthly");
+          return iv === "year" && p.interval !== "year" ? mine + portalBtn(k, "Switch to yearly") : mine;
+        }
+        return MacroCore.tierRank(k) > MacroCore.tierRank(t) ? portalBtn(k, `Switch to ${name}`) : "";
+      }
+      if (k === t && p.kind === "trial") return badge(`Free trial · ${days(p.daysLeft)}`) + buy(`Keep ${name}`);
+      if (k === t && p.kind === "comp") return badge(`Free from Max until ${fmtDate(p.until)}`) + buy(`Keep ${name}`);
+      return buy(`Get ${name}`);
+    }
 
-    const noLinks = !p.upgradeUrl && !p.platinumUrl && !paying;
+    function cardHtml(k, iv) {
+      const price = iv === "year" ? `<b>${TIER_PRICES[k].year}</b> a year` : `<b>${TIER_PRICES[k].month}</b> a month`;
+      const save = iv === "year" ? `<p class="fuel-plan-card__save">Save ${TIER_PRICES[k].save} · 3 months free</p>` : "";
+      return `
+        <div class="fuel-plan-card fuel-plan-card--${k}${t === k ? " is-current" : ""}">
+          <div class="fuel-plan-card__head"><span class="fuel-tier fuel-tier--${k}">${TIER_NAMES[k]}</span><span class="fuel-plan-card__price">${price}</span></div>
+          ${save}
+          ${DESCRIPTIONS[k]}
+          ${action(k, iv)}
+        </div>`;
+    }
+
+    function plansHtml(iv) {
+      const anyLink = PAID_TIERS.some((k) => links[k] && links[k][iv]);
+      return `
+        <div class="fuel-plan-card fuel-plan-card--silver${t === "silver" ? " is-current" : ""}">
+          <div class="fuel-plan-card__head"><span class="fuel-tier fuel-tier--silver">Silver</span><span class="fuel-plan-card__price">Free</span></div>
+          <p>Barcodes, search, saved meals, typed-in numbers, what-to-eat ideas and your progress.</p>
+          ${t === "silver" ? badge("Your plan") : ""}
+        </div>
+        ${PAID_TIERS.map((k) => cardHtml(k, iv)).join("")}
+        ${!anyLink && !paying ? '<p class="fuel-error">Sign-ups open soon. Ask Max about it at your next session.</p>' : ""}
+        ${
+          paying && p.portalUrl
+            ? '<p class="fuel-plan-card__note">Switching opens Stripe\'s billing page: choose Update plan. Stripe adjusts your bill for the rest of the period.</p>'
+            : ""
+        }`;
+    }
+
+    const toggle = hasYear
+      ? `<div class="fuel-interval" role="radiogroup" aria-label="How often you pay">
+           <button type="button" role="radio" data-interval="month">Monthly</button>
+           <button type="button" role="radio" data-interval="year">Yearly <small>3 months free</small></button>
+         </div>`
+      : "";
+
     openSheet(
       `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Fuel plans</h2>
        <p class="fuel-sheet__sub">${esc(sub)}</p>
-       <div class="fuel-plans">
-         <div class="fuel-plan-card fuel-plan-card--silver${t === "silver" ? " is-current" : ""}">
-           <div class="fuel-plan-card__head"><span class="fuel-tier fuel-tier--silver">Silver</span><span class="fuel-plan-card__price">Free</span></div>
-           <p>Barcodes, search, saved meals, typed-in numbers, what-to-eat ideas and your progress.</p>
-           ${t === "silver" ? badge("Your plan") : ""}
-         </div>
-         <div class="fuel-plan-card fuel-plan-card--gold${t === "gold" ? " is-current" : ""}">
-           <div class="fuel-plan-card__head"><span class="fuel-tier fuel-tier--gold">Gold</span><span class="fuel-plan-card__price"><b>${TIER_PRICES.gold}</b> a month</span></div>
-           <p><b>${perDay.gold} AI uses a day:</b> snap a meal, scan a label or Describe it.</p>
-           ${goldAction}
-         </div>
-         <div class="fuel-plan-card fuel-plan-card--platinum${t === "platinum" ? " is-current" : ""}">
-           <div class="fuel-plan-card__head"><span class="fuel-tier fuel-tier--platinum">Platinum</span><span class="fuel-plan-card__price"><b>${TIER_PRICES.platinum}</b> a month</span></div>
-           <p><b>Everything in Gold, plus Ask Fuel</b>, your AI nutrition coach: what to eat next, what to order when you're out, and help when you're over.</p>
-           <p><b>${perDay.platinum} AI uses a day</b> for photos, labels, Describe it and questions.</p>
-           ${platAction}
-         </div>
-       </div>
-       ${noLinks ? '<p class="fuel-error">Sign-ups open soon. Ask Max about it at your next session.</p>' : ""}
+       ${toggle}
+       <div class="fuel-plans" data-plans></div>
        ${paying && p.portalUrl ? `<a class="fuel-link fuel-plans__manage" href="${esc(p.portalUrl)}" target="_blank" rel="noopener">Manage or cancel your subscription</a>` : ""}
        <button class="fuel-btn fuel-btn--quiet" type="button" data-refresh>Already paid? Tap to refresh</button>`,
       (body) => {
-        body.querySelectorAll("[data-upgrade]").forEach((a) => a.addEventListener("click", () => (state.awaitingUpgrade = true)));
+        const paint = () => {
+          body.querySelector("[data-plans]").innerHTML = plansHtml(plansInterval);
+          body.querySelectorAll("[data-interval]").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.interval === plansInterval)));
+        };
+        body.addEventListener("click", (e) => {
+          const iv = e.target.closest("[data-interval]");
+          if (iv) {
+            plansInterval = iv.dataset.interval;
+            paint();
+          } else if (e.target.closest("[data-upgrade]")) state.awaitingUpgrade = true;
+        });
         body.querySelector("[data-refresh]").addEventListener("click", (e) => refreshPlan(e.target));
+        paint();
       }
     );
   }

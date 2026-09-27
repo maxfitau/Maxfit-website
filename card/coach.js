@@ -128,7 +128,7 @@
         <div class="coach-actions">
           ${c.link ? '<button class="fuel-btn" type="button" data-a="copy">Copy link</button>' : '<button class="fuel-btn" type="button" data-a="issue">Create Fuel link</button>'}
           <button class="fuel-btn fuel-btn--ghost" type="button" data-a="targets">Set targets</button>
-          ${c.hasKey && aiEnabled ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="giveMonth" data-tier="gold">Free month of Gold</button><button class="fuel-btn fuel-btn--ghost" type="button" data-a="giveMonth" data-tier="platinum">Free month of Platinum</button>' : ""}
+          ${c.hasKey && aiEnabled ? ["gold", "platinum", "diamond"].map((t) => `<button class="fuel-btn fuel-btn--ghost" type="button" data-a="giveMonth" data-tier="${t}">Free month of ${TIER_NAMES[t]}</button>`).join("") : ""}
           ${c.hasKey ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="weight">Log weight</button>' : ""}
           ${c.hasKey && c.targets ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="goal">Set goal</button>' : ""}
           ${c.link ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="rotate">New link</button>' : ""}
@@ -196,21 +196,26 @@
     return bits.join(" · ") || "No weigh-ins or green days yet";
   }
 
+  const TIER_NAMES = { gold: "Gold", platinum: "Platinum", diamond: "Diamond" };
+
   /** A client's Fuel AI status in a few words. */
   function planText(p) {
     if (!p) return "";
     const date = (ymd) => {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(String(ymd || ""))) return "";
       const [y, m, d] = ymd.split("-").map(Number);
-      return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-AU", { day: "numeric", month: "short", timeZone: "UTC" });
+      const opts = { day: "numeric", month: "short", timeZone: "UTC" };
+      if (y !== new Date().getFullYear()) opts.year = "numeric"; // yearly plans renew next year
+      return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-AU", opts);
     };
-    const tier = p.tier === "platinum" ? "Platinum" : "Gold";
-    if (p.kind === "paid") return `${tier}: paying${p.until ? ` · renews ${date(p.until)}` : ""}${p.status === "past_due" ? " · card failed, Stripe retrying" : ""}`;
+    const tier = TIER_NAMES[p.tier] || "Gold";
+    const period = p.interval === "year" ? "paying yearly" : "paying monthly";
+    if (p.kind === "paid") return `${tier}: ${period}${p.until ? ` · renews ${date(p.until)}` : ""}${p.status === "past_due" ? " · card failed, Stripe retrying" : ""}`;
     if (p.kind === "comp") return `${tier}: free month · until ${date(p.until)}`;
-    if (p.kind === "trial") return `Gold: free trial · ${p.daysLeft} day${p.daysLeft === 1 ? "" : "s"} left`;
+    if (p.kind === "trial") return `${tier}: free trial · ${p.daysLeft} day${p.daysLeft === 1 ? "" : "s"} left`;
     if (p.kind === "lapsed") return "Silver: subscription ended";
     if (p.kind === "trial_over") return "Silver: trial finished, not subscribed";
-    return "Silver: Gold trial starts when they first open Fuel";
+    return "Silver: the free week starts when they first open Fuel";
   }
 
   function render() {
@@ -360,7 +365,7 @@
         const data = await MacroApi.coach("coachGiveMonth", pin, { slug: slug, tier: btn.dataset.tier });
         c.plan = data.plan;
         render();
-        toast(`${c.name} has ${btn.dataset.tier === "platinum" ? "Platinum" : "Gold"} free until ${planText(data.plan).split("until ")[1] || "next month"}`);
+        toast(`${c.name} has ${TIER_NAMES[btn.dataset.tier] || "Gold"} free until ${planText(data.plan).split("until ")[1] || "next month"}`);
       } else if (a === "clearTargets") {
         await MacroApi.coach("coachSetTargets", pin, { slug: slug, clear: true });
         open[slug] = null;

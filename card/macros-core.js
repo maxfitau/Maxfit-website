@@ -305,6 +305,16 @@ const MacroCore = (function () {
   // ---------------------------------------------------------------------------
 
   const TRIAL_DAYS = 7;
+  // The free week gives the top plan, so new clients try everything.
+  const TRIAL_TIER = "diamond";
+  // Lowest to highest. Silver is free (no AI).
+  const TIERS = ["silver", "gold", "platinum", "diamond"];
+
+  /** 0 (Silver) to 3 (Diamond). A paid plan with no tier on file counts as Gold. */
+  function tierRank(tier) {
+    const i = TIERS.indexOf(tier);
+    return i >= 0 ? i : 1;
+  }
   // Stripe subscription statuses that still get Fuel AI. past_due is a card
   // that failed but is still being retried, so it isn't cut off straight away.
   const PAID_STATUSES = ["active", "trialing", "past_due"];
@@ -334,29 +344,38 @@ const MacroCore = (function () {
    * comp_until (dates as "YYYY-MM-DD"), plan_tier and comp_tier; `today`
    * is a Sydney date.
    *
-   * tier: "silver" (free, no AI) | "gold" | "platinum". The free week is Gold.
+   * tier: "silver" (free, no AI) | "gold" | "platinum" | "diamond". The
+   *       free week is Diamond.
    * kind: "paid" | "comp" (a free month from Max) | "trial" |
    *       "trial_over" | "lapsed" (subscription ended) | "not_started"
+   * interval (paid only): "month" | "year", from plan_interval.
    */
   function planState(m, today) {
     m = m || {};
     const status = String(m.plan_status || "");
-    const tierOf = (t) => (t === "platinum" ? "platinum" : "gold");
+    const tierOf = (t) => (t === "platinum" || t === "diamond" ? t : "gold");
     const comp = String(m.comp_until || "");
     const compState =
       isYmd_(comp) && comp >= today
         ? { access: true, tier: tierOf(m.comp_tier), kind: "comp", until: comp, daysLeft: daysBetween(today, comp) + 1 }
         : null;
     if (PAID_STATUSES.indexOf(status) >= 0) {
-      const paid = { access: true, tier: tierOf(m.plan_tier), kind: "paid", status: status, until: String(m.plan_until || "") };
-      // A free Platinum month from Max tops up a paying Gold client.
-      return compState && compState.tier === "platinum" && paid.tier === "gold" ? compState : paid;
+      const paid = {
+        access: true,
+        tier: tierOf(m.plan_tier),
+        kind: "paid",
+        status: status,
+        until: String(m.plan_until || ""),
+        interval: m.plan_interval === "year" ? "year" : "month",
+      };
+      // A free month from Max on a higher plan tops up a paying client.
+      return compState && tierRank(compState.tier) > tierRank(paid.tier) ? compState : paid;
     }
     if (compState) return compState;
     const start = String(m.trial_started || "");
     if (isYmd_(start)) {
       const end = addDays(start, TRIAL_DAYS);
-      if (today < end) return { access: true, tier: "gold", kind: "trial", until: end, daysLeft: daysBetween(today, end) };
+      if (today < end) return { access: true, tier: TRIAL_TIER, kind: "trial", until: end, daysLeft: daysBetween(today, end) };
       return { access: false, tier: "silver", kind: status ? "lapsed" : "trial_over", status: status };
     }
     return { access: false, tier: "silver", kind: "not_started" };
@@ -620,6 +639,9 @@ const MacroCore = (function () {
     parseServingGrams: parseServingGrams,
     normaliseOffProduct: normaliseOffProduct,
     TRIAL_DAYS: TRIAL_DAYS,
+    TRIAL_TIER: TRIAL_TIER,
+    TIERS: TIERS,
+    tierRank: tierRank,
     addDays: addDays,
     daysBetween: daysBetween,
     planState: planState,

@@ -1623,10 +1623,12 @@ a.fuel-btn {
   gap: 8px;
 }
 
-/* Plans: Silver / Gold / Platinum, and the AI meter. Each plan wears its
-   own metal (Max, 2026-09-27): Silver a plain matte grey, Gold a warm
-   metallic, Platinum a pearl sheen with a slow shimmer and a glowing edge,
-   so it's clearly the one worth having. Everything else stays red. */
+/* Plans: Silver / Gold / Platinum / Diamond, and the AI meter. Each plan
+   wears its own metal (Max, 2026-09-27): Silver a plain matte grey, Gold a
+   warm metallic, Platinum a pearl sheen with a slow shimmer and a glowing
+   edge, and Diamond (the top plan) an icy white prism: a spectral sheen,
+   twinkling glints, and a rainbow edge that turns. Everything else stays
+   red. Every animation stops for reduced motion. */
 :root {
   --silver-metal: linear-gradient(180deg, #dcdfe2 0%, #a9aeb3 100%);
   --silver-ink: #16181a;
@@ -1639,6 +1641,38 @@ a.fuel-btn {
   --platinum-ink: #15171c;
   --platinum-text: #e3e9f4;
   --platinum-glow: rgba(206, 220, 255, 0.22);
+  --diamond-metal: linear-gradient(110deg, #ffffff 0%, #eaf6ff 10%, #ffe3f4 18%, #fff7d6 26%, #e2fff1 34%, #e3ecff 42%, #ffffff 50%, #eaf6ff 60%, #f7e4ff 68%, #e0fbff 76%, #fffbe6 84%, #ffffff 100%);
+  --diamond-spectrum: #ffffff, #9ed8ff, #c9a8ff, #ff9fd6, #ffe28a, #9fffd2, #ffffff;
+  --diamond-ink: #0f1116;
+  --diamond-text: #f4f9ff;
+  --diamond-glow: rgba(190, 225, 255, 0.35);
+}
+
+/* The angle Diamond's rainbow edge turns through. Browsers without
+   @property just show it still. */
+@property --fuel-spin {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes fuel-spin {
+  to {
+    --fuel-spin: 360deg;
+  }
+}
+
+/* A star glint on the Diamond badge: appears, turns, fades. */
+@keyframes fuel-twinkle {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(0.3) rotate(0deg);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1) rotate(45deg);
+  }
 }
 
 /* Slides a 300%-wide repeating gradient by exactly one tile, so it loops. */
@@ -1708,6 +1742,40 @@ a.fuel-btn {
   animation: fuel-sheen 8s linear infinite;
 }
 
+.fuel-tier--diamond {
+  position: relative;
+  color: var(--diamond-ink);
+  background: var(--diamond-metal) 0% 50% / 300% 100%;
+  border-color: transparent;
+  box-shadow: inset 0 1px 0 #ffffff, 0 0 0 1px rgba(255, 255, 255, 0.55), 0 0 16px var(--diamond-glow);
+  animation: fuel-sheen 6s linear infinite;
+}
+
+.fuel-tier--diamond::before,
+.fuel-tier--diamond::after {
+  content: "✦";
+  position: absolute;
+  font-size: 9px;
+  line-height: 1;
+  color: #ffffff;
+  text-shadow: 0 0 6px rgba(190, 225, 255, 0.95);
+  pointer-events: none;
+  opacity: 0;
+  animation: fuel-twinkle 2.6s ease-in-out infinite;
+}
+
+.fuel-tier--diamond::before {
+  top: -5px;
+  right: -3px;
+}
+
+.fuel-tier--diamond::after {
+  bottom: -4px;
+  left: -2px;
+  font-size: 7px;
+  animation-delay: 1.3s;
+}
+
 .fuel-tier--sm {
   font-size: 10px;
   padding: 4px 7px;
@@ -1746,8 +1814,31 @@ a.fuel-btn {
   z-index: -1;
 }
 
+.fuel-btn--diamond,
+.fuel-btn--diamond:active {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate; /* the light band (::after, z-index -1) passes under the text */
+  color: var(--diamond-ink);
+  background: var(--diamond-metal) 0% 50% / 300% 100%;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.7), 0 0 30px -4px var(--diamond-glow);
+  animation: fuel-sheen 6s linear infinite;
+}
+
+.fuel-btn--diamond::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 28%, rgba(255, 150, 215, 0.55) 40%, rgba(255, 255, 255, 0.95) 50%, rgba(130, 205, 255, 0.6) 60%, transparent 72%);
+  transform: translateX(-130%);
+  animation: fuel-shine 3.6s ease-in-out 0.6s infinite;
+  pointer-events: none;
+  z-index: -1;
+}
+
 .fuel-btn--gold:active,
-.fuel-btn--platinum:active {
+.fuel-btn--platinum:active,
+.fuel-btn--diamond:active {
   filter: brightness(0.88);
 }
 
@@ -1787,6 +1878,11 @@ a.fuel-btn {
 .fuel-meter--platinum .fuel-meter__bar span {
   background: var(--platinum-metal) 0% 50% / 300% 100%;
   animation: fuel-sheen 8s linear infinite;
+}
+
+.fuel-meter--diamond .fuel-meter__bar span {
+  background: linear-gradient(90deg, var(--diamond-spectrum)) 0% 50% / 300% 100%;
+  animation: fuel-sheen 5s linear infinite;
 }
 
 .fuel-meter__text {
@@ -1862,6 +1958,109 @@ a.fuel-btn {
   color: var(--platinum-text);
 }
 
+/* Diamond: facets of light in the corner, a rainbow edge that slowly
+   turns, a brighter glow, and a price that shimmers. */
+.fuel-plan-card--diamond {
+  border: 1.5px solid transparent;
+  background:
+    conic-gradient(from 210deg at 88% 0%, rgba(255, 255, 255, 0.1), transparent 12%, rgba(170, 210, 255, 0.08) 22%, transparent 34%, rgba(255, 190, 235, 0.06) 46%, transparent 58%) padding-box,
+    radial-gradient(120% 90% at 100% 0%, rgba(225, 240, 255, 0.14), transparent 60%) padding-box,
+    linear-gradient(var(--bg), var(--bg)) padding-box,
+    conic-gradient(from var(--fuel-spin), var(--diamond-spectrum)) border-box;
+  box-shadow: 0 0 36px -6px var(--diamond-glow);
+  animation: fuel-spin 6s linear infinite;
+}
+
+.fuel-plan-card--diamond.is-current {
+  box-shadow: 0 0 44px -2px var(--diamond-glow);
+}
+
+.fuel-plan-card--diamond .fuel-plan-card__price b {
+  background: linear-gradient(90deg, #ffffff, #bfe6ff, #ffd1ef, #fff3c4, #d4ffec, #ffffff) 0% 50% / 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: fuel-sheen 6s linear infinite;
+}
+
+.fuel-plan-card--diamond .fuel-plan-card__badge {
+  color: var(--diamond-text);
+}
+
+/* "Save $17.89 · 3 months free", on Yearly. */
+.fuel-plan-card p.fuel-plan-card__save {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 12px;
+  color: var(--white);
+  margin-top: -4px;
+}
+
+.fuel-plan-card--gold p.fuel-plan-card__save {
+  color: var(--gold-text);
+}
+
+.fuel-plan-card--platinum p.fuel-plan-card__save {
+  color: var(--platinum-text);
+}
+
+.fuel-plan-card--diamond p.fuel-plan-card__save {
+  color: var(--diamond-text);
+}
+
+.fuel-plans > p.fuel-plan-card__note {
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--dim);
+  margin: 0;
+  line-height: 1.45;
+}
+
+/* Monthly / Yearly switch at the top of the plans sheet (same look as the
+   CARD | FUEL tabs). */
+.fuel-interval {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 4px;
+  gap: 4px;
+}
+
+.fuel-interval button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 44px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 13px;
+  color: var(--dim);
+  background: transparent;
+  border: none;
+  border-radius: 9px;
+  padding: 6px 4px;
+  cursor: pointer;
+}
+
+.fuel-interval button small {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--red);
+}
+
+.fuel-interval button[aria-checked="true"] {
+  color: var(--white);
+  background: var(--bg-card);
+}
+
 .fuel-plan-card p {
   font-family: var(--font-body);
   font-size: 14px;
@@ -1917,11 +2116,19 @@ a.fuel-btn {
   .fuel-btn--platinum,
   .fuel-plan-card--platinum,
   .fuel-plan-card--platinum .fuel-plan-card__price b,
-  .fuel-meter--platinum .fuel-meter__bar span {
+  .fuel-meter--platinum .fuel-meter__bar span,
+  .fuel-tier--diamond,
+  .fuel-btn--diamond,
+  .fuel-plan-card--diamond,
+  .fuel-plan-card--diamond .fuel-plan-card__price b,
+  .fuel-meter--diamond .fuel-meter__bar span {
     animation: none;
   }
 
-  .fuel-btn--platinum::after {
+  .fuel-btn--platinum::after,
+  .fuel-btn--diamond::after,
+  .fuel-tier--diamond::before,
+  .fuel-tier--diamond::after {
     display: none;
   }
 }
