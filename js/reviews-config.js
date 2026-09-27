@@ -9,5 +9,5 @@ window.MAXFIT_REVIEWS = {
 
   // Your Google review link, like https://g.page/r/xxxxxxxx/review (SETUP.md
   // step 7). Turns on the "Post it on Google too" and "Review on Google" buttons.
-  googleUrl: ""
+  googleUrl: "https://g.page/r/CZW0Ur_R1FYfEBM/review"
 };
