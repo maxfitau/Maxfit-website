@@ -10,7 +10,7 @@
  *   targets  — Max's targets (read-only) or the calculator
  *   settings — hide calories, Fuel AI plan, disclaimer
  *   suggest  — "what to eat next" from Max's Foods list (free, no AI)
- *   chat     — Ask Fuel, the AI copilot (Fuel AI plan)
+ *   chat     — Ask Fuel, the AI copilot (Platinum only)
  *   upsell   — Fuel AI: 7-day trial, then $9.99/month (members) via Stripe
  *   progress — weight trend vs goal, calorie target steps, last 14 days
  *              with green days and the nutrition punches (free)
@@ -495,7 +495,7 @@
       <button class="fuel-scan" type="button" data-act="scan">${ICONS.camera} Add food</button>
       ${
         state.aiEnabled
-          ? `<button class="fuel-btn fuel-btn--ghost fuel-ask" type="button" data-act="ask">${ICONS.spark} Ask Fuel${fuelAi() ? "" : ` ${ICONS.lock}`}</button>`
+          ? `<button class="fuel-btn fuel-btn--ghost fuel-ask" type="button" data-act="ask">${ICONS.spark} Ask Fuel${askFuelOn() ? "" : ' <span class="fuel-tier fuel-tier--platinum fuel-tier--sm">Platinum</span>'}</button>`
           : ""
       }
       ${aiMeterHtml()}
@@ -767,7 +767,7 @@
   // Scan chooser + photos
   // ---------------------------------------------------------------------------
 
-  /** Fuel AI (scans, Describe it, Ask Fuel): API key on the server AND Gold or Platinum (paid, free month or trial). */
+  /** Fuel AI (scans, Describe it): API key on the server AND Gold or Platinum (paid, free month or trial). */
   function fuelAi() {
     return state.aiEnabled && !!(state.plan && state.plan.access);
   }
@@ -777,6 +777,11 @@
 
   function tier() {
     return (state.plan && state.plan.tier) || (fuelAi() ? "gold" : "silver");
+  }
+
+  /** Ask Fuel is Platinum only (paying, or a free Platinum month from Max). */
+  function askFuelOn() {
+    return fuelAi() && tier() === "platinum";
   }
 
   /** Gold/Platinum with none of today's AI uses left. */
@@ -809,7 +814,7 @@
             <span class="card__label">AI today</span>
             <span class="fuel-tier fuel-tier--silver">Silver</span>
           </div>
-          <p class="fuel-meter__text">Photo scans, Describe it and Ask Fuel come with Gold.</p>
+          <p class="fuel-meter__text">Photo scans and Describe it come with Gold. Ask Fuel comes with Platinum.</p>
           <button class="fuel-link" type="button" data-act="plans">See plans</button>
         </div>`;
     }
@@ -817,7 +822,7 @@
     const pct = a.limit ? Math.min(100, Math.round((a.used / a.limit) * 100)) : 0;
     const t = tier();
     return `
-      <div class="fuel-panel fuel-meter">
+      <div class="fuel-panel fuel-meter fuel-meter--${t}">
         <div class="fuel-meter__head">
           <span class="card__label">AI today</span>
           <span class="fuel-tier fuel-tier--${t}">${TIER_NAMES[t]}${state.plan.kind === "trial" ? " trial" : ""}</span>
@@ -1118,7 +1123,8 @@
 
   /**
    * The plans: Silver (free), Gold and Platinum. opts.reason "limit" = they
-   * just ran out of today's AI uses (opts.message is the server's wording).
+   * just ran out of today's AI uses (opts.message is the server's wording);
+   * "ask" = they tapped Ask Fuel, which is Platinum only.
    */
   function openUpsell(opts) {
     opts = opts || {};
@@ -1129,47 +1135,50 @@
     const sub =
       opts.reason === "limit"
         ? opts.message || "That's all your AI uses for today."
+        : opts.reason === "ask"
+        ? "Ask Fuel, your AI nutrition coach, comes with Platinum."
         : p.kind === "trial_over" || p.kind === "lapsed"
         ? planText() + "."
         : "Your AI nutrition coach, in your pocket. Cancel any time.";
     const badge = (text) => `<span class="fuel-plan-card__badge">${esc(text)}</span>`;
-    const buy = (url, label) =>
-      url ? `<a class="fuel-btn" href="${esc(url)}" target="_blank" rel="noopener" data-upgrade>${esc(label)}</a>` : "";
+    const buy = (url, label, t) =>
+      url ? `<a class="fuel-btn fuel-btn--${t}" href="${esc(url)}" target="_blank" rel="noopener" data-upgrade>${esc(label)}</a>` : "";
 
     let goldAction = "";
     if (t === "gold" && paying) goldAction = badge("Your plan");
-    else if (t === "gold" && p.kind === "trial") goldAction = badge(`Free trial · ${p.daysLeft} day${p.daysLeft === 1 ? "" : "s"} left`) + buy(p.upgradeUrl, "Keep Gold");
-    else if (t === "gold" && p.kind === "comp") goldAction = badge(`Free from Max until ${fmtDate(p.until)}`) + buy(p.upgradeUrl, "Get Gold");
-    else if (!(paying && t === "platinum")) goldAction = buy(p.upgradeUrl, "Get Gold");
+    else if (t === "gold" && p.kind === "trial") goldAction = badge(`Free trial · ${p.daysLeft} day${p.daysLeft === 1 ? "" : "s"} left`) + buy(p.upgradeUrl, "Keep Gold", "gold");
+    else if (t === "gold" && p.kind === "comp") goldAction = badge(`Free from Max until ${fmtDate(p.until)}`) + buy(p.upgradeUrl, "Get Gold", "gold");
+    else if (!(paying && t === "platinum")) goldAction = buy(p.upgradeUrl, "Get Gold", "gold");
 
     let platAction = "";
     if (t === "platinum" && paying) platAction = badge("Your plan");
     else if (t === "platinum" && p.kind === "comp") platAction = badge(`Free from Max until ${fmtDate(p.until)}`);
     else if (paying && t === "gold") {
       platAction = p.portalUrl
-        ? `<a class="fuel-btn" href="${esc(p.portalUrl)}" target="_blank" rel="noopener" data-upgrade>Switch to Platinum</a>
+        ? `<a class="fuel-btn fuel-btn--platinum" href="${esc(p.portalUrl)}" target="_blank" rel="noopener" data-upgrade>Switch to Platinum</a>
            <p class="fuel-plan-card__note">Opens Stripe's billing page: choose Update plan, then Fuel Platinum. Stripe adjusts your bill for the rest of the month.</p>`
         : "";
-    } else platAction = buy(p.platinumUrl, "Get Platinum");
+    } else platAction = buy(p.platinumUrl, "Get Platinum", "platinum");
 
     const noLinks = !p.upgradeUrl && !p.platinumUrl && !paying;
     openSheet(
       `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Fuel plans</h2>
        <p class="fuel-sheet__sub">${esc(sub)}</p>
        <div class="fuel-plans">
-         <div class="fuel-plan-card${t === "silver" ? " is-current" : ""}">
+         <div class="fuel-plan-card fuel-plan-card--silver${t === "silver" ? " is-current" : ""}">
            <div class="fuel-plan-card__head"><span class="fuel-tier fuel-tier--silver">Silver</span><span class="fuel-plan-card__price">Free</span></div>
            <p>Barcodes, search, saved meals, typed-in numbers, what-to-eat ideas and your progress.</p>
            ${t === "silver" ? badge("Your plan") : ""}
          </div>
-         <div class="fuel-plan-card${t === "gold" ? " is-current" : ""}">
+         <div class="fuel-plan-card fuel-plan-card--gold${t === "gold" ? " is-current" : ""}">
            <div class="fuel-plan-card__head"><span class="fuel-tier fuel-tier--gold">Gold</span><span class="fuel-plan-card__price"><b>${TIER_PRICES.gold}</b> a month</span></div>
-           <p><b>${perDay.gold} AI uses a day:</b> snap a meal, scan a label, Describe it, and Ask Fuel.</p>
+           <p><b>${perDay.gold} AI uses a day:</b> snap a meal, scan a label or Describe it.</p>
            ${goldAction}
          </div>
-         <div class="fuel-plan-card${t === "platinum" ? " is-current" : ""}">
+         <div class="fuel-plan-card fuel-plan-card--platinum${t === "platinum" ? " is-current" : ""}">
            <div class="fuel-plan-card__head"><span class="fuel-tier fuel-tier--platinum">Platinum</span><span class="fuel-plan-card__price"><b>${TIER_PRICES.platinum}</b> a month</span></div>
-           <p><b>${perDay.platinum} AI uses a day.</b> Everything in Gold, with room to log every meal and snack.</p>
+           <p><b>Everything in Gold, plus Ask Fuel</b>, your AI nutrition coach: what to eat next, what to order when you're out, and help when you're over.</p>
+           <p><b>${perDay.platinum} AI uses a day</b> for photos, labels, Describe it and questions.</p>
            ${platAction}
          </div>
        </div>
@@ -1857,8 +1866,8 @@
   }
 
   function openChat() {
-    if (!fuelAi()) {
-      openUpsell();
+    if (!askFuelOn()) {
+      openUpsell({ reason: "ask" });
       return;
     }
     openSheet(
@@ -1896,12 +1905,13 @@
             const left = body.querySelector("[data-chat-left]");
             if (left) left.textContent = aiLeftText();
           } catch (err) {
-            if (err.code === "no_plan" || err.code === "limit") {
+            if (err.code === "no_plan" || err.code === "limit" || err.code === "platinum") {
               state.chat.pop();
               state.chat.pop(); // their question too: it didn't go anywhere
               state.busy = false;
               if (err.code === "no_plan" && state.plan) state.plan.access = false;
-              openUpsell({ reason: err.code === "limit" ? "limit" : "", message: err.message });
+              openUpsell({ reason: err.code === "limit" ? "limit" : err.code === "platinum" ? "ask" : "", message: err.message });
+              render();
               return;
             }
             Object.assign(pending, { pending: false, error: true, content: err.message });
@@ -2665,6 +2675,7 @@
          state.aiEnabled && state.plan
            ? `<div class="fuel-panel fuel-plan">
                 <span class="card__label card__label--red">Your plan</span>
+                <span class="fuel-tier fuel-tier--${tier()}">${TIER_NAMES[tier()]}</span>
                 <span class="fuel-plan__text">${esc(planText())}</span>
                 ${fuelAi() ? `<span class="fuel-plan__text">${esc(aiLeftText())}</span>` : ""}
                 ${

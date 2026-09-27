@@ -28,12 +28,12 @@ Click **Project Settings** (the gear icon on the left), then **Script Properties
 | `STAFF_PIN` | The same PIN you use for check-in. |
 | `MACRO_SHEET_ID` | The ID you copied in step 1. |
 | `MAIN_SHEET_ID` | `1dGQyIoJ2_XrkbvvPvM2JAY0xdeYQfsCnYHal8WZojUg` |
-| `DAILY_AI_LIMIT` | Optional. Photo/label scans per client per day (default 25; 15 is plenty for paying clients). |
-| `CHAT_DAILY_LIMIT` | Optional. Ask Fuel messages per client per day (default 40). |
+| `GOLD_DAILY_AI` | Optional. AI uses per day on Gold (default 10). |
+| `PLATINUM_DAILY_AI` | Optional. AI uses per day on Platinum (default 25). |
 
 The three Stripe properties are covered in step 7.
 
-You can leave out `ANTHROPIC_API_KEY` until you buy API credits. Until then Fuel AI (photo/label scans and Ask Fuel) is hidden, and clients use barcodes and the free "what to eat next" ideas.
+You can leave out `ANTHROPIC_API_KEY` until you buy API credits. Until then Fuel AI (photo/label scans, Describe it and Ask Fuel) is hidden, and clients use barcodes and the free "what to eat next" ideas.
 
 Also set a monthly spend limit in console.anthropic.com → Settings → Limits. A photo scan costs roughly 1 US cent, and the **AI Usage** tab shows this month's total in cell N1.
 
@@ -68,7 +68,7 @@ Paste the new code in and save. Then go to **Deploy** → **Manage deployments**
 
 **What clients need to do:** open the link once in Safari (iPhone) or Chrome (Android), then **Add to Home Screen again**. On iPhone, the old home-screen icon keeps its own storage and won't know the new link.
 
-**Plans.** **Silver** is free: barcodes, search, saved meals, typed-in numbers, targets, ideas and progress. **Gold** ($9.99 a month, 10 AI uses a day) and **Platinum** ($14.99, 25 a day) add Fuel AI: photo and label scans, Describe it, and Ask Fuel, all from one daily pool that resets at midnight. The card shows each client how many they have left. New clients get **7 days of Gold** from the first time they open FUEL. On the coach page each client shows their plan, and **Free month of Gold / Platinum** unlocks it for 30 days without payment. To change the daily numbers, add `GOLD_DAILY_AI` or `PLATINUM_DAILY_AI` in Script Properties; no redeploy is needed.
+**Plans.** **Silver** is free: barcodes, search, saved meals, typed-in numbers, targets, ideas and progress. **Gold** ($9.99 a month, 10 AI uses a day) adds Fuel AI: photo and label scans and Describe it. **Platinum** ($14.99, 25 a day) adds **Ask Fuel**, the AI chat, which is Platinum only (Max, 2026-09-27). Everything comes from one daily pool that resets at midnight. The card shows each client how many they have left. New clients get **7 days of Gold** from the first time they open FUEL. On the coach page each client shows their plan, and **Free month of Gold / Platinum** unlocks it for 30 days without payment. To change the daily numbers, add `GOLD_DAILY_AI` or `PLATINUM_DAILY_AI` in Script Properties; no redeploy is needed.
 
 Lost phone, or a link shared by mistake? Tap **New link** on the coach page. The old link stops working for FUEL straight away.
 

@@ -1,7 +1,8 @@
 /* ==========================================================================
    MAX FIT · membership card — FUEL (macro tracker)
    Uses the card's own tokens from styles.css (--bg, --red, --line, fonts).
-   Panels: 14px radius, thin --line border, red as the only accent.
+   Panels: 14px radius, thin --line border, red as the only accent, except
+   the three plans, which each wear their own metal (see "Plans" below).
    ========================================================================== */
 
 :root {
@@ -1622,8 +1623,55 @@ a.fuel-btn {
   gap: 8px;
 }
 
-/* Plans: Silver / Gold / Platinum, and the AI meter. Brand colours only:
-   Silver is outlined grey, Gold outlined red, Platinum filled red. */
+/* Plans: Silver / Gold / Platinum, and the AI meter. Each plan wears its
+   own metal (Max, 2026-09-27): Silver a plain matte grey, Gold a warm
+   metallic, Platinum a pearl sheen with a slow shimmer and a glowing edge,
+   so it's clearly the one worth having. Everything else stays red. */
+:root {
+  --silver-metal: linear-gradient(180deg, #dcdfe2 0%, #a9aeb3 100%);
+  --silver-ink: #16181a;
+  --silver-edge: #a9aeb3;
+  --gold-metal: linear-gradient(135deg, #b8872b 0%, #f6d77c 38%, #dcaa45 62%, #fbe7a6 82%, #c6952f 100%);
+  --gold-ink: #1a1206;
+  --gold-edge: #d4a53f;
+  --gold-text: #ecc767;
+  --platinum-metal: linear-gradient(115deg, #f4f6fb 0%, #c3d3f2 14%, #e3d3fb 28%, #c6ece9 42%, #f9dbe9 56%, #d0dcf5 70%, #eef0f8 84%, #f4f6fb 100%);
+  --platinum-ink: #15171c;
+  --platinum-text: #e3e9f4;
+  --platinum-glow: rgba(206, 220, 255, 0.22);
+}
+
+/* Slides a 300%-wide repeating gradient by exactly one tile, so it loops. */
+@keyframes fuel-sheen {
+  from {
+    background-position: 0% 50%;
+  }
+  to {
+    background-position: 150% 50%;
+  }
+}
+
+/* The same, for the Platinum card's edge (its third background layer). */
+@keyframes fuel-sheen-edge {
+  from {
+    background-position: 0 0, 0 0, 0% 50%;
+  }
+  to {
+    background-position: 0 0, 0 0, 150% 50%;
+  }
+}
+
+/* A band of light that crosses the Platinum button every few seconds. */
+@keyframes fuel-shine {
+  0% {
+    transform: translateX(-130%);
+  }
+  55%,
+  100% {
+    transform: translateX(130%);
+  }
+}
+
 .fuel-tier {
   font-family: var(--font-head);
   font-weight: 800;
@@ -1638,15 +1686,69 @@ a.fuel-btn {
   white-space: nowrap;
 }
 
+.fuel-tier--silver {
+  color: var(--silver-ink);
+  background: var(--silver-metal);
+  border-color: transparent;
+}
+
 .fuel-tier--gold {
-  color: var(--white);
-  border-color: var(--red);
+  color: var(--gold-ink);
+  background: var(--gold-metal);
+  border-color: transparent;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
 }
 
 .fuel-tier--platinum {
-  color: var(--on-red);
-  background: var(--red);
-  border-color: var(--red);
+  color: var(--platinum-ink);
+  background: var(--platinum-metal);
+  background-size: 300% 100%;
+  border-color: transparent;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 0 14px var(--platinum-glow);
+  animation: fuel-sheen 8s linear infinite;
+}
+
+.fuel-tier--sm {
+  font-size: 10px;
+  padding: 4px 7px;
+  letter-spacing: 0.08em;
+}
+
+.fuel-plan .fuel-tier {
+  align-self: flex-start;
+}
+
+.fuel-btn--gold,
+.fuel-btn--gold:active {
+  color: var(--gold-ink);
+  background: var(--gold-metal);
+}
+
+.fuel-btn--platinum,
+.fuel-btn--platinum:active {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate; /* the light band (::after, z-index -1) passes under the text */
+  color: var(--platinum-ink);
+  background: var(--platinum-metal) 0% 50% / 300% 100%;
+  box-shadow: 0 0 26px -4px var(--platinum-glow);
+  animation: fuel-sheen 8s linear infinite;
+}
+
+.fuel-btn--platinum::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, 0.8) 50%, transparent 65%);
+  transform: translateX(-130%);
+  animation: fuel-shine 4.5s ease-in-out 1s infinite;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.fuel-btn--gold:active,
+.fuel-btn--platinum:active {
+  filter: brightness(0.88);
 }
 
 .fuel-meter {
@@ -1678,6 +1780,15 @@ a.fuel-btn {
   border-radius: 999px;
 }
 
+.fuel-meter--gold .fuel-meter__bar span {
+  background: var(--gold-metal);
+}
+
+.fuel-meter--platinum .fuel-meter__bar span {
+  background: var(--platinum-metal) 0% 50% / 300% 100%;
+  animation: fuel-sheen 8s linear infinite;
+}
+
 .fuel-meter__text {
   font-family: var(--font-body);
   font-size: 13px;
@@ -1701,8 +1812,54 @@ a.fuel-btn {
   padding: 14px;
 }
 
-.fuel-plan-card.is-current {
-  border-color: var(--red);
+.fuel-plan-card--silver.is-current {
+  border-color: var(--silver-edge);
+}
+
+.fuel-plan-card--gold {
+  border-color: rgba(212, 165, 63, 0.35);
+  background: linear-gradient(180deg, rgba(212, 165, 63, 0.08), transparent 60%), var(--bg);
+}
+
+.fuel-plan-card--gold.is-current {
+  border-color: var(--gold-edge);
+}
+
+.fuel-plan-card--gold .fuel-plan-card__badge {
+  color: var(--gold-text);
+}
+
+/* Platinum: a pearl edge (the gradient shows through a transparent border),
+   a soft cool light in the corner, and a glow. Always on, current or not. */
+.fuel-plan-card--platinum {
+  border: 1.5px solid transparent;
+  background:
+    radial-gradient(120% 90% at 100% 0%, rgba(214, 226, 255, 0.14), transparent 60%) padding-box,
+    linear-gradient(var(--bg), var(--bg)) padding-box,
+    var(--platinum-metal) border-box;
+  background-size: 100% 100%, 100% 100%, 300% 100%;
+  box-shadow: 0 0 30px -8px var(--platinum-glow);
+  animation: fuel-sheen-edge 8s linear infinite;
+}
+
+.fuel-plan-card--platinum .fuel-plan-card__price b {
+  background: var(--platinum-metal) 0% 50% / 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: fuel-sheen 8s linear infinite;
+}
+
+.fuel-plan-card--gold .fuel-plan-card__price b {
+  color: var(--gold-text);
+}
+
+.fuel-plan-card--platinum.is-current {
+  box-shadow: 0 0 36px -4px var(--platinum-glow);
+}
+
+.fuel-plan-card--platinum .fuel-plan-card__badge {
+  color: var(--platinum-text);
 }
 
 .fuel-plan-card p {
@@ -1753,6 +1910,20 @@ a.fuel-btn {
 
 .fuel-plans__manage {
   align-self: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fuel-tier--platinum,
+  .fuel-btn--platinum,
+  .fuel-plan-card--platinum,
+  .fuel-plan-card--platinum .fuel-plan-card__price b,
+  .fuel-meter--platinum .fuel-meter__bar span {
+    animation: none;
+  }
+
+  .fuel-btn--platinum::after {
+    display: none;
+  }
 }
 
 /* Five add-food tiles: the odd one out spans the row. */

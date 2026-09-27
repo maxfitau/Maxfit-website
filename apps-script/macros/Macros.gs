@@ -27,8 +27,9 @@
  *
  * Plans: Silver is free (barcodes, search, saved meals, typed-in numbers,
  * targets, totals, suggestions, progress). Gold and Platinum add Fuel AI:
- * photo and label scans, Describe it, and Ask Fuel, from one daily pool of
- * AI uses. New clients get 7 days of Gold from the first time they open
+ * photo and label scans and Describe it, from one daily pool of AI uses.
+ * Ask Fuel (the chat) is Platinum only, and its messages come out of the
+ * same pool. New clients get 7 days of Gold from the first time they open
  * FUEL; after that it's a Stripe subscription or a free month from Max. A
  * subscription's tier comes from its price's lookup key ("fuel_platinum").
  *
@@ -53,7 +54,7 @@
  * or change rows carrying their own id.
  */
 
-const MACROS_VERSION = "2026-09-26a";
+const MACROS_VERSION = "2026-09-27a";
 const TIMEZONE = "Australia/Sydney";
 const MAIN_SESSIONS_GID = 1169726169; // "Sessions Remaining" in the CRM sheet
 const CARD_URL = "https://maxfit.now/card/";
@@ -530,7 +531,8 @@ function favouritesFor_(slug) {
 }
 
 // Daily AI uses per tier: one pool for photo and label scans, Describe it
-// and Ask Fuel messages. Override with GOLD_DAILY_AI / PLATINUM_DAILY_AI.
+// and (Platinum only) Ask Fuel messages. Override with GOLD_DAILY_AI /
+// PLATINUM_DAILY_AI.
 const DEFAULT_DAILY_AI = { gold: 10, platinum: 25 };
 
 function dailyAiFor_(tier) {
@@ -575,11 +577,19 @@ function planFor_(member) {
   );
 }
 
-/** Stops a Fuel AI action (photo/label scan, chat) unless this member has the plan. */
+/** Stops a Fuel AI action (photo/label scan, Describe it) unless this member has the plan. */
 function requireFuelAi_(member) {
   if (!aiOn_()) throw userError_("ai_off", "Fuel AI isn't switched on yet. Barcodes still work.");
   if (!planFor_(member).access) {
     throw userError_("no_plan", "That's part of Fuel Gold. Barcodes, search and saved meals stay free.");
+  }
+}
+
+/** Ask Fuel is Platinum only: paying, or a free Platinum month from Max. */
+function requireAskFuel_(member) {
+  requireFuelAi_(member);
+  if (planFor_(member).tier !== "platinum") {
+    throw userError_("platinum", "Ask Fuel comes with Fuel Platinum. Photo scans, labels and Describe it stay on Gold.");
   }
 }
 
@@ -1803,7 +1813,7 @@ function foodsList_() {
 }
 
 // ---------------------------------------------------------------------------
-// Ask Fuel: the AI copilot chat (Fuel AI plan)
+// Ask Fuel: the AI copilot chat (Platinum only)
 // ---------------------------------------------------------------------------
 
 const CHAT_SYSTEM_PROMPT = [
@@ -1918,7 +1928,7 @@ function chatContext_(member, date) {
 
 function actionChat_(payload, member) {
   const slug = String(member.slug);
-  requireFuelAi_(member);
+  requireAskFuel_(member);
   const history = cleanHistory_(payload.messages);
   const context = chatContext_(member, validDate_(payload.date));
   const usageRow = reserveAi_(member, "chat", TEXT_MODEL);
