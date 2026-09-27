@@ -50,7 +50,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="styles.css?v=2026092506" />
+<link rel="stylesheet" href="styles.css?v=2026092701" />
 </head>
 <body>
 
@@ -864,6 +864,81 @@ First Aid Certificate
 </div>
 </section>
 
+<!-- Reviews: leave a review. It is saved to a private sheet for Max to
+     approve (nothing shows here until he does), and afterwards every
+     reviewer, whatever their rating, is offered a button that copies their
+     text and opens Google's own review page, because Google only lets the
+     reviewer post their own review. Stays hidden until js/reviews-config.js
+     has an apiUrl or googleUrl, so it can never show a broken form.
+     Setup: apps-script/reviews/SETUP.md -->
+<section class="section section--tight reviews" id="reviews" hidden>
+<div class="container">
+<div class="section-head reveal">
+<span class="eyebrow">Reviews</span>
+<h2>Trained with Max? Leave a review</h2>
+<p>Honest words from real clients help the next person decide. It takes about a minute.</p>
+</div>
+
+<div class="reviews__layout">
+
+<div class="reviews__write">
+<form class="review-form" id="reviewForm" novalidate hidden>
+<fieldset class="review-form__group review-form__rating">
+<legend class="review-form__label">Your rating</legend>
+<div class="stars">
+<input type="radio" name="rating" id="rate5" value="5"><label for="rate5" title="5 stars"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6.1 6.6.9-4.8 4.6 1.2 6.6L12 17.6 6.1 20.7l1.2-6.6L2.5 9.6l6.6-.9z"/></svg><span class="sr-only">5 stars</span></label>
+<input type="radio" name="rating" id="rate4" value="4"><label for="rate4" title="4 stars"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6.1 6.6.9-4.8 4.6 1.2 6.6L12 17.6 6.1 20.7l1.2-6.6L2.5 9.6l6.6-.9z"/></svg><span class="sr-only">4 stars</span></label>
+<input type="radio" name="rating" id="rate3" value="3"><label for="rate3" title="3 stars"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6.1 6.6.9-4.8 4.6 1.2 6.6L12 17.6 6.1 20.7l1.2-6.6L2.5 9.6l6.6-.9z"/></svg><span class="sr-only">3 stars</span></label>
+<input type="radio" name="rating" id="rate2" value="2"><label for="rate2" title="2 stars"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6.1 6.6.9-4.8 4.6 1.2 6.6L12 17.6 6.1 20.7l1.2-6.6L2.5 9.6l6.6-.9z"/></svg><span class="sr-only">2 stars</span></label>
+<input type="radio" name="rating" id="rate1" value="1"><label for="rate1" title="1 star"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6.1 6.6.9-4.8 4.6 1.2 6.6L12 17.6 6.1 20.7l1.2-6.6L2.5 9.6l6.6-.9z"/></svg><span class="sr-only">1 star</span></label>
+</div>
+</fieldset>
+<div class="review-form__group">
+<label class="review-form__label" for="reviewName">Your name</label>
+<input id="reviewName" name="name" type="text" maxlength="40" autocomplete="given-name" placeholder="First name and last initial">
+</div>
+<div class="review-form__group">
+<label class="review-form__label" for="reviewText">Your review</label>
+<textarea id="reviewText" name="text" rows="5" maxlength="600" placeholder="What was it like training with Max?"></textarea>
+<span class="review-form__count" id="reviewCount" aria-hidden="true">0 / 600</span>
+</div>
+<label class="review-form__check">
+<input type="checkbox" name="consent">
+<span>I'm happy for Max Fit to show this review on the website.</span>
+</label>
+<input type="text" name="website" class="review-form__hp" tabindex="-1" autocomplete="off" aria-hidden="true">
+<p class="review-form__error" id="reviewError" role="alert" hidden></p>
+<button type="submit" class="btn btn--primary" id="reviewSubmit">Send review</button>
+</form>
+
+<div class="review-thanks" id="reviewThanks" tabindex="-1" hidden>
+<h3 class="review-thanks__title">Thank you<span id="reviewThanksName"></span>!</h3>
+<p>Your review is with Max. He reads every one, and it will show up here once he has approved it.</p>
+<div class="review-thanks__google" id="reviewGoogleStep" hidden>
+<p class="review-thanks__lead">One more thing that helps a lot: post it on Google too, so people searching for a trainer nearby can see it.</p>
+<a class="btn btn--primary" id="reviewGoogleBtn" target="_blank" rel="noopener noreferrer">Post it on Google too</a>
+<p class="review-thanks__hint" id="reviewGoogleHint">We'll copy your review for you. On Google, paste it into the box (Cmd+V, or press and hold then tap Paste) and tap Post.</p>
+<blockquote class="review-thanks__copy" id="reviewCopy"></blockquote>
+</div>
+</div>
+
+<div class="review-google-only" id="reviewGoogleOnly" hidden>
+<p>Prefer to leave it on Google? It helps people nearby find Max.</p>
+<a class="btn btn--outline btn--sm" id="reviewGoogleDirect" target="_blank" rel="noopener noreferrer">Review Max Fit on Google</a>
+</div>
+</div>
+
+<div class="reviews__read" id="reviewsRead" hidden>
+<h3 class="reviews__read-title">What people are saying</h3>
+<div class="reviews__list" id="reviewsList"></div>
+<p class="reviews__empty" id="reviewsEmpty" hidden>No reviews here yet. Be the first.</p>
+<button type="button" class="btn btn--outline btn--sm" id="reviewsMore" hidden>Show more</button>
+</div>
+
+</div>
+</div>
+</section>
+
 <!-- Stats -->
 <section class="section stats">
 <div class="container">
@@ -1183,5 +1258,7 @@ Or email directly
 <script src="js/animations/about.js?v=2026092504"></script>
 <script src="js/animations/why.js?v=2026092504"></script>
 <script src="js/animations/showcase.js?v=2026092504"></script>
+<script src="js/reviews-config.js?v=2026092701"></script>
+<script src="js/reviews.js?v=2026092701"></script>
 </body>
 </html>
