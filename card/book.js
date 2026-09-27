@@ -13,6 +13,17 @@
  * every request. The public CRM sheet is only read for the client's Check-in
  * Token, which the backend uses if Max has switched codes off.
  *
+ * Confirmation email: when Max has it switched on (policy.emailClients), the
+ * confirm panel has an optional "Email me a confirmation" box, filled in with the
+ * address the backend already holds for the client. It goes to the backend with
+ * the booking, which keeps it on the client's private row and sends the email.
+ *
+ * Paying: a client with no sessions left is shown Buy buttons (the backend's
+ * "buy" list: Stripe Payment Links for the prices Max has set up). Stripe sends
+ * them back here as book.html?paid=<Checkout Session id>; the id goes to the
+ * backend, which checks it with Stripe and adds the sessions, and the page then
+ * carries on as normal. The page never decides what was paid for.
+ *
  * All text goes onto the page with textContent, never innerHTML.
  */
 (function () {
@@ -21,9 +32,14 @@
   const CODE_STORAGE_KEY = "maxfitBookCode"; // { id, code }: the personal code, saved per phone
   const REQUEST_TIMEOUT_MS = 25000;
   const SAFE_LINK = /^(https:\/\/|sms:|tel:|mailto:)/i;
+  const BUY_LINK = /^https:\/\/buy\.stripe\.com\//; // a Buy button can only ever go to Stripe
+  const PAID_ID = /^cs_(test|live)_[A-Za-z0-9]{8,200}$/; // what Stripe puts in ?paid=
+  // The same test the backend applies before it will send anything to an address.
+  const EMAIL_OK = /^[A-Za-z0-9][A-Za-z0-9._%+'-]*@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/;
 
   const params = new URLSearchParams(window.location.search);
   let memberId = params.get("id");
+  let paidId = PAID_ID.test(params.get("paid") || "") ? params.get("paid") : ""; // anything else in the address is ignored
   if (!memberId) {
     try {
       memberId = localStorage.getItem(MEMBER_ID_STORAGE_KEY);
@@ -50,6 +66,8 @@
     mineSection: $("mineSection"),
     mineList: $("mineList"),
     message: $("bookMessage"),
+    buySection: $("buySection"),
+    buyList: $("buyList"),
     pickSection: $("pickSection"),
     dayGrid: $("dayGrid"),
     timesWrap: $("timesWrap"),
@@ -58,6 +76,9 @@
     confirmBox: $("confirmBox"),
     confirmWhen: $("confirmWhen"),
     confirmNote: $("confirmNote"),
+    emailBox: $("emailBox"),
+    emailInput: $("emailInput"),
+    emailError: $("emailError"),
     confirmBtn: $("confirmBtn"),
     confirmBack: $("confirmBack"),
     success: $("bookSuccess"),
@@ -75,6 +96,8 @@
     info: null, // the backend's last "bookingInfo" reply
     selectedDate: "",
     selectedStart: "",
+    email: "", // what's in the "Email me a confirmation" box
+    emailEdited: false, // once they've touched the box, a reload of the times doesn't overwrite it
     cancelingId: "", // the booking whose "Yes, cancel" is showing
     busy: false,
     flash: "", // the last thing that worked ("Booked. See you...")
@@ -275,6 +298,7 @@
     renderIntro(info);
     renderMine(info);
     renderMessage(info);
+    renderBuy(info);
     renderPicker(info);
     els.success.textContent = state.flash;
     show(els.success, Boolean(state.flash));
@@ -339,22 +363,51 @@
   function renderMessage(info) {
     let text = "";
     let ask = "";
+    let linkText = "Message Max";
     if (!info.client.canBook) {
       text = info.client.message;
       ask = info.client.reason === "no-sessions" ? "I'd like to top up my 1-on-1 sessions." : "I'd like to book another session.";
+      if (info.client.reason === "no-sessions" && buyOptions(info).length) {
+        text = "You don't have any 1-on-1 sessions left. Buy some below to keep training.";
+        ask = "I have a question about buying sessions.";
+        linkText = "Questions? Message Max";
+      }
     } else if (!info.slots.length) {
       text = "No times are open right now. Check back soon, or message Max.";
       ask = "I'd like to book a 1-on-1 session but I can't see any times.";
     }
     els.message.textContent = text;
     if (text) {
-      const link = contactLink("Message Max", "Hi Max, it's " + firstName() + ". " + ask);
+      const link = contactLink(linkText, "Hi Max, it's " + firstName() + ". " + ask);
       if (link) {
         els.message.appendChild(document.createTextNode(" "));
         els.message.appendChild(link);
       }
     }
     show(els.message, Boolean(text));
+  }
+
+  /** What the backend offers for sale, keeping only links that go to Stripe. */
+  function buyOptions(info) {
+    return Array.isArray(info.buy) ? info.buy.filter((o) => o && typeof o.url === "string" && BUY_LINK.test(o.url) && o.name) : [];
+  }
+
+  function renderBuy(info) {
+    // Only for someone who is out of sessions: never for a client who has some (even if all of them are booked).
+    const options = !info.client.canBook && info.client.reason === "no-sessions" ? buyOptions(info) : [];
+    show(els.buySection, options.length > 0);
+    els.buyList.textContent = "";
+    options.forEach((o) => {
+      const a = mk("a", "book__buy-option");
+      a.href = o.url;
+      a.rel = "noopener";
+      const text = mk("span", "book__buy-text");
+      text.appendChild(mk("span", "book__buy-name", String(o.name)));
+      text.appendChild(mk("span", "book__buy-detail", plural(Number(o.sessions) || 1, "session") + " added to your account"));
+      a.appendChild(text);
+      a.appendChild(mk("span", "book__buy-price", String(o.price || "")));
+      els.buyList.appendChild(a);
+    });
   }
 
   function renderPicker(info) {
@@ -408,6 +461,9 @@
     if (chosen) {
       els.confirmWhen.textContent = dayLabel(chosen.date) + " · " + timeRange(chosen) + " (" + chosen.minutes + " min)";
       els.confirmNote.textContent = "Free to cancel up to " + hoursText(info.policy.cancelHours) + " before. Your session is used when you check in, not when you book.";
+      show(els.emailBox, Boolean(info.policy.emailClients));
+      if (els.emailInput.value !== state.email) els.emailInput.value = state.email;
+      els.emailInput.disabled = state.busy;
       els.confirmBtn.textContent = state.busy ? "Booking…" : "Confirm booking";
       els.confirmBtn.disabled = state.busy;
       els.confirmBack.disabled = state.busy;
@@ -463,6 +519,7 @@
       return false;
     }
     state.info = res;
+    if (!state.emailEdited) state.email = res.client.email || ""; // their address on file, if they gave one before
     state.contact = typeof res.contact === "string" ? res.contact : "";
     if (state.code) storeCode(); // it worked, so remember it on this phone
     state.typedCode = false;
@@ -472,13 +529,33 @@
     return true;
   }
 
+  function showEmailError(text) {
+    els.emailError.textContent = text;
+    show(els.emailError, Boolean(text));
+  }
+
   async function confirmBooking() {
     if (state.busy || !state.selectedDate || !state.selectedStart) return;
     state.error = "";
+
+    // Only sent when Max has confirmation emails switched on. A blank box is sent as blank on purpose: "not this time".
+    const fields = { date: state.selectedDate, start: state.selectedStart };
+    let typedEmail = "";
+    if (state.info && state.info.policy.emailClients) {
+      typedEmail = state.email.trim();
+      if (typedEmail && (typedEmail.length > 120 || !EMAIL_OK.test(typedEmail))) {
+        showEmailError("That email doesn't look right. Check it, or leave the box empty.");
+        els.emailInput.focus();
+        return;
+      }
+      fields.email = typedEmail;
+    }
+    showEmailError("");
+
     setBusy(true);
     let res;
     try {
-      res = await api("bookSession", { date: state.selectedDate, start: state.selectedStart });
+      res = await api("bookSession", fields);
     } catch (err) {
       setBusy(false);
       state.error = "Couldn't reach the booking system. Check your connection, then tap Confirm again. You won't be booked twice.";
@@ -488,6 +565,8 @@
     if (res.status === "success") {
       const b = res.booking;
       state.flash = "Booked. See you " + dayLabel(b.date) + " at " + clock(b.start) + ".";
+      if (res.emailedTo) state.flash += " A confirmation is on its way to " + res.emailedTo + ".";
+      else if (typedEmail) state.flash += " We couldn't send the confirmation email, but your booking is saved.";
       state.selectedStart = "";
       state.busy = false;
       await load(true);
@@ -517,7 +596,7 @@
     state.busy = false;
     state.cancelingId = "";
     if (res.status === "success") {
-      state.flash = "Cancelled. That time is open again.";
+      state.flash = "Cancelled. That time is open again." + (res.emailedTo ? " We've emailed you a note." : "");
       await load(true);
       return;
     }
@@ -527,6 +606,11 @@
     renderAll();
   }
 
+  els.emailInput.addEventListener("input", () => {
+    state.email = els.emailInput.value;
+    state.emailEdited = true;
+    showEmailError("");
+  });
   els.confirmBtn.addEventListener("click", confirmBooking);
   els.confirmBack.addEventListener("click", () => {
     state.selectedStart = "";
@@ -550,7 +634,45 @@
     els.codeSubmit.disabled = false;
   });
 
+  /**
+   * Back from Stripe (book.html?paid=<id>): ask the backend to check the payment and add the sessions.
+   * Returns true when the page can carry on to the times, false when a message is showing instead.
+   */
+  async function handlePaidReturn() {
+    showScreen("loading");
+    let res;
+    try {
+      res = await api("paymentReturn", { sessionId: paidId });
+    } catch (err) {
+      showNotice("Can't check your payment", "Check your connection and try again. If you've paid, your sessions will still be added.", init);
+      return false;
+    }
+    if (res.status !== "success") {
+      const canRetry = res.code === "stripe" || res.code === "server";
+      showNotice("We couldn't check your payment", (res.message || "Please try again in a minute.") + " If you've paid, your sessions will still be added.", canRetry ? init : null);
+      return false;
+    }
+    if (res.slug) memberId = res.slug; // whoever paid is who this page is for, even in a different browser from the one they started in
+    if (res.state === "waiting") {
+      showNotice("Payment received", "We're just confirming it with Stripe. This usually takes a few seconds.", init);
+      return false;
+    }
+    if (res.state === "unmatched") {
+      showNotice("Thanks, your payment went through", "We couldn't add your sessions automatically, so Max has been told and will add them shortly.");
+      return false;
+    }
+    state.flash = "Payment received. " + (res.sessions ? plural(res.sessions, "session") + " added to your account." : "Your sessions are added.") + " Pick a time below.";
+    paidId = "";
+    try {
+      history.replaceState(null, "", location.pathname + (memberId ? "?id=" + encodeURIComponent(memberId) : "")); // so a refresh doesn't check it again
+    } catch (err) {
+      // Not important.
+    }
+    return true;
+  }
+
   async function init() {
+    if (paidId && !(await handlePaidReturn())) return;
     if (!memberId) {
       showNotice("Open this from your card", "Booking works from your membership card. Open your card, then tap Book a session.");
       return;

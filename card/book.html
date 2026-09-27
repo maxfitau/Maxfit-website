@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="styles.css?v=20260913b" />
-<link rel="stylesheet" href="book.css?v=20260926b" />
+<link rel="stylesheet" href="book.css?v=20260927b" />
 </head>
 <body>
 
@@ -55,6 +55,12 @@
 
     <p class="book__message" id="bookMessage" role="status" hidden></p>
 
+    <section class="book__section" id="buySection" aria-labelledby="buyLabel" hidden>
+      <span class="card__label card__label--red" id="buyLabel">Buy sessions</span>
+      <div class="book__buy" id="buyList"></div>
+      <p class="book__hint">You pay securely on Stripe, then come straight back here to pick a time.</p>
+    </section>
+
     <section class="book__section" id="pickSection" aria-labelledby="pickLabel" hidden>
       <span class="card__label card__label--red" id="pickLabel">Pick a day</span>
       <div class="book__weekdays" aria-hidden="true"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span></div>
@@ -68,6 +74,12 @@
       <div class="book__confirm" id="confirmBox" hidden>
         <p class="book__confirm-when" id="confirmWhen"></p>
         <p class="book__confirm-note" id="confirmNote"></p>
+        <div class="book__email" id="emailBox" hidden>
+          <label class="card__label" for="emailInput">Email me a confirmation</label>
+          <input class="book__email-input" id="emailInput" type="email" inputmode="email" autocomplete="email" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="120" placeholder="you@example.com" aria-describedby="emailHint emailError" />
+          <p class="book__hint" id="emailHint">Optional. Leave it empty if you'd rather not get one.</p>
+          <p class="book__error book__error--left" id="emailError" role="alert" hidden></p>
+        </div>
         <button class="book__btn" id="confirmBtn" type="button">Confirm booking</button>
         <button class="book__btn book__btn--ghost" id="confirmBack" type="button">Choose another time</button>
       </div>
@@ -79,6 +91,6 @@
 </main>
 
 <script src="sheet.js?v=20260925a"></script>
-<script src="book.js?v=20260926b"></script>
+<script src="book.js?v=20260927b"></script>
 </body>
 </html>

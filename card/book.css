@@ -360,6 +360,67 @@ body {
   cursor: default;
 }
 
+/* ---- Buying sessions ---- */
+
+.book__buy {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.book__buy-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--white);
+  text-decoration: none;
+}
+
+.book__buy-option:active {
+  border-color: var(--red);
+}
+
+.book__buy-option:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+}
+
+.book__buy-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.book__buy-name {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 17px;
+  line-height: 1.2;
+}
+
+.book__buy-detail {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.book__buy-price {
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 24px;
+  line-height: 1;
+  color: var(--white);
+  flex-shrink: 0;
+}
+
 /* ---- Confirming ---- */
 
 .book__confirm {
@@ -389,6 +450,42 @@ body {
   line-height: 1.45;
   color: var(--dim);
   margin: 0;
+}
+
+/* The optional email box: 16px text so phones don't zoom in when it's tapped. */
+.book__email {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.book__email-input {
+  font-family: var(--font-body);
+  font-size: 16px;
+  color: var(--white);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  width: 100%;
+  min-width: 0;
+}
+
+.book__email-input::placeholder {
+  color: var(--dim);
+}
+
+.book__email-input:focus {
+  outline: none;
+  border-color: var(--red);
+}
+
+.book__email-input:disabled {
+  opacity: 0.6;
+}
+
+.book__error--left {
+  text-align: left;
 }
 
 /* ---- Messages ---- */

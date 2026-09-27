@@ -33,7 +33,7 @@ const GROCERY_SHEET_NAME = "Grocery Items";
 // Changes whenever this file does, and is shown when you open the deployed
 // URL in a browser (see doGet) — the quick way to tell whether a redeploy
 // actually took, instead of guessing from behaviour.
-const BACKEND_VERSION = "2026-09-26b";
+const BACKEND_VERSION = "2026-09-27b";
 
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -253,6 +253,9 @@ function doPost(e) {
   }
   if (action === "bookingInfo") {
     return handleBookingInfo_(payload); // read-only, so no lock
+  }
+  if (action === "paymentReturn") {
+    return handlePaymentReturn_(payload); // asks Stripe first, then takes the lock itself for the sheet work
   }
   if (action === "bookSession") {
     return withLock_(() => handleBookSession_(payload));
@@ -1493,10 +1496,12 @@ function incrementClientsReferred_(friendName) {
 //   Settings      Notice and cancellation rules, who gets emailed, how clients
 //                 message Max, and whether a booking code is required.
 //   Clients       Each client's personal booking code, with a ready-made text
-//                 to send them. issueBookingCodes() fills it in.
+//                 to send them, and their email. issueBookingCodes() fills it in.
 //   Bookings      One row per booking. This script writes it; Max can change a
 //                 Status to Cancelled to free a slot.
 //   Upcoming      A read-only list of what's coming up (a formula).
+//   Prices        What a client with no sessions left can buy, and its Stripe Pay link.
+//   Payments      A ledger of every Stripe payment credited, written by this script.
 //
 // A time is only offered if it sits on the grid an Availability row generates,
 // isn't inside Time Off, isn't too soon or too far ahead, and doesn't overlap an
@@ -1511,11 +1516,24 @@ function incrementClientsReferred_(friendName) {
 // them and they type it once per phone. Five wrong codes for one slug locks
 // that slug out for 15 minutes (CacheService). Settings > "Require booking
 // code" = No goes back to slug + Check-in Token for anyone who wants that.
+//
+// EMAILS. Max is emailed on every booking and cancel. A client with an address
+// in the Clients tab's Email column is emailed too: a confirmation with a
+// calendar file when they book, and a note when they cancel (Settings > "Email
+// clients" switches it off; "Meeting place" goes in the email). The address is
+// copied from the CRM by issueBookingCodes() when it has one, or typed by the
+// client in the Book page's email box the first time, and kept only in the
+// private Clients tab. An email can never fail a booking.
+//
+// PAYING. A client with no sessions left can buy more on Stripe (see "Online
+// payments" below): singles or 6-packs from the Prices tab, credited to
+// "1 on 1 Remaining" automatically once Stripe says they've paid.
 
 const BOOKING_SHEET_ID_PROPERTY = "BOOKING_SHEET_ID";
 const BOOKING_SELFTEST_SHEET_ID_PROPERTY = "BOOKING_SELFTEST_SHEET_ID";
 const BOOKING_SHEET_TITLE = "MaxFit Bookings";
 const BOOKING_NOTIFY_DEFAULT = "max.french28@gmail.com";
+const BOOKING_SITE_URL = "https://maxfit.now"; // where the Book page lives, for the link in a client's confirmation email
 const BOOKING_DEFAULT_MINUTES = 45;
 
 // No I, L, O, 0 or 1, so a code is easy to read out and to type.
@@ -1531,12 +1549,25 @@ const BOOKING_TABS = {
   clients: "Clients",
   bookings: "Bookings",
   upcoming: "Upcoming",
+  prices: "Prices",
+  payments: "Payments",
 };
 const BOOKING_AVAILABILITY_HEADER = ["On", "Day", "Start", "End", "Session Minutes", "Buffer Minutes"];
 const BOOKING_TIME_OFF_HEADER = ["From", "To", "Note"];
 const BOOKING_SETTINGS_HEADER = ["Setting", "Value", "What it does"];
-const BOOKING_CLIENTS_HEADER = ["Name", "Slug", "Booking Code", "Text to send"];
+const BOOKING_CLIENTS_HEADER = ["Name", "Slug", "Booking Code", "Text to send", "Email"];
 const BOOKINGS_HEADER = ["Booking ID", "Date", "Start", "End", "Minutes", "Client", "Client Slug", "Status", "Booked At", "Cancelled At"];
+const BOOKING_PRICES_HEADER = ["On", "Name", "Sessions", "Price", "Stripe lookup key", "Pay link"];
+const BOOKING_PAYMENTS_HEADER = ["Stripe Session", "Paid At", "Client", "Slug", "Item", "Sessions", "Amount", "Before", "After", "Status", "Note"];
+
+// Online payments (Stripe). The key is a Script Property, never in this file.
+const BOOKING_STRIPE_KEY_PROPERTY = "STRIPE_SECRET_KEY";
+const BOOKING_STRIPE_SYNCED_PROPERTY = "STRIPE_BOOKING_SYNCED_TO";
+const BOOKING_STRIPE_LAST_SYNC_PROPERTY = "STRIPE_BOOKING_LAST_SYNC_AT";
+const BOOKING_PAY_REF_PREFIX = "pt-"; // client_reference_id on our Payment Links is pt-<slug>. FUEL's are fuel-<slug>.
+const BOOKING_PAY_LINK_PREFIX = "https://buy.stripe.com/";
+const BOOKING_SYNC_OVERLAP_SECONDS = 172800; // each sync looks back two days, so a slow or failed run can't lose a payment
+const BOOKING_PAY_CHECKS_PER_MINUTE = 30; // how many "did my payment arrive?" questions to put to Stripe per minute, whoever asks
 const BOOKING_MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 
 // The Settings tab starts with these rows; a re-run of setupBooking() adds any that are missing.
@@ -1549,6 +1580,17 @@ const BOOKING_SETTING_DEFAULTS = [
   ["Max active bookings", 6, "The most upcoming bookings one client can hold at once."],
   ["Require booking code", "Yes", "Yes: a client types their personal code (Clients tab) once per phone. No: anyone with a client's card link can book as them."],
   ["Contact link", "", "How clients message you. Put {message} where the ready-typed message goes. WhatsApp: https://wa.me/61400000000?text={message}   Text: sms:+61400000000?&body={message}. Leave blank to hide the Message Max buttons."],
+  ["Email clients", "Yes", "Yes: a client with an email on the Clients tab gets a confirmation (with a calendar file) when they book, and a note when they cancel. No: only you are emailed."],
+  ["Meeting place", "", "Where you meet clients, e.g. Petersham Park by the rotunda. It goes in the confirmation email and the calendar file. Leave blank to leave it out."],
+  ["Online payments", "No", "Yes: a client with no 1-on-1 sessions left sees Buy buttons (from the Prices tab) instead of \"message Max\". Needs the Stripe key in Script Properties and a Pay link on the Prices tab. No: they're told to message you."],
+];
+
+// The Prices tab starts with these rows. The Price is only what the button says: Stripe charges what the Pay link says.
+const BOOKING_PRICE_DEFAULTS = [
+  ["Yes", "Single session, 30 min", 1, "$39", "pt_single_30", ""],
+  ["Yes", "Single session, 45 min", 1, "$49", "pt_single_45", ""],
+  ["Yes", "6-pack, 30 min sessions", 6, "$199", "pt_pack6_30", ""],
+  ["Yes", "6-pack, 45 min sessions", 6, "$249", "pt_pack6_45", ""],
 ];
 
 // Set only by bookingSelfTest(), and only for that one run: every run of the
@@ -1616,13 +1658,15 @@ function setupBooking() {
     bookingEnsureSettingRows_(settings.sheet); // settings added in a later version
   }
 
-  const clients = bookingEnsureTab_(ss, BOOKING_TABS.clients, BOOKING_CLIENTS_HEADER, [], ["Slug", "Booking Code"]);
+  const clients = bookingEnsureTab_(ss, BOOKING_TABS.clients, BOOKING_CLIENTS_HEADER, [], ["Slug", "Booking Code", "Email"]);
   if (clients.isNew) {
     clients.sheet.getRange(1, 3).setNote("Each client's personal booking code. Text it to them: they type it once on each phone. To give someone a new code, clear their cell and run issueBookingCodes.");
+    clients.sheet.getRange(1, 5).setNote("Where this client's booking confirmations go. Copied from the CRM when it has one, or typed by the client the first time they book. Clear it to stop their emails.");
     clients.sheet.setColumnWidth(1, 200);
     clients.sheet.setColumnWidth(2, 170);
     clients.sheet.setColumnWidth(3, 120);
     clients.sheet.setColumnWidth(4, 620);
+    clients.sheet.setColumnWidth(5, 240);
   }
 
   const bookings = bookingEnsureTab_(ss, BOOKING_TABS.bookings, BOOKINGS_HEADER, [], ["Date", "Start", "End", "Minutes", "Booked At", "Cancelled At"]);
@@ -1635,6 +1679,26 @@ function setupBooking() {
   if (upcoming.isNew) {
     upcoming.sheet.getRange("A2").setFormula('=IFNA(SORT(FILTER(Bookings!B2:F, Bookings!H2:H="Booked", Bookings!B2:B>=TEXT(TODAY(),"yyyy-mm-dd")), 1, TRUE, 2, TRUE), "Nothing booked yet")');
     upcoming.sheet.setColumnWidth(5, 180);
+  }
+
+  const prices = bookingEnsureTab_(ss, BOOKING_TABS.prices, BOOKING_PRICES_HEADER, BOOKING_PRICE_DEFAULTS, ["Stripe lookup key", "Pay link"]);
+  if (prices.isNew) {
+    prices.sheet.getRange(1, 3).setNote("How many 1-on-1 sessions this adds to the client's \"1 on 1 Remaining\" when it's bought.");
+    prices.sheet.getRange(1, 4).setNote("Only what the button says. Stripe charges what the Pay link is set to.");
+    prices.sheet.getRange(1, 5).setNote("The lookup key on the Stripe price. It is how a payment is matched to this row, so it has to match exactly.");
+    prices.sheet.getRange(1, 6).setNote("The Stripe Payment Link (https://buy.stripe.com/...). A row with no link isn't shown to clients.");
+    prices.sheet.setColumnWidth(1, 60);
+    prices.sheet.setColumnWidth(2, 220);
+    prices.sheet.setColumnWidth(5, 170);
+    prices.sheet.setColumnWidth(6, 380);
+  }
+
+  const payments = bookingEnsureTab_(ss, BOOKING_TABS.payments, BOOKING_PAYMENTS_HEADER, [], ["Stripe Session", "Paid At", "Slug", "Amount", "Before", "After"]);
+  if (payments.isNew) {
+    payments.sheet.getRange(1, 1).setNote("One row per Stripe payment, written by the script. Please don't edit it: it is how a payment is only ever counted once.");
+    payments.sheet.setColumnWidth(1, 300);
+    payments.sheet.setColumnWidth(5, 220);
+    payments.sheet.setColumnWidth(11, 420);
   }
 
   // Every client in the CRM gets a personal booking code (existing ones are left alone).
@@ -1651,8 +1715,8 @@ function setupBooking() {
           "",
           "1. Availability tab: set your real 1-on-1 hours, then change On to Yes on the rows you want to offer.",
           "2. Time Off tab: add any days you're away.",
-          "3. Settings tab: check the rules, and put your Contact link in so clients can message you from the page.",
-          "4. Clients tab: every client has a personal booking code and a ready-made text. Send each client theirs. They type it once on each phone.",
+          "3. Settings tab: check the rules, put your Contact link in so clients can message you from the page, and say where you meet clients (Meeting place) so it goes in their confirmation email.",
+          "4. Clients tab: every client has a personal booking code and a ready-made text. Send each client theirs. They type it once on each phone. Clients with an email get a booking confirmation.",
           "5. Back in Apps Script, run bookingSelfTest once. It tries the whole booking flow on real Google and emails you the result.",
           "",
           "Bookings and the Upcoming list fill in here as clients book from their card.",
@@ -1663,7 +1727,7 @@ function setupBooking() {
     }
   }
   Logger.log((created ? "Created the booking sheet: " : "Booking sheet is already set up: ") + ss.getUrl());
-  Logger.log("Booking codes: " + codes.added + " new, " + codes.filled + " filled in. Next: run bookingSelfTest.");
+  Logger.log("Booking codes: " + codes.added + " new, " + codes.filled + " filled in. Client emails copied from the CRM: " + codes.emails + ". Next: run bookingSelfTest.");
 }
 
 /** Adds any setting from BOOKING_SETTING_DEFAULTS that isn't on the Settings tab yet (matched by name), leaving everything Max has edited alone. */
@@ -1844,7 +1908,7 @@ function bookingTable_(sheet) {
 }
 
 function bookingSettings_(ss) {
-  const s = { notifyEmail: BOOKING_NOTIFY_DEFAULT, minNoticeHours: 12, bookAheadDays: 28, cancelNoticeHours: 24, requireSession: true, maxActive: 6, requireCode: true, contactLink: "" };
+  const s = { notifyEmail: BOOKING_NOTIFY_DEFAULT, minNoticeHours: 12, bookAheadDays: 28, cancelNoticeHours: 24, requireSession: true, maxActive: 6, requireCode: true, contactLink: "", emailClients: true, meetingPlace: "", onlinePayments: false };
   const table = bookingTable_(ss.getSheetByName(BOOKING_TABS.settings));
   const keyCol = findColumn_(table.header, "Setting");
   const valueCol = findColumn_(table.header, "Value");
@@ -1862,7 +1926,15 @@ function bookingSettings_(ss) {
   s.maxActive = Math.floor(bookingNumber_(map["max active bookings"], s.maxActive, 1, 50));
   if (map["require booking code"]) s.requireCode = !bookingIsNo_(map["require booking code"]);
   s.contactLink = bookingSafeLink_(map["contact link"]);
+  if (map["email clients"]) s.emailClients = !bookingIsNo_(map["email clients"]);
+  s.meetingPlace = bookingOneLine_(map["meeting place"], 160);
+  s.onlinePayments = Boolean(map["online payments"]) && !bookingIsNo_(map["online payments"]); // off unless it says so
   return s;
+}
+
+/** Text on a single line, trimmed and capped, for putting in an email or calendar file. */
+function bookingOneLine_(text, maxLen) {
+  return String(text == null ? "" : text).replace(/\s+/g, " ").trim().slice(0, maxLen);
 }
 
 /** A contact link Max typed, or "" if it isn't a web, text, phone or email link (so a typo can never become a script link). */
@@ -2126,13 +2198,15 @@ function bookingStoredCode_(ss, slug) {
 function issueBookingCodes() {
   const ss = bookingBook_();
   if (!ss) throw new Error("Run setupBooking first.");
-  const sheet = ss.getSheetByName(BOOKING_TABS.clients) || bookingEnsureTab_(ss, BOOKING_TABS.clients, BOOKING_CLIENTS_HEADER, [], ["Slug", "Booking Code"]).sheet;
+  const sheet = ss.getSheetByName(BOOKING_TABS.clients) || bookingEnsureTab_(ss, BOOKING_TABS.clients, BOOKING_CLIENTS_HEADER, [], ["Slug", "Booking Code", "Email"]).sheet;
+  if (sheet.getLastColumn() > 0) ensureColumns_(sheet, ["Email"]); // a sheet set up before confirmation emails existed
   const table = bookingTable_(sheet);
   const c = {
     name: findColumn_(table.header, "Name"),
     slug: findColumn_(table.header, "Slug"),
     code: findColumn_(table.header, "Booking Code"),
     text: findColumn_(table.header, "Text to send"),
+    email: findColumn_(table.header, "Email"),
   };
   if (c.slug < 0 || c.code < 0) throw new Error("The Clients tab is missing its Slug or Booking Code column.");
 
@@ -2148,6 +2222,7 @@ function issueBookingCodes() {
   const crm = getSheetByGid_(SESSIONS_SHEET_GID).getDataRange().getValues();
   const nameCol = findColumn_(crm[0], "Name");
   if (nameCol < 0) throw new Error('The Sessions Remaining tab has no "Name" column.');
+  const crmEmailCol = findColumn_(crm[0], "Email"); // where a client already gave one; copied here so confirmations can go to it
 
   const textFor = function (name, code) {
     return "Hi " + name.split(" ")[0] + ", you can now book 1-on-1 sessions from your MaxFit card. Tap Book a session and enter this code the first time: " + code + ". It only needs entering once on each phone.";
@@ -2161,12 +2236,14 @@ function issueBookingCodes() {
 
   let added = 0;
   let filled = 0;
+  let emails = 0;
   const seen = {};
   for (let i = 1; i < crm.length; i++) {
     const name = String(crm[i][nameCol] || "").trim();
     const slug = slugify_(name);
     if (!slug || seen[slug]) continue;
     seen[slug] = true;
+    const crmEmail = crmEmailCol >= 0 ? bookingCleanEmail_(crm[i][crmEmailCol]) : "";
     const row = rowBySlug[slug];
     if (!row) {
       const code = newUniqueCode();
@@ -2175,19 +2252,30 @@ function issueBookingCodes() {
       values[c.slug] = slug;
       values[c.code] = code;
       if (c.text >= 0) values[c.text] = textFor(name, code);
+      if (c.email >= 0 && crmEmail) {
+        values[c.email] = crmEmail;
+        emails++;
+      }
       const target = sheet.getRange(sheet.getLastRow() + 1, 1, 1, values.length);
       target.setNumberFormat("@");
       target.setValues([values]);
       added++;
-    } else if (!bookingNormalizeCode_(sheet.getRange(row, c.code + 1).getDisplayValue())) {
+      continue;
+    }
+    if (!bookingNormalizeCode_(sheet.getRange(row, c.code + 1).getDisplayValue())) {
       const code = newUniqueCode();
       sheet.getRange(row, c.code + 1).setNumberFormat("@").setValue(code);
       if (c.text >= 0) sheet.getRange(row, c.text + 1).setValue(textFor(name, code));
       filled++;
     }
+    // A client who has an email in the CRM but none here gets it copied over. One already here is never overwritten.
+    if (c.email >= 0 && crmEmail && !bookingCleanEmail_(table.rows[row - 2][c.email])) {
+      sheet.getRange(row, c.email + 1).setNumberFormat("@").setValue(crmEmail);
+      emails++;
+    }
   }
   SpreadsheetApp.flush();
-  return { added: added, filled: filled };
+  return { added: added, filled: filled, emails: emails };
 }
 
 /**
@@ -2265,6 +2353,773 @@ function bookingNotify_(settings, subject, lines) {
   }
 }
 
+// ---- Emails to clients ----------------------------------------------------
+
+/**
+ * A client's email address as typed, or "" if it doesn't look like one. Strict
+ * on purpose, because it goes straight into a To field and into a cell: no
+ * spaces, commas, quotes or angle brackets, and it can't start with a symbol
+ * (which a spreadsheet could read as a formula).
+ */
+function bookingCleanEmail_(text) {
+  const email = String(text == null ? "" : text).trim();
+  return email.length <= 120 && /^[A-Za-z0-9][A-Za-z0-9._%+'-]*@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/.test(email) ? email : "";
+}
+
+/** The email on this client's row of the private Clients tab, or "" if they have none (or the tab has no Email column yet). */
+function bookingClientEmail_(ss, slug) {
+  const table = bookingTable_(ss.getSheetByName(BOOKING_TABS.clients));
+  const slugCol = findColumn_(table.header, "Slug");
+  const emailCol = findColumn_(table.header, "Email");
+  if (slugCol < 0 || emailCol < 0) return "";
+  for (let i = 0; i < table.rows.length; i++) {
+    if (slugify_(table.rows[i][slugCol]) === slug) return bookingCleanEmail_(table.rows[i][emailCol]);
+  }
+  return "";
+}
+
+/** Saves a client's email on their Clients row, adding the Email column first if the sheet was set up before it existed. False if they have no row. */
+function bookingSaveClientEmail_(ss, slug, email) {
+  const sheet = ss.getSheetByName(BOOKING_TABS.clients);
+  if (!sheet || sheet.getLastColumn() < 1) return false;
+  ensureColumns_(sheet, ["Email"]);
+  const table = bookingTable_(sheet);
+  const slugCol = findColumn_(table.header, "Slug");
+  const emailCol = findColumn_(table.header, "Email");
+  if (slugCol < 0 || emailCol < 0) return false;
+  for (let i = 0; i < table.rows.length; i++) {
+    if (slugify_(table.rows[i][slugCol]) === slug) {
+      sheet.getRange(i + 2, emailCol + 1).setNumberFormat("@").setValue(email);
+      return true;
+    }
+  }
+  return false;
+}
+
+function bookingHoursText_(hours) {
+  const n = Math.round(hours * 10) / 10;
+  return n + (n === 1 ? " hour" : " hours");
+}
+
+/** Where a client goes to see, book or cancel their sessions. */
+function bookingPageUrl_(slug) {
+  return BOOKING_SITE_URL + "/card/book.html?id=" + encodeURIComponent(slug);
+}
+
+/** A moment in the form calendar files want: 20261001T063000Z. */
+function bookingIcsStamp_(ms) {
+  return new Date(ms).toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
+}
+
+/** Calendar files break long lines with a CRLF and a space. */
+function bookingIcsFold_(line) {
+  const parts = [];
+  for (let i = 0; i < line.length; i += 73) parts.push(line.slice(i, i + 73));
+  return parts.join("\r\n ");
+}
+
+/** A one-event calendar file for a booking (its times are the real instants, so daylight saving is already handled). */
+function bookingIcs_(booking, settings, nowMs) {
+  const startMs = bookingStartMs_(booking.date, booking.startMin);
+  const endMs = startMs + booking.minutes * 60000;
+  const esc = function (text) {
+    return String(text).replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+  };
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//MaxFit//Booking//EN",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    "BEGIN:VEVENT",
+    "UID:" + booking.id + "@maxfit.now",
+    "DTSTAMP:" + bookingIcsStamp_(nowMs),
+    "DTSTART:" + bookingIcsStamp_(startMs),
+    "DTEND:" + bookingIcsStamp_(endMs),
+    "SUMMARY:MaxFit 1-on-1 session",
+  ];
+  if (settings.meetingPlace) lines.push("LOCATION:" + esc(settings.meetingPlace));
+  lines.push("STATUS:CONFIRMED", "END:VEVENT", "END:VCALENDAR");
+  return lines.map(bookingIcsFold_).join("\r\n") + "\r\n";
+}
+
+/** The confirmation a client gets after booking: { subject, body, attachments }. Plain text, in Max's voice, with the calendar file attached. */
+function bookingConfirmationEmail_(booking, member, settings, nowMs) {
+  const when = bookingLabel_(booking.date, booking.startMin);
+  const first = String(member.name || "").split(" ")[0] || "there";
+  const lines = [
+    "Hi " + first + ",",
+    "",
+    "You're booked in for a " + booking.minutes + "-minute 1-on-1 session.",
+    "",
+    "When: " + when + " to " + bookingClock12_(booking.endMin),
+  ];
+  if (settings.meetingPlace) lines.push("Where: " + settings.meetingPlace);
+  lines.push(
+    "",
+    "Need to change it? You can cancel for free up to " + bookingHoursText_(settings.cancelNoticeHours) + " before, from your card:",
+    bookingPageUrl_(member.slug),
+    "After that, just reply to this email.",
+    "",
+    "The attached calendar file adds it to your calendar.",
+    "",
+    "See you there,",
+    "Max"
+  );
+  return {
+    subject: "You're booked: " + when,
+    body: lines.join("\n"),
+    attachments: [Utilities.newBlob(bookingIcs_(booking, settings, nowMs), "text/calendar", "maxfit-session.ics")],
+  };
+}
+
+/** The note a client gets when they cancel: { subject, body }. */
+function bookingCancellationEmail_(booking, member) {
+  const when = bookingLabel_(booking.date, booking.startMin);
+  const first = String(member.name || "").split(" ")[0] || "there";
+  return {
+    subject: "Cancelled: " + when,
+    body: [
+      "Hi " + first + ",",
+      "",
+      "Your 1-on-1 session on " + when + " to " + bookingClock12_(booking.endMin) + " is cancelled, and that time is open again.",
+      "",
+      "Want another time? You can book one from your card:",
+      bookingPageUrl_(member.slug),
+      "",
+      "Max",
+    ].join("\n"),
+  };
+}
+
+/**
+ * Builds and sends one email to a client. True if it went out. A failure (quota,
+ * a bad address) is logged and never blocks the booking. During the self-test
+ * the subject says so, because the "client" is really a real one being used as
+ * a sample and the email goes to Max.
+ */
+function bookingTryEmail_(to, build) {
+  try {
+    const mail = build();
+    const message = { to: to, subject: (bookingSheetOverride_ ? "[Self-test sample] " : "") + mail.subject, body: mail.body, name: "MaxFit" };
+    if (mail.attachments && mail.attachments.length) message.attachments = mail.attachments;
+    MailApp.sendEmail(message);
+    return true;
+  } catch (err) {
+    Logger.log("Client email failed: " + err);
+    return false;
+  }
+}
+
+/**
+ * Which address a confirmation goes to. `typed` is what the Book page's email
+ * box sent: a good address is used and remembered on the client's row, a blank
+ * box means "not this time", and a missing or unusable one falls back to the
+ * address already on file. Returns "" for no email.
+ */
+function bookingResolveEmail_(ctx, typed) {
+  if (!ctx.settings.emailClients) return "";
+  const stored = bookingClientEmail_(ctx.ss, ctx.member.slug);
+  if (typed === undefined || typed === null) return stored;
+  const text = String(typed).trim();
+  if (text === "") return "";
+  const clean = bookingCleanEmail_(text);
+  if (!clean) return stored;
+  if (clean.toLowerCase() !== stored.toLowerCase()) {
+    try {
+      bookingSaveClientEmail_(ctx.ss, ctx.member.slug, clean);
+    } catch (err) {
+      Logger.log("Couldn't save a client's email: " + err); // they still get this confirmation
+    }
+  }
+  return clean;
+}
+
+/** Sends the client their booking confirmation. Returns the address it went to, or "". Never throws: by now the booking is saved. */
+function bookingConfirmClient_(ctx, typed, booking) {
+  try {
+    const to = bookingResolveEmail_(ctx, typed);
+    if (!to) return "";
+    return bookingTryEmail_(to, function () { return bookingConfirmationEmail_(booking, ctx.member, ctx.settings, ctx.now.ms); }) ? to : "";
+  } catch (err) {
+    Logger.log("Client confirmation failed: " + err);
+    return "";
+  }
+}
+
+/** Tells the client their cancellation went through. Returns the address it went to, or "". Never throws. */
+function bookingCancelNoteClient_(ctx, booking) {
+  try {
+    if (!ctx.settings.emailClients) return "";
+    const to = bookingClientEmail_(ctx.ss, ctx.member.slug);
+    if (!to) return "";
+    return bookingTryEmail_(to, function () { return bookingCancellationEmail_(booking, ctx.member); }) ? to : "";
+  } catch (err) {
+    Logger.log("Client cancellation note failed: " + err);
+    return "";
+  }
+}
+
+/** The line in Max's own notification that says whether the client was emailed. Nothing if client emails are switched off. */
+function bookingEmailedLine_(settings, emailedTo) {
+  if (!settings.emailClients) return [];
+  return [emailedTo ? "Emailed to the client: " + emailedTo : "No email went to the client (none on file)."];
+}
+
+// ---- Online payments (Stripe) ---------------------------------------------
+//
+// A client with no 1-on-1 sessions left can buy some on Stripe instead of
+// messaging Max. The Book page shows a Buy button for each row of the Prices
+// tab that has a Pay link (a Stripe Payment Link) and adds
+// client_reference_id=pt-<slug> to it, which is how a payment finds its client.
+//
+// Stripe is never called by webhook: Apps Script can't read a webhook's
+// headers, so it can't check who sent it. Instead this script asks Stripe,
+// with a READ-ONLY restricted key kept in the STRIPE_SECRET_KEY Script
+// Property (Checkout Sessions: Read is all it needs):
+//   - when the client lands back on the Book page (the Payment Link's "after
+//     payment" address is .../card/book.html?paid={CHECKOUT_SESSION_ID}), the
+//     page sends that id to paymentReturn, and
+//   - every 10 minutes on a trigger (installBookingPaymentSync), which catches
+//     anyone who paid and then closed the tab.
+//
+// A paid session adds what it bought (matched on the price's lookup key, via
+// the Prices tab) to "1 on 1 Remaining" on the CRM: the same number check-in
+// already uses and counts down. "Paid sessions" and the referral payout are
+// deliberately NOT touched, because they happen at check-in, when the session
+// is actually had. Each Stripe session is credited exactly once: the Payments
+// tab is the ledger, and a session's row is written before the balance moves,
+// so a run that dies halfway can be finished later without paying twice.
+
+function bookingStripeKey_() {
+  return String(PropertiesService.getScriptProperties().getProperty(BOOKING_STRIPE_KEY_PROPERTY) || "").trim();
+}
+
+/** Anything that looks like a Stripe key, blanked out, so a key can never end up in a log, an email or a reply. */
+function bookingScrub_(text) {
+  return String(text == null ? "" : text).replace(/\b[rs]k_(test|live)_[A-Za-z0-9]+/g, "[key]");
+}
+
+/** One read-only GET to the Stripe API. Throws (with the key scrubbed out) if Stripe says no. */
+function bookingStripeGet_(path, params) {
+  const key = bookingStripeKey_();
+  if (!key) throw new Error("STRIPE_SECRET_KEY is not set.");
+  const qs = Object.keys(params || {})
+    .map(function (k) { return encodeURIComponent(k) + "=" + encodeURIComponent(params[k]); })
+    .join("&");
+  const res = UrlFetchApp.fetch("https://api.stripe.com/v1/" + path + (qs ? "?" + qs : ""), {
+    headers: { Authorization: "Bearer " + key },
+    muteHttpExceptions: true,
+  });
+  let body = null;
+  try {
+    body = JSON.parse(res.getContentText());
+  } catch (err) {
+    body = null;
+  }
+  if (res.getResponseCode() !== 200 || !body) {
+    const msg = body && body.error && body.error.message ? body.error.message : "HTTP " + res.getResponseCode();
+    throw new Error("Stripe " + path + ": " + bookingScrub_(msg));
+  }
+  return body;
+}
+
+/** Every page of a Stripe list (capped, to stay well inside Apps Script's time limit). */
+function bookingStripeList_(path, params, maxPages) {
+  const out = [];
+  let after = null;
+  for (let page = 0; page < (maxPages || 5); page++) {
+    const p = Object.assign({ limit: 100 }, params || {});
+    if (after) p.starting_after = after;
+    const res = bookingStripeGet_(path, p);
+    (res.data || []).forEach(function (x) { out.push(x); });
+    if (!res.has_more || !res.data || !res.data.length) break;
+    after = res.data[res.data.length - 1].id;
+  }
+  return out;
+}
+
+/** Whether clients may be sent to Stripe: switched on in Settings, and there is a key to check payments with. */
+function bookingPaymentsOn_(settings) {
+  return Boolean(settings.onlinePayments && bookingStripeKey_());
+}
+
+/** A Pay link Max pasted, or "" unless it's a Stripe Payment Link (so a typo can never send a client somewhere else). */
+function bookingSafePayLink_(text) {
+  const link = String(text == null ? "" : text).trim();
+  return link.length <= 300 && link.indexOf(BOOKING_PAY_LINK_PREFIX) === 0 && !/\s/.test(link) ? link : "";
+}
+
+/** The Prices tab as { on, name, sessions, price, lookup, link } rows. A row with no name or lookup key can't be used and is skipped. */
+function bookingPrices_(ss) {
+  const table = bookingTable_(ss.getSheetByName(BOOKING_TABS.prices));
+  const c = {
+    on: findColumn_(table.header, "On"),
+    name: findColumn_(table.header, "Name"),
+    sessions: findColumn_(table.header, "Sessions"),
+    price: findColumn_(table.header, "Price"),
+    lookup: findColumn_(table.header, "Stripe lookup key"),
+    link: findColumn_(table.header, "Pay link"),
+  };
+  if (c.name < 0 || c.sessions < 0 || c.lookup < 0) return [];
+  return table.rows
+    .map(function (r) {
+      return {
+        on: c.on < 0 ? true : !bookingIsNo_(r[c.on]),
+        name: bookingOneLine_(r[c.name], 80),
+        sessions: Math.floor(bookingNumber_(r[c.sessions], 0, 0, 1000)),
+        price: c.price < 0 ? "" : bookingOneLine_(r[c.price], 20),
+        lookup: bookingOneLine_(r[c.lookup], 80),
+        link: c.link < 0 ? "" : String(r[c.link] || "").trim(),
+      };
+    })
+    .filter(function (p) { return p.name && p.lookup; });
+}
+
+/** What a client with no sessions left can buy: [{ name, sessions, price, url }], only rows that are on, add a session and have a Stripe Pay link. */
+function bookingBuyOptions_(ss, member, email) {
+  return bookingPrices_(ss)
+    .filter(function (p) { return p.on && p.sessions >= 1 && bookingSafePayLink_(p.link); })
+    .map(function (p) {
+      const link = bookingSafePayLink_(p.link);
+      const extra = ["client_reference_id=" + encodeURIComponent(BOOKING_PAY_REF_PREFIX + member.slug)];
+      if (email) extra.push("prefilled_email=" + encodeURIComponent(email));
+      return { name: p.name, sessions: p.sessions, price: p.price, url: link + (link.indexOf("?") >= 0 ? "&" : "?") + extra.join("&") };
+    });
+}
+
+/** A paid, finished, one-off Checkout Session carrying one of our client references. */
+function bookingIsOurs_(session) {
+  return Boolean(session && session.mode === "payment" && session.status === "complete" && session.payment_status === "paid"
+    && /^pt-[a-z0-9]+$/.test(String(session.client_reference_id || "")));
+}
+
+/** What a paid session bought: { slug, sessions, item }, or { slug, problem } saying why it can't be credited automatically. */
+function bookingPurchaseOf_(session, lines, prices) {
+  const slug = String(session.client_reference_id || "").slice(BOOKING_PAY_REF_PREFIX.length);
+  let sessions = 0;
+  const names = [];
+  for (let i = 0; i < lines.length; i++) {
+    const lookup = String((lines[i].price && lines[i].price.lookup_key) || "").trim().toLowerCase();
+    const row = lookup ? prices.filter(function (p) { return p.lookup.toLowerCase() === lookup; })[0] : null;
+    if (!row) return { slug: slug, problem: "an item on it isn't on the Prices tab (" + bookingOneLine_(lookup || lines[i].description || "no lookup key", 60) + ")" };
+    if (row.sessions < 1) return { slug: slug, problem: "the Prices tab row \"" + row.name + "\" has no number of sessions" };
+    const qty = Math.max(1, Math.floor(Number(lines[i].quantity) || 1));
+    sessions += row.sessions * qty;
+    names.push((qty > 1 ? qty + " x " : "") + row.name);
+  }
+  if (!sessions) return { slug: slug, problem: "it has no items" };
+  return { slug: slug, sessions: sessions, item: names.join(", ") };
+}
+
+/** A client's row in Sessions Remaining, with what they have left: { sheet, row, col, name, current }, or null if there's no such client. Throws if the balance can't be read. */
+function bookingCrmRow_(slug) {
+  const sheet = getSheetByGid_(SESSIONS_SHEET_GID);
+  const data = sheet.getDataRange().getValues();
+  const header = data[0];
+  const nameCol = findColumn_(header, "Name");
+  const col = findColumn_(header, "1 on 1 Remaining");
+  if (nameCol < 0 || col < 0) throw new Error("The Sessions Remaining tab has no Name or \"1 on 1 Remaining\" column");
+  for (let i = 1; i < data.length; i++) {
+    if (slugify_(data[i][nameCol]) !== slug) continue;
+    const raw = String(data[i][col] == null ? "" : data[i][col]).trim();
+    const n = raw === "" ? 0 : Number(raw);
+    if (!isFinite(n)) throw new Error("the 1 on 1 Remaining cell for " + slug + " isn't a number (it says \"" + bookingOneLine_(raw, 30) + "\")");
+    return { sheet: sheet, row: i + 1, col: col, name: String(data[i][nameCol]).trim(), current: n };
+  }
+  return null;
+}
+
+// -- The Payments ledger ----------------------------------------------------
+
+function bookingLedger_(ss) {
+  const sheet = ss.getSheetByName(BOOKING_TABS.payments)
+    || bookingEnsureTab_(ss, BOOKING_TABS.payments, BOOKING_PAYMENTS_HEADER, [], ["Stripe Session", "Paid At", "Slug", "Amount", "Before", "After"]).sheet;
+  const table = bookingTable_(sheet);
+  const c = {
+    id: findColumn_(table.header, "Stripe Session"),
+    paidAt: findColumn_(table.header, "Paid At"),
+    client: findColumn_(table.header, "Client"),
+    slug: findColumn_(table.header, "Slug"),
+    item: findColumn_(table.header, "Item"),
+    sessions: findColumn_(table.header, "Sessions"),
+    amount: findColumn_(table.header, "Amount"),
+    before: findColumn_(table.header, "Before"),
+    after: findColumn_(table.header, "After"),
+    status: findColumn_(table.header, "Status"),
+    note: findColumn_(table.header, "Note"),
+  };
+  Object.keys(c).forEach(function (k) {
+    if (c[k] < 0) throw new Error("The Payments tab is missing a column (" + k + ")");
+  });
+  return { sheet: sheet, table: table, c: c };
+}
+
+/** The ledger row for a Stripe session, or null. */
+function bookingLedgerFind_(led, id) {
+  for (let i = 0; i < led.table.rows.length; i++) {
+    const r = led.table.rows[i];
+    if (String(r[led.c.id]).trim() !== id) continue;
+    return {
+      row: i + 2,
+      status: String(r[led.c.status]).trim(),
+      slug: String(r[led.c.slug]).trim(),
+      sessions: Number(r[led.c.sessions]) || 0,
+      before: r[led.c.before] === "" ? NaN : Number(r[led.c.before]),
+      after: r[led.c.after] === "" ? NaN : Number(r[led.c.after]),
+      note: String(r[led.c.note]),
+    };
+  }
+  return null;
+}
+
+/** Adds a ledger row (plain text, like the other tabs) and returns its row number. */
+function bookingLedgerAppend_(led, v) {
+  const values = led.table.header.map(function () { return ""; });
+  Object.keys(led.c).forEach(function (k) {
+    if (v[k] !== undefined) values[led.c[k]] = v[k];
+  });
+  const target = led.sheet.getRange(led.sheet.getLastRow() + 1, 1, 1, values.length);
+  target.setNumberFormat("@");
+  target.setValues([values]);
+  return target.getRow();
+}
+
+function bookingLedgerUpdate_(led, row, patch) {
+  Object.keys(patch).forEach(function (k) {
+    led.sheet.getRange(row, led.c[k] + 1).setNumberFormat("@").setValue(patch[k]);
+  });
+}
+
+// -- Crediting a payment ------------------------------------------------------
+
+/**
+ * Runs `fn` under the script lock and says whether it got the lock: { ok, value }.
+ * (withLock_ answers a web request; a background sync needs to know it was too busy and try again later.)
+ */
+function bookingWithLock_(fn) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (err) {
+    return { ok: false };
+  }
+  try {
+    return { ok: true, value: fn() };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Credits one paid Stripe session to its client, exactly once, and records it in the ledger.
+ * Must run under the script lock. `purchase` comes from bookingPurchaseOf_.
+ * Returns { state: "credited" | "already" | "unmatched", slug, sessions, after, note, fresh }; `fresh`
+ * is true only for the call that actually did the work, so the emails go out once.
+ */
+function bookingRecordPayment_(ss, session, purchase) {
+  const led = bookingLedger_(ss);
+  const known = bookingLedgerFind_(led, session.id);
+  if (known && known.status === "Credited") {
+    return { state: "already", slug: known.slug, sessions: known.sessions, after: known.after, fresh: false };
+  }
+  if (known && known.status === "Unmatched") {
+    return { state: "unmatched", slug: known.slug, sessions: 0, note: known.note, fresh: false };
+  }
+
+  const paidAt = Utilities.formatDate(new Date(Number(session.created) * 1000), TIMEZONE, "yyyy-MM-dd HH:mm");
+  const amount = (Number(session.amount_total) / 100).toFixed(2) + " " + String(session.currency || "").toUpperCase();
+
+  let crm = null;
+  let problem = purchase.problem || "";
+  if (!problem) {
+    try {
+      crm = bookingCrmRow_(purchase.slug);
+      if (!crm) problem = "there is no client called " + purchase.slug;
+    } catch (err) {
+      problem = bookingScrub_(err && err.message ? err.message : err);
+    }
+  }
+
+  if (problem) {
+    const cols = { id: session.id, paidAt: paidAt, slug: purchase.slug || "", item: purchase.item || "", amount: amount, status: "Unmatched", note: problem };
+    if (known) bookingLedgerUpdate_(led, known.row, { status: "Unmatched", note: problem });
+    else bookingLedgerAppend_(led, cols);
+    SpreadsheetApp.flush();
+    return { state: "unmatched", slug: purchase.slug || "", sessions: 0, note: problem, fresh: true };
+  }
+
+  let ledgerRow = known ? known.row : 0;
+  if (known && known.status === "Crediting" && crm.current !== known.before) {
+    // An earlier run wrote this row and moved the balance, then stopped before it could say so. Don't pay it twice.
+    bookingLedgerUpdate_(led, known.row, { after: String(crm.current), status: "Credited", note: "finished on a retry" });
+    SpreadsheetApp.flush();
+    return { state: "credited", slug: purchase.slug, sessions: purchase.sessions, after: crm.current, name: crm.name, fresh: true };
+  }
+  if (!known) {
+    // The ledger row goes in first, with the balance as it is right now.
+    ledgerRow = bookingLedgerAppend_(led, {
+      id: session.id, paidAt: paidAt, client: cleanNote_(crm.name, 80), slug: purchase.slug, item: purchase.item,
+      sessions: String(purchase.sessions), amount: amount, before: String(crm.current), status: "Crediting",
+    });
+    SpreadsheetApp.flush();
+  }
+
+  const after = crm.current + purchase.sessions;
+  crm.sheet.getRange(crm.row, crm.col + 1).setValue(after);
+  SpreadsheetApp.flush();
+  bookingLedgerUpdate_(led, ledgerRow, { after: String(after), status: "Credited", note: "" });
+  SpreadsheetApp.flush();
+  return { state: "credited", slug: purchase.slug, sessions: purchase.sessions, after: after, name: crm.name, fresh: true };
+}
+
+/**
+ * Deals with one paid session that carries our client reference. The Stripe call happens
+ * before the lock is taken; only the sheet work is inside it. Throws if it couldn't finish
+ * (Stripe hiccup, script busy), so the caller can try again later.
+ */
+function bookingHandlePaidSession_(ss, session) {
+  const led = bookingLedger_(ss);
+  const known = bookingLedgerFind_(led, session.id);
+  // Already dealt with: costs no Stripe call.
+  if (known && known.status === "Credited") return { state: "already", slug: known.slug, sessions: known.sessions, after: known.after, fresh: false };
+  if (known && known.status === "Unmatched") return { state: "unmatched", slug: known.slug, sessions: 0, note: known.note, fresh: false };
+
+  const lines = bookingStripeList_("checkout/sessions/" + encodeURIComponent(session.id) + "/line_items", {}, 1);
+  const purchase = bookingPurchaseOf_(session, lines, bookingPrices_(ss));
+  const locked = bookingWithLock_(function () { return bookingRecordPayment_(ss, session, purchase); });
+  if (!locked.ok) throw new Error("the script was busy, so this payment will be tried again");
+  const result = locked.value;
+  if (result.fresh) bookingAnnouncePayment_(ss, session, purchase, result);
+  return result;
+}
+
+/** Tells Max (and the client) about a payment that was just credited, or that couldn't be. Never throws: the sheet is already right. */
+function bookingAnnouncePayment_(ss, session, purchase, result) {
+  try {
+    const settings = bookingSettings_(ss);
+    const tag = session.livemode === false ? "[TEST] " : "";
+    const amount = (Number(session.amount_total) / 100).toFixed(2) + " " + String(session.currency || "").toUpperCase();
+    const payerEmail = session.customer_details ? bookingCleanEmail_(session.customer_details.email) : "";
+
+    if (result.state === "unmatched") {
+      const lines = ["A payment came in that wasn't added to anyone's sessions, because " + result.note + ".", "", "Amount: " + amount];
+      if (purchase.item) lines.push("Item: " + purchase.item);
+      if (payerEmail) lines.push("Paid by: " + payerEmail);
+      lines.push(
+        "Stripe session: " + session.id,
+        "",
+        "Please add the sessions by hand on the Sessions Remaining tab if that's what they bought. It's listed on the Payments tab as Unmatched, and won't be tried again."
+      );
+      bookingNotify_(settings, tag + "A Stripe payment I couldn't match to a client", lines);
+      return;
+    }
+
+    bookingNotify_(settings, tag + "Payment: " + result.name + " bought " + result.sessions + " session" + (result.sessions === 1 ? "" : "s"), [
+      result.name + " paid " + amount + " for " + purchase.item + ".",
+      "",
+      result.sessions + " added to their 1 on 1 Remaining. They now have " + result.after + ".",
+      "Stripe session: " + session.id,
+      "",
+      "Nothing else was changed: Paid sessions and referral rewards happen at check-in, as usual.",
+    ]);
+
+    if (!settings.emailClients) return;
+    let to = bookingClientEmail_(ss, purchase.slug);
+    if (!to && payerEmail) {
+      to = payerEmail;
+      try {
+        bookingSaveClientEmail_(ss, purchase.slug, payerEmail); // they gave it to pay, so it can be used for their bookings too
+      } catch (err) {
+        Logger.log("Couldn't save a client's email: " + err);
+      }
+    }
+    if (!to) return;
+    const first = String(result.name || "").split(" ")[0] || "there";
+    bookingTryEmail_(to, function () {
+      return {
+        subject: "Payment received: " + result.sessions + " session" + (result.sessions === 1 ? "" : "s") + " added",
+        body: [
+          "Hi " + first + ",",
+          "",
+          "Thanks, your payment of " + amount + " went through and " + result.sessions + " session" + (result.sessions === 1 ? " was" : "s were") + " added to your account (" + purchase.item + ").",
+          "You now have " + result.after + " 1-on-1 session" + (result.after === 1 ? "" : "s") + " left.",
+          "",
+          "Pick a time here:",
+          bookingPageUrl_(purchase.slug),
+          "",
+          "Max",
+        ].join("\n"),
+      };
+    });
+  } catch (err) {
+    Logger.log("Payment announcement failed: " + bookingScrub_(err));
+  }
+}
+
+/** Puts a ceiling on how many payment checks strangers can make Stripe do. True means "not now". */
+function bookingPayThrottled_() {
+  const cache = CacheService.getScriptCache();
+  const key = "bookpaycheck:" + Math.floor(bookingNow_().ms / 60000);
+  const n = (Number(cache.get(key)) || 0) + 1;
+  cache.put(key, String(n), 120);
+  return n > BOOKING_PAY_CHECKS_PER_MINUTE;
+}
+
+/**
+ * The client has come back from Stripe. The Book page sends the Checkout Session id from the address; it is
+ * fetched from Stripe here (so it can't be faked), and if it's a paid booking payment the sessions are
+ * added straight away. No booking code is needed: the id is the proof, and all it can do is credit
+ * a payment that really happened, once.
+ */
+function handlePaymentReturn_(payload) {
+  try {
+    const id = String(payload.sessionId || "").trim();
+    if (!/^cs_(test|live)_[A-Za-z0-9]{8,200}$/.test(id)) return bookingFail_("bad-request", "That payment link didn't come back properly.");
+    const ss = bookingBook_();
+    if (!ss) return bookingFail_("not-set-up", "Booking isn't switched on yet. Please message Max.");
+    if (!bookingPaymentsOn_(bookingSettings_(ss))) return bookingFail_("payments-off", "Online payments aren't switched on yet. Please message Max.");
+    if (bookingPayThrottled_()) return jsonResponse_({ status: "success", state: "waiting" });
+
+    let session;
+    try {
+      session = bookingStripeGet_("checkout/sessions/" + id, {});
+    } catch (err) {
+      Logger.log("Payment return: " + bookingScrub_(err));
+      return bookingFail_("stripe", "We couldn't check your payment just now. Please try again in a minute.");
+    }
+    const ref = /^pt-([a-z0-9]+)$/.exec(String(session.client_reference_id || ""));
+    if (!ref || session.mode !== "payment") return bookingFail_("not-ours", "That payment isn't for a 1-on-1 booking. Please message Max.");
+    if (session.status !== "complete" || session.payment_status !== "paid") return jsonResponse_({ status: "success", state: "waiting", slug: ref[1] });
+
+    const result = bookingHandlePaidSession_(ss, session);
+    return jsonResponse_({ status: "success", state: result.state, slug: result.slug || ref[1], sessions: result.sessions });
+  } catch (err) {
+    return bookingServerError_("payment return", err);
+  }
+}
+
+// -- Checking Stripe in the background --------------------------------------
+
+/** Looks at Stripe for paid booking payments that haven't been credited yet. Returns { checked, credited, unmatched, errors } or { skipped }. */
+function syncBookingPayments_() {
+  const ss = bookingBook_();
+  if (!ss) return { skipped: "booking isn't set up" };
+  if (!bookingPaymentsOn_(bookingSettings_(ss))) return { skipped: "online payments are off, or there is no Stripe key" };
+
+  const props = PropertiesService.getScriptProperties();
+  const startedAt = Math.floor(bookingNow_().ms / 1000);
+  const since = Number(props.getProperty(BOOKING_STRIPE_SYNCED_PROPERTY)) || startedAt;
+  const sessions = bookingStripeList_("checkout/sessions", { status: "complete", "created[gte]": Math.max(0, since - BOOKING_SYNC_OVERLAP_SECONDS) }, 5);
+
+  const out = { checked: 0, credited: 0, unmatched: 0, errors: 0 };
+  sessions.forEach(function (session) {
+    if (!bookingIsOurs_(session)) return;
+    out.checked++;
+    try {
+      const r = bookingHandlePaidSession_(ss, session);
+      if (r.fresh && r.state === "credited") out.credited++;
+      if (r.fresh && r.state === "unmatched") out.unmatched++;
+    } catch (err) {
+      out.errors++;
+      Logger.log("Payment sync: " + bookingScrub_(err));
+    }
+  });
+  if (!out.errors) {
+    // Only move the marker on when every payment was dealt with; otherwise the next run looks at the same stretch again.
+    props.setProperty(BOOKING_STRIPE_SYNCED_PROPERTY, String(startedAt));
+    props.setProperty(BOOKING_STRIPE_LAST_SYNC_PROPERTY, bookingNow_().stamp);
+  }
+  return out;
+}
+
+/** What the 10-minute trigger runs (and safe to run by hand from the editor). */
+function syncBookingPayments() {
+  try {
+    return JSON.stringify(syncBookingPayments_());
+  } catch (err) {
+    Logger.log("Payment sync failed: " + bookingScrub_(err));
+    return "failed: " + bookingScrub_(err);
+  }
+}
+
+/** Run ONCE from the Apps Script editor: checks Stripe for booking payments every 10 minutes from now on. */
+function installBookingPaymentSync() {
+  ScriptApp.getProjectTriggers()
+    .filter(function (t) { return t.getHandlerFunction() === "syncBookingPayments"; })
+    .forEach(function (t) { ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger("syncBookingPayments").timeBased().everyMinutes(10).create();
+  Logger.log("Booking payments will be checked every 10 minutes.");
+  return "Booking payments will be checked every 10 minutes.";
+}
+
+/**
+ * Run from the editor any time: checks the payments set-up (Settings, the Stripe key, the Prices tab, the trigger,
+ * the last check and the ledger), logs it and emails it to Max. Reads only; changes nothing.
+ */
+function checkBookingPayments() {
+  const ss = bookingBook_();
+  if (!ss) throw new Error("Run setupBooking first.");
+  const settings = bookingSettings_(ss);
+  const lines = [];
+  let allGood = true;
+  const flag = function (ok, text) {
+    if (!ok) allGood = false;
+    lines.push((ok ? "OK      " : "TO DO   ") + text);
+  };
+
+  flag(settings.onlinePayments, 'Settings > "Online payments" is ' + (settings.onlinePayments ? "Yes" : "No (clients aren't sent to Stripe until it's Yes)"));
+
+  const key = bookingStripeKey_();
+  const mode = /^[rs]k_live_/.test(key) ? "LIVE" : /^[rs]k_test_/.test(key) ? "TEST" : "unknown";
+  if (!key) {
+    flag(false, "STRIPE_SECRET_KEY isn't set. Add it in Project Settings > Script Properties (a read-only restricted key).");
+  } else {
+    try {
+      bookingStripeGet_("checkout/sessions", { limit: 1 });
+      flag(true, "The Stripe key works (" + mode + " mode).");
+    } catch (err) {
+      flag(false, "Stripe refused the key (" + mode + " mode): " + bookingScrub_(err && err.message ? err.message : err));
+    }
+    if (/^sk_/.test(key)) flag(false, "That's a full secret key. A restricted key (rk_...) that can only READ Checkout Sessions is safer.");
+  }
+
+  const prices = bookingPrices_(ss);
+  const live = prices.filter(function (p) { return p.on; });
+  flag(live.length > 0, live.length + " row" + (live.length === 1 ? "" : "s") + " switched on in the Prices tab.");
+  live.forEach(function (p) {
+    const link = bookingSafePayLink_(p.link);
+    flag(Boolean(link) && p.sessions >= 1, p.name + " (" + p.lookup + ", " + p.sessions + " session" + (p.sessions === 1 ? "" : "s") + "): " + (link ? "has a Pay link" : "NO Pay link yet (it needs to start with " + BOOKING_PAY_LINK_PREFIX + "), so clients aren't offered it"));
+    // A test-mode link only ever shows up to a test-mode key, and a live link to a live one. Mixing them means payments are never found.
+    const linkIsTest = /^https:\/\/buy\.stripe\.com\/test_/.test(link);
+    if (link && mode !== "unknown") flag((mode === "TEST") === linkIsTest, p.name + ": " + ((mode === "TEST") === linkIsTest ? "the link and the key are both " + mode : "its Pay link is a " + (linkIsTest ? "TEST" : "LIVE") + " link but the key is a " + mode + " key, so its payments would never be found"));
+  });
+
+  const hasTrigger = ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === "syncBookingPayments"; });
+  flag(hasTrigger, hasTrigger ? "The 10-minute Stripe check is installed." : "The 10-minute Stripe check isn't installed. Run installBookingPaymentSync once.");
+  const last = PropertiesService.getScriptProperties().getProperty(BOOKING_STRIPE_LAST_SYNC_PROPERTY);
+  lines.push("        Last Stripe check: " + (last || "never"));
+
+  try {
+    const led = bookingLedger_(ss);
+    const count = function (status) { return led.table.rows.filter(function (r) { return String(r[led.c.status]).trim() === status; }).length; };
+    lines.push("        Payments so far: " + count("Credited") + " credited, " + count("Unmatched") + " unmatched, " + count("Crediting") + " half-finished.");
+    flag(count("Unmatched") === 0 && count("Crediting") === 0, "No payments are waiting for you to look at.");
+  } catch (err) {
+    flag(false, "The Payments tab: " + err);
+  }
+
+  const summary = allGood ? "ALL GOOD" : "NEEDS ATTENTION";
+  Logger.log("Booking payments check: " + summary);
+  lines.forEach(function (l) { Logger.log(l); });
+  try {
+    MailApp.sendEmail({ to: BOOKING_NOTIFY_DEFAULT, subject: "MaxFit booking payments: " + summary, body: lines.join("\n") });
+  } catch (err) {
+    Logger.log("Couldn't email the result: " + err);
+  }
+  return summary;
+}
+
 // ---- The three actions ----------------------------------------------------
 
 /** What the Book page needs in one go: the client's own bookings, whether they can book, and the times on offer. Read-only. */
@@ -2275,6 +3130,12 @@ function handleBookingInfo_(payload) {
     const rows = bookingRows_(ctx.ss);
     const mine = bookingMine_(rows, ctx.member, ctx.settings, ctx.now);
     const eligibility = bookingEligibility_(ctx.member, ctx.settings, mine.length);
+
+    // A client with nothing left can buy more on Stripe, if Max has switched that on and given at least one row a Pay link.
+    let buy = [];
+    if (!eligibility.canBook && eligibility.code === "no-sessions" && bookingPaymentsOn_(ctx.settings)) {
+      buy = bookingBuyOptions_(ctx.ss, ctx.member, bookingClientEmail_(ctx.ss, ctx.member.slug));
+    }
 
     let slots = [];
     if (eligibility.canBook) {
@@ -2292,11 +3153,14 @@ function handleBookingInfo_(payload) {
         canBook: eligibility.canBook,
         reason: eligibility.code,
         message: eligibility.message,
+        // Their own address, so the page can fill in the email box. Only given to someone who has proved who they are.
+        email: ctx.settings.emailClients ? bookingClientEmail_(ctx.ss, ctx.member.slug) : "",
       },
-      policy: { cancelHours: ctx.settings.cancelNoticeHours, minNoticeHours: ctx.settings.minNoticeHours, bookAheadDays: ctx.settings.bookAheadDays },
+      policy: { cancelHours: ctx.settings.cancelNoticeHours, minNoticeHours: ctx.settings.minNoticeHours, bookAheadDays: ctx.settings.bookAheadDays, emailClients: ctx.settings.emailClients },
       today: ctx.now.dateKey,
       // Only handed to someone who has proved who they are, so Max's number isn't given to anyone who asks.
       contact: ctx.settings.contactLink,
+      buy: buy,
       bookings: mine,
       slots: slots,
     });
@@ -2355,16 +3219,20 @@ function handleBookSession_(payload) {
     target.setValues([row]);
     SpreadsheetApp.flush(); // commit before the lock is released, or the next request could still read the slot as free
 
+    // The booking is saved, so nothing from here on may fail it: emails only report back.
+    const emailedTo = bookingConfirmClient_(ctx, payload.email, { id: id, date: date, startMin: startMin, endMin: candidate.endMin, minutes: candidate.minutes });
+
     const when = bookingLabel_(date, candidate.startMin);
     bookingNotify_(ctx.settings, "New booking: " + ctx.member.name + " — " + when, [
       ctx.member.name + " booked a 1-on-1 session.",
       "",
       "When: " + when + " to " + bookingClock12_(candidate.endMin) + " (" + candidate.minutes + " min)",
       ctx.member.unlimited ? "Plan: unlimited" : "1-on-1 sessions left: " + (ctx.member.sessionsLeft === null ? "not set" : ctx.member.sessionsLeft),
+    ].concat(bookingEmailedLine_(ctx.settings, emailedTo), [
       "",
       "To cancel it yourself, change its Status to Cancelled in the Bookings tab:",
       ctx.ss.getUrl(),
-    ]);
+    ]));
 
     return jsonResponse_({
       status: "success",
@@ -2376,6 +3244,7 @@ function handleBookSession_(payload) {
         minutes: candidate.minutes,
         canCancel: (bookingStartMs_(date, startMin) - ctx.now.ms) / 3600000 >= ctx.settings.cancelNoticeHours,
       },
+      emailedTo: emailedTo,
     });
   } catch (err) {
     return bookingServerError_("book", err);
@@ -2406,16 +3275,19 @@ function handleCancelBooking_(payload) {
     sheet.getRange(target.row, c.cancelledAt + 1).setNumberFormat("@").setValue(ctx.now.stamp);
     SpreadsheetApp.flush();
 
+    const emailedTo = bookingCancelNoteClient_(ctx, target);
+
     const when = bookingLabel_(target.date, target.startMin);
     bookingNotify_(ctx.settings, "Cancelled: " + ctx.member.name + " — " + when, [
       ctx.member.name + " cancelled their 1-on-1 session.",
       "",
       "Was: " + when + " to " + bookingClock12_(target.endMin) + " (" + target.minutes + " min)",
       "That time is open again.",
+    ].concat(bookingEmailedLine_(ctx.settings, emailedTo), [
       "",
       ctx.ss.getUrl(),
-    ]);
-    return jsonResponse_({ status: "success" });
+    ]));
+    return jsonResponse_({ status: "success", emailedTo: emailedTo });
   } catch (err) {
     return bookingServerError_("cancel", err);
   }
@@ -2468,7 +3340,7 @@ function bookingSelfTest() {
         setupBooking();
         scratch.deleteSheet(state.keep);
         const have = scratch.getSheets().map(function (s) { return s.getName(); });
-        [BOOKING_TABS.availability, BOOKING_TABS.timeOff, BOOKING_TABS.settings, BOOKING_TABS.clients, BOOKING_TABS.bookings, BOOKING_TABS.upcoming].forEach(function (n) {
+        [BOOKING_TABS.availability, BOOKING_TABS.timeOff, BOOKING_TABS.settings, BOOKING_TABS.clients, BOOKING_TABS.bookings, BOOKING_TABS.upcoming, BOOKING_TABS.prices, BOOKING_TABS.payments].forEach(function (n) {
           expect(have.indexOf(n) >= 0, "the " + n + " tab is missing");
         });
         const start = scratch.getSheetByName(BOOKING_TABS.availability).getRange(2, 3);
@@ -2486,7 +3358,7 @@ function bookingSelfTest() {
         table.rows.forEach(function (r) { expect(shape.test(r[c.code]), "a code looks wrong: " + r[c.code]); });
         state.member = { name: table.rows[0][c.name], slug: table.rows[0][c.slug], code: table.rows[0][c.code] };
         const again = issueBookingCodes();
-        expect(again.added === 0 && again.filled === 0, "running it again changed " + (again.added + again.filled) + " rows");
+        expect(again.added === 0 && again.filled === 0 && again.emails === 0, "running it again changed " + (again.added + again.filled + again.emails) + " rows");
         return table.rows.length + " clients have codes";
       });
 
@@ -2536,8 +3408,10 @@ function bookingSelfTest() {
       });
 
       step("Booking a time works and writes plain text", function () {
-        const r = call({ action: "bookSession", clientSlug: state.member.slug, code: state.member.code, date: state.date, start: state.first.start });
+        // The email box holds Max's own address here, so the confirmation is a real sample he can look at.
+        const r = call({ action: "bookSession", clientSlug: state.member.slug, code: state.member.code, date: state.date, start: state.first.start, email: BOOKING_NOTIFY_DEFAULT });
         expect(r.status === "success", "expected success, got " + r.status + "/" + r.code + " " + (r.message || ""));
+        expect(r.emailedTo === BOOKING_NOTIFY_DEFAULT, "the confirmation email wasn't sent (emailedTo is '" + r.emailedTo + "'). Check the log for 'Client email failed'.");
         state.bookingId = r.booking.id;
         const sheet = scratch.getSheetByName(BOOKING_TABS.bookings);
         expect(typeof sheet.getRange(2, 2).getValue() === "string" && sheet.getRange(2, 2).getDisplayValue() === state.date, "the Date cell came back as " + typeof sheet.getRange(2, 2).getValue());
@@ -2551,6 +3425,13 @@ function bookingSelfTest() {
         expect(!r.slots.some(function (s) { return s.date === state.date && s.start === state.first.start; }), "the booked time is still on offer");
       });
 
+      step("The client's email is remembered on their Clients row", function () {
+        const r = call({ action: "bookingInfo", clientSlug: state.member.slug, code: state.member.code });
+        expect(r.client.email === BOOKING_NOTIFY_DEFAULT, "bookingInfo gave the email as '" + r.client.email + "'");
+        expect(bookingClientEmail_(scratch, state.member.slug) === BOOKING_NOTIFY_DEFAULT, "the Clients tab doesn't hold the email");
+        return "the Clients tab has an Email column";
+      });
+
       step("The Upcoming tab shows the booking", function () {
         const row = bookingUpcomingRow_(scratch, function (r) { return r[0] === state.date; });
         expect(row[0] === state.date && row[1] === "06:00" && String(row[4]).replace(/^'/, "") === state.member.name, "Upcoming shows " + JSON.stringify(row));
@@ -2560,6 +3441,7 @@ function bookingSelfTest() {
       step("Cancelling works and the time comes back", function () {
         const r = call({ action: "cancelBooking", clientSlug: state.member.slug, code: state.member.code, id: state.bookingId });
         expect(r.status === "success", "expected success, got " + r.status + "/" + r.code + " " + (r.message || ""));
+        expect(r.emailedTo === BOOKING_NOTIFY_DEFAULT, "the cancellation email wasn't sent (emailedTo is '" + r.emailedTo + "')");
         expect(bookingRows_(scratch).filter(function (b) { return b.active; }).length === 0, "the booking is still active");
         const info = call({ action: "bookingInfo", clientSlug: state.member.slug, code: state.member.code });
         expect(info.slots.some(function (s) { return s.date === state.date && s.start === state.first.start; }), "the time didn't come back");
@@ -2578,6 +3460,44 @@ function bookingSelfTest() {
         const bad = call({ action: "bookingInfo", clientSlug: state.member.slug, code: state.member.code });
         expect(bad.contact === "", "an unsafe link was passed on: " + bad.contact);
         bookingSetSetting_(scratch, "Contact link", "");
+      });
+
+      step("The Prices and Payments tabs are there, with four prices", function () {
+        const prices = bookingPrices_(scratch);
+        expect(prices.length === 4 && prices[0].sessions === 1 && prices[2].sessions === 6, "the Prices tab was read as " + JSON.stringify(prices));
+        const led = bookingLedger_(scratch);
+        expect(led.c.id === 0 && led.c.status === 9, "the Payments tab has its columns in an unexpected order");
+        return prices.length + " prices";
+      });
+
+      step("A Pay link becomes a Buy option for the right client, and only if it's a Stripe link", function () {
+        const sheet = scratch.getSheetByName(BOOKING_TABS.prices);
+        sheet.getRange(2, 6).setValue("https://buy.stripe.com/test_selftest");
+        sheet.getRange(3, 6).setValue("http://not-stripe.example/pay");
+        const options = bookingBuyOptions_(scratch, { slug: state.member.slug }, "");
+        sheet.getRange(2, 6).setValue("");
+        sheet.getRange(3, 6).setValue("");
+        expect(options.length === 1 && options[0].url === "https://buy.stripe.com/test_selftest?client_reference_id=pt-" + state.member.slug, "the Buy options were " + JSON.stringify(options));
+      });
+
+      step("The Payments ledger keeps a row as plain text and can update it", function () {
+        const led = bookingLedger_(scratch);
+        const row = bookingLedgerAppend_(led, { id: "cs_test_selftest0001", paidAt: "2026-01-01 09:00", slug: "selftest", sessions: "1", before: "0", status: "Crediting" });
+        const found = bookingLedgerFind_(bookingLedger_(scratch), "cs_test_selftest0001");
+        expect(found && found.status === "Crediting" && found.before === 0 && found.row === row, "the row came back as " + JSON.stringify(found));
+        bookingLedgerUpdate_(led, row, { after: "1", status: "Credited" });
+        const done = bookingLedgerFind_(bookingLedger_(scratch), "cs_test_selftest0001");
+        expect(done && done.status === "Credited" && done.after === 1, "the update came back as " + JSON.stringify(done));
+        const sheet = scratch.getSheetByName(BOOKING_TABS.payments);
+        expect(typeof sheet.getRange(row, 1).getValue() === "string", "the session id cell isn't plain text");
+        sheet.getRange(row, 1, 1, led.table.header.length).setValues([led.table.header.map(function () { return ""; })]); // tidy up: it's only a test row
+      });
+
+      step("The Stripe key, if you've added one, can read your payments", function () {
+        const key = bookingStripeKey_();
+        if (!key) return "no key yet (fine until you switch on online payments)";
+        bookingStripeGet_("checkout/sessions", { limit: 1 });
+        return (/^[rs]k_live_/.test(key) ? "LIVE" : "TEST") + " mode key works";
       });
     }
   } catch (err) {
@@ -2601,6 +3521,7 @@ function bookingSelfTest() {
         lines.join("\n"),
         "",
         failed.length ? "Send this email back and it can be fixed." : "Booking works on real Google. Nothing in your real booking sheet or CRM was changed.",
+        failed.length ? "" : "Two emails marked [Self-test sample] came just before this one: the booking confirmation and the cancellation note a client gets. Have a look at them (the confirmation has the calendar file attached).",
         scratch ? "The scratch spreadsheet it used (safe to delete): " + scratch.getUrl() : "",
       ].join("\n"),
     });
