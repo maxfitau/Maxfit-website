@@ -2692,3 +2692,314 @@ body.vt-lightbox-open { overflow: hidden; }
   .plan__list { grid-template-columns: 1fr; }
   .plan__step { border-right: none; }
 }
+
+/* ---------- Reviews ---------- */
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* The section and its parts start [hidden] and are revealed by js/reviews.js
+   only once something is set up; keep author display rules from overriding that. */
+.reviews [hidden] { display: none !important; }
+
+.reviews__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 32px;
+  max-width: 560px;
+  margin: 0 auto;
+}
+
+.reviews.has-form .reviews__layout {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  max-width: none;
+  gap: 48px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .reviews.has-form .reviews__layout {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 560px;
+    gap: 40px;
+  }
+}
+
+.review-form,
+.review-thanks,
+.review-google-only {
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 28px;
+}
+
+@media (max-width: 600px) {
+  .review-form,
+  .review-thanks,
+  .review-google-only { padding: 22px; }
+}
+
+.review-form {
+  display: grid;
+  gap: 22px;
+}
+
+.review-form__group {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.review-form__label {
+  padding: 0;
+  font-family: var(--font-head);
+  font-size: 0.8rem;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.review-form input[type="text"],
+.review-form textarea {
+  width: 100%;
+  padding: 14px 16px;
+  background: var(--bg);
+  color: var(--white);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.review-form textarea {
+  min-height: 130px;
+  resize: vertical;
+}
+
+.review-form input[type="text"]::placeholder,
+.review-form textarea::placeholder {
+  color: var(--dim);
+  opacity: 0.8;
+}
+
+.review-form input[type="text"]:focus,
+.review-form textarea:focus {
+  outline: none;
+  border-color: var(--red);
+  box-shadow: 0 0 0 3px rgba(224, 0, 0, 0.25);
+}
+
+.review-form__count {
+  justify-self: end;
+  font-size: 0.75rem;
+  color: var(--dim);
+}
+
+.review-form__check {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 0.95rem;
+  color: #ccc;
+  cursor: pointer;
+}
+
+.review-form__check input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 4px;
+  accent-color: var(--red);
+}
+
+/* Honeypot: real people never see or fill this, bots usually do. */
+.review-form__hp {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.review-form__error {
+  margin: 0;
+  padding: 10px 14px;
+  border-left: 3px solid var(--red);
+  background: rgba(224, 0, 0, 0.08);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: 0.95rem;
+}
+
+.review-form .btn { justify-self: start; }
+.review-form .btn[disabled] { opacity: 0.6; cursor: default; }
+
+/* Star picker: the radios are DOM-ordered 5 to 1 and displayed in reverse, so
+   "this star and every star before it" is just the ~ sibling selector. */
+.stars {
+  position: relative;
+  display: inline-flex;
+  flex-direction: row-reverse;
+  justify-content: flex-end;
+  gap: 4px;
+  align-self: start;
+}
+
+.stars input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
+.stars label {
+  padding: 3px;
+  line-height: 0;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.stars svg {
+  width: 34px;
+  height: 34px;
+  fill: none;
+  stroke: var(--line-strong);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  transition: fill 0.15s, stroke 0.15s, transform 0.15s;
+}
+
+.stars label:hover svg,
+.stars label:hover ~ label svg,
+.stars input:checked ~ label svg {
+  fill: var(--red);
+  stroke: var(--red);
+}
+
+.stars label:hover svg { transform: scale(1.08); }
+
+.stars input:focus-visible + label {
+  outline: 2px solid var(--white);
+  outline-offset: 2px;
+}
+
+.review-thanks { display: grid; gap: 10px; }
+.review-thanks:focus { outline: none; }
+.review-thanks__title { margin: 0; }
+.review-thanks p { margin: 0; color: #ccc; }
+
+.review-thanks__google {
+  display: grid;
+  gap: 14px;
+  justify-items: start;
+  margin-top: 14px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+}
+
+.review-thanks__hint {
+  font-size: 0.9rem;
+  color: var(--dim) !important;
+}
+
+.review-thanks__copy {
+  margin: 0;
+  padding: 14px 16px;
+  width: 100%;
+  border-left: 3px solid var(--red);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--bg);
+  color: #ccc;
+  font-size: 0.95rem;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.review-google-only {
+  display: grid;
+  gap: 14px;
+  justify-items: start;
+}
+
+.review-google-only p { margin: 0; color: #ccc; }
+.reviews.has-form .review-google-only { margin-top: 20px; }
+
+.reviews__read-title {
+  margin: 0 0 20px;
+  font-size: 1rem;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.reviews__list {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.reviews__list:empty { margin-bottom: 0; }
+
+.reviews__empty {
+  margin: 0 0 16px;
+  color: var(--dim);
+}
+
+.review-card {
+  padding: 22px 24px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.review-card__stars {
+  display: flex;
+  gap: 3px;
+  margin-bottom: 12px;
+}
+
+.review-card__stars svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: var(--line-strong);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.review-card__stars svg.is-filled {
+  fill: var(--red);
+  stroke: var(--red);
+}
+
+.review-card__text {
+  margin: 0 0 14px;
+  color: #ccc;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.review-card__meta {
+  margin: 0;
+  font-family: var(--font-head);
+  font-size: 0.85rem;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--dim);
+  white-space: pre-wrap;
+}
