@@ -13,7 +13,6 @@
 
 const SESSIONS_SHEET_GID = 1169726169; // "Sessions Remaining"
 const ATTENDANCE_SHEET_GID = 902061668; // attendance log
-const REFERRALS_SHEET_GID = 1148655449; // "Refferals"
 const LEADS_SHEET_GID = 846176456; // "Leads"
 const TIMEZONE = "Australia/Sydney";
 
@@ -33,7 +32,7 @@ const GROCERY_SHEET_NAME = "Grocery Items";
 // Changes whenever this file does, and is shown when you open the deployed
 // URL in a browser (see doGet) — the quick way to tell whether a redeploy
 // actually took, instead of guessing from behaviour.
-const BACKEND_VERSION = "2026-09-28c";
+const BACKEND_VERSION = "2026-09-28d";
 
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -441,7 +440,7 @@ function handleCheckIn_(payload) {
     paidSessionsCount = (paidRaw !== "" && Number.isFinite(paidNum) ? paidNum : 0) + 1;
     sheet.getRange(rowIndex + 1, col.paidSessions + 1).setValue(paidSessionsCount);
 
-    maybeApplyReferralBonus_(sheet, rowIndex + 1, paidSessionsCount);
+    maybeApplyReferralBonus_(sheet, rowIndex + 1);
     markReferralCounted_(sheet, rowIndex + 1, paidSessionsCount);
   }
 
@@ -507,13 +506,9 @@ function handleSignup_(payload) {
     }
   }
 
-  // ?ref= is either a referral partner's code (their red card, on the
-  // Refferals tab) or a client's card id (the Refer a Friend QR on every
-  // client's card). Either way the Lead gets a plain name in Referred By.
-  let referrerName = "";
-  if (referralCode) {
-    referrerName = findReferrerNameByCode_(referralCode) || findClientNameBySlug_(referralCode);
-  }
+  // ?ref= is a client's card id (the Refer a Friend QR on every client's
+  // card). The Lead gets that client's name in Referred By.
+  const referrerName = referralCode ? findClientNameBySlug_(referralCode) : "";
 
   const today = Utilities.formatDate(new Date(), TIMEZONE, "yyyy-MM-dd");
   const newRow = new Array(leadsHeader.length).fill("");
@@ -573,35 +568,28 @@ function isEmailAlreadyPresent_(sheet, emailCol, email) {
 
 /**
  * Pays the referrer for ONE paid session by the client on `row` (Max's rule,
- * 2026-09-28 — every paid session counts the same, group or 1-on-1):
+ * 2026-09-28 — every paid session counts the same, group or 1-on-1): the
+ * client named in this row's "Referred By" cell (capitals, spaces and
+ * punctuation don't matter) gets 1 punch on their loyalty card, +1 in their
+ * "Referral Punches" cell (Max doesn't give clients cash). If that completes
+ * a card of 10, "Free Session Owed" = Y, the same way a Fuel punch does, so
+ * check-in offers the free session next visit. A blank Referred By, or a name
+ * that isn't a client, pays nothing — only clients refer.
  *
- * - A referrer who's a client gets 1 punch on their loyalty card: +1 in their
- *   "Referral Punches" cell on Sessions Remaining (Max doesn't give clients
- *   cash). If that completes a card of 10, "Free Session Owed" = Y, the same
- *   way a Fuel punch does, so check-in offers the free session next visit.
- * - Anyone else — a referral partner on the Refferals tab — gets 5 tokens in
- *   their "Tokens Owed" there, and their "Clients Referred" goes up by 1 on
- *   the friend's first paid session.
- *
- * The referrer is whoever Max typed in this client's "Referred By" cell (see
- * referrerNameFor_). Called once per paid session, from a check-in scan and
- * from a hand edit of Paid Sessions (onEdit); both keep "Referral Sessions
- * Counted" up to date, so no session is ever paid for twice.
+ * Called once per paid session, from a check-in scan and from a hand edit of
+ * Paid Sessions (onEdit); both keep "Referral Sessions Counted" up to date,
+ * so no session is ever paid for twice.
  */
-function maybeApplyReferralBonus_(sheet, row, paidSessionsCount) {
+function maybeApplyReferralBonus_(sheet, row) {
   const header = ensureColumns_(sheet, [REFERRAL_PUNCHES_COLUMN, "Free Session Owed"]);
   const col = sessionsReferralColumns_(header);
-  const referredBy = referrerNameFor_(sheet, col, row);
+  const referredBy = col.referredBy >= 0
+    ? String(sheet.getRange(row, col.referredBy + 1).getValue() || "").trim()
+    : "";
   if (!referredBy) return;
 
   const referrerRow = findClientRowBySlug_(sheet, col, referredBy);
-  if (referrerRow === row) return; // nobody earns from their own sessions
-  if (referrerRow > 0) {
-    addReferralPunch_(sheet, col, referrerRow);
-    return;
-  }
-  creditReferralTokens_(referredBy, TOKENS_PER_REFERRED_SESSION);
-  if (paidSessionsCount === 1) incrementClientsReferred_(referredBy);
+  if (referrerRow > 0 && referrerRow !== row) addReferralPunch_(sheet, col, referrerRow); // nobody earns from their own sessions
 }
 
 /** +1 Referral Punch for the client on `row`; sets "Free Session Owed" when that fills a card of 10 (class visits + Fuel punches + referral punches). */
@@ -615,29 +603,6 @@ function addReferralPunch_(sheet, col, row) {
   }
 }
 
-/** Finds a friend's row in the Referrals tab. Returns null if the tab, the friend, or a needed column isn't there. */
-function findReferralsRow_(friendName, columnNames) {
-  // A missing or renamed Refferals tab shouldn't stop a client referrer being paid.
-  let refSheet;
-  try {
-    refSheet = getSheetByGid_(REFERRALS_SHEET_GID);
-  } catch (err) {
-    return null;
-  }
-  const refHeader = refSheet.getRange(1, 1, 1, refSheet.getLastColumn()).getValues()[0];
-  const rCol = { friendName: findColumn_(refHeader, "Friend Name") };
-  for (const name of columnNames) rCol[name] = findColumn_(refHeader, name);
-  if (rCol.friendName < 0) return null;
-
-  const lastRow = refSheet.getLastRow();
-  if (lastRow < 2) return null;
-  const names = refSheet.getRange(2, rCol.friendName + 1, lastRow - 1, 1).getValues().flat();
-  const idx = names.findIndex((n) => String(n || "").trim().toLowerCase() === friendName.toLowerCase());
-  if (idx < 0) return null;
-
-  return { sheet: refSheet, col: rCol, row: idx + 2 };
-}
-
 // ---- Referral payout when Paid Sessions is edited BY HAND ------------------
 //
 // The payout above also runs off a hand-typed Paid Sessions number, so a
@@ -649,7 +614,6 @@ function findReferralsRow_(friendName, columnNames) {
 
 const REFERRAL_COUNTER_COLUMN = "Referral Sessions Counted";
 const REFERRAL_PUNCHES_COLUMN = "Referral Punches";
-const TOKENS_PER_REFERRED_SESSION = 5; // referral partners only; clients get a punch instead
 
 // A hand edit that raises Paid Sessions by more than this in one go is far
 // more likely a typo (30 for 3) than a real catch-up, and paying out for a
@@ -761,7 +725,7 @@ function applyPaidSessionsEdit_(sheet, row, oldCount, newCount, editedRange) {
       return;
     }
     for (let k = counted + 1; k <= newCount; k++) {
-      maybeApplyReferralBonus_(sheet, row, k);
+      maybeApplyReferralBonus_(sheet, row);
     }
   }
 
@@ -777,25 +741,6 @@ function markReferralCounted_(sheet, row, count) {
   const raw = cell.getValue();
   const current = raw === "" || raw == null ? 0 : Number(raw);
   if (!Number.isFinite(current) || count > current) cell.setValue(count);
-}
-
-/**
- * WHO referred the client on `row`, as a name the payout can look up (a
- * client's Name, or a friend's name on the Refferals tab): whatever Max typed
- * in their "Referred By" cell, or "" if it's blank.
- */
-function referrerNameFor_(sheet, col, row) {
-  const typed = col.referredBy >= 0
-    ? String(sheet.getRange(row, col.referredBy + 1).getValue() || "").trim()
-    : "";
-  return typed ? resolveReferrerText_(sheet, col, typed) : "";
-}
-
-/** Turns what was typed in "Referred By" into a referrer's name: a client's name (spacing and capitals don't matter), a partner's Referral Code, or else the text as typed. */
-function resolveReferrerText_(sheet, col, text) {
-  const clientRow = findClientRowBySlug_(sheet, col, text);
-  if (clientRow > 0) return String(sheet.getRange(clientRow, col.name + 1).getValue() || "").trim();
-  return findReferrerNameByCode_(text) || text;
 }
 
 /** The Sessions Remaining row (1-based) of the client whose name matches `name` once lowercased and stripped of spaces and punctuation, or -1. */
@@ -815,30 +760,6 @@ function findClientNameBySlug_(slug) {
   const col = { name: findColumn_(header, "Name") };
   const row = findClientRowBySlug_(sheet, col, slug);
   return row > 0 ? String(sheet.getRange(row, col.name + 1).getValue() || "").trim() : "";
-}
-
-/** The friend on the Refferals tab whose Referral Code is `code`, or "". */
-function findReferrerNameByCode_(code) {
-  let refSheet;
-  try {
-    refSheet = getSheetByGid_(REFERRALS_SHEET_GID);
-  } catch (err) {
-    return "";
-  }
-  const lastRow = refSheet.getLastRow();
-  const lastCol = refSheet.getLastColumn();
-  if (lastRow < 2 || lastCol < 1) return "";
-  const header = refSheet.getRange(1, 1, 1, lastCol).getValues()[0];
-  const codeCol = findColumn_(header, "Referral Code");
-  const nameCol = findColumn_(header, "Friend Name");
-  if (codeCol < 0 || nameCol < 0) return "";
-
-  const wanted = code.toLowerCase();
-  const values = refSheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
-  for (const r of values) {
-    if (String(r[codeCol] || "").trim().toLowerCase() === wanted) return String(r[nameCol] || "").trim();
-  }
-  return "";
 }
 
 /**
@@ -1342,24 +1263,6 @@ function handleDeleteGroceryItem_(payload) {
   deleteMatchingRows_(sheet, lastRow, idCol, id, -1, "");
 
   return jsonResponse_({ status: "success" });
-}
-
-function creditReferralTokens_(friendName, amount) {
-  const found = findReferralsRow_(friendName, ["Tokens Owed"]);
-  if (!found || found.col["Tokens Owed"] < 0) return;
-
-  const cell = found.sheet.getRange(found.row, found.col["Tokens Owed"] + 1);
-  const current = Number(String(cell.getValue() || "").replace(/[^0-9.]/g, "")) || 0;
-  cell.setValue(current + amount);
-}
-
-function incrementClientsReferred_(friendName) {
-  const found = findReferralsRow_(friendName, ["Clients Referred"]);
-  if (!found || found.col["Clients Referred"] < 0) return;
-
-  const cell = found.sheet.getRange(found.row, found.col["Clients Referred"] + 1);
-  const current = Number(cell.getValue()) || 0;
-  cell.setValue(current + 1);
 }
 
 // ===========================================================================

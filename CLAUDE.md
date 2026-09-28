@@ -5,7 +5,7 @@ Max French runs MaxFit, a personal-training business in Inner West Sydney with *
 ## Scope rules (from Max)
 
 - The **membership card** (`card/`) and the **macro tracker** (inside the card) are fair game.
-- **Ask Max first** before touching the marketing site: `index.html`, `styles.css`, `script.js` (and the other root-level pages: `join.*`, `referrer.*`, `checkin.*`).
+- **Ask Max first** before touching the marketing site: `index.html`, `styles.css`, `script.js` (and the other root-level pages: `join.*`, `checkin.*`).
 - Don't touch `workout/` or `grocery/` unless Max asks.
 
 ## Stack
@@ -58,20 +58,17 @@ Clients book from the card: **Book a session** (Card tab) opens `card/book.html`
 
 ## Referrals (simplified 2026-09-28)
 
-Max found the first version (a personal code per client, 20 tokens at the 3rd paid session then 5 per 1-on-1, free classes for "Paid In Classes") too complex, and asked for: no codes, a QR on the card that opens the sign-up form, one "who referred them" column, and a simple reward. He doesn't give clients cash.
+Max found the first version (a personal code per client, 20 tokens at the 3rd paid session then 5 per 1-on-1, free classes for "Paid In Classes") too complex, and asked for: no codes, a QR on the card that opens the sign-up form, one "who referred them" column, and a simple reward. He doesn't give clients cash. He then had the red referral-partner cards (`referrer.html`, the Refferals tab's codes and 5-token payouts) removed altogether: **only clients refer, and the only reward is a punch.**
 
 - **The card:** **Refer a Friend** (Card tab) opens `card/refer.html`: a QR and a Share button for `join.html?ref=<card id>` (the member's slug), plus "Punches From Referrals". No codes, nothing to issue.
-- **Sign-up:** `handleSignup_` resolves `?ref=` as a Refferals-tab partner code first (`findReferrerNameByCode_`, the red `referrer.html` cards, unchanged), then as a client's card id (`findClientNameBySlug_`), and writes the plain name into the Lead's **Referred By**. `join.js` shows "Referred by <Name>" before submitting either way (a client ref needs a second sheet read, so it appears a moment later).
-- **Max's one manual step:** when a lead becomes a client he types the referrer's name (or a partner code) into their **Referred By** cell on Sessions Remaining. Matching ignores capitals, spaces and punctuation (`findClientRowBySlug_`).
-- **The reward, one per paid session (group or 1-on-1, never a free one):** `maybeApplyReferralBonus_(sheet, row, paidSessionsCount)`.
-  - Referrer is a client (their name is on Sessions Remaining, however they were typed or coded): +1 **Referral Punches** on their row. If class visits + Nutrition Punches + Referral Punches hits a multiple of 10, **Free Session Owed** = Y, exactly like a Fuel punch.
-  - Otherwise (a partner on the Refferals tab): +5 **Tokens Owed** there, and **Clients Referred** +1 on the friend's first paid session.
-  - Nobody earns from their own sessions.
+- **Sign-up:** `handleSignup_` resolves `?ref=` as a client's card id (`findClientNameBySlug_`) and writes their name into the Lead's **Referred By**; anything else (such as an old partner code) is ignored. `join.js` shows "Referred by <Name>" before submitting.
+- **Max's one manual step:** when a lead becomes a client he types the referrer's name into their **Referred By** cell on Sessions Remaining. Matching ignores capitals, spaces and punctuation (`findClientRowBySlug_`).
+- **The reward, one per paid session (group or 1-on-1, never a free one):** `maybeApplyReferralBonus_(sheet, row)` gives the client named in Referred By +1 **Referral Punches**. If class visits + Nutrition Punches + Referral Punches hits a multiple of 10, **Free Session Owed** = Y, exactly like a Fuel punch. A name that isn't a client pays nothing, and nobody earns from their own sessions.
 - **Both paths still run:** a check-in scan, and a hand edit of "Paid sessions" (the simple `onEdit` trigger). "Referral Sessions Counted" stops any session being paid twice, and a jump of more than 10 in one edit is treated as a typo (no pay, a note on the cell).
 - **Loyalty card count everywhere:** Total Classes Attended + Nutrition Punches + Referral Punches, in `card/app.js`, `checkin.js` and the Fuel backend (`crmIndex_`/`awardPunches_` in Macros.gs, `2026-09-28b`, so a Fuel punch and a referral punch fill the same card).
-- **Removed:** personal Referral Codes (`issueReferralCodes`, `findClientNameByReferralCode_`), the "Referred Clients" reverse lookup, "Paid In Classes", "Has Paid 1-on-1", the 20-token milestone and client-side Tokens Owed / Clients Referred. Those sheet columns are now unused and Max can delete them (Referral Code, Referred Clients, Clients Referred and Tokens Owed on Sessions Remaining; Paid In Classes; Has Paid 1-on-1; the older Referral Bonus Applied).
-- **Testing:** a scratchpad page runs the real `Code.gs` against fake sheets (45 checks: client punch, the card-filling punch, free sessions, partner tokens, a partner code for someone who is a client, self/blank/unknown referrers, name matching, hand edits including the typo guard and a blank counter, sign-up by card id and code, `setupReferralTracking`). Don't commit it.
-- **Deploy:** paste `Code.gs` (`BACKEND_VERSION 2026-09-28c`), Save, run `setupReferralTracking` (adds Referral Punches, safe to re-run), Deploy -> New version. Paste `Macros.gs` (`2026-09-28b`) into the Fuel project, New version. Then push the site.
+- **Removed:** personal Referral Codes (`issueReferralCodes`, `findClientNameByReferralCode_`), the "Referred Clients" reverse lookup, "Paid In Classes", "Has Paid 1-on-1", the 20-token milestone, all tokens, and the red partner cards (`referrer.html/js/css`, `referrer-manifest.json`, `referrer-icons/`, `fetchReferrals()` in sheet.js, and every Refferals-tab read or write in Code.gs). Nothing reads the Refferals tab any more, so Max can delete it, along with these unused Sessions Remaining columns: Referral Code, Referred Clients, Clients Referred, Tokens Owed, Paid In Classes, Has Paid 1-on-1 and the older Referral Bonus Applied.
+- **Testing:** a scratchpad page runs the real `Code.gs` against fake sheets (48 checks: client punch, the card-filling punch, free sessions, old partner codes and non-clients paying nobody, working with the Refferals tab deleted, self/blank/unknown referrers, name matching, hand edits including the typo guard and a blank counter, sign-up by card id, `setupReferralTracking`). Don't commit it.
+- **Deploy:** paste `Code.gs` (`BACKEND_VERSION 2026-09-28d`), Save, run `setupReferralTracking` (adds Referral Punches, safe to re-run), Deploy -> New version. Paste `Macros.gs` (`2026-09-28b`) into the Fuel project, New version. Then push the site.
 
 ## Macro tracker: phase plan
 
