@@ -33,7 +33,7 @@ const GROCERY_SHEET_NAME = "Grocery Items";
 // Changes whenever this file does, and is shown when you open the deployed
 // URL in a browser (see doGet) — the quick way to tell whether a redeploy
 // actually took, instead of guessing from behaviour.
-const BACKEND_VERSION = "2026-09-28b";
+const BACKEND_VERSION = "2026-09-28c";
 
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -335,12 +335,7 @@ function handleCheckIn_(payload) {
     checkInToken: findColumn_(header, "Check-in Token"),
     totalAttended: findColumn_(header, "Total Classes Attended"),
     paidSessions: findColumn_(header, "Paid Sessions"),
-    hasPaidOneOnOne: findColumn_(header, "Has Paid 1-on-1"),
-    referredBy: findColumn_(header, "Referred By"),
-    groupSessions: findColumn_(header, "Group Sessions Remaining"),
-    paidInClasses: findColumn_(header, "Paid In Classes"),
-    tokensOwed: findColumn_(header, "Tokens Owed"),
-    freeOwed: findColumn_(header, "Free Session Owed"), // set by the MaxFit Macros script
+    freeOwed: findColumn_(header, "Free Session Owed"), // set by a Fuel or referral punch
   };
 
   if (col.checkInToken < 0) {
@@ -402,8 +397,8 @@ function handleCheckIn_(payload) {
     sheet.getRange(rowIndex + 1, col.lastAttended + 1).setValue(today);
   }
 
-  // A nutrition punch (FUEL) completed their card and this is the free
-  // session it earned — it's been used now.
+  // A bonus punch (FUEL or a referral) completed their card and this is the
+  // free session it earned — it's been used now.
   if (freeSession && col.freeOwed >= 0 && String(row[col.freeOwed] || "").trim().toUpperCase() === "Y") {
     sheet.getRange(rowIndex + 1, col.freeOwed + 1).setValue("");
   }
@@ -437,10 +432,8 @@ function handleCheckIn_(payload) {
   attendanceSheet.appendRow(newRow);
 
   // "Paid Sessions" only counts real, paid attendance — a free bonus
-  // session (freeSession) doesn't move a referred client any closer to
-  // their referrer's payout. The referral payout itself runs right here,
-  // driven entirely off this count and today's session type — no more
-  // manually flipping a Payment Status cell by hand for every client.
+  // session (freeSession) doesn't pay their referrer anything. The referral
+  // payout runs right here, once per paid session, group or 1-on-1.
   let paidSessionsCount = null;
   if (!freeSession && col.paidSessions >= 0) {
     const paidRaw = String(row[col.paidSessions] || "").trim();
@@ -448,18 +441,7 @@ function handleCheckIn_(payload) {
     paidSessionsCount = (paidRaw !== "" && Number.isFinite(paidNum) ? paidNum : 0) + 1;
     sheet.getRange(rowIndex + 1, col.paidSessions + 1).setValue(paidSessionsCount);
 
-    // Gates the starred/free-classes reward below — the very first free
-    // class a starred referrer earns requires their friend to have paid
-    // for a 1-on-1 specifically, not just any session.
-    let hasPaidOneOnOne = col.hasPaidOneOnOne >= 0
-      ? String(row[col.hasPaidOneOnOne] || "").trim().toLowerCase() === "y"
-      : false;
-    if (sessionType === "one-on-one" && col.hasPaidOneOnOne >= 0 && !hasPaidOneOnOne) {
-      sheet.getRange(rowIndex + 1, col.hasPaidOneOnOne + 1).setValue("Y");
-      hasPaidOneOnOne = true;
-    }
-
-    maybeApplyReferralBonus_(sheet, col, rowIndex + 1, paidSessionsCount, sessionType, hasPaidOneOnOne);
+    maybeApplyReferralBonus_(sheet, rowIndex + 1, paidSessionsCount);
     markReferralCounted_(sheet, rowIndex + 1, paidSessionsCount);
   }
 
@@ -525,18 +507,12 @@ function handleSignup_(payload) {
     }
   }
 
-  // A referral code can be a Refferals-tab Referral Code (the 7 hand-picked
-  // partners' red cards), or a regular client's own personal Referral Code —
-  // shown on their membership card since 2026-09-28.
+  // ?ref= is either a referral partner's code (their red card, on the
+  // Refferals tab) or a client's card id (the Refer a Friend QR on every
+  // client's card). Either way the Lead gets a plain name in Referred By.
   let referrerName = "";
   if (referralCode) {
-    referrerName = findReferrerNameByCode_(referralCode);
-    if (!referrerName) {
-      const sessionsSheet = getSheetByGid_(SESSIONS_SHEET_GID);
-      const sessionsHeader = sessionsSheet.getRange(1, 1, 1, sessionsSheet.getLastColumn()).getValues()[0];
-      const sCol = { name: findColumn_(sessionsHeader, "Name"), referralCode: findColumn_(sessionsHeader, "Referral Code") };
-      referrerName = findClientNameByReferralCode_(sessionsSheet, sCol, referralCode);
-    }
+    referrerName = findReferrerNameByCode_(referralCode) || findClientNameBySlug_(referralCode);
   }
 
   const today = Utilities.formatDate(new Date(), TIMEZONE, "yyyy-MM-dd");
@@ -596,82 +572,46 @@ function isEmailAlreadyPresent_(sheet, emailCol, email) {
 }
 
 /**
- * Referral payout — runs as part of check-in itself (handleCheckIn_ calls
- * this after bumping "Paid Sessions" and "Has Paid 1-on-1"), not as a
- * separate manual step. Every qualifying check-in re-evaluates the payout;
- * nothing here needs a one-time "already applied" guard because it keys
- * off paidSessionsCount, which only ever increases by exactly 1 per real
- * check-in, so each threshold below is only ever crossed once.
+ * Pays the referrer for ONE paid session by the client on `row` (Max's rule,
+ * 2026-09-28 — every paid session counts the same, group or 1-on-1):
  *
- * "Clients Referred" ticks up once, the moment the referred client hits
- * their 3rd paid session — regardless of which reward type below applies.
- * Same split as Tokens Owed: the referrer's own cell on Sessions Remaining
- * if they're a client, else the Refferals tab.
+ * - A referrer who's a client gets 1 punch on their loyalty card: +1 in their
+ *   "Referral Punches" cell on Sessions Remaining (Max doesn't give clients
+ *   cash). If that completes a card of 10, "Free Session Owed" = Y, the same
+ *   way a Fuel punch does, so check-in offers the free session next visit.
+ * - Anyone else — a referral partner on the Refferals tab — gets 5 tokens in
+ *   their "Tokens Owed" there, and their "Clients Referred" goes up by 1 on
+ *   the friend's first paid session.
  *
- * Two reward types, depending on the referrer:
- *
- * - Referrer is a client marked "Paid In Classes" (Y) — paid in free group
- *   classes instead of tokens. The first class requires their friend to
- *   have paid for a 1-on-1 specifically (not just any session type); after
- *   that, every 2 more paid sessions of any type earns 1 more free class
- *   (3 paid -> 2 classes, 5 paid -> 3 classes, ...).
- * - Any other referrer (a client not marked "Paid In Classes", or a friend
- *   who isn't a client at all) — paid in tokens: 20 the moment their
- *   friend hits 3 paid sessions, then +5 for every paid 1-on-1 after that
- *   (group sessions after the milestone don't earn anything further).
- *   Stored on the referrer's own "Tokens Owed" cell if they're a client,
- *   or in the Referrals tab if they're not.
- *
- * Who the referrer is comes from referrerNameFor_ below: whatever's typed in
- * the client's "Referred By" cell (a name, the referrer's Referral Code, or
- * a client's unique check-in code), or — if that's blank — the referrer whose
- * row lists this client's own unique code under "Referred Clients".
+ * The referrer is whoever Max typed in this client's "Referred By" cell (see
+ * referrerNameFor_). Called once per paid session, from a check-in scan and
+ * from a hand edit of Paid Sessions (onEdit); both keep "Referral Sessions
+ * Counted" up to date, so no session is ever paid for twice.
  */
-function maybeApplyReferralBonus_(sheet, col, row, paidSessionsCount, sessionType, hasPaidOneOnOne) {
+function maybeApplyReferralBonus_(sheet, row, paidSessionsCount) {
+  const header = ensureColumns_(sheet, [REFERRAL_PUNCHES_COLUMN, "Free Session Owed"]);
+  const col = sessionsReferralColumns_(header);
   const referredBy = referrerNameFor_(sheet, col, row);
   if (!referredBy) return;
 
-  const lastRow = sheet.getLastRow();
-  const names = col.name >= 0 && lastRow >= 2
-    ? sheet.getRange(2, col.name + 1, lastRow - 1, 1).getValues().flat()
-    : [];
-  const referrerRowOffset = names.findIndex(
-    (n) => String(n || "").trim().toLowerCase() === referredBy.toLowerCase()
-  );
-  const referrerIsClient = referrerRowOffset >= 0;
-  const referrerRow = referrerIsClient ? referrerRowOffset + 2 : -1;
-
-  if (paidSessionsCount === 3) {
-    if (referrerIsClient && col.clientsReferred >= 0) {
-      const cell = sheet.getRange(referrerRow, col.clientsReferred + 1);
-      cell.setValue((Number(cell.getValue()) || 0) + 1);
-    } else if (!referrerIsClient && REFERRALS_SHEET_GID) {
-      incrementClientsReferred_(referredBy);
-    }
-  }
-
-  const starred = referrerIsClient && col.paidInClasses >= 0
-    ? String(sheet.getRange(referrerRow, col.paidInClasses + 1).getValue() || "").trim().toLowerCase() === "y"
-    : false;
-
-  if (starred) {
-    if (hasPaidOneOnOne && paidSessionsCount % 2 === 1 && col.groupSessions >= 0) {
-      const cell = sheet.getRange(referrerRow, col.groupSessions + 1);
-      cell.setValue((Number(cell.getValue()) || 0) + 1);
-    }
+  const referrerRow = findClientRowBySlug_(sheet, col, referredBy);
+  if (referrerRow === row) return; // nobody earns from their own sessions
+  if (referrerRow > 0) {
+    addReferralPunch_(sheet, col, referrerRow);
     return;
   }
+  creditReferralTokens_(referredBy, TOKENS_PER_REFERRED_SESSION);
+  if (paidSessionsCount === 1) incrementClientsReferred_(referredBy);
+}
 
-  let tokensEarned = 0;
-  if (paidSessionsCount === 3) tokensEarned = 20;
-  else if (paidSessionsCount > 3 && sessionType === "one-on-one") tokensEarned = 5;
-  if (tokensEarned <= 0) return;
-
-  if (referrerIsClient && col.tokensOwed >= 0) {
-    const cell = sheet.getRange(referrerRow, col.tokensOwed + 1);
-    cell.setValue((Number(cell.getValue()) || 0) + tokensEarned);
-  } else if (!referrerIsClient && REFERRALS_SHEET_GID) {
-    creditReferralTokens_(referredBy, tokensEarned);
+/** +1 Referral Punch for the client on `row`; sets "Free Session Owed" when that fills a card of 10 (class visits + Fuel punches + referral punches). */
+function addReferralPunch_(sheet, col, row) {
+  const cell = sheet.getRange(row, col.referralPunches + 1);
+  const punches = toSessionCount_(cell.getValue()) + 1;
+  cell.setValue(punches);
+  const count = (c) => (c >= 0 ? toSessionCount_(sheet.getRange(row, c + 1).getValue()) : 0);
+  if ((count(col.totalAttended) + count(col.nutritionPunches) + punches) % 10 === 0) {
+    sheet.getRange(row, col.freeOwed + 1).setValue("Y");
   }
 }
 
@@ -700,38 +640,32 @@ function findReferralsRow_(friendName, columnNames) {
 
 // ---- Referral payout when Paid Sessions is edited BY HAND ------------------
 //
-// The payout above used to run only inside a check-in scan. These let it
-// happen off a hand-typed Paid Sessions number too, so a client who was
-// marked up by hand (or never scanned) still earns their referrer the same
-// tokens. Two helper columns are involved, both created on demand:
-//   "Referral Sessions Counted" (Sessions Remaining) — the highest paid-session
-//     count already run through the payout for that client. It's what stops
-//     any session being paid for twice: correcting 5 -> 4 -> 5 by hand, or a
-//     check-in followed by a manual edit, only ever pays for counts above it.
-//   "Referred Clients" (Refferals tab, and optionally Sessions Remaining) — a
-//     referrer's row can list the unique codes of the clients they referred.
+// The payout above also runs off a hand-typed Paid Sessions number, so a
+// client who was marked up by hand (or never scanned) still earns their
+// referrer the same. "Referral Sessions Counted" (Sessions Remaining, created
+// on demand) holds the highest paid-session count already paid for: it's
+// what stops any session being paid twice — correcting 5 -> 4 -> 5 by hand,
+// or a check-in followed by a manual edit, only ever pays above it.
 
 const REFERRAL_COUNTER_COLUMN = "Referral Sessions Counted";
-const REFERRED_CLIENTS_COLUMN = "Referred Clients";
+const REFERRAL_PUNCHES_COLUMN = "Referral Punches";
+const TOKENS_PER_REFERRED_SESSION = 5; // referral partners only; clients get a punch instead
 
 // A hand edit that raises Paid Sessions by more than this in one go is far
-// more likely a typo (30 for 3) than a real catch-up, and paying 155 tokens
-// for a slip of the finger isn't something to do silently.
+// more likely a typo (30 for 3) than a real catch-up, and paying out for a
+// slip of the finger isn't something to do silently.
 const MAX_MANUAL_CATCH_UP = 10;
 
 function sessionsReferralColumns_(header) {
   return {
     name: findColumn_(header, "Name"),
     paidSessions: findColumn_(header, "Paid Sessions"),
-    hasPaidOneOnOne: findColumn_(header, "Has Paid 1-on-1"),
     referredBy: findColumn_(header, "Referred By"),
-    groupSessions: findColumn_(header, "Group Sessions Remaining"),
-    paidInClasses: findColumn_(header, "Paid In Classes"),
-    tokensOwed: findColumn_(header, "Tokens Owed"),
-    checkInToken: findColumn_(header, "Check-in Token"),
     counter: findColumn_(header, REFERRAL_COUNTER_COLUMN),
-    clientsReferred: findColumn_(header, "Clients Referred"),
-    referralCode: findColumn_(header, "Referral Code"),
+    referralPunches: findColumn_(header, REFERRAL_PUNCHES_COLUMN),
+    totalAttended: findColumn_(header, "Total Classes Attended"),
+    nutritionPunches: findColumn_(header, "Nutrition Punches"),
+    freeOwed: findColumn_(header, "Free Session Owed"),
   };
 }
 
@@ -798,10 +732,7 @@ function onEdit(e) {
 
 /**
  * Pays the referrer for every paid session above what's already been counted
- * for this client, one session at a time so each threshold (the 3rd = 20
- * tokens, every later one = 5) lands exactly once — the same rules as a
- * check-in. A hand edit can't say whether a session was a group class or a
- * 1-on-1, so each one past the 3rd is treated as earning the 5.
+ * for this client, one session at a time — the same rule as a check-in.
  *
  * The first time a client is seen here their counter is blank; it's taken to
  * be whatever the cell held BEFORE this edit, on the basis that everything up
@@ -829,10 +760,8 @@ function applyPaidSessionsEdit_(sheet, row, oldCount, newCount, editedRange) {
       }
       return;
     }
-    const hasPaidOneOnOne = col.hasPaidOneOnOne >= 0
-      && String(sheet.getRange(row, col.hasPaidOneOnOne + 1).getValue() || "").trim().toLowerCase() === "y";
     for (let k = counted + 1; k <= newCount; k++) {
-      maybeApplyReferralBonus_(sheet, col, row, k, "one-on-one", hasPaidOneOnOne);
+      maybeApplyReferralBonus_(sheet, row, k);
     }
   }
 
@@ -851,45 +780,41 @@ function markReferralCounted_(sheet, row, count) {
 }
 
 /**
- * Works out WHO referred the client on `row`, as a name the payout can look
- * up (a client's Name, or a friend's name on the Refferals tab):
- *   1. Whatever's typed in the client's "Referred By" — a name as before, or
- *      a Referral Code, either the Refferals tab's or a client's own.
- *   2. If that's blank: the referrer whose row lists this client's unique
- *      code under "Referred Clients".
+ * WHO referred the client on `row`, as a name the payout can look up (a
+ * client's Name, or a friend's name on the Refferals tab): whatever Max typed
+ * in their "Referred By" cell, or "" if it's blank.
  */
 function referrerNameFor_(sheet, col, row) {
   const typed = col.referredBy >= 0
     ? String(sheet.getRange(row, col.referredBy + 1).getValue() || "").trim()
     : "";
-  if (typed) return resolveReferrerText_(sheet, col, typed);
-
-  const token = col.checkInToken >= 0
-    ? String(sheet.getRange(row, col.checkInToken + 1).getValue() || "").trim()
-    : "";
-  return token ? findReferrerListingCode_(token) : "";
+  return typed ? resolveReferrerText_(sheet, col, typed) : "";
 }
 
-/** Turns what was typed in "Referred By" into a referrer's name. Anything that isn't a recognised code is assumed to be a name already. */
+/** Turns what was typed in "Referred By" into a referrer's name: a client's name (spacing and capitals don't matter), a partner's Referral Code, or else the text as typed. */
 function resolveReferrerText_(sheet, col, text) {
-  const wanted = text.toLowerCase();
+  const clientRow = findClientRowBySlug_(sheet, col, text);
+  if (clientRow > 0) return String(sheet.getRange(clientRow, col.name + 1).getValue() || "").trim();
+  return findReferrerNameByCode_(text) || text;
+}
+
+/** The Sessions Remaining row (1-based) of the client whose name matches `name` once lowercased and stripped of spaces and punctuation, or -1. */
+function findClientRowBySlug_(sheet, col, name) {
+  const wanted = slugify_(name);
   const lastRow = sheet.getLastRow();
-  const names = col.name >= 0 && lastRow >= 2
-    ? sheet.getRange(2, col.name + 1, lastRow - 1, 1).getValues().flat()
-    : [];
+  if (!wanted || col.name < 0 || lastRow < 2) return -1;
+  const names = sheet.getRange(2, col.name + 1, lastRow - 1, 1).getValues().flat();
+  const idx = names.findIndex((n) => slugify_(n) === wanted);
+  return idx < 0 ? -1 : idx + 2;
+}
 
-  // A client's name — the way it has always worked.
-  if (names.some((n) => String(n || "").trim().toLowerCase() === wanted)) return text;
-
-  // A Referral Code from the Refferals tab.
-  const byCode = findReferrerNameByCode_(text);
-  if (byCode) return byCode;
-
-  // A client's own Referral Code.
-  const byOwnCode = findClientNameByReferralCode_(sheet, col, text);
-  if (byOwnCode) return byOwnCode;
-
-  return text;
+/** The name of the client whose card id is `slug` (join.html?ref=<card id>), or "". */
+function findClientNameBySlug_(slug) {
+  const sheet = getSheetByGid_(SESSIONS_SHEET_GID);
+  const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const col = { name: findColumn_(header, "Name") };
+  const row = findClientRowBySlug_(sheet, col, slug);
+  return row > 0 ? String(sheet.getRange(row, col.name + 1).getValue() || "").trim() : "";
 }
 
 /** The friend on the Refferals tab whose Referral Code is `code`, or "". */
@@ -917,139 +842,16 @@ function findReferrerNameByCode_(code) {
 }
 
 /**
- * A client's Name whose Referral Code is `code`, or "" if none matches. This
- * is a client's own personal referral code (2026-09-28) — a separate code
- * from their check-in QR, issued by issueReferralCodes(), shown as plain
- * text and a QR on their own card's Refer a Friend page so they can share it
- * with a friend without needing the Refferals tab at all.
- */
-function findClientNameByReferralCode_(sheet, col, code) {
-  if (col.referralCode < 0 || col.name < 0) return "";
-  const wanted = String(code || "").trim().toUpperCase();
-  if (!wanted) return "";
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return "";
-  const codes = sheet.getRange(2, col.referralCode + 1, lastRow - 1, 1).getValues().flat();
-  const idx = codes.findIndex((c) => String(c || "").trim().toUpperCase() === wanted);
-  if (idx < 0) return "";
-  return String(sheet.getRange(2 + idx, col.name + 1).getValue() || "").trim();
-}
-
-/** The referrer (on the Refferals tab, else Sessions Remaining) whose "Referred Clients" cell contains this unique code, or "". */
-function findReferrerListingCode_(code) {
-  if (code.length < 8) return ""; // a fragment this short could match by accident
-  const wanted = code.toLowerCase();
-  const candidates = [];
-  try {
-    candidates.push([getSheetByGid_(REFERRALS_SHEET_GID), "Friend Name"]);
-  } catch (err) {
-    // No Refferals tab — Sessions Remaining is still checked below.
-  }
-  try {
-    candidates.push([getSheetByGid_(SESSIONS_SHEET_GID), "Name"]);
-  } catch (err) {
-    // Nothing else to check.
-  }
-
-  for (const [sheet, nameHeader] of candidates) {
-    const lastRow = sheet.getLastRow();
-    const lastCol = sheet.getLastColumn();
-    if (lastRow < 2 || lastCol < 1) continue;
-    const header = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-    const listCol = findColumn_(header, REFERRED_CLIENTS_COLUMN);
-    const nameCol = findColumn_(header, nameHeader);
-    if (listCol < 0 || nameCol < 0) continue;
-
-    const values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
-    for (const r of values) {
-      if (String(r[listCol] || "").toLowerCase().indexOf(wanted) >= 0) {
-        const name = String(r[nameCol] || "").trim();
-        if (name) return name;
-      }
-    }
-  }
-  return "";
-}
-
-// ---- Personal referral codes (2026-09-28) ----------------------------------
-//
-// Same style as a booking code (6 characters, no ambiguous I/L/O/0/1) so
-// every personal code in the app looks and behaves the same way — but this
-// one lives on the PUBLIC Sessions Remaining sheet and is never a secret: a
-// client sees only their own on their own card (Refer a Friend), same as
-// their Check-in Token already is, so there's nothing private to protect and
-// nothing to text out.
-
-// Copied rather than referencing BOOKING_CODE_ALPHABET/BOOKING_CODE_LENGTH directly:
-// those consts are declared further down the file, and a top-level const that
-// reads another one before ITS declaration line has run throws immediately
-// (the temporal dead zone) — which would break the whole script, not just this.
-const REFERRAL_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-const REFERRAL_CODE_LENGTH = 6;
-
-/** A new random referral code. Bytes come from Utilities.getUuid(), which is backed by a secure random generator. */
-function referralNewCode_() {
-  const hex = Utilities.getUuid().replace(/-/g, "");
-  let code = "";
-  for (let i = 0; i < REFERRAL_CODE_LENGTH; i++) {
-    code += REFERRAL_CODE_ALPHABET.charAt(parseInt(hex.substr(i * 2, 2), 16) % REFERRAL_CODE_ALPHABET.length);
-  }
-  return code;
-}
-
-/**
- * Optional one-time helper — run manually from the Apps Script editor
- * (setupReferralTracking() runs it too). Gives every client on Sessions
- * Remaining who doesn't already have one a personal Referral Code. Safe to
- * re-run — it only fills blanks, never overwrites a code already there.
- */
-function issueReferralCodes() {
-  const sheet = getSheetByGid_(SESSIONS_SHEET_GID);
-  const header = ensureColumns_(sheet, ["Referral Code"]);
-  const nameCol = findColumn_(header, "Name");
-  const codeCol = findColumn_(header, "Referral Code");
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return;
-
-  const data = sheet.getRange(2, 1, lastRow - 1, header.length).getValues();
-  const taken = {};
-  data.forEach((r) => {
-    const code = String(r[codeCol] || "").trim().toUpperCase();
-    if (code) taken[code] = true;
-  });
-  const newUniqueCode = () => {
-    let code = referralNewCode_();
-    while (taken[code]) code = referralNewCode_();
-    taken[code] = true;
-    return code;
-  };
-
-  let filled = 0;
-  data.forEach((r, i) => {
-    if (!r[nameCol]) return; // skip blank rows
-    if (String(r[codeCol] || "").trim()) return; // already has one
-    sheet.getRange(2 + i, codeCol + 1).setValue(newUniqueCode());
-    filled++;
-  });
-  Logger.log("Issued " + filled + " referral code(s).");
-}
-
-/**
- * Optional one-time helper — run manually from the Apps Script editor. Adds
- * the helper columns the manual referral payout uses ("Referral Sessions
- * Counted" and "Clients Referred" on Sessions Remaining; "Referred Clients"
- * on the Refferals tab and on Sessions Remaining), issues every client their
- * own Referral Code (issueReferralCodes()), and sets every existing client's
- * counter to their current Paid Sessions, so nothing already handled can
- * ever be paid twice. The payout works without running this — it creates
- * what it needs the first time it fires — but this is the way to get the
- * "Referred Clients" column to exist so you can start pasting codes into it,
- * and everyone's Referral Code ready before their card reads it. Safe to
- * re-run.
+ * Optional helper — run manually from the Apps Script editor after pasting
+ * new code. Adds the columns the referral payout uses ("Referral Sessions
+ * Counted" and "Referral Punches" on Sessions Remaining) and sets every
+ * existing client's counter to their current Paid Sessions, so sessions paid
+ * before today are never paid out again. The payout works without running
+ * this (it creates what it needs the first time it fires). Safe to re-run.
  */
 function setupReferralTracking() {
   const sessions = getSheetByGid_(SESSIONS_SHEET_GID);
-  const header = ensureColumns_(sessions, [REFERRAL_COUNTER_COLUMN, REFERRED_CLIENTS_COLUMN, "Clients Referred"]);
+  const header = ensureColumns_(sessions, [REFERRAL_COUNTER_COLUMN, REFERRAL_PUNCHES_COLUMN, "Free Session Owed"]);
   const col = sessionsReferralColumns_(header);
   const lastRow = sessions.getLastRow();
   if (lastRow >= 2 && col.paidSessions >= 0) {
@@ -1057,12 +859,6 @@ function setupReferralTracking() {
     const counters = sessions.getRange(2, col.counter + 1, lastRow - 1, 1).getValues();
     const filled = counters.map((c, i) => (c[0] === "" || c[0] == null ? [toSessionCount_(paid[i][0])] : [c[0]]));
     sessions.getRange(2, col.counter + 1, lastRow - 1, 1).setValues(filled);
-  }
-  issueReferralCodes();
-  try {
-    ensureColumns_(getSheetByGid_(REFERRALS_SHEET_GID), [REFERRED_CLIENTS_COLUMN]);
-  } catch (err) {
-    Logger.log("No Refferals tab found — skipped its Referred Clients column.");
   }
   Logger.log("Referral tracking ready.");
 }

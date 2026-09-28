@@ -107,14 +107,13 @@ function fetchSheet() {
           programDoc: findColumn(header, "Program Doc"),
           checkInToken: findColumn(header, "Check-in Token"),
           totalAttended: findColumn(header, "Total Classes Attended"),
-          // Added by the Macros backend: punches earned with FUEL (5 green
-          // days in a week = 1), and "Y" when one of those completed a card.
+          // Bonus punches on the loyalty card: FUEL adds one per week of 5
+          // green days, and the check-in script adds one for every session a
+          // referred friend pays for. "Free Session Owed" is "Y" when a bonus
+          // punch completed a card.
           nutritionPunches: findColumn(header, "Nutrition Punches"),
+          referralPunches: findColumn(header, "Referral Punches"),
           freeOwed: findColumn(header, "Free Session Owed"),
-          // A client's own referral stats and personal code — card/refer.html.
-          tokensOwed: findColumn(header, "Tokens Owed"),
-          clientsReferred: findColumn(header, "Clients Referred"),
-          referralCode: findColumn(header, "Referral Code"),
         };
         return { rows, col };
       });

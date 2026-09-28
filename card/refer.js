@@ -3,17 +3,12 @@
  * refer.html?id=<slug>). Same identity as the rest of the card: ?id= in the
  * URL, falling back to whatever the card last saved in localStorage.
  *
- * A client's referral code is a separate personal code from their check-in
- * QR (issueReferralCodes() in Code.gs) — 6 characters, same style as a
- * booking code, so it's short enough to say out loud or type. It's read
- * straight from the public CRM sheet (never a secret — see CLAUDE.md), same
- * as the rest of this page's data. Sharing it takes a friend to
- * join.html?ref=<code>; the backend recognises that as this client's own
- * Referral Code (see findClientNameByReferralCode_ in Code.gs).
- *
- * "Clients Referred" and "Tokens Owed" are read the same way — plain columns
- * on the sheet the card already reads, kept up to date by the check-in
- * backend's referral payout. This page never writes anything.
+ * No codes: the QR and link take a friend to the sign-up form as
+ * join.html?ref=<card id>, and the backend writes this client's name into
+ * the new Lead's "Referred By" (findClientNameBySlug_ in Code.gs). Once Max
+ * has them as a client, every session they pay for adds a punch to this
+ * client's card ("Referral Punches", read from the public CRM sheet like the
+ * rest of the card). This page never writes anything.
  */
 (function () {
   const JOIN_URL_BASE = "https://maxfit.now/join.html";
@@ -44,10 +39,7 @@
     noticeTitle: $("noticeTitle"),
     noticeText: $("noticeText"),
     content: $("referContent"),
-    code: $("referCode"),
-    count: $("referCount"),
-    bonus: $("referBonus"),
-    bonusWrap: $("referBonusWrap"),
+    punches: $("referPunches"),
     shareBtn: $("shareBtn"),
     copiedNote: $("copiedNote"),
     linkValue: $("linkValue"),
@@ -66,16 +58,15 @@
     showScreen("notice");
   }
 
-  /** Who is asking: name, Referral Code and referral stats, from the public CRM sheet. */
+  /** Who is asking: their card id and referral punches, from the public CRM sheet. */
   async function resolveMember() {
     const { rows, col } = await fetchSheet();
     const wanted = slugify(memberId);
     const match = rows.find((r) => r[col.name] && slugify(r[col.name]) === wanted);
     if (!match) return null;
     return {
-      code: col.referralCode >= 0 ? String(match[col.referralCode] || "").trim().toUpperCase() : "",
-      tokensOwed: col.tokensOwed >= 0 ? String(match[col.tokensOwed] || "").trim() : "",
-      clientsReferred: col.clientsReferred >= 0 ? String(match[col.clientsReferred] || "").trim() : "",
+      slug: wanted,
+      punches: col.referralPunches >= 0 ? parseSessions(match[col.referralPunches], 0) : 0,
     };
   }
 
@@ -112,19 +103,13 @@
   }
 
   function render(member) {
-    const url = `${JOIN_URL_BASE}?ref=${encodeURIComponent(member.code)}`;
-    els.code.textContent = member.code;
-    els.count.textContent = member.clientsReferred || "0";
-    els.bonus.textContent = member.tokensOwed || "0";
+    const url = `${JOIN_URL_BASE}?ref=${encodeURIComponent(member.slug)}`;
+    els.punches.textContent = String(member.punches);
     els.linkValue.textContent = url;
     renderQR(url);
     els.shareBtn.addEventListener("click", () => shareLink(url));
     showScreen("content");
   }
-
-  els.bonusWrap.addEventListener("click", () => {
-    els.bonusWrap.classList.toggle("card__sessions--revealed");
-  });
 
   async function init() {
     if (!memberId) {
@@ -142,10 +127,6 @@
     }
     if (!member) {
       showNotice("We couldn't find you", "Open this from your own membership card.");
-      return;
-    }
-    if (!member.code) {
-      showNotice("Not ready yet", "Max hasn't switched this on for you yet — check back soon.");
       return;
     }
     render(member);

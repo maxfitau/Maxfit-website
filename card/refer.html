@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="styles.css?v=20260913b" />
-<link rel="stylesheet" href="refer.css?v=20260928b" />
+<link rel="stylesheet" href="refer.css?v=20260928c" />
 </head>
 <body>
 
@@ -33,23 +33,11 @@
   </div>
 
   <div class="refer__content" id="referContent" hidden>
-    <p class="refer__intro">Share your link with a friend. They get a free 1-on-1 to try MaxFit — and once they join, you earn rewards too.</p>
+    <p class="refer__intro">Let a friend scan this to sign up. They get a free 1-on-1 to try MaxFit, and every session they pay for adds a punch to your loyalty card.</p>
 
-    <div class="refer__code-box">
-      <span class="refer__code-label">Your referral code</span>
-      <span class="refer__code" id="referCode">——————</span>
-    </div>
-
-    <div class="card__sessions-row">
-      <div class="card__sessions">
-        <span class="card__label card__label--red">Clients Referred</span>
-        <span class="card__sessions-num card__sessions-num--split" id="referCount">—</span>
-      </div>
-      <button type="button" class="card__sessions card__sessions--reveal" id="referBonusWrap" aria-label="Tap to reveal tokens owed">
-        <span class="card__label card__label--red">Tokens Owed</span>
-        <span class="card__sessions-num card__sessions-num--split card__bonus-value" id="referBonus">—</span>
-        <span class="card__reveal-hint">Tap to reveal</span>
-      </button>
+    <div class="card__scan">
+      <div class="card__qr" id="qrCode"></div>
+      <span class="card__scan-caption">Your Friend Scans This</span>
     </div>
 
     <button class="refer__btn" id="shareBtn" type="button">Share Your Link</button>
@@ -60,15 +48,15 @@
       <span class="refer__link-value" id="linkValue">—</span>
     </div>
 
-    <div class="card__scan">
-      <div class="card__qr" id="qrCode"></div>
-      <span class="card__scan-caption">Or Let Them Scan This</span>
+    <div class="card__sessions">
+      <span class="card__label card__label--red">Punches From Referrals</span>
+      <span class="card__sessions-num card__sessions-num--split" id="referPunches">0</span>
     </div>
   </div>
 </main>
 
 <script src="vendor/qrcode.js"></script>
-<script src="sheet.js?v=20260928b"></script>
-<script src="refer.js?v=20260928b"></script>
+<script src="sheet.js?v=20260928c"></script>
+<script src="refer.js?v=20260928c"></script>
 </body>
 </html>

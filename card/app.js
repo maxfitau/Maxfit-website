@@ -370,7 +370,7 @@ async function render(data) {
   els.name.textContent = data.memberName;
   els.tier.textContent = data.tier;
   renderQR(data.checkInUrl);
-  renderLoyalty(data.totalAttended + (data.nutritionPunches || 0), !!data.freeOwed);
+  renderLoyalty(data.totalAttended + (data.nutritionPunches || 0) + (data.referralPunches || 0), !!data.freeOwed);
 
   // Booking and referring are for real members: the demo card has no membership behind either.
   if (!data.isDemo) {
@@ -458,6 +458,7 @@ async function fetchMemberData(id) {
     oneOnOneSessionsRemaining: parseSessions(match[col.oneOnOneSessions], "N/A"),
     totalAttended: parseSessions(match[col.totalAttended], 0),
     nutritionPunches: col.nutritionPunches >= 0 ? parseSessions(match[col.nutritionPunches], 0) : 0,
+    referralPunches: col.referralPunches >= 0 ? parseSessions(match[col.referralPunches], 0) : 0,
     freeOwed: col.freeOwed >= 0 && String(match[col.freeOwed] || "").trim().toUpperCase() === "Y",
     checkInUrl: `https://maxfit.now/checkin.html?token=${encodeURIComponent(token)}`,
     programType: programType === "self-guided" ? "self-guided" : "group",

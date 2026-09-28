@@ -230,11 +230,13 @@ async function init() {
   // and so is their very first ever visit. Pre-tick the box either way —
   // staff can still untick it, or tick it manually for any other reason
   // (e.g. a one-off comp).
-  // The card counts class visits PLUS nutrition punches earned in FUEL
-  // (5 green days in a week = 1 punch). If a nutrition punch is what filled
-  // the card, "Free Session Owed" is Y and this visit is the free one.
+  // The card counts class visits PLUS bonus punches: FUEL's (5 green days in
+  // a week = 1) and referrals' (1 per session a referred friend pays for). If
+  // a bonus punch is what filled the card, "Free Session Owed" is Y and this
+  // visit is the free one.
   const totalBefore = parseSessions(col.totalAttended >= 0 ? match[col.totalAttended] : "", 0);
-  const punches = col.nutritionPunches >= 0 ? parseSessions(match[col.nutritionPunches], 0) : 0;
+  const punches = (col.nutritionPunches >= 0 ? parseSessions(match[col.nutritionPunches], 0) : 0)
+    + (col.referralPunches >= 0 ? parseSessions(match[col.referralPunches], 0) : 0);
   const freeOwed = col.freeOwed >= 0 && String(match[col.freeOwed] || "").trim().toUpperCase() === "Y";
   const cardBefore = totalBefore + punches;
   const isFirstVisit = totalBefore === 0;
@@ -243,7 +245,7 @@ async function init() {
     els.freeCheckbox.checked = true;
     els.freeRow.classList.add("checkin__free--suggested");
     els.freeLabel.textContent = freeOwed
-      ? "Free Session (earned with Fuel!)"
+      ? "Free Session (card complete!)"
       : isFirstVisit
       ? "Free Session (first visit!)"
       : punches

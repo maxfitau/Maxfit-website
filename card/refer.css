@@ -1,9 +1,7 @@
 /* ==========================================================================
    MAX FIT · refer a friend
    Loads on top of card/styles.css — same shell, fonts and palette as the
-   card. card__sessions--reveal / card__bonus-value / card__reveal-hint are
-   duplicated from ../referrer.css (a root page) rather than shared, so this
-   file has no dependency on it.
+   card.
    ========================================================================== */
 
 /* This page can run taller than a phone screen, same reason as book.css. */
@@ -81,82 +79,6 @@ body {
   line-height: 1.5;
   color: var(--grey);
   margin: 0;
-}
-
-/* ---- The code itself — the main thing on this page ---- */
-
-.refer__code-box {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  align-items: center;
-  text-align: center;
-  background: rgba(224, 0, 0, 0.08);
-  border: 1px solid rgba(224, 0, 0, 0.3);
-  border-radius: var(--radius-sm);
-  padding: 18px 14px;
-}
-
-.refer__code-label {
-  font-family: var(--font-head);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  font-size: 12px;
-  color: var(--dim);
-}
-
-.refer__code {
-  font-family: var(--font-head);
-  font-weight: 800;
-  font-size: 34px;
-  letter-spacing: 0.22em;
-  color: var(--white);
-  padding-left: 0.22em; /* the letter-spacing pushes the last character out; this balances it back to centred */
-}
-
-/* ---- Tokens Owed tap-to-reveal — same behaviour as referrer.html's,
-   duplicated here since referrer.css isn't loaded on the card. ---- */
-
-.card__sessions--reveal {
-  position: relative;
-  background: none;
-  border: none;
-  padding: 0;
-  margin: 0;
-  cursor: pointer;
-  text-align: left;
-  font: inherit;
-  color: inherit;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.card__bonus-value {
-  filter: blur(10px);
-  user-select: none;
-  transition: filter 0.15s ease;
-}
-
-.card__sessions--reveal.card__sessions--revealed .card__bonus-value {
-  filter: none;
-}
-
-.card__reveal-hint {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 6px;
-  font-family: var(--font-head);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.5);
-  pointer-events: none;
-}
-
-.card__sessions--reveal.card__sessions--revealed .card__reveal-hint {
-  display: none;
 }
 
 /* ---- Share button ---- */

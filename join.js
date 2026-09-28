@@ -1,9 +1,10 @@
 /*
  * MaxFit public sign-up page.
  *
- * Anyone can open this — shared as a plain link, or with a referral code
- * appended (?ref=CODE) that a friend shares. If the code matches a row in
- * the "Referrals" tab, a banner shows who referred them. Submitting posts
+ * Anyone can open this — shared as a plain link, or with ?ref= appended:
+ * a referral partner's code (their red card, "Refferals" tab) or a client's
+ * card id (the Refer a Friend QR on their card). Either way a banner shows
+ * who referred them, and the backend records it on the Lead. Submitting posts
  * to the same Apps Script Web App the check-in page uses, with
  * action: "signup" so it's routed differently server-side. This only ever
  * adds a new row to Sessions Remaining as an "Enquiry" — it doesn't turn
@@ -42,11 +43,13 @@ async function showReferralBanner() {
 
   try {
     const { rows, col } = await fetchReferrals();
-    if (col.code < 0) return;
-    const match = rows.find(
+    const match = col.code >= 0 && rows.find(
       (r) => r[col.code] && r[col.code].trim().toLowerCase() === referralCode.toLowerCase()
     );
-    if (!match) return;
+    if (!match) {
+      await showClientReferralBanner();
+      return;
+    }
 
     const friendName = col.friendName >= 0 ? match[col.friendName] : "";
     const discount = col.discount >= 0 ? match[col.discount] : "";
@@ -57,6 +60,16 @@ async function showReferralBanner() {
   } catch (err) {
     // Sheet unreachable — just skip the banner, don't block sign-up.
   }
+}
+
+/** ?ref= is a client's card id: find them on Sessions Remaining. A client's referral always comes with a free first 1-on-1. */
+async function showClientReferralBanner() {
+  const { rows, col } = await fetchSheet();
+  const wanted = slugify(referralCode);
+  const match = col.name >= 0 && rows.find((r) => r[col.name] && slugify(r[col.name]) === wanted);
+  if (!match) return;
+  els.referral.textContent = `Referred by ${match[col.name].trim()} — your first 1-on-1 is free`;
+  els.referral.hidden = false;
 }
 
 els.form.addEventListener("submit", async (event) => {

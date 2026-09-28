@@ -50,9 +50,10 @@
  * NUTRITION PUNCHES — 5 green days in a Monday–Sunday week adds 1 to
  * "Nutrition Punches" on the CRM's Sessions Remaining tab (awardPunches,
  * daily trigger from installPunchTrigger). The card and check-in page add
- * those to Total Classes Attended; when a nutrition punch completes a card
- * of 10, "Free Session Owed" = Y and the check-in page offers the free
- * session (Code.gs clears it when it's used).
+ * those to Total Classes Attended (plus any "Referral Punches", which the
+ * check-in script adds); when a nutrition punch completes a card of 10,
+ * "Free Session Owed" = Y and the check-in page offers the free session
+ * (Code.gs clears it when it's used).
  *
  * Who can do what: every member action needs the member's id AND their
  * secret key (the &k= part of their card link), checked against the
@@ -60,7 +61,7 @@
  * or change rows carrying their own id.
  */
 
-const MACROS_VERSION = "2026-09-28a";
+const MACROS_VERSION = "2026-09-28b";
 const TIMEZONE = "Australia/Sydney";
 const MAIN_SESSIONS_GID = 1169726169; // "Sessions Remaining" in the CRM sheet
 const CARD_URL = "https://maxfit.now/card/";
@@ -2163,6 +2164,7 @@ function crmIndex_() {
     name: header.indexOf("name"),
     attended: header.indexOf("total classes attended"),
     punches: header.indexOf("nutrition punches"),
+    referral: header.indexOf("referral punches"), // added by the check-in script
     owed: header.indexOf("free session owed"),
   };
   out.col = col;
@@ -2174,6 +2176,7 @@ function crmIndex_() {
       row: r + 1,
       attended: col.attended >= 0 ? Number(values[r][col.attended]) || 0 : 0,
       punches: col.punches >= 0 ? Number(values[r][col.punches]) || 0 : 0,
+      referralPunches: col.referral >= 0 ? Number(values[r][col.referral]) || 0 : 0,
       owed: col.owed >= 0 && String(values[r][col.owed]).trim().toUpperCase() === "Y",
     };
   }
@@ -2227,7 +2230,7 @@ function actionProgress_(payload, member) {
         weekly_rate_kg: targets ? targets.weekly_rate_kg : null,
         kind: targets && targets.calc_inputs ? targets.calc_inputs.goal : null,
       },
-      loyalty: crm ? { attended: crm.attended, punches: crm.punches, owed: crm.owed } : null,
+      loyalty: crm ? { attended: crm.attended, punches: crm.punches + crm.referralPunches, owed: crm.owed } : null,
       punchEvery: MacroCore.GREEN_DAYS_FOR_PUNCH,
     },
   };
@@ -2340,7 +2343,7 @@ function awardPunches_() {
         if (!week.earnsPunch) return;
         client.punches += 1;
         crm.sheet.getRange(client.row, crm.col.punches + 1).setValue(client.punches);
-        if ((client.attended + client.punches) % 10 === 0 && crm.col.owed >= 0) {
+        if ((client.attended + client.punches + client.referralPunches) % 10 === 0 && crm.col.owed >= 0) {
           crm.sheet.getRange(client.row, crm.col.owed + 1).setValue("Y");
           client.owed = true;
         }
