@@ -111,6 +111,10 @@ function fetchSheet() {
           // days in a week = 1), and "Y" when one of those completed a card.
           nutritionPunches: findColumn(header, "Nutrition Punches"),
           freeOwed: findColumn(header, "Free Session Owed"),
+          // A client's own referral stats and personal code — card/refer.html.
+          tokensOwed: findColumn(header, "Tokens Owed"),
+          clientsReferred: findColumn(header, "Clients Referred"),
+          referralCode: findColumn(header, "Referral Code"),
         };
         return { rows, col };
       });

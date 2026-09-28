@@ -33,7 +33,7 @@ const GROCERY_SHEET_NAME = "Grocery Items";
 // Changes whenever this file does, and is shown when you open the deployed
 // URL in a browser (see doGet) — the quick way to tell whether a redeploy
 // actually took, instead of guessing from behaviour.
-const BACKEND_VERSION = "2026-09-27b";
+const BACKEND_VERSION = "2026-09-28b";
 
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -525,22 +525,17 @@ function handleSignup_(payload) {
     }
   }
 
+  // A referral code can be a Refferals-tab Referral Code (the 7 hand-picked
+  // partners' red cards), or a regular client's own personal Referral Code —
+  // shown on their membership card since 2026-09-28.
   let referrerName = "";
-  if (referralCode && REFERRALS_SHEET_GID) {
-    const refSheet = getSheetByGid_(REFERRALS_SHEET_GID);
-    const refData = refSheet.getDataRange().getValues();
-    const refHeader = refData[0];
-    const rCol = {
-      friendName: findColumn_(refHeader, "Friend Name"),
-      code: findColumn_(refHeader, "Referral Code"),
-    };
-    if (rCol.code >= 0) {
-      for (let i = 1; i < refData.length; i++) {
-        if (String(refData[i][rCol.code] || "").trim().toLowerCase() === referralCode.toLowerCase()) {
-          referrerName = String(refData[i][rCol.friendName] || "").trim();
-          break;
-        }
-      }
+  if (referralCode) {
+    referrerName = findReferrerNameByCode_(referralCode);
+    if (!referrerName) {
+      const sessionsSheet = getSheetByGid_(SESSIONS_SHEET_GID);
+      const sessionsHeader = sessionsSheet.getRange(1, 1, 1, sessionsSheet.getLastColumn()).getValues()[0];
+      const sCol = { name: findColumn_(sessionsHeader, "Name"), referralCode: findColumn_(sessionsHeader, "Referral Code") };
+      referrerName = findClientNameByReferralCode_(sessionsSheet, sCol, referralCode);
     }
   }
 
@@ -610,6 +605,8 @@ function isEmailAlreadyPresent_(sheet, emailCol, email) {
  *
  * "Clients Referred" ticks up once, the moment the referred client hits
  * their 3rd paid session — regardless of which reward type below applies.
+ * Same split as Tokens Owed: the referrer's own cell on Sessions Remaining
+ * if they're a client, else the Refferals tab.
  *
  * Two reward types, depending on the referrer:
  *
@@ -644,8 +641,13 @@ function maybeApplyReferralBonus_(sheet, col, row, paidSessionsCount, sessionTyp
   const referrerIsClient = referrerRowOffset >= 0;
   const referrerRow = referrerIsClient ? referrerRowOffset + 2 : -1;
 
-  if (paidSessionsCount === 3 && REFERRALS_SHEET_GID) {
-    incrementClientsReferred_(referredBy);
+  if (paidSessionsCount === 3) {
+    if (referrerIsClient && col.clientsReferred >= 0) {
+      const cell = sheet.getRange(referrerRow, col.clientsReferred + 1);
+      cell.setValue((Number(cell.getValue()) || 0) + 1);
+    } else if (!referrerIsClient && REFERRALS_SHEET_GID) {
+      incrementClientsReferred_(referredBy);
+    }
   }
 
   const starred = referrerIsClient && col.paidInClasses >= 0
@@ -728,6 +730,8 @@ function sessionsReferralColumns_(header) {
     tokensOwed: findColumn_(header, "Tokens Owed"),
     checkInToken: findColumn_(header, "Check-in Token"),
     counter: findColumn_(header, REFERRAL_COUNTER_COLUMN),
+    clientsReferred: findColumn_(header, "Clients Referred"),
+    referralCode: findColumn_(header, "Referral Code"),
   };
 }
 
@@ -850,7 +854,7 @@ function markReferralCounted_(sheet, row, count) {
  * Works out WHO referred the client on `row`, as a name the payout can look
  * up (a client's Name, or a friend's name on the Refferals tab):
  *   1. Whatever's typed in the client's "Referred By" — a name as before, or
- *      the referrer's Referral Code, or a client's own unique check-in code.
+ *      a Referral Code, either the Refferals tab's or a client's own.
  *   2. If that's blank: the referrer whose row lists this client's unique
  *      code under "Referred Clients".
  */
@@ -881,12 +885,10 @@ function resolveReferrerText_(sheet, col, text) {
   const byCode = findReferrerNameByCode_(text);
   if (byCode) return byCode;
 
-  // A client's own unique code.
-  if (col.checkInToken >= 0 && lastRow >= 2) {
-    const tokens = sheet.getRange(2, col.checkInToken + 1, lastRow - 1, 1).getValues().flat();
-    const idx = tokens.findIndex((t) => String(t || "").trim().toLowerCase() === wanted);
-    if (idx >= 0 && String(names[idx] || "").trim()) return String(names[idx]).trim();
-  }
+  // A client's own Referral Code.
+  const byOwnCode = findClientNameByReferralCode_(sheet, col, text);
+  if (byOwnCode) return byOwnCode;
+
   return text;
 }
 
@@ -912,6 +914,25 @@ function findReferrerNameByCode_(code) {
     if (String(r[codeCol] || "").trim().toLowerCase() === wanted) return String(r[nameCol] || "").trim();
   }
   return "";
+}
+
+/**
+ * A client's Name whose Referral Code is `code`, or "" if none matches. This
+ * is a client's own personal referral code (2026-09-28) — a separate code
+ * from their check-in QR, issued by issueReferralCodes(), shown as plain
+ * text and a QR on their own card's Refer a Friend page so they can share it
+ * with a friend without needing the Refferals tab at all.
+ */
+function findClientNameByReferralCode_(sheet, col, code) {
+  if (col.referralCode < 0 || col.name < 0) return "";
+  const wanted = String(code || "").trim().toUpperCase();
+  if (!wanted) return "";
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return "";
+  const codes = sheet.getRange(2, col.referralCode + 1, lastRow - 1, 1).getValues().flat();
+  const idx = codes.findIndex((c) => String(c || "").trim().toUpperCase() === wanted);
+  if (idx < 0) return "";
+  return String(sheet.getRange(2 + idx, col.name + 1).getValue() || "").trim();
 }
 
 /** The referrer (on the Refferals tab, else Sessions Remaining) whose "Referred Clients" cell contains this unique code, or "". */
@@ -950,19 +971,85 @@ function findReferrerListingCode_(code) {
   return "";
 }
 
+// ---- Personal referral codes (2026-09-28) ----------------------------------
+//
+// Same style as a booking code (6 characters, no ambiguous I/L/O/0/1) so
+// every personal code in the app looks and behaves the same way — but this
+// one lives on the PUBLIC Sessions Remaining sheet and is never a secret: a
+// client sees only their own on their own card (Refer a Friend), same as
+// their Check-in Token already is, so there's nothing private to protect and
+// nothing to text out.
+
+// Copied rather than referencing BOOKING_CODE_ALPHABET/BOOKING_CODE_LENGTH directly:
+// those consts are declared further down the file, and a top-level const that
+// reads another one before ITS declaration line has run throws immediately
+// (the temporal dead zone) — which would break the whole script, not just this.
+const REFERRAL_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+const REFERRAL_CODE_LENGTH = 6;
+
+/** A new random referral code. Bytes come from Utilities.getUuid(), which is backed by a secure random generator. */
+function referralNewCode_() {
+  const hex = Utilities.getUuid().replace(/-/g, "");
+  let code = "";
+  for (let i = 0; i < REFERRAL_CODE_LENGTH; i++) {
+    code += REFERRAL_CODE_ALPHABET.charAt(parseInt(hex.substr(i * 2, 2), 16) % REFERRAL_CODE_ALPHABET.length);
+  }
+  return code;
+}
+
+/**
+ * Optional one-time helper — run manually from the Apps Script editor
+ * (setupReferralTracking() runs it too). Gives every client on Sessions
+ * Remaining who doesn't already have one a personal Referral Code. Safe to
+ * re-run — it only fills blanks, never overwrites a code already there.
+ */
+function issueReferralCodes() {
+  const sheet = getSheetByGid_(SESSIONS_SHEET_GID);
+  const header = ensureColumns_(sheet, ["Referral Code"]);
+  const nameCol = findColumn_(header, "Name");
+  const codeCol = findColumn_(header, "Referral Code");
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+
+  const data = sheet.getRange(2, 1, lastRow - 1, header.length).getValues();
+  const taken = {};
+  data.forEach((r) => {
+    const code = String(r[codeCol] || "").trim().toUpperCase();
+    if (code) taken[code] = true;
+  });
+  const newUniqueCode = () => {
+    let code = referralNewCode_();
+    while (taken[code]) code = referralNewCode_();
+    taken[code] = true;
+    return code;
+  };
+
+  let filled = 0;
+  data.forEach((r, i) => {
+    if (!r[nameCol]) return; // skip blank rows
+    if (String(r[codeCol] || "").trim()) return; // already has one
+    sheet.getRange(2 + i, codeCol + 1).setValue(newUniqueCode());
+    filled++;
+  });
+  Logger.log("Issued " + filled + " referral code(s).");
+}
+
 /**
  * Optional one-time helper — run manually from the Apps Script editor. Adds
  * the helper columns the manual referral payout uses ("Referral Sessions
- * Counted" on Sessions Remaining; "Referred Clients" on the Refferals tab and
- * on Sessions Remaining) and sets every existing client's counter to their
- * current Paid Sessions, so nothing already handled can ever be paid twice.
- * The payout works without running this — it creates what it needs the first
- * time it fires — but this is the way to get the "Referred Clients" column
- * to exist so you can start pasting codes into it. Safe to re-run.
+ * Counted" and "Clients Referred" on Sessions Remaining; "Referred Clients"
+ * on the Refferals tab and on Sessions Remaining), issues every client their
+ * own Referral Code (issueReferralCodes()), and sets every existing client's
+ * counter to their current Paid Sessions, so nothing already handled can
+ * ever be paid twice. The payout works without running this — it creates
+ * what it needs the first time it fires — but this is the way to get the
+ * "Referred Clients" column to exist so you can start pasting codes into it,
+ * and everyone's Referral Code ready before their card reads it. Safe to
+ * re-run.
  */
 function setupReferralTracking() {
   const sessions = getSheetByGid_(SESSIONS_SHEET_GID);
-  const header = ensureColumns_(sessions, [REFERRAL_COUNTER_COLUMN, REFERRED_CLIENTS_COLUMN]);
+  const header = ensureColumns_(sessions, [REFERRAL_COUNTER_COLUMN, REFERRED_CLIENTS_COLUMN, "Clients Referred"]);
   const col = sessionsReferralColumns_(header);
   const lastRow = sessions.getLastRow();
   if (lastRow >= 2 && col.paidSessions >= 0) {
@@ -971,6 +1058,7 @@ function setupReferralTracking() {
     const filled = counters.map((c, i) => (c[0] === "" || c[0] == null ? [toSessionCount_(paid[i][0])] : [c[0]]));
     sessions.getRange(2, col.counter + 1, lastRow - 1, 1).setValues(filled);
   }
+  issueReferralCodes();
   try {
     ensureColumns_(getSheetByGid_(REFERRALS_SHEET_GID), [REFERRED_CLIENTS_COLUMN]);
   } catch (err) {

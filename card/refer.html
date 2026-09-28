@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+<title>MaxFit — Refer a Friend</title>
+<meta name="theme-color" content="#111111" />
+<meta name="robots" content="noindex" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css?v=20260913b" />
+<link rel="stylesheet" href="refer.css?v=20260928b" />
+</head>
+<body>
+
+<main class="card refer" id="refer">
+  <div class="card__top">
+    <a class="refer__back" id="backLink" href="./" aria-label="Back to my card">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+    </a>
+    <span class="card__tag">Refer a Friend</span>
+  </div>
+
+  <div class="refer__state" id="referLoading" role="status">
+    <p class="refer__state-text">Loading your link…</p>
+  </div>
+
+  <div class="refer__state" id="referNotice" hidden>
+    <p class="refer__notice-title" id="noticeTitle"></p>
+    <p class="refer__state-text" id="noticeText"></p>
+  </div>
+
+  <div class="refer__content" id="referContent" hidden>
+    <p class="refer__intro">Share your link with a friend. They get a free 1-on-1 to try MaxFit — and once they join, you earn rewards too.</p>
+
+    <div class="refer__code-box">
+      <span class="refer__code-label">Your referral code</span>
+      <span class="refer__code" id="referCode">——————</span>
+    </div>
+
+    <div class="card__sessions-row">
+      <div class="card__sessions">
+        <span class="card__label card__label--red">Clients Referred</span>
+        <span class="card__sessions-num card__sessions-num--split" id="referCount">—</span>
+      </div>
+      <button type="button" class="card__sessions card__sessions--reveal" id="referBonusWrap" aria-label="Tap to reveal tokens owed">
+        <span class="card__label card__label--red">Tokens Owed</span>
+        <span class="card__sessions-num card__sessions-num--split card__bonus-value" id="referBonus">—</span>
+        <span class="card__reveal-hint">Tap to reveal</span>
+      </button>
+    </div>
+
+    <button class="refer__btn" id="shareBtn" type="button">Share Your Link</button>
+    <p class="refer__copied" id="copiedNote" role="status"></p>
+
+    <div class="refer__link-row">
+      <span class="refer__link-label">Or send this link directly</span>
+      <span class="refer__link-value" id="linkValue">—</span>
+    </div>
+
+    <div class="card__scan">
+      <div class="card__qr" id="qrCode"></div>
+      <span class="card__scan-caption">Or Let Them Scan This</span>
+    </div>
+  </div>
+</main>
+
+<script src="vendor/qrcode.js"></script>
+<script src="sheet.js?v=20260928b"></script>
+<script src="refer.js?v=20260928b"></script>
+</body>
+</html>

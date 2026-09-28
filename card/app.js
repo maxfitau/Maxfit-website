@@ -193,6 +193,8 @@ const els = {
   upcomingLink: document.getElementById("upcomingLink"),
   bookWrap: document.getElementById("bookWrap"),
   bookLink: document.getElementById("bookLink"),
+  referWrap: document.getElementById("referWrap"),
+  referLink: document.getElementById("referLink"),
   loyaltyCount: document.getElementById("loyaltyCount"),
   loyaltyBar: document.getElementById("loyaltyBar"),
   picker: document.getElementById("picker"),
@@ -370,10 +372,12 @@ async function render(data) {
   renderQR(data.checkInUrl);
   renderLoyalty(data.totalAttended + (data.nutritionPunches || 0), !!data.freeOwed);
 
-  // Booking is for real members: the demo card has no membership to book against.
+  // Booking and referring are for real members: the demo card has no membership behind either.
   if (!data.isDemo) {
     els.bookLink.href = `book.html?id=${encodeURIComponent(data.clientSlug)}`;
     els.bookWrap.hidden = false;
+    els.referLink.href = `refer.html?id=${encodeURIComponent(data.clientSlug)}`;
+    els.referWrap.hidden = false;
   }
 
   const { count: assignedCount, names: workoutNames, todayName } = await assignedWorkoutSummary_(data.clientSlug);

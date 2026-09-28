@@ -1,0 +1,216 @@
+/* ==========================================================================
+   MAX FIT · refer a friend
+   Loads on top of card/styles.css — same shell, fonts and palette as the
+   card. card__sessions--reveal / card__bonus-value / card__reveal-hint are
+   duplicated from ../referrer.css (a root page) rather than shared, so this
+   file has no dependency on it.
+   ========================================================================== */
+
+/* This page can run taller than a phone screen, same reason as book.css. */
+body {
+  align-items: flex-start;
+}
+
+.refer {
+  gap: 20px;
+  padding-bottom: max(40px, calc(env(safe-area-inset-bottom, 0px) + 32px));
+}
+
+.refer [hidden] {
+  display: none !important;
+}
+
+.refer button:focus-visible,
+.refer a:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+}
+
+.refer__back {
+  color: var(--grey);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: -6px 0 -6px -6px;
+  border-radius: 8px;
+}
+
+.refer__back:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* ---- Loading, notices ---- */
+
+.refer__state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.refer__state-text {
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--grey);
+  margin: 0;
+}
+
+.refer__notice-title {
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  font-size: 26px;
+  color: var(--white);
+  margin: 0;
+}
+
+/* ---- Main content ---- */
+
+.refer__content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.refer__intro {
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--grey);
+  margin: 0;
+}
+
+/* ---- The code itself — the main thing on this page ---- */
+
+.refer__code-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  text-align: center;
+  background: rgba(224, 0, 0, 0.08);
+  border: 1px solid rgba(224, 0, 0, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 18px 14px;
+}
+
+.refer__code-label {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.refer__code {
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 34px;
+  letter-spacing: 0.22em;
+  color: var(--white);
+  padding-left: 0.22em; /* the letter-spacing pushes the last character out; this balances it back to centred */
+}
+
+/* ---- Tokens Owed tap-to-reveal — same behaviour as referrer.html's,
+   duplicated here since referrer.css isn't loaded on the card. ---- */
+
+.card__sessions--reveal {
+  position: relative;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.card__bonus-value {
+  filter: blur(10px);
+  user-select: none;
+  transition: filter 0.15s ease;
+}
+
+.card__sessions--reveal.card__sessions--revealed .card__bonus-value {
+  filter: none;
+}
+
+.card__reveal-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 6px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
+  pointer-events: none;
+}
+
+.card__sessions--reveal.card__sessions--revealed .card__reveal-hint {
+  display: none;
+}
+
+/* ---- Share button ---- */
+
+.refer__btn {
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 16px;
+  color: var(--on-red);
+  background: var(--red);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  width: 100%;
+  cursor: pointer;
+}
+
+.refer__btn:active {
+  background: var(--red-dim);
+}
+
+.refer__copied {
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--white);
+  margin: -8px 0 0;
+  text-align: center;
+}
+
+.refer__copied:empty {
+  display: none;
+}
+
+/* Always-visible fallback so a friend can be sent the link even where
+   neither the share sheet nor clipboard access is available. */
+.refer__link-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.refer__link-label {
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.refer__link-value {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--grey);
+  word-break: break-all;
+  user-select: all;
+}
