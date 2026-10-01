@@ -39,11 +39,18 @@
 
   // Every loading moment in FUEL (initial load, AI scans, barcode lookups,
   // suggestions, progress) shares this one spinner markup — swapping it here
-  // swaps the animation everywhere at once.
+  // swaps the animation everywhere at once. All three layers are the SAME
+  // flame outline at three sizes, anchored to the same base, so every stage
+  // of the build is a complete flame, not a slice of one (see macros.css).
+  const FUEL_FLAME_PATH =
+    "M12 2 C 9.8 6, 6.5 9.5, 6.5 14 C 6.5 18.5, 8.8 22, 12 22 " +
+    "C 15.2 22, 17.5 18.5, 17.5 14 C 17.5 10.5, 15.5 8.5, 14.8 6 " +
+    "C 14.5 8, 13.2 9, 12.3 8 C 11.7 7.2, 12 4.5, 12 2 Z";
   const FUEL_FLAME_SVG =
     '<svg class="fuel-flame" viewBox="0 0 24 24" aria-hidden="true">' +
-    '<path class="fuel-flame__body" d="M12 3 A9 11 0 0 0 12 21 A7 10 0 0 0 12 3 Z"/>' +
-    '<path class="fuel-flame__core" d="M12 10 A4 6 0 0 0 12 20 A3.2 5.5 0 0 0 12 10 Z"/>' +
+    `<path class="flame__layer flame__layer--1" d="${FUEL_FLAME_PATH}"/>` +
+    `<path class="flame__layer flame__layer--2" d="${FUEL_FLAME_PATH}"/>` +
+    `<path class="flame__layer flame__layer--3" d="${FUEL_FLAME_PATH}"/>` +
     "</svg>";
 
   const state = {

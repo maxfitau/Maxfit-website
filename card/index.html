@@ -38,19 +38,19 @@
 <link rel="preconnect" href="https://docs.google.com" />
 <link rel="preconnect" href="https://script.google.com" />
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="styles.css?v=20261001a" />
-<link rel="stylesheet" href="macros.css?v=20261001a" />
+<link rel="stylesheet" href="styles.css?v=20261001b" />
+<link rel="stylesheet" href="macros.css?v=20261001b" />
 </head>
 <body>
 
 <!-- Covers the card until the first real data arrives — hidden by app.js once loadCard() resolves (or immediately if the name picker shows instead). -->
 <div class="card-loading" id="cardLoading">
   <svg class="card-loading__icon" viewBox="0 0 24 24" aria-hidden="true">
-    <rect x="1.5" y="7.5" width="4" height="9" rx="1.5" />
-    <rect x="18.5" y="7.5" width="4" height="9" rx="1.5" />
-    <rect x="6.5" y="9.5" width="2" height="5" rx="1" />
-    <rect x="15.5" y="9.5" width="2" height="5" rx="1" />
-    <rect x="8.5" y="11.25" width="7" height="1.5" rx="0.75" />
+    <rect class="dumbbell__bar" x="8.5" y="11.25" width="7" height="1.5" rx="0.75" />
+    <rect class="dumbbell__collar dumbbell__collar--l" x="6.5" y="9.5" width="2" height="5" rx="1" />
+    <rect class="dumbbell__collar dumbbell__collar--r" x="15.5" y="9.5" width="2" height="5" rx="1" />
+    <rect class="dumbbell__plate dumbbell__plate--l" x="1.5" y="7.5" width="4" height="9" rx="1.5" />
+    <rect class="dumbbell__plate dumbbell__plate--r" x="18.5" y="7.5" width="4" height="9" rx="1.5" />
   </svg>
   <span class="card-loading__text">Loading your card</span>
 </div>
@@ -188,6 +188,6 @@
 <script src="app.js?v=20261001a" defer></script>
 <script src="macros-core.js?v=20260928a" defer></script>
 <script src="macros-api.js?v=20260925a" defer></script>
-<script src="macros.js?v=20261001a" defer></script>
+<script src="macros.js?v=20261001b" defer></script>
 </body>
 </html>

@@ -1065,31 +1065,55 @@ select.fuel-input {
   width: 100%;
   height: 100%;
   display: block;
-  transform-origin: 50% 90%;
-  animation: flame-flicker 1s ease-in-out infinite;
+  overflow: visible;
 }
 
-.fuel-flame__body {
+/* All three layers are the same flame outline, anchored to its base, grown
+   to three different sizes — small, then medium, then full — so the flame
+   visibly builds taller in stages instead of just flickering in place.
+   Each stage holds complete for a beat, then clears and builds again. */
+
+.flame__layer {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
   fill: var(--red);
 }
 
-.fuel-flame__core {
-  fill: rgba(255, 255, 255, 0.3);
+.flame__layer--1 { animation: flame-build-1 2.4s ease-in-out infinite; }
+.flame__layer--2 { animation: flame-build-2 2.4s ease-in-out infinite; }
+.flame__layer--3 { animation: flame-build-3 2.4s ease-in-out infinite; }
+
+@keyframes flame-build-1 {
+  0%, 4% { opacity: 0; transform: scale(0.22); }
+  16% { opacity: 1; transform: scale(0.52); }
+  20% { transform: scale(0.44); }
+  80% { opacity: 1; transform: scale(0.44); }
+  90%, 100% { opacity: 0; transform: scale(0.22); }
 }
 
-@keyframes flame-flicker {
-  0%, 100% { transform: scale(1, 1) rotate(0deg); }
-  25% { transform: scale(0.94, 1.06) rotate(-3deg); }
-  50% { transform: scale(1.05, 0.96) rotate(2deg); }
-  75% { transform: scale(0.97, 1.04) rotate(-2deg); }
+@keyframes flame-build-2 {
+  0%, 18% { opacity: 0; transform: scale(0.36); }
+  30% { opacity: 1; transform: scale(0.82); }
+  34% { transform: scale(0.72); }
+  80% { opacity: 1; transform: scale(0.72); }
+  88%, 100% { opacity: 0; transform: scale(0.36); }
+}
+
+@keyframes flame-build-3 {
+  0%, 32% { opacity: 0; transform: scale(0.52); }
+  44% { opacity: 1; transform: scale(1.1); }
+  48% { transform: scale(1); }
+  80% { opacity: 1; transform: scale(1); }
+  86%, 100% { opacity: 0; transform: scale(0.52); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .fuel-flame__core {
-    animation: none;
-  }
-  .fuel-flame {
+  .flame__layer--1,
+  .flame__layer--2,
+  .flame__layer--3 {
     animation: fuel-loading-pulse 1.6s ease-in-out infinite;
+    opacity: 1;
+    transform: none;
   }
 }
 
