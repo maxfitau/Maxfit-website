@@ -139,6 +139,45 @@
   border-color: var(--red);
 }
 
+/* The exercise field is a button (opens ExercisePicker), styled to match
+   the row's text inputs it sits beside. */
+.builder__row-exercise {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--white);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 11px 10px;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.builder__row-exercise:active {
+  border-color: var(--red);
+}
+
+.builder__row-exercise--empty .builder__row-exercise-label {
+  color: var(--dim);
+  font-weight: 500;
+}
+
+.builder__row-exercise-label {
+  flex-grow: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .builder__row input[type="number"] {
   text-align: center;
   padding: 11px 4px;

@@ -105,11 +105,13 @@ function fetchSheet() {
           checkInToken: findColumn(header, "Check-in Token"),
           totalAttended: findColumn(header, "Total Classes Attended"),
           // Bonus punches on the loyalty card: FUEL adds one per week of 5
-          // green days, and the check-in script adds one for every session a
-          // referred friend pays for. "Free Session Owed" is "Y" when a bonus
-          // punch completed a card.
+          // green days, the check-in script adds one for every session a
+          // referred friend pays for, and one for every session Max adds by
+          // hand to a client's own Paid Sessions. "Free Session Owed" is "Y"
+          // when a bonus punch completed a card.
           nutritionPunches: findColumn(header, "Nutrition Punches"),
           referralPunches: findColumn(header, "Referral Punches"),
+          manualPunches: findColumn(header, "Manual Session Punches"),
           freeOwed: findColumn(header, "Free Session Owed"),
         };
         return { rows, col };
@@ -132,6 +134,8 @@ function fetchExercises() {
         const [header, ...rows] = parseCSV(text);
         const col = {
           name: findColumn(header, "Name"),
+          movement: findColumn(header, "Movement"),
+          bodyPart: findColumn(header, "Body Part"),
           startingWeight: findColumn(header, "Default Starting Weight (kg)"),
         };
         return { rows, col };

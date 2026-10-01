@@ -263,6 +263,11 @@
     state.aiEnabled = data.aiEnabled !== false;
     state.plan = data.plan || null;
     state.weightTrend = data.weightTrend || null;
+    // Themes the whole Fuel screen, not just the small plan badges — set on
+    // the panel itself (not inside render()'s innerHTML) so it survives every
+    // view's re-render, home screen or not. Silver gets no special
+    // background, same as its plain grey badge.
+    els.panelFuel.dataset.fuelTier = tier();
   }
 
   async function load(opts) {

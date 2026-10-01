@@ -32,7 +32,6 @@ const els = {
   deleteButton: document.getElementById("deleteButton"),
   error: document.getElementById("builderError"),
   success: document.getElementById("builderSuccess"),
-  exerciseOptions: document.getElementById("exerciseOptions"),
 };
 
 // This client's existing workouts, keyed by lowercased name — refreshed
@@ -57,15 +56,69 @@ function currentPin() {
   return els.pinInput.value.trim();
 }
 
+/**
+ * The visible exercise control — a button, not a text input, so the only
+ * way to set a name is to pick one from ExercisePicker (or add a new one
+ * through it). That's what guarantees "Bench Press" is spelled the same
+ * way every time it's assigned, so its logged history is never split by a
+ * typo. The actual name travels in nameValueInput (a hidden input, read by
+ * the save handler below) so the picked name survives the same as any
+ * other field even though it isn't typed.
+ */
+function buildExerciseControl(exercise) {
+  const wrap = document.createElement("button");
+  wrap.type = "button";
+  wrap.className = "builder__row-exercise";
+
+  const dot = document.createElement("span");
+  dot.className = "exercise-dot";
+  dot.hidden = true;
+
+  const label = document.createElement("span");
+  label.className = "builder__row-exercise-label";
+
+  const nameValueInput = document.createElement("input");
+  nameValueInput.type = "hidden";
+  nameValueInput.className = "builder__row-name-value";
+
+  function setChosen(name, movement, bodyPart) {
+    nameValueInput.value = name || "";
+    wrap.dataset.movement = movement || "";
+    wrap.dataset.bodyPart = bodyPart || "";
+    if (name) {
+      label.textContent = name;
+      wrap.classList.remove("builder__row-exercise--empty");
+      if (bodyPart) {
+        dot.style.background = ExercisePicker.colorFor(bodyPart);
+        dot.hidden = false;
+      } else {
+        dot.hidden = true;
+      }
+    } else {
+      label.textContent = "Choose exercise";
+      wrap.classList.add("builder__row-exercise--empty");
+      dot.hidden = true;
+    }
+  }
+
+  setChosen((exercise && exercise.name) || "", exercise && exercise.movement, exercise && exercise.bodyPart);
+
+  wrap.addEventListener("click", () => {
+    ExercisePicker.open({
+      onChoose: (picked) => setChosen(picked.name, picked.movement, picked.bodyPart),
+    });
+  });
+
+  wrap.appendChild(dot);
+  wrap.appendChild(label);
+  return { control: wrap, nameValueInput };
+}
+
 function addRow(exercise) {
   const row = document.createElement("div");
   row.className = "builder__row";
 
-  const nameInput = document.createElement("input");
-  nameInput.type = "text";
-  nameInput.placeholder = "Exercise";
-  nameInput.setAttribute("list", "exerciseOptions");
-  nameInput.value = (exercise && exercise.name) || "";
+  const { control: nameControl, nameValueInput } = buildExerciseControl(exercise);
 
   const setsInput = document.createElement("input");
   setsInput.type = "number";
@@ -129,13 +182,17 @@ function addRow(exercise) {
   removeButton.setAttribute("aria-label", "Remove exercise");
   removeButton.addEventListener("click", () => row.remove());
 
-  row.appendChild(nameInput);
+  row.appendChild(nameControl);
   row.appendChild(setsInput);
   row.appendChild(repsInput);
   row.appendChild(handle);
   row.appendChild(moveWrap);
   row.appendChild(removeButton);
   row.appendChild(tipInput);
+  // Last, and hidden — keeps the 7 elements above in the exact DOM order the
+  // CSS's nth-child mobile layout (builder.css) already expects, and keeps
+  // the picked name out of the save handler's positional input lookup below.
+  row.appendChild(nameValueInput);
   els.rows.appendChild(row);
 }
 
@@ -266,20 +323,32 @@ async function loadClientList() {
   }
 }
 
-async function loadExerciseOptions() {
-  try {
-    const { rows, col } = await fetchExercises();
-    els.exerciseOptions.innerHTML = "";
-    for (const row of rows) {
-      const name = col.name >= 0 ? String(row[col.name] || "").trim() : "";
-      if (!name) continue;
-      const option = document.createElement("option");
-      option.value = name;
-      els.exerciseOptions.appendChild(option);
+// Name -> {movement, bodyPart}, built once from fetchExercises() — the
+// Workout Exercises tab only stores an exercise's NAME against a client, not
+// its category, so re-opening a saved workout needs this lookup to show the
+// same colour dot a freshly-picked exercise gets.
+let exerciseCategoryByName_ = null;
+
+async function exerciseCategoryFor_(name) {
+  if (!exerciseCategoryByName_) {
+    exerciseCategoryByName_ = {};
+    try {
+      const { rows, col } = await fetchExercises();
+      if (col.name >= 0) {
+        for (const r of rows) {
+          const n = String(r[col.name] || "").trim();
+          if (!n) continue;
+          exerciseCategoryByName_[n.toLowerCase()] = {
+            movement: col.movement >= 0 ? String(r[col.movement] || "").trim() : "",
+            bodyPart: col.bodyPart >= 0 ? String(r[col.bodyPart] || "").trim() : "",
+          };
+        }
+      }
+    } catch (err) {
+      // Lookup stays empty — rows just render without a colour dot.
     }
-  } catch (err) {
-    // No autocomplete list — free-text entry still works fine without it.
   }
+  return exerciseCategoryByName_[name.trim().toLowerCase()] || { movement: "", bodyPart: "" };
 }
 
 /** Loads every workout name this client already has, grouped into { lowercaseName: { name, exercises } }. */
@@ -289,22 +358,30 @@ async function loadClientWorkouts(clientSlug) {
 
   try {
     const { rows, col } = await fetchWorkoutExercises();
-    const clientRows = rows
-      .filter((r) => String(r[col.client] || "").trim().toLowerCase() === clientSlug)
-      .map((r) => ({
-        workoutName: (col.workoutName >= 0 ? r[col.workoutName] : "") || "",
-        name: (r[col.exercise] || "").trim(),
-        sets: parseSessions(r[col.sets], ""),
-        reps: (r[col.reps] || "").trim(),
-        order: parseSessions(r[col.order], 0),
-        days: (col.days >= 0 ? String(r[col.days] || "") : "").split(",").map((d) => d.trim()).filter(Boolean),
-        workoutOrder: col.workoutOrder >= 0 ? Number(r[col.workoutOrder]) : NaN,
-        note: col.notes >= 0 ? String(r[col.notes] || "").trim() : "",
-        workoutNote: col.workoutNotes >= 0 ? String(r[col.workoutNotes] || "").trim() : "",
-      }))
-      .filter((ex) => ex.name && ex.workoutName);
+    const clientRows = await Promise.all(
+      rows
+        .filter((r) => String(r[col.client] || "").trim().toLowerCase() === clientSlug)
+        .map(async (r) => {
+          const name = (r[col.exercise] || "").trim();
+          const category = name ? await exerciseCategoryFor_(name) : { movement: "", bodyPart: "" };
+          return {
+            workoutName: (col.workoutName >= 0 ? r[col.workoutName] : "") || "",
+            name,
+            movement: category.movement,
+            bodyPart: category.bodyPart,
+            sets: parseSessions(r[col.sets], ""),
+            reps: (r[col.reps] || "").trim(),
+            order: parseSessions(r[col.order], 0),
+            days: (col.days >= 0 ? String(r[col.days] || "") : "").split(",").map((d) => d.trim()).filter(Boolean),
+            workoutOrder: col.workoutOrder >= 0 ? Number(r[col.workoutOrder]) : NaN,
+            note: col.notes >= 0 ? String(r[col.notes] || "").trim() : "",
+            workoutNote: col.workoutNotes >= 0 ? String(r[col.workoutNotes] || "").trim() : "",
+          };
+        })
+    );
+    const validRows = clientRows.filter((ex) => ex.name && ex.workoutName);
 
-    for (const ex of clientRows) {
+    for (const ex of validRows) {
       const key = ex.workoutName.toLowerCase();
       if (!clientWorkouts[key]) {
         clientWorkouts[key] = { name: ex.workoutName, exercises: [], days: ex.days, order: ex.workoutOrder, note: "" };
@@ -500,9 +577,13 @@ els.saveButton.addEventListener("click", async () => {
     return;
   }
 
+  // The row's only 4 <input>s now, in DOM order: sets, reps, tip, then the
+  // hidden exercise-name value (see addRow — its visible control is a
+  // button, not an input, precisely so it's skipped here and picked up by
+  // name below instead).
   const exercises = Array.from(els.rows.children)
     .map((row) => {
-      const [nameInput, setsInput, repsInput, tipInput] = row.querySelectorAll("input");
+      const [setsInput, repsInput, tipInput, nameInput] = row.querySelectorAll("input");
       return {
         name: nameInput.value.trim(),
         sets: Number(setsInput.value),
@@ -662,6 +743,5 @@ function rememberPin_(pin) {
   buildDaysPicker();
   buildWorkoutNoteField();
   loadClientList();
-  loadExerciseOptions();
   addRow();
 })();

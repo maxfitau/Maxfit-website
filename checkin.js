@@ -236,7 +236,8 @@ async function init() {
   // visit is the free one.
   const totalBefore = parseSessions(col.totalAttended >= 0 ? match[col.totalAttended] : "", 0);
   const punches = (col.nutritionPunches >= 0 ? parseSessions(match[col.nutritionPunches], 0) : 0)
-    + (col.referralPunches >= 0 ? parseSessions(match[col.referralPunches], 0) : 0);
+    + (col.referralPunches >= 0 ? parseSessions(match[col.referralPunches], 0) : 0)
+    + (col.manualPunches >= 0 ? parseSessions(match[col.manualPunches], 0) : 0);
   const freeOwed = col.freeOwed >= 0 && String(match[col.freeOwed] || "").trim().toUpperCase() === "Y";
   const cardBefore = totalBefore + punches;
   const isFirstVisit = totalBefore === 0;

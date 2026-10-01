@@ -32,7 +32,7 @@ const GROCERY_SHEET_NAME = "Grocery Items";
 // Changes whenever this file does, and is shown when you open the deployed
 // URL in a browser (see doGet) — the quick way to tell whether a redeploy
 // actually took, instead of guessing from behaviour.
-const BACKEND_VERSION = "2026-09-28d";
+const BACKEND_VERSION = "2026-10-01b";
 
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -90,7 +90,7 @@ function backfillTokens() {
  * it only creates a tab if one by that exact name doesn't already exist yet.
  */
 function setupWorkoutSheets() {
-  getOrCreateSheetByName_(EXERCISES_SHEET_NAME, ["Name", "Default Starting Weight (kg)"]);
+  getOrCreateSheetByName_(EXERCISES_SHEET_NAME, ["Name", "Movement", "Body Part", "Default Starting Weight (kg)"]);
   getOrCreateSheetByName_(WORKOUT_EXERCISES_SHEET_NAME, ["Client", "Workout Name", "Order", "Exercise", "Target Sets", "Target Reps", "Days", "Workout Order", "Exercise Notes", "Workout Notes"]);
   getOrCreateSheetByName_(LOGGED_SETS_SHEET_NAME, ["Client", "Workout Name", "Exercise", "Set Number", "Weight (kg)", "Reps", "Date", "Timestamp", "Notes"]);
   Logger.log("Workout sheets ready.");
@@ -161,6 +161,123 @@ function addNotesColumnToLoggedSets() {
   }
   sheet.getRange(1, lastCol + 1).setValue("Notes");
   Logger.log("Added Notes column.");
+}
+
+/**
+ * One-time helper — run manually from the Apps Script editor. Adds the
+ * "Movement" and "Body Part" columns to an existing Exercises tab that
+ * predates them (the exercise picker's three steps — movement, then body
+ * part, then the exercise itself — read these two columns; a row with
+ * either blank falls back to "Other" in the picker). Safe to re-run.
+ */
+function addCategoryColumnsToExercises() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(EXERCISES_SHEET_NAME);
+  if (!sheet) {
+    Logger.log("No Exercises tab yet — run setupWorkoutSheets first.");
+    return;
+  }
+  ensureExerciseColumns_(sheet);
+  Logger.log("Movement and Body Part columns ready.");
+}
+
+// [name, movement, body part] — a starting library for the exercise picker,
+// covering common gym equipment. Add more any time straight in the sheet,
+// or with "+ Add your own" in the picker itself; this seed never overwrites
+// those.
+const EXERCISE_SEED_ = [
+  ["Barbell Bench Press", "Push", "Chest"],
+  ["Incline Dumbbell Press", "Push", "Chest"],
+  ["Dumbbell Bench Press", "Push", "Chest"],
+  ["Push-Up", "Push", "Chest"],
+  ["Cable Chest Fly", "Push", "Chest"],
+  ["Overhead Press", "Push", "Shoulders"],
+  ["Dumbbell Shoulder Press", "Push", "Shoulders"],
+  ["Arnold Press", "Push", "Shoulders"],
+  ["Lateral Raise", "Push", "Shoulders"],
+  ["Front Raise", "Push", "Shoulders"],
+  ["Tricep Pushdown", "Push", "Triceps"],
+  ["Overhead Tricep Extension", "Push", "Triceps"],
+  ["Close-Grip Bench Press", "Push", "Triceps"],
+  ["Dips", "Push", "Triceps"],
+  ["Lat Pulldown", "Pull", "Back"],
+  ["Barbell Row", "Pull", "Back"],
+  ["Seated Cable Row", "Pull", "Back"],
+  ["Pull-Up", "Pull", "Back"],
+  ["Single-Arm Dumbbell Row", "Pull", "Back"],
+  ["Deadlift", "Pull", "Back"],
+  ["Barbell Curl", "Pull", "Biceps"],
+  ["Dumbbell Curl", "Pull", "Biceps"],
+  ["Hammer Curl", "Pull", "Biceps"],
+  ["Cable Curl", "Pull", "Biceps"],
+  ["Barbell Squat", "Legs", "Quads"],
+  ["Leg Press", "Legs", "Quads"],
+  ["Leg Extension", "Legs", "Quads"],
+  ["Walking Lunge", "Legs", "Quads"],
+  ["Goblet Squat", "Legs", "Quads"],
+  ["Romanian Deadlift", "Legs", "Hamstrings"],
+  ["Leg Curl", "Legs", "Hamstrings"],
+  ["Good Morning", "Legs", "Hamstrings"],
+  ["Hip Thrust", "Legs", "Glutes"],
+  ["Glute Bridge", "Legs", "Glutes"],
+  ["Cable Kickback", "Legs", "Glutes"],
+  ["Standing Calf Raise", "Legs", "Calves"],
+  ["Seated Calf Raise", "Legs", "Calves"],
+  ["Plank", "Core", "Abs"],
+  ["Cable Crunch", "Core", "Abs"],
+  ["Hanging Leg Raise", "Core", "Abs"],
+  ["Sit-Up", "Core", "Abs"],
+  ["Russian Twist", "Core", "Obliques"],
+  ["Side Plank", "Core", "Obliques"],
+  ["Woodchopper", "Core", "Obliques"],
+  ["Back Extension", "Core", "Lower Back"],
+  ["Superman", "Core", "Lower Back"],
+];
+
+/**
+ * One-time helper — run manually from the Apps Script editor, after
+ * addCategoryColumnsToExercises. Fills the Exercises tab with a starting
+ * library (EXERCISE_SEED_ above) so the picker has something in it from day
+ * one. Safe to re-run: skips any name already on the sheet (case-insensitive),
+ * so it only ever fills in what's missing and never touches a row you've
+ * since edited.
+ */
+function seedExercises() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(EXERCISES_SHEET_NAME);
+  if (!sheet) {
+    Logger.log("No Exercises tab yet — run setupWorkoutSheets first.");
+    return;
+  }
+  const header = ensureExerciseColumns_(sheet);
+  const col = {
+    name: findColumn_(header, "Name"),
+    movement: findColumn_(header, "Movement"),
+    bodyPart: findColumn_(header, "Body Part"),
+  };
+
+  const lastRow = sheet.getLastRow();
+  const existingNames = new Set();
+  if (lastRow >= 2) {
+    const existing = sheet.getRange(2, 1, lastRow - 1, header.length).getDisplayValues();
+    for (const row of existing) {
+      const n = String(row[col.name] || "").trim().toLowerCase();
+      if (n) existingNames.add(n);
+    }
+  }
+
+  const newRows = EXERCISE_SEED_
+    .filter(([name]) => !existingNames.has(name.toLowerCase()))
+    .map(([name, movement, bodyPart]) => {
+      const row = new Array(header.length).fill("");
+      row[col.name] = name;
+      row[col.movement] = movement;
+      row[col.bodyPart] = bodyPart;
+      return row;
+    });
+
+  if (newRows.length) {
+    sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, header.length).setValues(newRows);
+  }
+  Logger.log("Added " + newRows.length + " exercise(s); " + (EXERCISE_SEED_.length - newRows.length) + " already there.");
 }
 
 /**
@@ -240,6 +357,9 @@ function doPost(e) {
   }
   if (action === "assignWorkout") {
     return withLock_(() => handleAssignWorkout_(payload));
+  }
+  if (action === "addExercise") {
+    return withLock_(() => handleAddExercise_(payload));
   }
   if (action === "reorderWorkouts") {
     return withLock_(() => handleReorderWorkouts_(payload));
@@ -592,13 +712,31 @@ function maybeApplyReferralBonus_(sheet, row) {
   if (referrerRow > 0 && referrerRow !== row) addReferralPunch_(sheet, col, referrerRow); // nobody earns from their own sessions
 }
 
-/** +1 Referral Punch for the client on `row`; sets "Free Session Owed" when that fills a card of 10 (class visits + Fuel punches + referral punches). */
+/** +1 Referral Punch for the client on `row`; sets "Free Session Owed" when that fills a card of 10 (class visits + Fuel + referral + manual punches). */
 function addReferralPunch_(sheet, col, row) {
   const cell = sheet.getRange(row, col.referralPunches + 1);
   const punches = toSessionCount_(cell.getValue()) + 1;
   cell.setValue(punches);
   const count = (c) => (c >= 0 ? toSessionCount_(sheet.getRange(row, c + 1).getValue()) : 0);
-  if ((count(col.totalAttended) + count(col.nutritionPunches) + punches) % 10 === 0) {
+  if ((count(col.totalAttended) + count(col.nutritionPunches) + count(col.manualPunches) + punches) % 10 === 0) {
+    sheet.getRange(row, col.freeOwed + 1).setValue("Y");
+  }
+}
+
+/**
+ * +1 Manual Session Punch for the client on `row` themselves — called once
+ * per paid session added by hand-editing their own Paid Sessions, the same
+ * way addReferralPunch_ above is called once per paid session for whoever
+ * referred them. Sets "Free Session Owed" on the same all-sources total
+ * (class visits + Fuel + referral + manual punches) hitting a multiple of 10.
+ */
+function addManualSessionPunch_(sheet, col, row) {
+  if (col.manualPunches < 0 || col.freeOwed < 0) return;
+  const cell = sheet.getRange(row, col.manualPunches + 1);
+  const punches = toSessionCount_(cell.getValue()) + 1;
+  cell.setValue(punches);
+  const count = (c) => (c >= 0 ? toSessionCount_(sheet.getRange(row, c + 1).getValue()) : 0);
+  if ((count(col.totalAttended) + count(col.nutritionPunches) + count(col.referralPunches) + punches) % 10 === 0) {
     sheet.getRange(row, col.freeOwed + 1).setValue("Y");
   }
 }
@@ -615,6 +753,13 @@ function addReferralPunch_(sheet, col, row) {
 const REFERRAL_COUNTER_COLUMN = "Referral Sessions Counted";
 const REFERRAL_PUNCHES_COLUMN = "Referral Punches";
 
+// A hand-raised Paid Sessions is itself a loyalty punch for the CLIENT it
+// belongs to, same idea as a referral punch but for themselves instead of
+// whoever referred them — Max's call (2026-10-01): check-in scans probably
+// won't be his most common way of recording a session, so that can't be the
+// only way a client's own card fills up.
+const MANUAL_PUNCHES_COLUMN = "Manual Session Punches";
+
 // A hand edit that raises Paid Sessions by more than this in one go is far
 // more likely a typo (30 for 3) than a real catch-up, and paying out for a
 // slip of the finger isn't something to do silently.
@@ -627,6 +772,7 @@ function sessionsReferralColumns_(header) {
     referredBy: findColumn_(header, "Referred By"),
     counter: findColumn_(header, REFERRAL_COUNTER_COLUMN),
     referralPunches: findColumn_(header, REFERRAL_PUNCHES_COLUMN),
+    manualPunches: findColumn_(header, MANUAL_PUNCHES_COLUMN),
     totalAttended: findColumn_(header, "Total Classes Attended"),
     nutritionPunches: findColumn_(header, "Nutrition Punches"),
     freeOwed: findColumn_(header, "Free Session Owed"),
@@ -695,16 +841,20 @@ function onEdit(e) {
 }
 
 /**
- * Pays the referrer for every paid session above what's already been counted
- * for this client, one session at a time — the same rule as a check-in.
+ * For every paid session above what's already been counted for this client,
+ * one session at a time: pays the referrer who sent them (same rule as a
+ * check-in) AND punches this client's own card once (Manual Session
+ * Punches) — a hand-raised Paid Sessions counts toward their own free-every-
+ * 10th the same way an attended check-in does.
  *
  * The first time a client is seen here their counter is blank; it's taken to
  * be whatever the cell held BEFORE this edit, on the basis that everything up
  * to then was already handled by check-ins. That's what keeps clients who
- * already have paid sessions from being paid for them all over again.
+ * already have paid sessions from being paid (or punched) for them all over
+ * again.
  */
 function applyPaidSessionsEdit_(sheet, row, oldCount, newCount, editedRange) {
-  const header = ensureColumns_(sheet, [REFERRAL_COUNTER_COLUMN]);
+  const header = ensureColumns_(sheet, [REFERRAL_COUNTER_COLUMN, MANUAL_PUNCHES_COLUMN, "Free Session Owed"]);
   const col = sessionsReferralColumns_(header);
   const counterCell = sheet.getRange(row, col.counter + 1);
   const rawValue = counterCell.getValue();
@@ -725,7 +875,8 @@ function applyPaidSessionsEdit_(sheet, row, oldCount, newCount, editedRange) {
       return;
     }
     for (let k = counted + 1; k <= newCount; k++) {
-      maybeApplyReferralBonus_(sheet, row);
+      maybeApplyReferralBonus_(sheet, row); // pays whoever referred THIS client, if anyone
+      addManualSessionPunch_(sheet, col, row); // punches THIS client's own card
     }
   }
 
@@ -876,6 +1027,62 @@ function handleAssignWorkout_(payload) {
   // notesSupported lets the builder tell a deployment that stored the tips
   // from an older one that would have quietly ignored them.
   return jsonResponse_({ status: "success", notesSupported: true });
+}
+
+/**
+ * Adds a new exercise to the Exercises tab — "add your own" at the end of
+ * the exercise picker's list, for whenever the one a coach or client wants
+ * isn't curated yet. No PIN: a client can hit this from the "+ Add
+ * Exercise" ad-hoc flow on their own workout page, same as the builder.
+ * Case-insensitive duplicate check: if the name's already there (under
+ * whatever Movement/Body Part it was filed under before), nothing new is
+ * added — the existing categorisation comes back instead, so two people
+ * adding "bench press" around the same time can't fork it into two rows
+ * that then split its logged-set history between them.
+ */
+function handleAddExercise_(payload) {
+  const name = String(payload.name || "").trim().slice(0, 120);
+  const movement = String(payload.movement || "").trim().slice(0, 60);
+  const bodyPart = String(payload.bodyPart || "").trim().slice(0, 60);
+  if (!name || !movement || !bodyPart) {
+    return jsonResponse_({ status: "error", message: "Missing exercise name, movement or body part." });
+  }
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(EXERCISES_SHEET_NAME);
+  if (!sheet) {
+    return jsonResponse_({ status: "error", message: "Run setupWorkoutSheets first." });
+  }
+
+  const header = ensureExerciseColumns_(sheet);
+  const col = {
+    name: findColumn_(header, "Name"),
+    movement: findColumn_(header, "Movement"),
+    bodyPart: findColumn_(header, "Body Part"),
+  };
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow >= 2) {
+    const existing = sheet.getRange(2, 1, lastRow - 1, header.length).getDisplayValues();
+    for (const row of existing) {
+      if (String(row[col.name] || "").trim().toLowerCase() !== name.toLowerCase()) continue;
+      return jsonResponse_({
+        status: "success",
+        exercise: {
+          name: row[col.name],
+          movement: row[col.movement] || movement,
+          bodyPart: row[col.bodyPart] || bodyPart,
+        },
+      });
+    }
+  }
+
+  const newRow = new Array(header.length).fill("");
+  newRow[col.name] = name;
+  newRow[col.movement] = movement;
+  newRow[col.bodyPart] = bodyPart;
+  sheet.getRange(sheet.getLastRow() + 1, 1, 1, header.length).setValues([newRow]);
+
+  return jsonResponse_({ status: "success", exercise: { name, movement, bodyPart } });
 }
 
 /**
@@ -1031,6 +1238,10 @@ function ensureLoggedSetsColumns_(sheet) {
  */
 function ensureWorkoutExercisesColumns_(sheet) {
   return ensureColumns_(sheet, ["Exercise Notes", "Workout Notes"]);
+}
+
+function ensureExerciseColumns_(sheet) {
+  return ensureColumns_(sheet, ["Movement", "Body Part"]);
 }
 
 /** Adds any of `names` that are missing from the sheet's header row (at the end — everything looks columns up by NAME, so position doesn't matter) and returns the up-to-date header. */
