@@ -37,6 +37,15 @@
   const MEAL_LABELS = { breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner", snack: "Snacks" };
   const MEAL_SHORT = { breakfast: "Brekky", lunch: "Lunch", dinner: "Dinner", snack: "Snack" };
 
+  // Every loading moment in FUEL (initial load, AI scans, barcode lookups,
+  // suggestions, progress) shares this one spinner markup — swapping it here
+  // swaps the animation everywhere at once.
+  const FUEL_FLAME_SVG =
+    '<svg class="fuel-flame" viewBox="0 0 24 24" aria-hidden="true">' +
+    '<path class="fuel-flame__body" d="M12 3 A9 11 0 0 0 12 21 A7 10 0 0 0 12 3 Z"/>' +
+    '<path class="fuel-flame__core" d="M12 10 A4 6 0 0 0 12 20 A3.2 5.5 0 0 0 12 10 Z"/>' +
+    "</svg>";
+
   const state = {
     loaded: false,
     loading: false,
@@ -231,7 +240,7 @@
   }
 
   function renderLoading(text) {
-    els.panelFuel.innerHTML = `<div class="fuel-loading"><div class="fuel-spinner"></div><span class="fuel-loading__text">${esc(text || "Loading")}</span></div>`;
+    els.panelFuel.innerHTML = `<div class="fuel-loading"><div class="fuel-spinner">${FUEL_FLAME_SVG}</div><span class="fuel-loading__text">${esc(text || "Loading")}</span></div>`;
   }
 
   function applyMe(data) {
@@ -741,7 +750,7 @@
   });
 
   function sheetLoading(text) {
-    openSheet(`<div class="fuel-loading"><div class="fuel-spinner"></div><span class="fuel-loading__text">${esc(text)}</span></div>`);
+    openSheet(`<div class="fuel-loading"><div class="fuel-spinner">${FUEL_FLAME_SVG}</div><span class="fuel-loading__text">${esc(text)}</span></div>`);
   }
 
   function sheetError(title, message, buttons) {

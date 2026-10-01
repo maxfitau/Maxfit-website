@@ -39,6 +39,14 @@ Max French runs MaxFit, a personal-training business in Inner West Sydney with *
 - **Progress:** thin red bars in the same style as the loyalty punch card (`.card__loyalty-peg`).
 - **Tone:** supportive everywhere. No shaming, no red "failure" screens, and clients can hide calorie numbers.
 
+## Card home screen (redesigned 2026-09-29)
+
+The Card tab is a 2×2 grid of square tiles — Check In, Today's Workout/Upcoming Session, 1-on-1 Sessions, Refer a Friend — instead of the old stacked rows. Check In opens the QR in a modal (`#qrModal`) instead of showing it on the card at all times. All existing element ids were kept, so `app.js`'s render logic barely changed. No reinstall needed for UI changes like this: the card has no service worker, so the home-screen icon just re-fetches the page fresh every time it's opened (only the icon image and app name are fixed at install time).
+
+**Loading screen (2026-10-01):** `#cardLoading` is a full-screen overlay with an animated dumbbell, shown by default in the HTML and hidden by `app.js` once the first real data is on screen (`hideCardLoading()`, called from `render()`, `showPicker()`, and `loadCard()`'s catch block). FUEL's existing spinner (`.fuel-spinner`, used for every loading moment in macros.js — initial load, AI scans, barcodes, suggestions, progress) was restyled from a plain spinning circle into a small flickering flame (`FUEL_FLAME_SVG` in macros.js) — one change, every loading moment in FUEL gets it.
+
+**Faster loading (2026-10-01):** all `<script>` tags across `card/*.html` are now `defer`red so they download in parallel instead of one at a time; the Google Fonts request only pulls the Barlow Condensed weights actually used (700/800, down from six) since Barlow (body) genuinely uses 400/500/600/700; `<link rel="preconnect">` was added for `docs.google.com` and `script.google.com` (whichever a page actually calls) so the browser isn't doing DNS/TLS on top of the real fetch; and on the Card tab, the member-data fetch and the "Today's Workout" lookup now fire at the same time instead of one after the other (both only need the id's slug, known before either starts).
+
 ## Booking (1-on-1 sessions, built 2026-09-26)
 
 Clients book from the card: **Book a session** (Card tab) opens `card/book.html` (`book.js`, `book.css`), a day grid then a time list, then confirm. Max chose: 1-on-1 only, hours set in a sheet, cancelling up to 24 hours before.

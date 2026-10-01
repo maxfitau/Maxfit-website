@@ -188,13 +188,16 @@ const els = {
   tier: document.getElementById("memberTier"),
   qr: document.getElementById("qrCode"),
   status: document.getElementById("status"),
+  cardLoading: document.getElementById("cardLoading"),
   upcomingLabel: document.getElementById("upcomingLabel"),
   upcomingValue: document.getElementById("upcomingValue"),
   upcomingLink: document.getElementById("upcomingLink"),
-  bookWrap: document.getElementById("bookWrap"),
   bookLink: document.getElementById("bookLink"),
-  referWrap: document.getElementById("referWrap"),
   referLink: document.getElementById("referLink"),
+  checkinTile: document.getElementById("checkinTile"),
+  qrModal: document.getElementById("qrModal"),
+  qrModalBackdrop: document.getElementById("qrModalBackdrop"),
+  qrModalClose: document.getElementById("qrModalClose"),
   loyaltyCount: document.getElementById("loyaltyCount"),
   loyaltyBar: document.getElementById("loyaltyBar"),
   picker: document.getElementById("picker"),
@@ -272,10 +275,31 @@ els.completeButton.addEventListener("click", () => {
   if (nowChecked) celebrate();
 });
 
+/** The check-in QR used to sit on the card at all times; it now opens in a focused modal from the Check In tile — bigger and easier to scan, one tap away. */
+function openQrModal() {
+  els.qrModal.hidden = false;
+}
+
+function closeQrModal() {
+  els.qrModal.hidden = true;
+}
+
+els.checkinTile.addEventListener("click", openQrModal);
+els.qrModalBackdrop.addEventListener("click", closeQrModal);
+els.qrModalClose.addEventListener("click", closeQrModal);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !els.qrModal.hidden) closeQrModal();
+});
+
 function showStatus(message, isError) {
   els.status.textContent = message;
   els.status.hidden = false;
   els.status.classList.toggle("status--error", Boolean(isError));
+}
+
+/** Hides the boot-time loading screen — called once real data is on screen, or immediately if there's nothing to fetch yet (the name picker). Safe to call more than once. */
+function hideCardLoading() {
+  els.cardLoading.hidden = true;
 }
 
 function renderQR(value) {
@@ -364,7 +388,7 @@ async function assignedWorkoutSummary_(clientSlug) {
   }
 }
 
-async function render(data) {
+async function render(data, workoutSummary) {
   els.groupSessions.textContent = data.groupSessionsRemaining;
   els.oneOnOneSessions.textContent = data.oneOnOneSessionsRemaining;
   els.name.textContent = data.memberName;
@@ -375,12 +399,16 @@ async function render(data) {
   // Booking and referring are for real members: the demo card has no membership behind either.
   if (!data.isDemo) {
     els.bookLink.href = `book.html?id=${encodeURIComponent(data.clientSlug)}`;
-    els.bookWrap.hidden = false;
+    els.bookLink.hidden = false;
     els.referLink.href = `refer.html?id=${encodeURIComponent(data.clientSlug)}`;
-    els.referWrap.hidden = false;
+    els.referLink.hidden = false;
   }
 
-  const { count: assignedCount, names: workoutNames, todayName } = await assignedWorkoutSummary_(data.clientSlug);
+  // Everything that matters at a glance is on screen now — don't make the
+  // loading screen wait on the slower "Today's Workout" lookup below too.
+  hideCardLoading();
+
+  const { count: assignedCount, names: workoutNames, todayName } = workoutSummary;
   if (assignedCount > 0) {
     els.upcomingLabel.textContent = "Today's Workout";
     els.upcomingLink.href = `../workout/?id=${encodeURIComponent(data.clientSlug)}`;
@@ -469,9 +497,15 @@ async function fetchMemberData(id) {
 
 async function loadCard(id) {
   try {
-    const data = await fetchMemberData(id);
-    await render(data);
+    // Kicked off together, not one after the other — fetchMemberData() and
+    // the workout lookup hit two different sheet tabs, and the workout one
+    // only needs this id's slug, which is known before either fetch starts.
+    const memberPromise = fetchMemberData(id);
+    const workoutPromise = assignedWorkoutSummary_(slugify(id));
+    const data = await memberPromise;
+    await render(data, await workoutPromise);
   } catch (err) {
+    hideCardLoading();
     showStatus("Couldn't load your card. Check your connection and reopen.", true);
   }
 }
@@ -491,6 +525,7 @@ async function loadCard(id) {
  * one storage quirk for.
  */
 function showPicker() {
+  hideCardLoading();
   els.picker.hidden = false;
   els.pickerInput.focus();
 
@@ -524,6 +559,7 @@ function showPicker() {
       // Storage unavailable — card still works for this session.
     }
     els.picker.hidden = true;
+    els.cardLoading.hidden = false;
     loadCard(id);
   });
 }

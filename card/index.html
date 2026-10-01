@@ -34,11 +34,26 @@
 
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="styles.css?v=20260913b" />
-<link rel="stylesheet" href="macros.css?v=20260928a" />
+<!-- The card's real data comes from these two origins (sheet.js, macros-api.js) — warm up the connection early so the first fetch isn't stuck doing DNS/TLS on top of the round-trip. -->
+<link rel="preconnect" href="https://docs.google.com" />
+<link rel="preconnect" href="https://script.google.com" />
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css?v=20261001a" />
+<link rel="stylesheet" href="macros.css?v=20261001a" />
 </head>
 <body>
+
+<!-- Covers the card until the first real data arrives — hidden by app.js once loadCard() resolves (or immediately if the name picker shows instead). -->
+<div class="card-loading" id="cardLoading">
+  <svg class="card-loading__icon" viewBox="0 0 24 24" aria-hidden="true">
+    <rect x="1.5" y="7.5" width="4" height="9" rx="1.5" />
+    <rect x="18.5" y="7.5" width="4" height="9" rx="1.5" />
+    <rect x="6.5" y="9.5" width="2" height="5" rx="1" />
+    <rect x="15.5" y="9.5" width="2" height="5" rx="1" />
+    <rect x="8.5" y="11.25" width="7" height="1.5" rx="0.75" />
+  </svg>
+  <span class="card-loading__text">Loading your card</span>
+</div>
 
 <main class="card" id="card">
   <div class="card__top">
@@ -74,36 +89,6 @@
     </div>
   </div>
 
-  <a class="card__upcoming" id="upcomingLink" href="https://www.maxfit.now/#programs" target="_blank" rel="noopener">
-    <div class="card__upcoming-text">
-      <span class="card__label" id="upcomingLabel">Upcoming Session</span>
-      <span class="card__upcoming-value" id="upcomingValue">—</span>
-    </div>
-    <svg class="card__upcoming-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 17L17 7M17 7H8M17 7V16"/></svg>
-  </a>
-
-  <!-- Shown by app.js for real members only (not the demo card). -->
-  <div id="bookWrap" hidden>
-    <a class="card__upcoming" id="bookLink" href="book.html">
-      <div class="card__upcoming-text">
-        <span class="card__label">1-on-1 Sessions</span>
-        <span class="card__upcoming-value">Book a session</span>
-      </div>
-      <svg class="card__upcoming-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
-    </a>
-  </div>
-
-  <!-- Shown by app.js for real members only (not the demo card). -->
-  <div id="referWrap" hidden>
-    <a class="card__upcoming" id="referLink" href="refer.html">
-      <div class="card__upcoming-text">
-        <span class="card__label">Refer a Friend</span>
-        <span class="card__upcoming-value">Get your link</span>
-      </div>
-      <svg class="card__upcoming-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
-    </a>
-  </div>
-
   <div class="card__loyalty">
     <div class="card__loyalty-head">
       <span class="card__label card__label--red">Sessions to Free</span>
@@ -112,17 +97,40 @@
     <div class="card__loyalty-bar" id="loyaltyBar"></div>
   </div>
 
+  <div class="card__grid">
+    <button class="card__tile" id="checkinTile" type="button">
+      <svg class="card__tile-icon" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V4H8M16 4H20V8M20 16V20H16M8 20H4V16"/></svg>
+      <span class="card__tile-label">Check In</span>
+      <span class="card__tile-value">Show your code</span>
+    </button>
+
+    <a class="card__tile" id="upcomingLink" href="https://www.maxfit.now/#programs" target="_blank" rel="noopener">
+      <svg class="card__tile-icon" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 7v10M4 9v6M20 9v6M17.5 7v10M6.5 12h11"/></svg>
+      <span class="card__tile-label" id="upcomingLabel">Upcoming Session</span>
+      <span class="card__tile-value" id="upcomingValue">—</span>
+    </a>
+
+    <!-- Shown by app.js for real members only (not the demo card). -->
+    <a class="card__tile" id="bookLink" href="book.html" hidden>
+      <svg class="card__tile-icon" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>
+      <span class="card__tile-label">1-on-1 Sessions</span>
+      <span class="card__tile-value">Book a session</span>
+    </a>
+
+    <!-- Shown by app.js for real members only (not the demo card). -->
+    <a class="card__tile" id="referLink" href="refer.html" hidden>
+      <svg class="card__tile-icon" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.25"/><path d="M3.5 20c0-3.6 2.46-6 5.5-6s5.5 2.4 5.5 6"/><path d="M18 8v6M15 11h6"/></svg>
+      <span class="card__tile-label">Refer a Friend</span>
+      <span class="card__tile-value">Get your link</span>
+    </a>
+  </div>
+
   <button class="card__complete" id="completeButton" type="button">
     <span class="card__complete-box" id="completeBox" aria-hidden="true">
       <svg class="card__complete-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
     </span>
     Workout Completed
   </button>
-
-  <div class="card__scan">
-    <div class="card__qr" id="qrCode"></div>
-    <span class="card__scan-caption">Scan at Front Desk</span>
-  </div>
   </div>
 
   <!-- Macro tracker — everything inside is drawn by macros.js -->
@@ -143,6 +151,20 @@
 
 <div class="status" id="status" hidden></div>
 
+<div class="qr-modal" id="qrModal" hidden>
+  <button class="qr-modal__backdrop" id="qrModalBackdrop" type="button" aria-label="Close"></button>
+  <div class="qr-modal__panel" role="dialog" aria-modal="true" aria-labelledby="qrModalTitle">
+    <button class="qr-modal__close" id="qrModalClose" type="button" aria-label="Close">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+    <h2 class="qr-modal__title" id="qrModalTitle">Check In</h2>
+    <div class="card__scan">
+      <div class="card__qr" id="qrCode"></div>
+      <span class="card__scan-caption">Scan at Front Desk</span>
+    </div>
+  </div>
+</div>
+
 <div class="celebrate" id="celebrate" hidden>
   <div class="celebrate__confetti" id="confetti"></div>
   <span class="celebrate__text">Nice Work</span>
@@ -161,11 +183,11 @@
   </div>
 </div>
 
-<script src="vendor/qrcode.js"></script>
-<script src="sheet.js?v=20260928d"></script>
-<script src="app.js?v=20260928c"></script>
-<script src="macros-core.js?v=20260928a"></script>
-<script src="macros-api.js?v=20260925a"></script>
-<script src="macros.js?v=20260928a"></script>
+<script src="vendor/qrcode.js" defer></script>
+<script src="sheet.js?v=20260928d" defer></script>
+<script src="app.js?v=20261001a" defer></script>
+<script src="macros-core.js?v=20260928a" defer></script>
+<script src="macros-api.js?v=20260925a" defer></script>
+<script src="macros.js?v=20261001a" defer></script>
 </body>
 </html>
