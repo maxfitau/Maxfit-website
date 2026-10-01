@@ -200,8 +200,8 @@ body {
 
 .fuel-row__note {
   font-family: var(--font-body);
-  font-size: 12px;
-  color: var(--dim);
+  font-size: 15px;
+  color: var(--grey);
 }
 
 .fuel-bar {
@@ -1452,6 +1452,13 @@ a.fuel-btn {
   gap: 10px;
 }
 
+/* Section names on the Progress sheet ("Your week", "Weight"): the card's
+   12px label is too small for older eyes here. */
+.fuel-chartcard > .card__label,
+.fuel-punch .card__label {
+  font-size: 15px;
+}
+
 .fuel-chartcard__head {
   display: flex;
   align-items: baseline;
@@ -1466,8 +1473,8 @@ a.fuel-btn {
 
 .fuel-chart text {
   font-family: var(--font-body);
-  font-size: 11px;
-  fill: var(--dim);
+  font-size: 16px;
+  fill: var(--grey);
 }
 
 .fuel-chart .fuel-chart__strong {
@@ -1515,29 +1522,10 @@ a.fuel-btn {
   cursor: pointer;
 }
 
-.fuel-band {
-  fill: rgba(224, 0, 0, 0.09);
-}
-
-.fuel-target {
-  stroke: var(--white);
-  stroke-width: 1.25;
-  stroke-dasharray: 3 3;
-  opacity: 0.8;
-}
-
-.fuel-bar {
-  fill: #4a4a4a;
-}
-
-.fuel-bar--green {
-  fill: var(--red);
-}
-
 .fuel-readout {
   font-family: var(--font-body);
-  font-size: 12px;
-  color: var(--grey);
+  font-size: 16px;
+  color: var(--white);
   margin: -2px 0 0;
   min-height: 1.4em;
 }
@@ -1548,8 +1536,8 @@ a.fuel-btn {
   align-items: center;
   gap: 6px;
   font-family: var(--font-body);
-  font-size: 11px;
-  color: var(--dim);
+  font-size: 15px;
+  color: var(--grey);
   margin: 0;
 }
 
@@ -1581,54 +1569,183 @@ a.fuel-btn {
   border-top: 2px dashed #777777;
 }
 
-.fuel-week {
+/* ---- Progress: the week, Screen Time style (2026-10-02) ----
+   One bar per day, Monday to Sunday. Green = a green day, grey = logged but
+   not green, nothing = nothing logged. Everything here is sized for older
+   eyes: no text under 15px. Green is the one place Fuel steps outside the
+   red accent, because Max asked for green days to look green. */
+
+.fuel-wk {
+  --wk-h: 180px; /* bar height when it touches the top */
+  --wk-day: 34px; /* the day name under each bar */
+  --wk-green: #30d158;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.fuel-seg--big button {
+  font-size: 16px;
+  padding: 13px 6px;
+}
+
+.fuel-wk__head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fuel-wk__big {
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 48px;
+  line-height: 1;
+  color: var(--white);
+  display: flex;
+  align-items: baseline;
   gap: 10px;
 }
 
-.fuel-week__dots {
-  display: flex;
-  gap: 7px;
+.fuel-wk__unit {
+  font-size: 22px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
-.fuel-wday {
+.fuel-wk__avg {
+  font-family: var(--font-body);
+  font-size: 17px;
+  color: var(--grey);
+}
+
+.fuel-wk__plot {
+  position: relative;
+  display: flex;
+  gap: 6px;
+  padding-top: 26px; /* room for the target label when the target is near the top */
+}
+
+.fuel-wk__col {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.fuel-wk__col:disabled {
+  cursor: default;
+}
+
+.fuel-wk__track {
+  position: relative;
+  width: 100%;
+  height: var(--wk-h);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.fuel-wk__bar {
+  width: 72%;
+  max-width: 34px;
+  border-radius: 6px 6px 2px 2px;
+  background: #5a5a5a;
+}
+
+.fuel-wk__bar.is-green {
+  background: var(--wk-green);
+}
+
+.fuel-wk__col.is-picked .fuel-wk__track {
+  background: rgba(255, 255, 255, 0.09);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35);
+}
+
+.fuel-wk__day {
+  height: var(--wk-day);
+  display: flex;
+  align-items: flex-end;
   font-family: var(--font-head);
   font-weight: 700;
-  font-size: 10px;
+  font-size: 16px;
+  letter-spacing: 0.02em;
+  color: var(--grey);
+}
+
+.fuel-wk__col.is-today .fuel-wk__day {
+  color: var(--white);
+}
+
+.fuel-wk__col:disabled .fuel-wk__day {
   color: var(--dim);
 }
 
-.fuel-wdot {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 1px solid var(--line);
-  background: transparent;
+.fuel-wk__target {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 2px dashed rgba(255, 255, 255, 0.75);
+  pointer-events: none;
+  z-index: 1;
 }
 
-.fuel-wdot.is-green {
-  background: var(--red);
-  border-color: var(--red);
+.fuel-wk__target span {
+  position: absolute;
+  right: 0;
+  bottom: 4px;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--white);
+  background: var(--bg-card);
+  padding: 0 4px;
+  border-radius: 4px;
 }
 
-.fuel-wdot.is-logged {
-  background: #3a3a3a;
-  border-color: #3a3a3a;
+.fuel-wk__readout {
+  font-family: var(--font-body);
+  font-size: 17px;
+  line-height: 1.4;
+  color: var(--white);
+  margin: 0;
+  min-height: 1.4em;
 }
 
-.fuel-wdot.is-today {
-  border: 1.5px dashed var(--red);
+.fuel-wk__key {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--grey);
+  margin: 0;
+}
+
+.fuel-wk__swatch {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: var(--wk-green);
 }
 
 .fuel-punch__text {
   font-family: var(--font-body);
-  font-size: 13px;
+  font-size: 16px;
   color: var(--grey);
   line-height: 1.45;
   margin: 0;
