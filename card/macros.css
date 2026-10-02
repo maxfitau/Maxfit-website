@@ -2026,22 +2026,25 @@ a.fuel-btn {
 }
 
 #panelFuel[data-fuel-tier="gold"] {
-  background: radial-gradient(130% 70% at 50% -15%, rgba(240, 191, 90, 0.16), transparent 62%);
+  background: radial-gradient(130% 70% at 50% -15%, rgba(240, 191, 90, 0.22), transparent 62%);
+  box-shadow: 0 0 46px -18px rgba(240, 191, 90, 0.55);
 }
 
 #panelFuel[data-fuel-tier="platinum"] {
   background:
-    radial-gradient(70% 45% at 20% -5%, rgba(214, 196, 255, 0.14), transparent 70%),
-    radial-gradient(60% 40% at 85% 25%, rgba(170, 224, 255, 0.12), transparent 70%),
-    radial-gradient(50% 30% at 50% 105%, rgba(255, 210, 230, 0.08), transparent 70%);
+    radial-gradient(70% 45% at 20% -5%, rgba(214, 196, 255, 0.18), transparent 70%),
+    radial-gradient(60% 40% at 85% 25%, rgba(170, 224, 255, 0.16), transparent 70%),
+    radial-gradient(50% 30% at 50% 105%, rgba(255, 210, 230, 0.1), transparent 70%);
+  box-shadow: 0 0 46px -18px var(--platinum-glow);
 }
 
 #panelFuel[data-fuel-tier="diamond"] {
-  border: 1.5px solid transparent;
+  border: 2.5px solid transparent;
   background:
-    radial-gradient(90% 55% at 50% -10%, rgba(140, 210, 255, 0.16), transparent 65%) padding-box,
+    radial-gradient(90% 55% at 50% -10%, rgba(140, 210, 255, 0.22), transparent 65%) padding-box,
     linear-gradient(var(--bg-card), var(--bg-card)) padding-box,
     conic-gradient(from var(--fuel-spin), var(--diamond-spectrum)) border-box;
+  box-shadow: 0 0 50px -14px var(--diamond-glow);
   animation: fuel-spin 8s linear infinite;
 }
 
@@ -2049,6 +2052,119 @@ a.fuel-btn {
   #panelFuel[data-fuel-tier="diamond"] {
     animation: none;
   }
+}
+
+/* ---- Tier hero: the "your plan" moment at the top of Fuel (2026-10-02) ----
+   A real section, not just a tint — a medal in the tier's own metal (the
+   same --X-metal/--X-ink tokens its small badge uses) and the tier name set
+   in that metal as a gradient headline. Diamond's medal and headline get the
+   same sheen the Diamond badge/button already animate (fuel-sheen, above),
+   and its two sparkles reuse the badge's own twinkle (fuel-twinkle, above)
+   rather than a third animation. */
+
+.fuel-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0 4px;
+  position: relative;
+}
+
+.fuel-hero__medal {
+  width: 60px;
+  height: 60px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow:
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -8px 12px rgba(0, 0, 0, 0.22),
+    0 10px 20px -8px rgba(0, 0, 0, 0.6);
+}
+
+.fuel-hero__medal svg {
+  width: 28px;
+  height: 28px;
+}
+
+.fuel-hero__eyebrow {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.fuel-hero__name {
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: 32px;
+  line-height: 1;
+}
+
+.fuel-hero__spark {
+  position: absolute;
+  font-size: 11px;
+  line-height: 1;
+  color: #ffffff;
+  text-shadow: 0 0 6px rgba(190, 225, 255, 0.95);
+  pointer-events: none;
+  opacity: 0;
+  animation: fuel-twinkle 2.6s ease-in-out infinite;
+}
+
+.fuel-hero--silver .fuel-hero__medal {
+  background: var(--silver-metal);
+  color: var(--silver-ink);
+}
+
+.fuel-hero--silver .fuel-hero__name {
+  color: var(--silver-edge);
+}
+
+.fuel-hero--gold .fuel-hero__medal {
+  background: var(--gold-metal);
+  color: var(--gold-ink);
+}
+
+.fuel-hero--gold .fuel-hero__name {
+  background: var(--gold-metal);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.fuel-hero--platinum .fuel-hero__medal {
+  background: var(--platinum-metal) 0% 50% / 300% 100%;
+  color: var(--platinum-ink);
+  animation: fuel-sheen 8s linear infinite;
+}
+
+.fuel-hero--platinum .fuel-hero__name {
+  background: var(--platinum-metal) 0% 50% / 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: fuel-sheen 8s linear infinite;
+}
+
+.fuel-hero--diamond .fuel-hero__medal {
+  background: var(--diamond-metal) 0% 50% / 300% 100%;
+  color: var(--diamond-ink);
+  animation: fuel-sheen 6s linear infinite;
+}
+
+.fuel-hero--diamond .fuel-hero__name {
+  background: var(--diamond-metal) 0% 50% / 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: fuel-sheen 6s linear infinite;
 }
 
 .fuel-meter {
@@ -2326,18 +2442,23 @@ a.fuel-btn {
   .fuel-plan-card--platinum,
   .fuel-plan-card--platinum .fuel-plan-card__price b,
   .fuel-meter--platinum .fuel-meter__bar span,
+  .fuel-hero--platinum .fuel-hero__medal,
+  .fuel-hero--platinum .fuel-hero__name,
   .fuel-tier--diamond,
   .fuel-btn--diamond,
   .fuel-plan-card--diamond,
   .fuel-plan-card--diamond .fuel-plan-card__price b,
-  .fuel-meter--diamond .fuel-meter__bar span {
+  .fuel-meter--diamond .fuel-meter__bar span,
+  .fuel-hero--diamond .fuel-hero__medal,
+  .fuel-hero--diamond .fuel-hero__name {
     animation: none;
   }
 
   .fuel-btn--platinum::after,
   .fuel-btn--diamond::after,
   .fuel-tier--diamond::before,
-  .fuel-tier--diamond::after {
+  .fuel-tier--diamond::after,
+  .fuel-hero__spark {
     display: none;
   }
 }

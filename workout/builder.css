@@ -143,8 +143,9 @@
    the row's text inputs it sits beside. */
 .builder__row-exercise {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
   font-family: var(--font-body);
   font-weight: 600;
   font-size: 14px;
@@ -159,6 +160,21 @@
   cursor: pointer;
   appearance: none;
   -webkit-appearance: none;
+}
+
+.builder__row-exercise-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Which muscles this exercise works — filled in once an exercise is chosen
+   (see renderMuscleHighlight, card/muscle-map.js). Empty/hidden until then. */
+.builder__row-muscles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
 }
 
 .builder__row-exercise:active {

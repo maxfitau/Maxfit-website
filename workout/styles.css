@@ -370,6 +370,14 @@ body {
   margin: -6px 0 0;
 }
 
+/* Which muscles this exercise works (renderMuscleHighlight, card/muscle-map.js). */
+.workout__exercise-muscles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: -4px 0 0;
+}
+
 .workout__sets {
   display: flex;
   flex-direction: column;

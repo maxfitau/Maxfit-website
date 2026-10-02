@@ -1,0 +1,217 @@
+/* Exercise Library + Anatomy Lab (workout/library.html). Reuses card/
+   styles.css's shared tokens/.card/.card__top/.card__tag — only what's
+   specific to this page lives here. Text sizes follow Max's rule: body
+   >=16px, labels >=14px, bright (not --dim) for anything a client reads. */
+
+.lib-hint {
+  font-family: var(--font-body);
+  font-size: 15px;
+  color: var(--grey);
+  margin: 0;
+}
+
+/* ---- list ---- */
+
+.lib-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 18px;
+}
+
+.lib-group__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 14px;
+  color: var(--grey);
+  padding: 6px 2px;
+}
+
+.lib-group__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.lib-row {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  min-height: 48px;
+  text-align: left;
+  font-family: var(--font-body);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--white);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  margin-top: 6px;
+  cursor: pointer;
+}
+
+.lib-row:active {
+  border-color: var(--red);
+}
+
+/* ---- detail ("Anatomy Lab") ---- */
+
+.lib-back {
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: none;
+  color: var(--white);
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: -10px;
+  cursor: pointer;
+}
+
+.lib-detail__name {
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--white);
+  font-size: clamp(26px, 8vw, 34px);
+  line-height: 1.05;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.lib-chips {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  margin: 0 -4px;
+  padding-left: 4px;
+  padding-right: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.lib-chip {
+  appearance: none;
+  -webkit-appearance: none;
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--grey);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  min-height: 44px;
+  padding: 0 16px;
+  cursor: pointer;
+}
+
+.lib-chip.is-active {
+  color: var(--white);
+  background: var(--red);
+  border-color: var(--red);
+}
+
+.lib-figures {
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px 14px;
+}
+
+.lib-fig-wrap {
+  width: 100%;
+}
+
+.lib-muscle-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.lib-muscle-card {
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.lib-muscle-card__label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 14px;
+  color: var(--grey);
+}
+
+.lib-muscle-card__dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.lib-muscle-card__dot--primary {
+  background: #ff2a1f;
+}
+
+.lib-muscle-card__dot--secondary {
+  background: #ff9a7a;
+}
+
+.lib-muscle-card__names {
+  font-family: var(--font-body);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--white);
+  margin: 0;
+  line-height: 1.35;
+}
+
+.lib-add {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  min-height: 56px;
+  border-radius: 999px;
+  border: none;
+  background: var(--red);
+  color: var(--on-red);
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.lib-add:active {
+  background: var(--red-dim);
+}
+
+.lib-add__note {
+  text-align: center;
+  font-family: var(--font-body);
+  font-size: 15px;
+  color: var(--grey);
+  margin: -8px 0 0;
+}

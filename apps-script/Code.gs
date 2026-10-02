@@ -32,7 +32,7 @@ const GROCERY_SHEET_NAME = "Grocery Items";
 // Changes whenever this file does, and is shown when you open the deployed
 // URL in a browser (see doGet) — the quick way to tell whether a redeploy
 // actually took, instead of guessing from behaviour.
-const BACKEND_VERSION = "2026-10-01b";
+const BACKEND_VERSION = "2026-10-02b";
 
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -278,6 +278,303 @@ function seedExercises() {
     sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, header.length).setValues(newRows);
   }
   Logger.log("Added " + newRows.length + " exercise(s); " + (EXERCISE_SEED_.length - newRows.length) + " already there.");
+}
+
+/**
+ * category (from EXERCISE_MUSCLE_DATA_ below) + its primary muscle keys ->
+ * the existing picker buckets (MOVEMENTS/BODY_PARTS_BY_MOVEMENT in
+ * exercise-picker.js, which this mirrors — keep the two in step). Most
+ * categories map straight across; "Shoulders & Traps" and "Hamstrings &
+ * Glutes" each cover two picker body parts, split by whichever muscle is
+ * actually primary for that exercise. Only used for a name that ISN'T
+ * already on the sheet — see seedExerciseMuscleData_ below for why.
+ */
+function exerciseMovementBodyPart_(category, primary) {
+  const first = primary[0] || "";
+  switch (category) {
+    case "Chest": return ["Push", "Chest"];
+    case "Back": return ["Pull", "Back"];
+    case "Shoulders & Traps":
+      return primary.length === 1 && first === "traps" ? ["Push", "Traps"] : ["Push", "Shoulders"];
+    case "Biceps": return ["Pull", "Biceps"];
+    case "Triceps": return ["Push", "Triceps"];
+    case "Forearms & Grip": return ["Pull", "Forearms"];
+    case "Quads": return ["Legs", "Quads"];
+    case "Hamstrings & Glutes": return first === "glutes" ? ["Legs", "Glutes"] : ["Legs", "Hamstrings"];
+    case "Calves": return ["Legs", "Calves"];
+    case "Core":
+      if (first === "obliques") return ["Core", "Obliques"];
+      if (first === "lowerback") return ["Core", "Lower Back"];
+      return ["Core", "Abs"];
+    case "Full Body & Conditioning": return ["Conditioning", "Full Body"];
+    default: return ["", ""];
+  }
+}
+
+// [name, category, equipment, primary muscle keys, secondary muscle keys,
+// best view] — Max's fuller exercise library (2026-10-02), muscle keys as
+// MUSCLE_KEYS in card/muscle-map.js spells them out. category drives
+// exerciseMovementBodyPart_ above for any of these NOT already on the
+// sheet; see seedExerciseMuscleData_ for how an overlapping name (e.g.
+// "Pull-Up", already in EXERCISE_SEED_) is handled instead.
+const EXERCISE_MUSCLE_DATA_ = [
+  ["Barbell Bench Press", "Chest", "Barbell", ["chest"], ["delts", "triceps"], "front"],
+  ["Incline Barbell Bench Press", "Chest", "Barbell", ["chest", "delts"], ["triceps"], "front"],
+  ["Decline Barbell Bench Press", "Chest", "Barbell", ["chest"], ["triceps", "delts"], "front"],
+  ["Dumbbell Bench Press", "Chest", "Dumbbell", ["chest"], ["delts", "triceps"], "front"],
+  ["Incline Dumbbell Press", "Chest", "Dumbbell", ["chest", "delts"], ["triceps"], "front"],
+  ["Machine Chest Press", "Chest", "Machine", ["chest"], ["delts", "triceps"], "front"],
+  ["Smith Machine Bench Press", "Chest", "Smith machine", ["chest"], ["delts", "triceps"], "front"],
+  ["Dumbbell Fly", "Chest", "Dumbbell", ["chest"], ["delts"], "front"],
+  ["Incline Dumbbell Fly", "Chest", "Dumbbell", ["chest"], ["delts"], "front"],
+  ["High-to-Low Cable Fly", "Chest", "Cable", ["chest"], ["delts"], "front"],
+  ["Low-to-High Cable Fly", "Chest", "Cable", ["chest"], ["delts"], "front"],
+  ["Pec Deck", "Chest", "Machine", ["chest"], ["delts"], "front"],
+  ["Push-Up", "Chest", "Bodyweight", ["chest"], ["delts", "triceps", "abs"], "front"],
+  ["Incline Push-Up", "Chest", "Bodyweight", ["chest"], ["delts", "triceps"], "front"],
+  ["Decline Push-Up", "Chest", "Bodyweight", ["chest", "delts"], ["triceps", "abs"], "front"],
+  ["Chest Dip", "Chest", "Dip bars", ["chest"], ["triceps", "delts"], "front"],
+
+  ["Conventional Deadlift", "Back", "Barbell", ["glutes", "hamstrings", "lowerback"], ["quads", "traps", "lats", "forearms"], "back"],
+  ["Pull-Up", "Back", "Pull-up bar", ["lats"], ["biceps", "delts", "forearms"], "back"],
+  ["Chin-Up", "Back", "Pull-up bar", ["lats", "biceps"], ["forearms"], "front"],
+  ["Assisted Pull-Up", "Back", "Machine", ["lats"], ["biceps", "delts"], "back"],
+  ["Wide-Grip Lat Pulldown", "Back", "Cable", ["lats"], ["biceps", "delts", "traps", "forearms"], "back"],
+  ["Close-Grip Lat Pulldown", "Back", "Cable", ["lats"], ["biceps", "forearms"], "back"],
+  ["Straight-Arm Cable Pulldown", "Back", "Cable", ["lats"], ["triceps", "abs"], "back"],
+  ["Barbell Bent-Over Row", "Back", "Barbell", ["lats", "traps"], ["biceps", "delts", "lowerback", "forearms"], "back"],
+  ["Pendlay Row", "Back", "Barbell", ["lats", "traps"], ["biceps", "lowerback"], "back"],
+  ["Single-Arm Dumbbell Row", "Back", "Dumbbell", ["lats"], ["biceps", "delts", "traps"], "back"],
+  ["Chest-Supported Dumbbell Row", "Back", "Dumbbell", ["lats", "traps"], ["biceps", "delts"], "back"],
+  ["T-Bar Row", "Back", "Barbell", ["lats", "traps"], ["biceps", "lowerback"], "back"],
+  ["Meadows Row", "Back", "Landmine", ["lats"], ["biceps", "traps", "forearms"], "back"],
+  ["Seated Cable Row", "Back", "Cable", ["lats", "traps"], ["biceps", "delts"], "back"],
+  ["Machine Row", "Back", "Machine", ["lats", "traps"], ["biceps"], "back"],
+  ["Inverted Row", "Back", "Barbell", ["lats", "traps"], ["biceps", "abs"], "back"],
+  ["Rack Pull", "Back", "Barbell", ["traps", "lowerback", "glutes"], ["hamstrings", "forearms"], "back"],
+  ["Back Extension", "Back", "Hyperextension bench", ["lowerback"], ["glutes", "hamstrings"], "back"],
+  ["Good Morning", "Back", "Barbell", ["hamstrings", "lowerback"], ["glutes"], "back"],
+  ["Superman", "Back", "Bodyweight", ["lowerback"], ["glutes"], "back"],
+
+  ["Barbell Overhead Press", "Shoulders & Traps", "Barbell", ["delts"], ["triceps", "traps", "abs"], "front"],
+  ["Seated Dumbbell Shoulder Press", "Shoulders & Traps", "Dumbbell", ["delts"], ["triceps"], "front"],
+  ["Arnold Press", "Shoulders & Traps", "Dumbbell", ["delts"], ["triceps"], "front"],
+  ["Machine Shoulder Press", "Shoulders & Traps", "Machine", ["delts"], ["triceps"], "front"],
+  ["Push Press", "Shoulders & Traps", "Barbell", ["delts"], ["triceps", "quads", "glutes"], "front"],
+  ["Landmine Press", "Shoulders & Traps", "Landmine", ["delts", "chest"], ["triceps", "abs"], "front"],
+  ["Dumbbell Lateral Raise", "Shoulders & Traps", "Dumbbell", ["delts"], ["traps"], "front"],
+  ["Cable Lateral Raise", "Shoulders & Traps", "Cable", ["delts"], ["traps"], "front"],
+  ["Machine Lateral Raise", "Shoulders & Traps", "Machine", ["delts"], ["traps"], "front"],
+  ["Dumbbell Front Raise", "Shoulders & Traps", "Dumbbell", ["delts"], ["chest"], "front"],
+  ["Dumbbell Rear Delt Fly", "Shoulders & Traps", "Dumbbell", ["delts"], ["traps"], "front"],
+  ["Reverse Pec Deck", "Shoulders & Traps", "Machine", ["delts"], ["traps"], "front"],
+  ["Face Pull", "Shoulders & Traps", "Cable", ["delts", "traps"], ["biceps"], "back"],
+  ["Upright Row", "Shoulders & Traps", "Barbell", ["delts", "traps"], ["biceps"], "back"],
+  ["Barbell Shrug", "Shoulders & Traps", "Barbell", ["traps"], ["forearms"], "back"],
+  ["Dumbbell Shrug", "Shoulders & Traps", "Dumbbell", ["traps"], ["forearms"], "back"],
+
+  ["Barbell Curl", "Biceps", "Barbell", ["biceps"], ["forearms"], "front"],
+  ["EZ-Bar Curl", "Biceps", "EZ bar", ["biceps"], ["forearms"], "front"],
+  ["Dumbbell Curl", "Biceps", "Dumbbell", ["biceps"], ["forearms"], "front"],
+  ["Hammer Curl", "Biceps", "Dumbbell", ["biceps", "forearms"], [], "front"],
+  ["Incline Dumbbell Curl", "Biceps", "Dumbbell", ["biceps"], [], "front"],
+  ["Preacher Curl", "Biceps", "Barbell", ["biceps"], ["forearms"], "front"],
+  ["Concentration Curl", "Biceps", "Dumbbell", ["biceps"], [], "front"],
+  ["Cable Curl", "Biceps", "Cable", ["biceps"], ["forearms"], "front"],
+  ["Bayesian Cable Curl", "Biceps", "Cable", ["biceps"], [], "front"],
+  ["Spider Curl", "Biceps", "Dumbbell", ["biceps"], [], "front"],
+  ["Reverse Curl", "Biceps", "Barbell", ["forearms"], ["biceps"], "front"],
+
+  ["Close-Grip Bench Press", "Triceps", "Barbell", ["triceps", "chest"], ["delts"], "front"],
+  ["EZ-Bar Skull Crusher", "Triceps", "EZ bar", ["triceps"], [], "back"],
+  ["Overhead Dumbbell Extension", "Triceps", "Dumbbell", ["triceps"], [], "back"],
+  ["Overhead Cable Extension", "Triceps", "Cable", ["triceps"], [], "back"],
+  ["Rope Pushdown", "Triceps", "Cable", ["triceps"], [], "back"],
+  ["Straight-Bar Pushdown", "Triceps", "Cable", ["triceps"], [], "back"],
+  ["Bench Dip", "Triceps", "Bench", ["triceps"], ["chest", "delts"], "back"],
+  ["Parallel Bar Dip (upright)", "Triceps", "Dip bars", ["triceps"], ["chest", "delts"], "back"],
+  ["Dumbbell Kickback", "Triceps", "Dumbbell", ["triceps"], [], "back"],
+  ["Diamond Push-Up", "Triceps", "Bodyweight", ["triceps"], ["chest", "delts"], "back"],
+  ["JM Press", "Triceps", "Barbell", ["triceps"], ["chest"], "back"],
+
+  ["Wrist Curl", "Forearms & Grip", "Dumbbell", ["forearms"], [], "front"],
+  ["Reverse Wrist Curl", "Forearms & Grip", "Dumbbell", ["forearms"], [], "front"],
+  ["Farmer's Carry", "Forearms & Grip", "Dumbbell", ["forearms", "traps"], ["abs", "obliques", "quads", "glutes"], "back"],
+  ["Dead Hang", "Forearms & Grip", "Pull-up bar", ["forearms"], ["lats", "delts"], "front"],
+
+  ["Back Squat", "Quads", "Barbell", ["quads", "glutes"], ["hamstrings", "lowerback", "abs"], "front"],
+  ["Front Squat", "Quads", "Barbell", ["quads"], ["glutes", "abs", "lowerback"], "front"],
+  ["Goblet Squat", "Quads", "Dumbbell", ["quads", "glutes"], ["abs"], "front"],
+  ["Box Squat", "Quads", "Barbell", ["quads", "glutes"], ["hamstrings", "lowerback"], "front"],
+  ["Pause Squat", "Quads", "Barbell", ["quads", "glutes"], ["lowerback", "abs"], "front"],
+  ["Smith Machine Squat", "Quads", "Smith machine", ["quads", "glutes"], ["hamstrings"], "front"],
+  ["Hack Squat", "Quads", "Machine", ["quads"], ["glutes"], "front"],
+  ["Leg Press", "Quads", "Machine", ["quads", "glutes"], ["hamstrings"], "front"],
+  ["Bulgarian Split Squat", "Quads", "Dumbbell", ["quads", "glutes"], ["hamstrings"], "front"],
+  ["Walking Lunge", "Quads", "Dumbbell", ["quads", "glutes"], ["hamstrings", "calves"], "front"],
+  ["Reverse Lunge", "Quads", "Dumbbell", ["glutes", "quads"], ["hamstrings"], "front"],
+  ["Step-Up", "Quads", "Dumbbell", ["quads", "glutes"], ["hamstrings"], "front"],
+  ["Leg Extension", "Quads", "Machine", ["quads"], [], "front"],
+  ["Sissy Squat", "Quads", "Bodyweight", ["quads"], [], "front"],
+  ["Pistol Squat", "Quads", "Bodyweight", ["quads", "glutes"], ["abs"], "front"],
+  ["Wall Sit", "Quads", "Bodyweight", ["quads"], ["glutes"], "front"],
+  ["Jump Squat", "Quads", "Bodyweight", ["quads", "glutes"], ["calves"], "front"],
+  ["Box Jump", "Quads", "Plyo box", ["quads", "glutes"], ["calves"], "front"],
+
+  ["Romanian Deadlift", "Hamstrings & Glutes", "Barbell", ["hamstrings", "glutes"], ["lowerback", "forearms", "traps"], "back"],
+  ["Stiff-Leg Deadlift", "Hamstrings & Glutes", "Barbell", ["hamstrings"], ["glutes", "lowerback"], "back"],
+  ["Sumo Deadlift", "Hamstrings & Glutes", "Barbell", ["glutes", "quads", "hamstrings"], ["lowerback", "traps", "forearms"], "back"],
+  ["Trap Bar Deadlift", "Hamstrings & Glutes", "Trap bar", ["quads", "glutes"], ["hamstrings", "lowerback", "traps"], "front"],
+  ["Single-Leg Romanian Deadlift", "Hamstrings & Glutes", "Dumbbell", ["hamstrings", "glutes"], ["lowerback"], "back"],
+  ["Lying Leg Curl", "Hamstrings & Glutes", "Machine", ["hamstrings"], ["calves"], "back"],
+  ["Seated Leg Curl", "Hamstrings & Glutes", "Machine", ["hamstrings"], [], "back"],
+  ["Nordic Hamstring Curl", "Hamstrings & Glutes", "Bodyweight", ["hamstrings"], ["glutes"], "back"],
+  ["Barbell Hip Thrust", "Hamstrings & Glutes", "Barbell", ["glutes"], ["hamstrings"], "back"],
+  ["Glute Bridge", "Hamstrings & Glutes", "Bodyweight", ["glutes"], ["hamstrings"], "back"],
+  ["Single-Leg Glute Bridge", "Hamstrings & Glutes", "Bodyweight", ["glutes"], ["hamstrings", "abs"], "back"],
+  ["Cable Kickback", "Hamstrings & Glutes", "Cable", ["glutes"], ["hamstrings"], "back"],
+  ["Cable Pull-Through", "Hamstrings & Glutes", "Cable", ["glutes", "hamstrings"], ["lowerback"], "back"],
+  ["Kettlebell Swing", "Hamstrings & Glutes", "Kettlebell", ["glutes", "hamstrings"], ["lowerback", "delts", "abs"], "back"],
+  ["Hip Abduction Machine", "Hamstrings & Glutes", "Machine", ["glutes"], [], "back"],
+
+  ["Standing Calf Raise", "Calves", "Machine", ["calves"], [], "front"],
+  ["Seated Calf Raise", "Calves", "Machine", ["calves"], [], "front"],
+  ["Leg Press Calf Raise", "Calves", "Machine", ["calves"], [], "front"],
+  ["Single-Leg Calf Raise", "Calves", "Bodyweight", ["calves"], [], "front"],
+  ["Jump Rope", "Calves", "Jump rope", ["calves"], ["delts", "quads"], "front"],
+
+  ["Plank", "Core", "Bodyweight", ["abs"], ["obliques", "delts"], "front"],
+  ["Side Plank", "Core", "Bodyweight", ["obliques"], ["abs"], "front"],
+  ["Crunch", "Core", "Bodyweight", ["abs"], [], "front"],
+  ["Cable Crunch", "Core", "Cable", ["abs"], ["obliques"], "front"],
+  ["Decline Sit-Up", "Core", "Decline bench", ["abs"], ["obliques"], "front"],
+  ["Bicycle Crunch", "Core", "Bodyweight", ["abs", "obliques"], [], "front"],
+  ["Hanging Leg Raise", "Core", "Pull-up bar", ["abs"], ["obliques", "forearms"], "front"],
+  ["Hanging Knee Raise", "Core", "Pull-up bar", ["abs"], ["forearms"], "front"],
+  ["Lying Leg Raise", "Core", "Bodyweight", ["abs"], [], "front"],
+  ["V-Up", "Core", "Bodyweight", ["abs"], [], "front"],
+  ["Hollow Body Hold", "Core", "Bodyweight", ["abs"], [], "front"],
+  ["Dragon Flag", "Core", "Bodyweight", ["abs"], ["lats", "lowerback"], "front"],
+  ["Ab Wheel Rollout", "Core", "Ab wheel", ["abs"], ["lats", "delts"], "front"],
+  ["Russian Twist", "Core", "Bodyweight", ["obliques"], ["abs"], "front"],
+  ["Cable Woodchopper", "Core", "Cable", ["obliques"], ["abs", "delts"], "front"],
+  ["Pallof Press", "Core", "Cable", ["obliques", "abs"], [], "front"],
+  ["Dead Bug", "Core", "Bodyweight", ["abs"], [], "front"],
+  ["Bird Dog", "Core", "Bodyweight", ["lowerback", "abs"], ["glutes"], "front"],
+
+  ["Burpee", "Full Body & Conditioning", "Bodyweight", ["quads", "chest"], ["delts", "triceps", "abs"], "front"],
+  ["Thruster", "Full Body & Conditioning", "Barbell", ["quads", "delts"], ["glutes", "triceps", "abs"], "front"],
+  ["Power Clean", "Full Body & Conditioning", "Barbell", ["glutes", "hamstrings", "traps"], ["quads", "delts", "lowerback"], "back"],
+  ["Hang Clean", "Full Body & Conditioning", "Barbell", ["traps", "glutes", "hamstrings"], ["delts", "forearms"], "back"],
+  ["Clean and Press", "Full Body & Conditioning", "Barbell", ["delts", "glutes", "quads"], ["traps", "triceps"], "front"],
+  ["Dumbbell Snatch", "Full Body & Conditioning", "Dumbbell", ["delts", "glutes"], ["hamstrings", "traps"], "back"],
+  ["Man Maker", "Full Body & Conditioning", "Dumbbell", ["delts", "chest", "quads"], ["lats", "triceps", "abs"], "front"],
+  ["Turkish Get-Up", "Full Body & Conditioning", "Kettlebell", ["delts", "abs"], ["glutes", "obliques"], "front"],
+  ["Wall Ball", "Full Body & Conditioning", "Medicine ball", ["quads", "delts"], ["glutes"], "front"],
+  ["Mountain Climber", "Full Body & Conditioning", "Bodyweight", ["abs"], ["delts", "quads"], "front"],
+  ["Bear Crawl", "Full Body & Conditioning", "Bodyweight", ["delts", "abs"], ["quads"], "front"],
+  ["Battle Ropes", "Full Body & Conditioning", "Battle ropes", ["delts"], ["forearms", "abs"], "front"],
+  ["Sled Push", "Full Body & Conditioning", "Sled", ["quads", "glutes"], ["calves"], "front"],
+  ["Rowing Machine", "Full Body & Conditioning", "Rower", ["lats", "quads"], ["hamstrings", "biceps", "glutes"], "front"],
+  ["Assault Bike", "Full Body & Conditioning", "Air bike", ["quads"], ["hamstrings", "delts"], "front"],
+  ["Sprint", "Full Body & Conditioning", "Bodyweight", ["hamstrings", "glutes"], ["quads", "calves"], "back"],
+
+  // Top-up (2026-10-02): exact names from the original ~45-exercise seed
+  // (EXERCISE_SEED_ above) that don't share a name with any of the 150
+  // above, so seedExerciseMuscleData_ would otherwise leave them with no
+  // muscle data even though a client may already have them assigned. Two
+  // of these (Lat Pulldown, Overhead Press) are exactly Max's own example
+  // exercises from his muscle-map brief.
+  ["Lat Pulldown", "Back", "Cable", ["lats"], ["biceps", "delts", "traps", "forearms"], "back"],
+  ["Overhead Press", "Shoulders & Traps", "Barbell", ["delts"], ["triceps", "traps", "abs"], "front"],
+  ["Barbell Row", "Back", "Barbell", ["lats", "traps"], ["biceps", "delts", "lowerback", "forearms"], "back"],
+  ["Tricep Pushdown", "Triceps", "Cable", ["triceps"], [], "back"],
+  ["Dumbbell Shoulder Press", "Shoulders & Traps", "Dumbbell", ["delts"], ["triceps"], "front"],
+  ["Lateral Raise", "Shoulders & Traps", "Dumbbell", ["delts"], ["traps"], "front"],
+  ["Front Raise", "Shoulders & Traps", "Dumbbell", ["delts"], ["chest"], "front"],
+  ["Overhead Tricep Extension", "Triceps", "Dumbbell", ["triceps"], [], "back"],
+  ["Dips", "Triceps", "Dip bars", ["triceps"], ["chest", "delts"], "back"],
+  ["Deadlift", "Back", "Barbell", ["glutes", "hamstrings", "lowerback"], ["quads", "traps", "lats", "forearms"], "back"],
+  ["Leg Curl", "Hamstrings & Glutes", "Machine", ["hamstrings"], ["calves"], "back"],
+  ["Hip Thrust", "Hamstrings & Glutes", "Barbell", ["glutes"], ["hamstrings"], "back"],
+  ["Sit-Up", "Core", "Bodyweight", ["abs"], ["obliques"], "front"],
+  ["Woodchopper", "Core", "Cable", ["obliques"], ["abs", "delts"], "front"],
+];
+
+/**
+ * One-time helper — run manually from the Apps Script editor, after
+ * addCategoryColumnsToExercises. Brings in Max's fuller exercise library
+ * (EXERCISE_MUSCLE_DATA_ above): equipment, and which muscles each one
+ * works (primary and secondary — the muscle diagram on the client card and
+ * the builder reads these, see card/muscle-map.js). Safe to re-run.
+ *
+ * A name already on the sheet (case-insensitive — plenty of these overlap
+ * with the original seedExercises() library, e.g. "Pull-Up") only gets its
+ * BLANK Equipment/Primary/Secondary/Best View cells filled in: its existing
+ * Movement and Body Part are never touched, so nothing already assigned to
+ * a client moves to a different picker bucket underneath them. A genuinely
+ * new name is added as a new row, with Movement/Body Part worked out from
+ * its category (exerciseMovementBodyPart_ above).
+ */
+function seedExerciseMuscleData() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(EXERCISES_SHEET_NAME);
+  if (!sheet) {
+    Logger.log("No Exercises tab yet — run setupWorkoutSheets first.");
+    return;
+  }
+  const header = ensureExerciseColumns_(sheet);
+  const col = {
+    name: findColumn_(header, "Name"),
+    movement: findColumn_(header, "Movement"),
+    bodyPart: findColumn_(header, "Body Part"),
+    equipment: findColumn_(header, "Equipment"),
+    primary: findColumn_(header, "Primary Muscles"),
+    secondary: findColumn_(header, "Secondary Muscles"),
+    bestView: findColumn_(header, "Best View"),
+  };
+
+  const lastRow = sheet.getLastRow();
+  const existingByName = {}; // lowercased name -> { row, values }
+  if (lastRow >= 2) {
+    const existing = sheet.getRange(2, 1, lastRow - 1, header.length).getDisplayValues();
+    existing.forEach((row, i) => {
+      const n = String(row[col.name] || "").trim().toLowerCase();
+      if (n) existingByName[n] = { row: i + 2, values: row };
+    });
+  }
+
+  let filled = 0;
+  let added = 0;
+  const newRows = [];
+  EXERCISE_MUSCLE_DATA_.forEach(([name, category, equipment, primary, secondary, bestView]) => {
+    const found = existingByName[name.toLowerCase()];
+    if (found) {
+      const patches = [];
+      if (col.equipment >= 0 && !String(found.values[col.equipment] || "").trim()) patches.push([col.equipment, equipment]);
+      if (col.primary >= 0 && !String(found.values[col.primary] || "").trim()) patches.push([col.primary, primary.join(",")]);
+      if (col.secondary >= 0 && !String(found.values[col.secondary] || "").trim()) patches.push([col.secondary, secondary.join(",")]);
+      if (col.bestView >= 0 && !String(found.values[col.bestView] || "").trim()) patches.push([col.bestView, bestView]);
+      patches.forEach(([c, v]) => sheet.getRange(found.row, c + 1).setValue(v));
+      if (patches.length) filled++;
+      return;
+    }
+    const [movement, bodyPart] = exerciseMovementBodyPart_(category, primary);
+    const row = new Array(header.length).fill("");
+    row[col.name] = name;
+    row[col.movement] = movement;
+    row[col.bodyPart] = bodyPart;
+    row[col.equipment] = equipment;
+    row[col.primary] = primary.join(",");
+    row[col.secondary] = secondary.join(",");
+    row[col.bestView] = bestView;
+    newRows.push(row);
+    added++;
+  });
+
+  if (newRows.length) {
+    sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, header.length).setValues(newRows);
+  }
+  Logger.log("Added " + added + " exercise(s); filled in muscle data on " + filled + " existing one(s).");
 }
 
 /**
@@ -1241,7 +1538,7 @@ function ensureWorkoutExercisesColumns_(sheet) {
 }
 
 function ensureExerciseColumns_(sheet) {
-  return ensureColumns_(sheet, ["Movement", "Body Part"]);
+  return ensureColumns_(sheet, ["Movement", "Body Part", "Equipment", "Primary Muscles", "Secondary Muscles", "Best View"]);
 }
 
 /** Adds any of `names` that are missing from the sheet's header row (at the end — everything looks columns up by NAME, so position doesn't matter) and returns the up-to-date header. */

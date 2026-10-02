@@ -14,13 +14,14 @@
  * it just uses the host page's.
  */
 const ExercisePicker = (function () {
-  const MOVEMENTS = ["Push", "Pull", "Legs", "Core"];
+  const MOVEMENTS = ["Push", "Pull", "Legs", "Core", "Conditioning"];
 
   const BODY_PARTS_BY_MOVEMENT = {
-    Push: ["Chest", "Shoulders", "Triceps"],
-    Pull: ["Back", "Biceps"],
+    Push: ["Chest", "Shoulders", "Triceps", "Traps"],
+    Pull: ["Back", "Biceps", "Forearms"],
     Legs: ["Quads", "Hamstrings", "Glutes", "Calves"],
     Core: ["Abs", "Obliques", "Lower Back"],
+    Conditioning: ["Full Body"],
   };
 
   // One accent colour per body part — red stays the only accent everywhere
@@ -30,8 +31,10 @@ const ExercisePicker = (function () {
     Chest: "#e0954a",
     Shoulders: "#e0c04a",
     Triceps: "#d4714a",
+    Traps: "#d4a14a",
     Back: "#4a8fd4",
     Biceps: "#4ab8c9",
+    Forearms: "#6f4ad4",
     Quads: "#5ac97a",
     Hamstrings: "#8fc94a",
     Glutes: "#4ac99e",
@@ -39,6 +42,7 @@ const ExercisePicker = (function () {
     Abs: "#9a7ad9",
     Obliques: "#c97ad9",
     "Lower Back": "#7a7ad9",
+    "Full Body": "#9a9a9a",
   };
   const FALLBACK_COLOR = "#999999";
 
@@ -151,6 +155,9 @@ const ExercisePicker = (function () {
               name: String(r[col.name] || "").trim(),
               movement: col.movement >= 0 ? String(r[col.movement] || "").trim() : "",
               bodyPart: col.bodyPart >= 0 ? String(r[col.bodyPart] || "").trim() : "",
+              primaryMuscles: col.primaryMuscles >= 0 ? parseMuscleKeys(r[col.primaryMuscles]) : [],
+              secondaryMuscles: col.secondaryMuscles >= 0 ? parseMuscleKeys(r[col.secondaryMuscles]) : [],
+              bestView: col.bestView >= 0 ? String(r[col.bestView] || "").trim() : "",
             }))
             .filter((ex) => ex.name && ex.movement === movement && ex.bodyPart === bodyPart)
             .sort((a, b) => a.name.localeCompare(b.name))
@@ -198,7 +205,15 @@ const ExercisePicker = (function () {
     bodyEl.querySelectorAll("[data-name]").forEach((btn) => {
       btn.addEventListener("click", () => {
         close();
-        onChoose({ name: btn.dataset.name, movement, bodyPart });
+        const picked = filtered.find((ex) => ex.name === btn.dataset.name);
+        onChoose({
+          name: btn.dataset.name,
+          movement,
+          bodyPart,
+          primaryMuscles: (picked && picked.primaryMuscles) || [],
+          secondaryMuscles: (picked && picked.secondaryMuscles) || [],
+          bestView: (picked && picked.bestView) || "",
+        });
       });
     });
 
@@ -223,7 +238,14 @@ const ExercisePicker = (function () {
           }
           exercisesCache = null; // next open() re-fetches, so the new one shows up in its list
           close();
-          onChoose({ name: result.exercise.name, movement: result.exercise.movement, bodyPart: result.exercise.bodyPart });
+          onChoose({
+            name: result.exercise.name,
+            movement: result.exercise.movement,
+            bodyPart: result.exercise.bodyPart,
+            primaryMuscles: [],
+            secondaryMuscles: [],
+            bestView: "",
+          });
         } catch (err) {
           addBtn.disabled = false;
           addBtn.textContent = `+ Add "${name}" as a new exercise`;

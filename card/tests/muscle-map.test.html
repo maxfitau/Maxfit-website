@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>Muscle Map Tests</title>
+<style>
+  :root { --bg: #111; --fg: #fff; --dim: #999; --red: #e00000; }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg); font: 14px/1.4 -apple-system, system-ui, sans-serif; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  li { margin: 2px 0; }
+  .pass { color: var(--dim); }
+  .fail { color: var(--red); font-weight: 700; }
+  #summary { font-weight: 700; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+<h1>card/muscle-map.js tests</h1>
+<div id="summary">Running…</div>
+<ol id="results"></ol>
+
+<script src="../muscle-map.js"></script>
+<script>
+  /*
+   * Checks on card/muscle-map.js: the muscle key/colour tables stay in
+   * step with each other and with the figure's own shapes, and every
+   * exercise Code.gs seeds resolves to muscle keys this file knows about.
+   * No node on this project, so this runs in the browser like
+   * macros-core.test.html — open it and every line should be grey.
+   */
+  const results = [];
+  function truthy(name, value) {
+    results.push({ name, ok: !!value, actual: value, expected: true });
+  }
+  function eq(name, actual, expected) {
+    const ok = JSON.stringify(actual) === JSON.stringify(expected);
+    results.push({ name, ok, actual, expected });
+  }
+
+  const KEYS = Object.keys(MUSCLE_KEYS);
+
+  // --- parseMuscleKeys --------------------------------------------------
+  eq("parseMuscleKeys splits and lowercases", parseMuscleKeys("Chest, Delts"), ["chest", "delts"]);
+  eq("parseMuscleKeys drops blanks", parseMuscleKeys("chest,,abs,"), ["chest", "abs"]);
+  eq("parseMuscleKeys of blank is empty", parseMuscleKeys(""), []);
+  eq("parseMuscleKeys of null is empty", parseMuscleKeys(null), []);
+
+  // --- muscleFigureSvg / paintMuscleFigure -------------------------------
+  const wrap = document.createElement("div");
+  wrap.style.display = "none";
+  document.body.appendChild(wrap);
+
+  ["front", "back"].forEach((view) => {
+    wrap.innerHTML = muscleFigureSvg(view, "t_" + view);
+    const svg = wrap.querySelector("svg");
+    truthy(`${view}: renders an <svg>`, svg);
+    const shapeKeys = Array.from(svg.querySelectorAll("[data-muscle]")).map((g) => g.getAttribute("data-muscle"));
+    const uniqueKeys = Array.from(new Set(shapeKeys));
+    truthy(`${view}: has at least one muscle group`, uniqueKeys.length > 0);
+    uniqueKeys.forEach((key) => {
+      truthy(`${view}: shape key "${key}" is a known muscle`, KEYS.includes(key));
+    });
+
+    paintMuscleFigure(svg, [uniqueKeys[0]], uniqueKeys[1] ? [uniqueKeys[1]] : []);
+    eq(`${view}: primary group painted red`, svg.querySelector(`[data-muscle="${uniqueKeys[0]}"]`).getAttribute("fill"), MUSCLE_PRIMARY_COLOR);
+    if (uniqueKeys[1]) {
+      eq(`${view}: secondary group painted salmon`, svg.querySelector(`[data-muscle="${uniqueKeys[1]}"]`).getAttribute("fill"), MUSCLE_SECONDARY_COLOR);
+    }
+    if (uniqueKeys[2]) {
+      eq(`${view}: untouched group stays unused grey`, svg.querySelector(`[data-muscle="${uniqueKeys[2]}"]`).getAttribute("fill"), MUSCLE_UNUSED_COLOR);
+    }
+    truthy(`${view}: title updates to a plain-text summary`, svg.querySelector("title").textContent.indexOf("Highlights:") === 0);
+  });
+
+  // Every key the two views' shapes use together should still be a subset
+  // of MUSCLE_KEYS (front + back don't have to cover every key each, but
+  // nothing outside the 14 should ever appear).
+  wrap.innerHTML = muscleFigureSvg("front", "t_f2") + muscleFigureSvg("back", "t_b2");
+  const allShapeKeys = Array.from(new Set(Array.from(wrap.querySelectorAll("[data-muscle]")).map((g) => g.getAttribute("data-muscle"))));
+  eq("front+back together cover every MUSCLE_KEYS entry", allShapeKeys.sort(), KEYS.slice().sort());
+
+  // --- renderMuscleHighlight (the chip row) ------------------------------
+  const chipBox = document.createElement("div");
+  renderMuscleHighlight(chipBox, ["chest"], ["delts", "triceps"]);
+  truthy("renderMuscleHighlight: unhides with data", !chipBox.hidden);
+  eq("renderMuscleHighlight: one primary + two secondary chips", chipBox.querySelectorAll(".muscle-chip").length, 3);
+  eq("renderMuscleHighlight: primary chip count", chipBox.querySelectorAll(".muscle-chip--primary").length, 1);
+  renderMuscleHighlight(chipBox, [], []);
+  truthy("renderMuscleHighlight: hides with nothing to show", chipBox.hidden);
+
+  // --- report -------------------------------------------------------------------------
+  const failed = results.filter((x) => !x.ok);
+  document.getElementById("summary").textContent = `${results.length - failed.length} passed, ${failed.length} failed`;
+  document.getElementById("summary").className = failed.length ? "fail" : "pass";
+  document.getElementById("results").innerHTML = results
+    .map(
+      (x) =>
+        `<li class="${x.ok ? "pass" : "fail"}">${x.ok ? "✓" : "✗"} ${x.name}${x.ok ? "" : ` — got ${JSON.stringify(x.actual)}, expected ${JSON.stringify(x.expected)}`}</li>`
+    )
+    .join("");
+  window.__testResults = { passed: results.length - failed.length, failed: failed.length, failures: failed };
+</script>
+</body>
+</html>

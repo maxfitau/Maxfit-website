@@ -712,3 +712,143 @@ body {
     font-size: 40px;
   }
 }
+
+/* Which muscles an exercise works — the coach builder and a client's own
+   workout page both show this (renderMuscleHighlight, card/muscle-map.js).
+   Shared here since both load this file already. Filled: primary muscles.
+   Outlined: secondary. A real body diagram will join these chips later. */
+.muscle-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--grey);
+  white-space: nowrap;
+}
+
+.muscle-chip--primary {
+  color: var(--white);
+}
+
+.muscle-chip__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.muscle-chip--secondary .muscle-chip__dot {
+  opacity: 0.75;
+}
+
+/* The real figure (muscleFigureSvg/paintMuscleFigure, card/muscle-map.js):
+   Max's own artwork, front or back, filled by paintMuscleFigure. Its gap
+   stroke between adjoining muscles is baked into the markup itself (not
+   here) since it has to sit on one specific inner <g>, not the whole figure.
+   Colour transitions (switching exercises, or front/back) are the only
+   motion here, so reduced-motion just removes that. */
+.muscle-figure {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.muscle-figure [data-muscle] {
+  transition: fill 0.2s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .muscle-figure [data-muscle] {
+    transition: none;
+  }
+}
+
+.muscle-figure-pair {
+  display: flex;
+  gap: 16px;
+}
+
+.muscle-figure-pair > div {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.muscle-figure-pair .muscle-figure {
+  max-width: 160px;
+}
+
+.muscle-figure-caption {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 14px;
+  color: var(--grey);
+}
+
+/* Bottom nav (card/bottom-nav.js, self-mounting) — Train/Muscles/Macros/
+   Profile. `body` centres `.card` with flexbox, so this is positioned to
+   match the card's own width/centring rather than spanning the full
+   viewport on desktop. bottom-nav.js adds its own spacer inside `.card`
+   (not body padding — body's height is fixed, not just a minimum, so
+   content taller than the viewport overflows it instead of growing it;
+   see the comment there) so the fixed bar never covers the last bit of
+   page content. */
+
+.bottom-nav {
+  position: fixed;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-bottom: none;
+  border-radius: var(--radius) var(--radius) 0 0;
+  padding-bottom: env(safe-area-inset-bottom);
+  z-index: 20;
+}
+
+.bottom-nav__item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 60px;
+  padding: 10px 4px;
+  color: var(--grey);
+  text-decoration: none;
+}
+
+.bottom-nav__item.is-active {
+  color: var(--red);
+}
+
+.bottom-nav__icon {
+  width: 22px;
+  height: 22px;
+  display: flex;
+}
+
+.bottom-nav__icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.bottom-nav__label {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 14px;
+}

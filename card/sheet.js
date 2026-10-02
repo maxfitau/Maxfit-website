@@ -137,6 +137,10 @@ function fetchExercises() {
           movement: findColumn(header, "Movement"),
           bodyPart: findColumn(header, "Body Part"),
           startingWeight: findColumn(header, "Default Starting Weight (kg)"),
+          equipment: findColumn(header, "Equipment"),
+          primaryMuscles: findColumn(header, "Primary Muscles"),
+          secondaryMuscles: findColumn(header, "Secondary Muscles"),
+          bestView: findColumn(header, "Best View"),
         };
         return { rows, col };
       });

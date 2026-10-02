@@ -70,6 +70,9 @@ function buildExerciseControl(exercise) {
   wrap.type = "button";
   wrap.className = "builder__row-exercise";
 
+  const top = document.createElement("span");
+  top.className = "builder__row-exercise-top";
+
   const dot = document.createElement("span");
   dot.className = "exercise-dot";
   dot.hidden = true;
@@ -77,11 +80,15 @@ function buildExerciseControl(exercise) {
   const label = document.createElement("span");
   label.className = "builder__row-exercise-label";
 
+  const muscles = document.createElement("span");
+  muscles.className = "builder__row-muscles";
+  muscles.hidden = true;
+
   const nameValueInput = document.createElement("input");
   nameValueInput.type = "hidden";
   nameValueInput.className = "builder__row-name-value";
 
-  function setChosen(name, movement, bodyPart) {
+  function setChosen(name, movement, bodyPart, primaryMuscles, secondaryMuscles) {
     nameValueInput.value = name || "";
     wrap.dataset.movement = movement || "";
     wrap.dataset.bodyPart = bodyPart || "";
@@ -99,18 +106,27 @@ function buildExerciseControl(exercise) {
       wrap.classList.add("builder__row-exercise--empty");
       dot.hidden = true;
     }
+    renderMuscleHighlight(muscles, primaryMuscles, secondaryMuscles);
   }
 
-  setChosen((exercise && exercise.name) || "", exercise && exercise.movement, exercise && exercise.bodyPart);
+  setChosen(
+    (exercise && exercise.name) || "",
+    exercise && exercise.movement,
+    exercise && exercise.bodyPart,
+    exercise && exercise.primaryMuscles,
+    exercise && exercise.secondaryMuscles
+  );
 
   wrap.addEventListener("click", () => {
     ExercisePicker.open({
-      onChoose: (picked) => setChosen(picked.name, picked.movement, picked.bodyPart),
+      onChoose: (picked) => setChosen(picked.name, picked.movement, picked.bodyPart, picked.primaryMuscles, picked.secondaryMuscles),
     });
   });
 
-  wrap.appendChild(dot);
-  wrap.appendChild(label);
+  top.appendChild(dot);
+  top.appendChild(label);
+  wrap.appendChild(top);
+  wrap.appendChild(muscles);
   return { control: wrap, nameValueInput };
 }
 
@@ -323,11 +339,13 @@ async function loadClientList() {
   }
 }
 
-// Name -> {movement, bodyPart}, built once from fetchExercises() — the
-// Workout Exercises tab only stores an exercise's NAME against a client, not
-// its category, so re-opening a saved workout needs this lookup to show the
-// same colour dot a freshly-picked exercise gets.
+// Name -> {movement, bodyPart, primaryMuscles, secondaryMuscles, bestView},
+// built once from fetchExercises() — the Workout Exercises tab only stores
+// an exercise's NAME against a client, not its category or muscles, so
+// re-opening a saved workout needs this lookup to show the same colour dot
+// and muscle chips a freshly-picked exercise gets.
 let exerciseCategoryByName_ = null;
+const EXERCISE_CATEGORY_FALLBACK_ = { movement: "", bodyPart: "", primaryMuscles: [], secondaryMuscles: [], bestView: "" };
 
 async function exerciseCategoryFor_(name) {
   if (!exerciseCategoryByName_) {
@@ -341,14 +359,17 @@ async function exerciseCategoryFor_(name) {
           exerciseCategoryByName_[n.toLowerCase()] = {
             movement: col.movement >= 0 ? String(r[col.movement] || "").trim() : "",
             bodyPart: col.bodyPart >= 0 ? String(r[col.bodyPart] || "").trim() : "",
+            primaryMuscles: col.primaryMuscles >= 0 ? parseMuscleKeys(r[col.primaryMuscles]) : [],
+            secondaryMuscles: col.secondaryMuscles >= 0 ? parseMuscleKeys(r[col.secondaryMuscles]) : [],
+            bestView: col.bestView >= 0 ? String(r[col.bestView] || "").trim() : "",
           };
         }
       }
     } catch (err) {
-      // Lookup stays empty — rows just render without a colour dot.
+      // Lookup stays empty — rows just render without a colour dot or muscle chips.
     }
   }
-  return exerciseCategoryByName_[name.trim().toLowerCase()] || { movement: "", bodyPart: "" };
+  return exerciseCategoryByName_[name.trim().toLowerCase()] || EXERCISE_CATEGORY_FALLBACK_;
 }
 
 /** Loads every workout name this client already has, grouped into { lowercaseName: { name, exercises } }. */
@@ -363,12 +384,14 @@ async function loadClientWorkouts(clientSlug) {
         .filter((r) => String(r[col.client] || "").trim().toLowerCase() === clientSlug)
         .map(async (r) => {
           const name = (r[col.exercise] || "").trim();
-          const category = name ? await exerciseCategoryFor_(name) : { movement: "", bodyPart: "" };
+          const category = name ? await exerciseCategoryFor_(name) : EXERCISE_CATEGORY_FALLBACK_;
           return {
             workoutName: (col.workoutName >= 0 ? r[col.workoutName] : "") || "",
             name,
             movement: category.movement,
             bodyPart: category.bodyPart,
+            primaryMuscles: category.primaryMuscles,
+            secondaryMuscles: category.secondaryMuscles,
             sets: parseSessions(r[col.sets], ""),
             reps: (r[col.reps] || "").trim(),
             order: parseSessions(r[col.order], 0),

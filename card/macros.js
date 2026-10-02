@@ -53,6 +53,20 @@
     `<path class="flame__layer flame__layer--3" d="${FUEL_FLAME_PATH}"/>` +
     "</svg>";
 
+  // The medal icon on the Fuel tier hero (see heroHtml()) — one shape per
+  // plan, fill="currentColor" so it takes the medal's --X-ink colour.
+  // Diamond's is a cut gem with pale facet lines on top of the fill.
+  const FUEL_TIER_ICONS = {
+    silver: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2 L19 5 V11 C19 16 15.5 20 12 22 C8.5 20 5 16 5 11 V5 Z"/></svg>',
+    gold: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2 L14.5 9 L22 9.5 L16 14.3 L18 21.5 L12 17.5 L6 21.5 L8 14.3 L2 9.5 L9.5 9 Z"/></svg>',
+    platinum: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 9 L12 3 L18 9 L12 21 Z"/></svg>',
+    diamond:
+      '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+      '<path fill="currentColor" d="M4 9 L12 2 L20 9 L12 22 Z"/>' +
+      '<path fill="none" stroke="rgba(255,255,255,0.45)" stroke-width="1" d="M4 9 L20 9 M12 2 L8.5 9 L12 22 M12 2 L15.5 9 L12 22"/>' +
+      "</svg>",
+  };
+
   const state = {
     loaded: false,
     loading: false,
@@ -496,11 +510,35 @@
       </div>`;
   }
 
+  /**
+   * The "your plan" moment at the top of Fuel: a medal in the tier's own
+   * metal (same --X-metal/--X-ink tokens as its small badge elsewhere) and
+   * the tier name itself set in that metal as a gradient headline, not just
+   * a tint on the panel behind it. Diamond reuses the badge's own twinkle
+   * glints (fuel-twinkle, macros.css) rather than inventing a second sparkle.
+   */
+  function heroHtml() {
+    const t = tier();
+    const sparkles =
+      t === "diamond"
+        ? '<span class="fuel-hero__spark" style="top:2px;right:26%">✦</span>' +
+          '<span class="fuel-hero__spark" style="bottom:10px;left:24%;font-size:9px;animation-delay:1.3s">✦</span>'
+        : "";
+    return `
+      <div class="fuel-hero fuel-hero--${t}">
+        ${sparkles}
+        <div class="fuel-hero__medal">${FUEL_TIER_ICONS[t]}</div>
+        <span class="fuel-hero__eyebrow">Your Plan</span>
+        <span class="fuel-hero__name">${TIER_NAMES[t]}</span>
+      </div>`;
+  }
+
   function render() {
     if (!state.loaded) return;
     const today = isToday();
     const g = state.targets;
     els.panelFuel.innerHTML = `
+      ${heroHtml()}
       <div class="fuel__head">
         <div class="fuel__date">
           <button class="fuel__day-btn" type="button" data-act="prev" aria-label="Previous day">${ICONS.left}</button>

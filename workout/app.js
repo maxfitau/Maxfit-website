@@ -66,6 +66,7 @@ const APP_VERSION = (() => {
 })();
 
 const params = new URLSearchParams(window.location.search);
+let pendingAddExerciseHandled_ = false; // ?addExercise=, from the Exercise Library — added once, see renderWorkout
 let memberId = params.get("id");
 if (!memberId) {
   try {
@@ -551,6 +552,13 @@ function buildSetRow(exercise, setNumber, initial, onSave) {
  * exercise would), and by restoring extras they'd already saved earlier
  * today. Every exercise gets "+ Add Set" for when they do more than planned.
  */
+// Name (lowercased) -> { primary: [...], secondary: [...] } muscle keys,
+// filled in once during the initial load (same loop that builds
+// startingWeights/exerciseNameOptions below) from the Exercises tab — so
+// addExerciseSection can show which muscles an exercise works without an
+// extra fetch or needing to become async itself.
+let exerciseMusclesByName_ = {};
+
 function addExerciseSection(ctx, exercise, opts) {
   const { clientSlug, setRows, setCol, startingWeights } = ctx;
   const isExtra = Boolean(opts && opts.isExtra);
@@ -584,6 +592,14 @@ function addExerciseSection(ctx, exercise, opts) {
   head.appendChild(target);
 
   section.appendChild(head);
+
+  const muscles = exerciseMusclesByName_[key];
+  if (muscles) {
+    const musclesEl = document.createElement("div");
+    musclesEl.className = "workout__exercise-muscles";
+    renderMuscleHighlight(musclesEl, muscles.primary, muscles.secondary);
+    if (!musclesEl.hidden) section.appendChild(musclesEl);
+  }
 
   const hint = document.createElement("p");
   hint.className = "workout__exercise-hint";
@@ -998,6 +1014,22 @@ function renderWorkout(shared, workoutName, exercises) {
 
   els.list.appendChild(buildNotesSection(ctx, restored.notes));
   els.list.appendChild(buildLogSection(ctx));
+
+  // Arrived from the Exercise Library's "Add to Today's Workout" (?addExercise=).
+  // Only once per page load — not on a later renderWorkout (changing the date,
+  // or opening a different workout from the picker) — and only if it isn't
+  // already in this workout under another name.
+  const pendingAdd = !pendingAddExerciseHandled_ && (params.get("addExercise") || "").trim();
+  if (pendingAdd) {
+    pendingAddExerciseHandled_ = true;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("addExercise");
+    history.replaceState(null, "", url.toString());
+    if (!assignedKeys.has(pendingAdd.toLowerCase()) && !savedByExercise.has(pendingAdd.toLowerCase())) {
+      addExerciseSection(ctx, { name: pendingAdd, sets: 1, reps: "" }, { isExtra: true });
+    }
+  }
+
   ctx.updateSummary();
 }
 
@@ -1233,6 +1265,10 @@ async function init() {
       const name = rawName.toLowerCase();
       const weight = Number(row[exerciseDefaults.col.startingWeight]);
       if (Number.isFinite(weight)) startingWeights[name] = weight;
+      exerciseMusclesByName_[name] = {
+        primary: exerciseDefaults.col.primaryMuscles >= 0 ? parseMuscleKeys(row[exerciseDefaults.col.primaryMuscles]) : [],
+        secondary: exerciseDefaults.col.secondaryMuscles >= 0 ? parseMuscleKeys(row[exerciseDefaults.col.secondaryMuscles]) : [],
+      };
     }
   } catch (err) {
     showStatus("Couldn't load your workout. Check your connection and reopen.", true);

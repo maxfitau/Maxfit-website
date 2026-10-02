@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+<title>MaxFit — Exercise Library</title>
+<meta name="theme-color" content="#111111" />
+<meta name="robots" content="noindex" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="../card/styles.css?v=20261002b" />
+<link rel="stylesheet" href="library.css?v=20261002a" />
+</head>
+<body>
+
+<main class="card lib" id="lib">
+
+  <!-- LIST: every exercise, grouped by body part. -->
+  <section id="libList">
+    <div class="card__top">
+      <img class="card__wordmark" src="../assets/images/maxfit-logo.png" alt="MaxFit" />
+      <span class="card__tag">Exercise Library</span>
+    </div>
+    <p class="lib-hint">Tap an exercise to see which muscles it works.</p>
+    <div id="libGroups"><p class="lib-hint">Loading…</p></div>
+  </section>
+
+  <!-- DETAIL (the "Anatomy Lab"): one exercise, shown/hidden in place — no page reload when jumping between exercises via the chip row. -->
+  <section id="libDetail" hidden>
+    <div class="card__top">
+      <button class="lib-back" id="detailBack" type="button" aria-label="Back to the library">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <img class="card__wordmark" src="../assets/images/maxfit-logo.png" alt="MaxFit" />
+      <span></span>
+    </div>
+    <span class="card__tag">Exercise Library</span>
+    <h1 class="lib-detail__name" id="detailName"></h1>
+
+    <div class="lib-chips" id="detailChips"></div>
+
+    <div class="lib-figures">
+      <div class="muscle-figure-pair" id="detailFigures"></div>
+    </div>
+
+    <div class="lib-muscle-cards">
+      <div class="lib-muscle-card">
+        <span class="lib-muscle-card__label"><span class="lib-muscle-card__dot lib-muscle-card__dot--primary"></span>Primary</span>
+        <p class="lib-muscle-card__names" id="detailPrimary"></p>
+      </div>
+      <div class="lib-muscle-card">
+        <span class="lib-muscle-card__label"><span class="lib-muscle-card__dot lib-muscle-card__dot--secondary"></span>Secondary</span>
+        <p class="lib-muscle-card__names" id="detailSecondary"></p>
+      </div>
+    </div>
+
+    <button class="lib-add" id="detailAdd" type="button">Add to Today's Workout</button>
+    <p class="lib-add__note" id="detailAddNote" hidden>Added — open Train to log it.</p>
+  </section>
+
+  <p class="lib-hint" id="libError" hidden>Couldn't load the exercise library. Check your connection and reopen.</p>
+
+</main>
+
+<script src="../card/sheet.js?v=20261002a"></script>
+<script src="../card/muscle-map.js?v=20261002b"></script>
+<script src="../card/bottom-nav.js?v=20261002a"></script>
+<script src="exercise-picker.js?v=20261002a"></script>
+<script src="library.js?v=20261002a"></script>
+</body>
+</html>
