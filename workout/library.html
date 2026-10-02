@@ -3,23 +3,50 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
-<title>MaxFit — Exercise Library</title>
+<title>MaxFit — Muscles</title>
 <meta name="theme-color" content="#111111" />
 <meta name="robots" content="noindex" />
 
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="../card/styles.css?v=20261002b" />
-<link rel="stylesheet" href="library.css?v=20261002b" />
+<link rel="stylesheet" href="../card/styles.css?v=20261003a" />
+<link rel="stylesheet" href="library.css?v=20261003a" />
 </head>
 <body>
 
 <main class="card lib" id="lib">
 
-  <!-- LIST: every exercise, grouped by body part. -->
-  <section id="libList">
+  <!-- HEAT: the Muscles tab's home — which muscles they're training, today
+       or this week, from their actual logged sets (not the static figure
+       the library/detail screen below uses). -->
+  <section id="libHeat">
     <div class="card__top">
+      <img class="card__wordmark" src="../assets/images/maxfit-logo.png" alt="MaxFit" />
+      <span class="card__tag">Muscle Heatmap</span>
+    </div>
+
+    <div class="lib-heat-toggle" role="tablist" aria-label="Range">
+      <button class="lib-heat-toggle__btn is-active" type="button" data-range="today" role="tab" aria-selected="true">Today</button>
+      <button class="lib-heat-toggle__btn" type="button" data-range="week" role="tab" aria-selected="false">This Week</button>
+    </div>
+
+    <div class="lib-figures">
+      <div class="muscle-figure-pair" id="heatFigures"></div>
+    </div>
+
+    <p class="lib-hint" id="heatEmpty" hidden>Nothing logged yet — once sets are logged, the muscles they work light up here.</p>
+    <div id="heatBreakdown"></div>
+
+    <button class="lib-browse" id="heatBrowse" type="button">Browse all exercises</button>
+  </section>
+
+  <!-- LIST: every exercise, grouped by body part. -->
+  <section id="libList" hidden>
+    <div class="card__top">
+      <button class="lib-back" id="listBack" type="button" aria-label="Back to the heatmap">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
       <img class="card__wordmark" src="../assets/images/maxfit-logo.png" alt="MaxFit" />
       <span class="card__tag">Exercise Library</span>
     </div>
@@ -65,9 +92,10 @@
 </main>
 
 <script src="../card/sheet.js?v=20261002a"></script>
-<script src="../card/muscle-map.js?v=20261002c"></script>
+<script src="../card/muscle-map.js?v=20261003a"></script>
 <script src="../card/bottom-nav.js?v=20261002b"></script>
-<script src="exercise-picker.js?v=20261002d"></script>
-<script src="library.js?v=20261002b"></script>
+<script src="exercise-picker.js?v=20261003a"></script>
+<script src="heatmap.js?v=20261003a"></script>
+<script src="library.js?v=20261003a"></script>
 </body>
 </html>

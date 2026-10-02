@@ -250,3 +250,31 @@ function paintMuscleFigure(svgRoot, primary, secondary) {
     title.textContent = parts.length ? `Highlights: ${parts.join(", ")}` : (svgRoot.dataset.view === "back" ? "Back view" : "Front view");
   }
 }
+
+/** Grey (0) toward red (1), for paintMuscleHeat below — MUSCLE_UNUSED_COLOR and MUSCLE_PRIMARY_COLOR are both #rrggbb. */
+function muscleHeatColor_(t) {
+  const from = [0x3c, 0x3c, 0x3c];
+  const to = [0xff, 0x2a, 0x1f];
+  const rgb = from.map((c, i) => Math.round(c + (to[i] - c) * Math.max(0, Math.min(1, t))));
+  return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+}
+
+/**
+ * Colours every `[data-muscle]` shape by how much it's been trained,
+ * grey-to-red, instead of paintMuscleFigure's binary primary/secondary —
+ * for the Muscle Heatmap (workout/heatmap.js), not an exercise's own
+ * figure. `weighted` is `{ key: weightedSetCount }`; `cap` is the count
+ * that reads as fully red (so a heavy but not extreme day doesn't look
+ * identical to a maximal one) — defaults to 10.
+ */
+function paintMuscleHeat(svgRoot, weighted, cap) {
+  if (!svgRoot) return;
+  const capVal = cap || 10;
+  svgRoot.querySelectorAll("[data-muscle]").forEach((g) => {
+    const key = g.getAttribute("data-muscle");
+    const w = (weighted && weighted[key]) || 0;
+    g.setAttribute("fill", muscleHeatColor_(w / capVal));
+  });
+  const title = svgRoot.querySelector("title");
+  if (title) title.textContent = svgRoot.dataset.view === "back" ? "Back view" : "Front view";
+}

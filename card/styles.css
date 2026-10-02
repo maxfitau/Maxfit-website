@@ -21,8 +21,16 @@
 
 * { box-sizing: border-box; }
 
+/* Centre the card when it fits the screen, scroll from the top when it
+   doesn't — e.g. the Muscles tab's exercise list, or a long workout. A
+   fixed-height, align-items:center body clips anything taller than the
+   viewport (symmetrically, top and bottom, with no way to scroll to the
+   clipped part) instead of growing or scrolling; auto margins on .card
+   can't do that clipping, only real centring. (2026-10-02 — first fixed
+   for Fuel in macros.css, moved here so every page using this shared base
+   gets it, not just the ones that happened to hit the bug.) */
 html, body {
-  height: 100%;
+  height: auto;
 }
 
 body {
@@ -32,7 +40,7 @@ body {
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   padding: max(24px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
   min-height: 100vh;
@@ -42,6 +50,8 @@ body {
 .card {
   width: 100%;
   max-width: 400px;
+  margin-top: auto;
+  margin-bottom: auto;
   background: var(--bg-card);
   border: 1px solid var(--line);
   border-radius: var(--radius);

@@ -1,9 +1,17 @@
 /*
- * Exercise Library + Anatomy Lab (workout/library.html) — browse every
- * exercise from the Exercises sheet, tap one to see the real muscle
- * figure (card/muscle-map.js) front and back, and add it straight into
- * today's workout. One page, two states (list / detail) rather than two
- * page loads, so jumping between exercises via the chip row is instant.
+ * The Muscles tab (workout/library.html) — three states, one page:
+ *   heat   — the default: a Muscle Heatmap of the client's own logged sets,
+ *            Today or This Week (workout/heatmap.js does the counting,
+ *            card/muscle-map.js's paintMuscleHeat does the colouring). Max's
+ *            framing: this is so a client can see what a workout trains,
+ *            not a static reference (2026-10-03).
+ *   list   — every exercise from the Exercises sheet, reached via "Browse
+ *            all exercises" from heat, grouped by movement/body part.
+ *   detail — the "Anatomy Lab": one exercise's own real muscle figure
+ *            (front + back) and an Add to Today's Workout button.
+ * Kept as one page / three shown-hidden sections, not three page loads, so
+ * jumping between exercises via the chip row (and back out to heat) is
+ * instant.
  *
  * Link-only, like the rest of the client-facing card — no PIN.
  */
@@ -17,7 +25,14 @@ const libMemberId = libParams.get("id") || (function () {
 })();
 
 const libEls = {
+  heat: document.getElementById("libHeat"),
+  heatToggle: document.querySelectorAll(".lib-heat-toggle__btn"),
+  heatFigures: document.getElementById("heatFigures"),
+  heatBreakdown: document.getElementById("heatBreakdown"),
+  heatEmpty: document.getElementById("heatEmpty"),
+  heatBrowse: document.getElementById("heatBrowse"),
   list: document.getElementById("libList"),
+  listBack: document.getElementById("listBack"),
   groups: document.getElementById("libGroups"),
   detail: document.getElementById("libDetail"),
   detailBack: document.getElementById("detailBack"),
@@ -38,14 +53,24 @@ function libEsc(text) {
 }
 
 let libExercises = []; // [{ name, movement, bodyPart, primaryMuscles, secondaryMuscles, bestView }]
+let libHeatRange = "today";
+
+function showLibHeat() {
+  libEls.heat.hidden = false;
+  libEls.list.hidden = true;
+  libEls.detail.hidden = true;
+  history.replaceState(null, "", window.location.pathname + window.location.search.replace(/[?&]ex=[^&]*/, "").replace(/^&/, "?"));
+}
 
 function showLibList() {
+  libEls.heat.hidden = true;
   libEls.detail.hidden = true;
   libEls.list.hidden = false;
   history.replaceState(null, "", window.location.pathname + window.location.search.replace(/[?&]ex=[^&]*/, "").replace(/^&/, "?"));
 }
 
 function showLibDetail(exercise) {
+  libEls.heat.hidden = true;
   libEls.list.hidden = true;
   libEls.detail.hidden = false;
   libEls.detailAddNote.hidden = true;
@@ -152,6 +177,62 @@ function renderLibList() {
 }
 
 libEls.detailBack.addEventListener("click", showLibList);
+libEls.listBack.addEventListener("click", showLibHeat);
+libEls.heatBrowse.addEventListener("click", showLibList);
+libEls.heatToggle.forEach((btn) => {
+  btn.addEventListener("click", () => loadHeat(btn.dataset.range));
+});
+
+/**
+ * Paints the heat figures + the per-muscle breakdown list for `range`
+ * ("today" | "week") from the client's real logged sets (workout/heatmap.js).
+ * Max's framing: this is so a client can see what a workout trains, not a
+ * static reference — always real data, never a worked example.
+ */
+async function loadHeat(range) {
+  libHeatRange = range;
+  libEls.heatToggle.forEach((btn) => {
+    const on = btn.dataset.range === range;
+    btn.classList.toggle("is-active", on);
+    btn.setAttribute("aria-selected", on ? "true" : "false");
+  });
+
+  const frontSvg = muscleFigureSvg("front", "heatFigFrontTitle");
+  const backSvg = muscleFigureSvg("back", "heatFigBackTitle");
+  libEls.heatFigures.innerHTML =
+    `<div><div class="lib-fig-wrap">${frontSvg}</div><span class="muscle-figure-caption">Front</span></div>` +
+    `<div><div class="lib-fig-wrap">${backSvg}</div><span class="muscle-figure-caption">Back</span></div>`;
+  const svgs = libEls.heatFigures.querySelectorAll("svg.muscle-figure");
+
+  let weighted = {};
+  let setsCounted = 0;
+  try {
+    const data = await heatmapMuscleData(libMemberId, range);
+    weighted = data.weighted;
+    setsCounted = data.setsCounted;
+  } catch (err) {
+    // A quiet, all-grey figure beats a crash — the breakdown list below
+    // staying empty already says nothing was found.
+  }
+
+  svgs.forEach((svg) => paintMuscleHeat(svg, weighted));
+
+  libEls.heatEmpty.hidden = setsCounted > 0;
+  const entries = Object.keys(weighted)
+    .filter((k) => weighted[k] > 0)
+    .sort((a, b) => weighted[b] - weighted[a]);
+  libEls.heatBreakdown.innerHTML = entries
+    .map((k) => {
+      const n = weighted[k];
+      return `
+        <div class="lib-heat-row">
+          <span class="lib-heat-row__name">${libEsc(muscleLabel_(k))}</span>
+          <span class="lib-heat-row__track"><span class="lib-heat-row__fill" style="width:${Math.min(100, (n / 10) * 100)}%"></span></span>
+          <span class="lib-heat-row__num">${n % 1 === 0 ? n : n.toFixed(1)}</span>
+        </div>`;
+    })
+    .join("");
+}
 
 async function initLibrary() {
   try {
@@ -179,4 +260,9 @@ async function initLibrary() {
   if (preset) showLibDetail(preset);
 }
 
+// Heat is the default landing view (already the only un-hidden section in
+// the markup) — loads independently of the exercise list below, which
+// only matters once someone taps into Browse or a deep link asks for one
+// exercise's own detail screen.
+loadHeat("today");
 initLibrary();

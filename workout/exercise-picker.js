@@ -147,7 +147,7 @@ const ExercisePicker = (function () {
         `</button>`
       );
     }).join("");
-    render("Add Exercise", `<div class="exercise-picker__grid">${tiles}</div>`, null);
+    render("Add Exercise", `<div class="exercise-picker__grid exercise-picker__grid--fill">${tiles}</div>`, null);
     bodyEl.querySelectorAll("[data-movement]").forEach((btn) => {
       btn.addEventListener("click", () => showBodyPartStep(btn.dataset.movement));
       const svg = btn.querySelector("svg[data-crop-keys]");

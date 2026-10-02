@@ -10,6 +10,106 @@
   margin: 0;
 }
 
+/* ---- heat (the Muscles tab's home) ---- */
+
+.lib-heat-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px;
+  gap: 4px;
+}
+
+.lib-heat-toggle__btn {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  min-height: 40px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 14px;
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.lib-heat-toggle__btn.is-active {
+  background: var(--bg-card);
+  color: var(--white);
+}
+
+.lib-heat-row {
+  display: grid;
+  grid-template-columns: 84px 1fr 32px;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+}
+
+.lib-heat-row + .lib-heat-row {
+  margin-top: 8px;
+}
+
+.lib-heat-row__name {
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--white);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lib-heat-row__track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.lib-heat-row__fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--red);
+}
+
+.lib-heat-row__num {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--grey);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.lib-browse {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  min-height: 52px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--white);
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.lib-browse:active {
+  border-color: var(--red);
+  color: var(--red);
+}
+
 /* ---- list ---- */
 /* Movement is a native <details> so the whole list doesn't run off the
    screen — closed by default, no JS needed for the toggle itself. Body

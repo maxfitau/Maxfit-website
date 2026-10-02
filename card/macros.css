@@ -19,22 +19,8 @@
   display: none;
 }
 
-/* Centre the card when it fits, scroll from the top when it doesn't (FUEL,
-   or CARD on a short phone). Flex align-items:center would clip the top of
-   anything taller than the screen; auto margins can't. */
-html,
-body {
-  height: auto;
-}
-
-body {
-  align-items: flex-start;
-}
-
-.card {
-  margin-top: auto;
-  margin-bottom: auto;
-}
+/* The scroll-instead-of-clip fix (body height:auto, .card auto margins)
+   now lives in the shared card/styles.css, not just here. */
 
 /* ---------- FUEL home ---------- */
 
