@@ -78,6 +78,7 @@
 
 .exercise-picker__tile {
   aspect-ratio: 1.3 / 1;
+  min-width: 0;
   border-radius: var(--radius-sm);
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.04);
@@ -130,10 +131,26 @@
   height: 22px;
 }
 
-/* The muscle-crop icons (movement tiles) are a photo-like crop of the real
-   figure, not a centred glyph — fill the badge instead of sitting small
-   and centred like the plain stroke icons above. */
-.exercise-picker__tile-icon--crop svg {
+/* Movement tiles (Push/Pull/Legs/Core/Conditioning): the muscle-crop icon
+   is the tile, not a small badge tucked in a corner — big, centred, with
+   the tinted background carrying the movement's colour so nothing's lost
+   by dropping the little badge circle. Body part tiles (the dot + label
+   step after this one) are untouched — still bottom-left, per .exercise-picker__tile. */
+.exercise-picker__tile--movement {
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+}
+
+.exercise-picker__tile-icon--big {
+  width: 68%;
+  max-width: 110px;
+  min-width: 0;
+  aspect-ratio: 1;
+}
+
+.exercise-picker__tile-icon--big svg {
+  display: block;
   width: 100%;
   height: 100%;
 }
@@ -145,6 +162,10 @@
   letter-spacing: 0.02em;
   font-size: 16px;
   color: var(--white);
+}
+
+.exercise-picker__tile-label--big {
+  font-size: 19px;
 }
 
 .exercise-picker__search {

@@ -141,9 +141,9 @@ const ExercisePicker = (function () {
     const tiles = MOVEMENTS.map((m) => {
       const color = MOVEMENT_COLORS_[m] || FALLBACK_COLOR;
       return (
-        `<button class="exercise-picker__tile" type="button" data-movement="${esc(m)}">` +
-        `<span class="exercise-picker__tile-icon exercise-picker__tile-icon--crop" style="background:${color}26;color:${color}">${movementIconHtml_(m)}</span>` +
-        `<span class="exercise-picker__tile-label">${esc(m)}</span>` +
+        `<button class="exercise-picker__tile exercise-picker__tile--movement" type="button" data-movement="${esc(m)}" style="background:${color}14; border-color:${color}40">` +
+        `<span class="exercise-picker__tile-icon--big">${movementIconHtml_(m)}</span>` +
+        `<span class="exercise-picker__tile-label exercise-picker__tile-label--big">${esc(m)}</span>` +
         `</button>`
       );
     }).join("");
