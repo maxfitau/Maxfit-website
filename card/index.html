@@ -39,7 +39,7 @@
 <link rel="preconnect" href="https://script.google.com" />
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="styles.css?v=20261002b" />
-<link rel="stylesheet" href="macros.css?v=20261002c" />
+<link rel="stylesheet" href="macros.css?v=20261002g" />
 </head>
 <body>
 
@@ -61,12 +61,7 @@
     <span class="card__tag">Membership</span>
   </div>
 
-  <div class="card__tabs" role="tablist" aria-label="Card sections">
-    <button class="card__tab is-active" id="tabCard" type="button" role="tab" aria-selected="true" aria-controls="panelCard" data-tab="card">Card</button>
-    <button class="card__tab" id="tabFuel" type="button" role="tab" aria-selected="false" aria-controls="panelFuel" data-tab="fuel">Fuel</button>
-  </div>
-
-  <div class="card__panel" id="panelCard" role="tabpanel" aria-labelledby="tabCard">
+  <div class="card__panel" id="panelCard" aria-label="Membership card">
   <div class="card__sessions-row">
     <div class="card__sessions">
       <span class="card__label card__label--red">Group Left</span>
@@ -134,7 +129,7 @@
   </div>
 
   <!-- Macro tracker — everything inside is drawn by macros.js -->
-  <section class="card__panel fuel" id="panelFuel" role="tabpanel" aria-labelledby="tabFuel" hidden></section>
+  <section class="card__panel fuel" id="panelFuel" aria-label="Fuel" hidden></section>
 </main>
 
 <!-- Macro tracker bottom sheet, toast and camera inputs (macros.js) -->
@@ -188,7 +183,7 @@
 <script src="app.js?v=20261001b" defer></script>
 <script src="macros-core.js?v=20260928a" defer></script>
 <script src="macros-api.js?v=20260925a" defer></script>
-<script src="macros.js?v=20261002c" defer></script>
-<script src="bottom-nav.js?v=20261002a" defer></script>
+<script src="macros.js?v=20261002e" defer></script>
+<script src="bottom-nav.js?v=20261002b" defer></script>
 </body>
 </html>

@@ -86,34 +86,59 @@ function showLibDetail(exercise) {
   history.replaceState(null, "", url.toString());
 }
 
-function libGroupLabel(movement, bodyPart) {
-  return `${movement} · ${bodyPart}`;
+const LIB_CHEVRON_SVG_ =
+  '<svg class="lib-movement__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+
+function libBodyPartGroup_(bodyPart, list) {
+  const color = typeof ExercisePicker !== "undefined" ? ExercisePicker.colorFor(bodyPart) : "#999";
+  return (
+    `<div class="lib-group">` +
+    `<span class="lib-group__head"><span class="lib-group__dot" style="background:${color}"></span>${libEsc(bodyPart)}</span>` +
+    list.map((ex) => `<button class="lib-row" type="button" data-name="${libEsc(ex.name)}">${libEsc(ex.name)}</button>`).join("") +
+    "</div>"
+  );
 }
 
+/**
+ * Two levels so the list doesn't just run off the bottom of the screen:
+ * Movement (Push/Pull/Legs/Core/Conditioning) as a collapsed `<details>`,
+ * Body Part as a plain sub-heading once it's open — e.g. tap Push, see
+ * Chest/Shoulders/Triceps/Traps each with their own exercises underneath.
+ * Order and grouping come from ExercisePicker's own tables so this always
+ * matches the builder's categories; any exercise whose movement/body part
+ * isn't in those tables (shouldn't happen — Code.gs uses the same list)
+ * still shows up, grouped at the end rather than silently dropped.
+ */
 function renderLibList() {
-  const groups = {}; // "Movement · Body Part" -> exercises[]
-  const order = [];
+  const byMovement = {}; // movement -> { bodyPart -> exercises[] }
   libExercises.forEach((ex) => {
     if (!ex.movement || !ex.bodyPart) return;
-    const key = libGroupLabel(ex.movement, ex.bodyPart);
-    if (!groups[key]) {
-      groups[key] = [];
-      order.push(key);
-    }
-    groups[key].push(ex);
+    (byMovement[ex.movement] = byMovement[ex.movement] || {});
+    (byMovement[ex.movement][ex.bodyPart] = byMovement[ex.movement][ex.bodyPart] || []).push(ex);
   });
 
-  libEls.groups.innerHTML = order
-    .map((key) => {
-      const list = groups[key];
-      const color = typeof ExercisePicker !== "undefined" ? ExercisePicker.colorFor(list[0].bodyPart) : "#999";
+  const knownMovements = typeof ExercisePicker !== "undefined" ? ExercisePicker.MOVEMENTS : Object.keys(byMovement).sort();
+  const bodyPartsByMovement = typeof ExercisePicker !== "undefined" ? ExercisePicker.BODY_PARTS_BY_MOVEMENT : {};
+  const extraMovements = Object.keys(byMovement)
+    .filter((m) => !knownMovements.includes(m))
+    .sort();
+
+  libEls.groups.innerHTML = knownMovements
+    .concat(extraMovements)
+    .map((movement) => {
+      const bodyParts = byMovement[movement];
+      if (!bodyParts) return "";
+      const knownBodyParts = bodyPartsByMovement[movement] || [];
+      const extraBodyParts = Object.keys(bodyParts)
+        .filter((bp) => !knownBodyParts.includes(bp))
+        .sort();
+      const orderedBodyParts = knownBodyParts.concat(extraBodyParts).filter((bp) => bodyParts[bp]);
+      const count = orderedBodyParts.reduce((n, bp) => n + bodyParts[bp].length, 0);
       return (
-        `<div class="lib-group">` +
-        `<span class="lib-group__head"><span class="lib-group__dot" style="background:${color}"></span>${libEsc(key)}</span>` +
-        list
-          .map((ex) => `<button class="lib-row" type="button" data-name="${libEsc(ex.name)}">${libEsc(ex.name)}</button>`)
-          .join("") +
-        "</div>"
+        `<details class="lib-movement">` +
+        `<summary class="lib-movement__head"><span>${libEsc(movement)}</span><span class="lib-movement__count">${count}</span>${LIB_CHEVRON_SVG_}</summary>` +
+        `<div class="lib-movement__body">${orderedBodyParts.map((bp) => libBodyPartGroup_(bp, bodyParts[bp])).join("")}</div>` +
+        "</details>"
       );
     })
     .join("");

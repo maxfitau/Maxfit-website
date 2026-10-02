@@ -11,6 +11,68 @@
 }
 
 /* ---- list ---- */
+/* Movement is a native <details> so the whole list doesn't run off the
+   screen — closed by default, no JS needed for the toggle itself. Body
+   part stays a plain sub-heading once a movement is open (not separately
+   collapsible — one more tap per exercise wasn't worth it). */
+
+.lib-movement {
+  border-bottom: 1px solid var(--line);
+}
+
+.lib-movement:first-of-type {
+  border-top: 1px solid var(--line);
+}
+
+.lib-movement__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 14px 2px;
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 20px;
+  color: var(--white);
+  cursor: pointer;
+  list-style: none;
+}
+
+.lib-movement__head::-webkit-details-marker {
+  display: none;
+}
+
+.lib-movement__count {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--grey);
+}
+
+.lib-movement__chevron {
+  width: 18px;
+  height: 18px;
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--grey);
+  transition: transform 0.2s ease;
+}
+
+.lib-movement[open] .lib-movement__chevron {
+  transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lib-movement__chevron {
+    transition: none;
+  }
+}
+
+.lib-movement__body {
+  padding-bottom: 16px;
+}
 
 .lib-group {
   display: flex;

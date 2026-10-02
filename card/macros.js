@@ -22,7 +22,6 @@
 (function () {
   const $ = (id) => document.getElementById(id);
   const els = {
-    tabs: Array.from(document.querySelectorAll(".card__tab")),
     panelCard: $("panelCard"),
     panelFuel: $("panelFuel"),
     sheet: $("fuelSheet"),
@@ -33,7 +32,6 @@
   };
   if (!els.panelFuel || !els.sheet) return;
 
-  const TAB_STORAGE = "maxfitCardTab";
   const MEAL_LABELS = { breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner", snack: "Snacks" };
   const MEAL_SHORT = { breakfast: "Brekky", lunch: "Lunch", dinner: "Dinner", snack: "Snack" };
 
@@ -197,32 +195,22 @@
       '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19V5M4 19h16"/><path d="M7 15l4-4 3 3 5-6"/></svg>',
     lock: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
     star: '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l3 6.9 7.5.7-5.7 5 1.7 7.4L12 18l-6.5 4 1.7-7.4-5.7-5 7.5-.7z"/></svg>',
+    chat: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+    list: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>',
+    chevron: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>',
   };
 
   // ---------------------------------------------------------------------------
   // Tabs
   // ---------------------------------------------------------------------------
 
-  function showTab(name, remember) {
+  /** Which panel shows — picked once on load from the URL (see the bottom of this file), no in-page switcher any more. */
+  function showTab(name) {
     const fuel = name === "fuel";
-    els.tabs.forEach((t) => {
-      const on = t.dataset.tab === name;
-      t.classList.toggle("is-active", on);
-      t.setAttribute("aria-selected", on ? "true" : "false");
-    });
     els.panelCard.hidden = fuel;
     els.panelFuel.hidden = !fuel;
-    if (remember) {
-      try {
-        localStorage.setItem(TAB_STORAGE, name);
-      } catch (err) {
-        // ignore
-      }
-    }
     if (fuel && !state.loaded && !state.loading) load(returnedSession ? { sync: true } : undefined);
   }
-
-  els.tabs.forEach((t) => t.addEventListener("click", () => showTab(t.dataset.tab, true)));
 
   // ---------------------------------------------------------------------------
   // Loading
@@ -279,9 +267,9 @@
     state.weightTrend = data.weightTrend || null;
     // Themes the whole Fuel screen, not just the small plan badges — set on
     // the panel itself (not inside render()'s innerHTML) so it survives every
-    // view's re-render, home screen or not. Silver gets no special
-    // background, same as its plain grey badge.
-    els.panelFuel.dataset.fuelTier = tier();
+    // view's re-render. Every tier gets its own background now, Silver
+    // included (2026-10-02 redesign, see macros.css).
+    els.panelFuel.dataset.tier = tier();
   }
 
   async function load(opts) {
@@ -356,59 +344,74 @@
   // Home view
   // ---------------------------------------------------------------------------
 
-  function progressRow(label, eaten, target, unit, { lead = false, note = "" } = {}) {
+  // Calorie ring geometry (r=42, matching the mockup's SVG exactly).
+  const FUEL_RING_R = 42;
+  const FUEL_RING_C = 2 * Math.PI * FUEL_RING_R;
+
+  function fuelMacroBar(label, eaten, target) {
     const pct = target > 0 ? Math.min(100, (eaten / target) * 100) : 0;
     return `
-      <div class="fuel-row${lead ? " fuel-row--lead" : ""}">
-        <div class="fuel-row__head">
-          <span class="card__label${lead ? " card__label--red" : ""}">${label}</span>
-          ${note ? `<span class="fuel-row__note">${note}</span>` : ""}
-        </div>
-        <div class="fuel-row__nums">${int(eaten)}<span class="fuel-row__target"> / ${int(target)}</span><span class="fuel-row__unit">${unit}</span></div>
-        <div class="fuel-bar"><div class="fuel-bar__fill" style="width:${pct.toFixed(1)}%"></div></div>
+      <div class="fuel-mbar">
+        <div class="fuel-mbar__head"><span>${label}</span><span>${int(eaten)} / ${int(target)}g</span></div>
+        <div class="fuel-mbar__track"><div class="fuel-mbar__fill" style="width:${pct.toFixed(1)}%"></div></div>
       </div>`;
   }
 
-  function smallRow(label, eaten, target) {
-    const pct = target > 0 ? Math.min(100, (eaten / target) * 100) : 0;
-    return `
-      <div class="fuel-row">
-        <span class="card__label">${label}</span>
-        <div class="fuel-row__nums">${int(eaten)}<span class="fuel-row__target"> / ${int(target)}</span><span class="fuel-row__unit">g</span></div>
-        <div class="fuel-bar"><div class="fuel-bar__fill" style="width:${pct.toFixed(1)}%"></div></div>
-      </div>`;
-  }
-
-  function totalsHtml() {
-    const t = state.day ? state.day.totals : MacroCore.sumTotals([]);
+  /**
+   * The Today card: a calorie ring + three macro bars, tapping it opens the
+   * full log (openLogView). When the member hides calories the ring runs
+   * off protein instead and only carbs/fat get their own bar — protein
+   * already has the ring, and no calorie figure appears anywhere, same rule
+   * the rest of Fuel follows.
+   */
+  function todayHtml() {
     const g = state.targets;
     if (!g) {
       return `
-        <div class="fuel-panel fuel-notice">
-          <h2 class="fuel-notice__title">Set your daily targets</h2>
-          <p>Two minutes with the calculator and you'll see protein, carbs, fat${hideKcal() ? "" : " and calories"} to aim for each day. Or Max can set them for you.</p>
-          <button class="fuel-btn" type="button" data-act="targets">Set my targets</button>
-          ${
-            state.day && state.day.entries.length
-              ? `<p class="fuel-row__note">So far ${esc(dayLabel(state.viewDate).toLowerCase())}: ${macroLine(t)}</p>`
-              : ""
-          }
-        </div>`;
+        <button class="fuel-today" type="button" data-act="targets">
+          <span class="card__label">Today</span>
+          <p class="fuel-row__note">Set your daily targets to see your ring and macros here.</p>
+        </button>`;
     }
-    const proteinLeft = g.protein_g - t.protein_g;
-    const proteinNote = proteinLeft > 0 ? `${int(proteinLeft)}g to go` : "Target hit";
-    const kcalLeft = g.kcal - t.kcal;
-    // Over on calories is information, not a failure — keep it calm.
-    const kcalNote = kcalLeft >= 0 ? `${int(kcalLeft)} left` : `${int(-kcalLeft)} over · no stress`;
+    const t = state.day ? state.day.totals : MacroCore.sumTotals([]);
+    const showKcal = !hideKcal();
+    const ringEaten = showKcal ? t.kcal : t.protein_g;
+    const ringTarget = showKcal ? g.kcal : g.protein_g;
+    const pct = ringTarget > 0 ? Math.min(1, ringEaten / ringTarget) : 0;
+    const offset = (FUEL_RING_C * (1 - pct)).toFixed(1);
+    const bars = showKcal
+      ? [
+          ["Protein", t.protein_g, g.protein_g],
+          ["Carbs", t.carbs_g, g.carbs_g],
+          ["Fat", t.fat_g, g.fat_g],
+        ]
+      : [
+          ["Carbs", t.carbs_g, g.carbs_g],
+          ["Fat", t.fat_g, g.fat_g],
+        ];
     return `
-      <div class="fuel-panel fuel-totals">
-        ${progressRow("Protein", t.protein_g, g.protein_g, "g", { lead: true, note: proteinNote })}
-        ${hideKcal() ? "" : progressRow("Calories", t.kcal, g.kcal, "kcal", { note: kcalNote })}
-        <div class="fuel-grid3" style="grid-template-columns: 1fr 1fr">
-          ${smallRow("Carbs", t.carbs_g, g.carbs_g)}
-          ${smallRow("Fat", t.fat_g, g.fat_g)}
+      <button class="fuel-today" type="button" data-act="today">
+        <span class="card__label">Today</span>
+        <div class="fuel-today__body">
+          <div class="fuel-ring">
+            <svg viewBox="0 0 100 100">
+              <defs>
+                <linearGradient id="fuelRingGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="var(--fuel-ring-a)"></stop>
+                  <stop offset="100%" stop-color="var(--fuel-ring-b)"></stop>
+                </linearGradient>
+              </defs>
+              <circle cx="50" cy="50" r="${FUEL_RING_R}" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="9"></circle>
+              <circle cx="50" cy="50" r="${FUEL_RING_R}" fill="none" stroke="url(#fuelRingGrad)" stroke-width="9" stroke-linecap="round" stroke-dasharray="${FUEL_RING_C.toFixed(1)}" stroke-dashoffset="${offset}"></circle>
+            </svg>
+            <div class="fuel-ring__label">
+              <span class="fuel-ring__num">${int(ringEaten)}</span>
+              <span class="fuel-ring__unit">of ${int(ringTarget)}${showKcal ? "" : "g"}</span>
+            </div>
+          </div>
+          <div class="fuel-mbars">${bars.map(([label, eaten, target]) => fuelMacroBar(label, eaten, target)).join("")}</div>
         </div>
-      </div>`;
+      </button>`;
   }
 
   /**
@@ -430,46 +433,50 @@
     return isServes(item) ? servesText(item.grams) : `${int(item.grams)}${item.unit || "g"}`;
   }
 
-  function chip(item, kind, index) {
-    const m = MacroCore.scale(item.per100, item.grams);
-    return `
-      <button class="fuel-chip" type="button" data-act="quick" data-kind="${kind}" data-i="${index}">
-        <span class="fuel-chip__name">${kind === "fav" ? `<span style="color:var(--red)">${ICONS.star}</span> ` : ""}${esc(item.name)}</span>
-        <span class="fuel-chip__meta">${amountText(item)} · ${int(m.protein_g)}P${hideKcal() ? "" : ` · ${int(m.kcal)} kcal`}</span>
-      </button>`;
-  }
-
   function mealTotals(meal) {
     return MacroCore.sumTotals(meal.items.map((it) => MacroCore.scale(it.per100, it.grams)));
   }
 
-  function mealChip(meal, index) {
-    const t = mealTotals(meal);
-    return `
-      <button class="fuel-chip" type="button" data-act="meal" data-i="${index}">
-        <span class="fuel-chip__name"><span style="color:var(--red)">${ICONS.bowl}</span> ${esc(meal.name)}</span>
-        <span class="fuel-chip__meta">${meal.items.length} food${meal.items.length === 1 ? "" : "s"} · ${int(t.protein_g)}P${hideKcal() ? "" : ` · ${int(t.kcal)} kcal`}</span>
-      </button>`;
-  }
-
-  function quickHtml() {
+  /**
+   * The 2 quick-log tiles on the main screen (replaces the old, unbounded
+   * "tap to log again" chip row — same priority order: saved meals first,
+   * then favourites, then recents, just capped at 2 so the screen stays
+   * tight). The full set is still reachable from Favourites (openFavourites)
+   * and from a saved meal's own chip there, unaffected by this cap.
+   */
+  function quickTilesHtml() {
     const favs = state.favourites || [];
     const meals = state.meals || [];
     const recents = (state.recent || []).filter(
       (r) => !favs.some((f) => f.name.toLowerCase() === String(r.name).toLowerCase())
     );
-    if (!favs.length && !recents.length && !meals.length) return "";
+    const tiles = [];
+    meals.forEach((m, i) => {
+      const t = mealTotals(m);
+      tiles.push({ act: "meal", i, name: m.name, meta: `${m.items.length} food${m.items.length === 1 ? "" : "s"} · +${int(t.protein_g)}g protein` });
+    });
+    favs.forEach((f, i) => {
+      const m = MacroCore.scale(f.per100, f.grams);
+      tiles.push({ act: "quick", kind: "fav", i, name: `${f.name}, ${amountText(f)}`, meta: `+${int(m.protein_g)}g protein` });
+    });
+    recents.forEach((r) => {
+      const m = MacroCore.scale(r.per100, r.grams);
+      tiles.push({ act: "quick", kind: "recent", i: state.recent.indexOf(r), name: `${r.name}, ${amountText(r)}`, meta: `+${int(m.protein_g)}g protein` });
+    });
+    if (!tiles.length) return "";
     return `
-      <div class="fuel-section">
-        <div class="fuel-section__head">
-          <span class="card__label">Tap to log again</span>
-          ${favs.length ? '<button class="fuel-link" type="button" data-act="favs">Favourites</button>' : ""}
-        </div>
-        <div class="fuel-chips">
-          ${meals.map(mealChip).join("")}
-          ${favs.map((f, i) => chip(f, "fav", i)).join("")}
-          ${recents.map((r) => chip(r, "recent", state.recent.indexOf(r))).join("")}
-        </div>
+      <div class="fuel-quicklog">
+        ${tiles
+          .slice(0, 2)
+          .map(
+            (t) => `
+          <button class="fuel-quicklog__tile" type="button" data-act="${t.act}" data-kind="${t.kind || ""}" data-i="${t.i}">
+            <span class="fuel-quicklog__swatch"></span>
+            <span class="fuel-quicklog__name">${esc(t.name)}</span>
+            <span class="fuel-quicklog__meta">${esc(t.meta)}</span>
+          </button>`
+          )
+          .join("")}
       </div>`;
   }
 
@@ -533,40 +540,126 @@
       </div>`;
   }
 
-  function render() {
-    if (!state.loaded) return;
+  /** Compact "AI scans today" row — hidden entirely for Silver/no AI (spec: hide rather than nudge inline). */
+  function fuelAiCompactHtml() {
+    if (!fuelAi()) return "";
+    const a = state.aiToday || { used: 0, limit: 0, left: 0, unlimited: false };
+    const countText = a.unlimited ? `${a.used} · Unlimited` : `${a.left} of ${a.limit}`;
+    const pct = a.unlimited ? Math.min(70, a.used * 8) : a.limit ? Math.min(100, Math.round((a.used / a.limit) * 100)) : 0;
+    return `
+      <div class="fuel-ai-compact">
+        <div class="fuel-ai-compact__head">
+          <span class="card__label">AI scans today</span>
+          <span class="fuel-ai-compact__count">${esc(countText)}</span>
+        </div>
+        <div class="fuel-ai-compact__track" role="progressbar" aria-valuemin="0" aria-valuemax="${a.unlimited ? 100 : a.limit}" aria-valuenow="${a.used}" aria-label="AI scans today">
+          <div class="fuel-ai-compact__fill" style="width:${pct}%"></div>
+        </div>
+      </div>`;
+  }
+
+  /** "Today's Log" row — opens the full list (openLogView), same visual row style as Ask Fuel. */
+  function logRowHtml() {
+    const entries = state.day ? state.day.entries : [];
+    const groups = MacroCore.MEALS.filter((meal) => entries.some((e) => e.meal === meal));
+    const sum = MacroCore.sumTotals(entries);
+    const hint = entries.length
+      ? `${groups.length} meal${groups.length === 1 ? "" : "s"}${hideKcal() ? "" : ` · ${int(sum.kcal)} kcal`}`
+      : `Nothing logged ${esc(dayLabel(state.viewDate).toLowerCase())} yet`;
+    return `
+      <button class="fuel-link-row" type="button" data-act="today-log">
+        <span class="fuel-link-row__icon">${ICONS.list}</span>
+        <span class="fuel-link-row__text">
+          <span class="fuel-link-row__title">Today's Log</span>
+          <span class="fuel-link-row__hint">${hint}</span>
+        </span>
+        <span class="fuel-link-row__chevron">${ICONS.chevron}</span>
+      </button>`;
+  }
+
+  /** Ask Fuel row — same .fuel-link-row style as logRowHtml, per spec. */
+  function askRowHtml() {
+    if (!state.aiEnabled) return "";
+    const on = askFuelOn();
+    return `
+      <button class="fuel-link-row" type="button" data-act="ask">
+        <span class="fuel-link-row__icon">${ICONS.chat}</span>
+        <span class="fuel-link-row__text">
+          <span class="fuel-link-row__title">Ask Fuel</span>
+          <span class="fuel-link-row__hint">${on ? "Your AI nutrition copilot" : "Unlocks on Platinum"}</span>
+        </span>
+        ${on ? `<span class="fuel-link-row__chevron">${ICONS.chevron}</span>` : '<span class="fuel-link-row__tag">Platinum</span>'}
+      </button>`;
+  }
+
+  /**
+   * Today's Log full view (step-1 stand-in: the existing bottom sheet, not
+   * yet the dedicated full-screen slide-in step 3 will build) — date nav,
+   * progress/settings icons (moved off the main screen), the grouped entry
+   * list, weight trend and the AI upsell detail, manual add, and the
+   * targets footnote. Nothing from the old main screen is lost, just moved.
+   */
+  function logViewHtml() {
     const today = isToday();
-    const g = state.targets;
-    els.panelFuel.innerHTML = `
-      ${heroHtml()}
+    return `
+      <h2 class="fuel-sheet__title" id="fuelSheetTitle">Today's Log</h2>
       <div class="fuel__head">
         <div class="fuel__date">
-          <button class="fuel__day-btn" type="button" data-act="prev" aria-label="Previous day">${ICONS.left}</button>
+          <button class="fuel__day-btn" type="button" data-act="day-prev" aria-label="Previous day">${ICONS.left}</button>
           <span class="fuel__day-label">${esc(dayLabel(state.viewDate))}</span>
-          <button class="fuel__day-btn" type="button" data-act="next" aria-label="Next day" ${today ? "disabled" : ""}>${ICONS.right}</button>
+          <button class="fuel__day-btn" type="button" data-act="day-next" aria-label="Next day" ${today ? "disabled" : ""}>${ICONS.right}</button>
         </div>
         <span class="fuel__head-btns">
           <button class="fuel__icon-btn" type="button" data-act="progress" aria-label="Your progress">${ICONS.chart}</button>
           <button class="fuel__icon-btn" type="button" data-act="settings" aria-label="Fuel settings">${ICONS.gear}</button>
         </span>
       </div>
-      ${totalsHtml()}
-      ${trendHtml()}
-      <button class="fuel-scan" type="button" data-act="scan">${ICONS.camera} Add food</button>
-      ${
-        state.aiEnabled
-          ? `<button class="fuel-btn fuel-btn--ghost fuel-ask" type="button" data-act="ask">${ICONS.spark} Ask Fuel${askFuelOn() ? "" : ' <span class="fuel-tier fuel-tier--platinum fuel-tier--sm">Platinum</span>'}</button>`
-          : ""
-      }
-      ${aiMeterHtml()}
-      ${today ? suggestionsHtml(state.moreIdeas ? 5 : 3, true) : ""}
-      ${quickHtml()}
       ${entriesHtml()}
+      ${trendHtml()}
+      ${aiMeterHtml()}
+      <button class="fuel-btn fuel-btn--ghost" type="button" data-act="log-scan">+ Add food</button>
       ${
-        g
-          ? `<p class="fuel-footnote">${g.set_by === "coach" ? "Targets set by Max" : "Targets from your calculator"} · <button class="fuel-link" type="button" data-act="targets">${g.set_by === "coach" ? "View" : "Edit"}</button></p>`
+        state.targets
+          ? `<p class="fuel-footnote">${state.targets.set_by === "coach" ? "Targets set by Max" : "Targets from your calculator"} · <button class="fuel-link" type="button" data-act="log-targets">${state.targets.set_by === "coach" ? "View" : "Edit"}</button></p>`
           : ""
       }`;
+  }
+
+  function wireLogView(body) {
+    body.addEventListener("click", async (e) => {
+      const btn = e.target.closest("[data-act]");
+      if (!btn) return;
+      const act = btn.dataset.act;
+      if (act === "day-prev" || act === "day-next") {
+        await changeDay(act === "day-prev" ? -1 : 1);
+        body.innerHTML = logViewHtml();
+      } else if (act === "progress") openProgress();
+      else if (act === "settings") openSettings();
+      else if (act === "log-scan") {
+        closeSheet();
+        openScanChooser();
+      } else if (act === "log-targets") openTargets();
+      else if (act === "edit") {
+        const entry = state.day.entries.find((x) => x.id === btn.dataset.id);
+        if (entry) openEdit(entry);
+      }
+    });
+  }
+
+  function openLogView() {
+    openSheet(logViewHtml(), wireLogView);
+  }
+
+  function render() {
+    if (!state.loaded) return;
+    els.panelFuel.innerHTML = `
+      ${heroHtml()}
+      ${todayHtml()}
+      ${fuelAiCompactHtml()}
+      <button class="fuel-scan" type="button" data-act="scan">${ICONS.camera} Scan Food</button>
+      ${quickTilesHtml()}
+      ${logRowHtml()}
+      ${askRowHtml()}`;
   }
 
   els.panelFuel.addEventListener("click", (e) => {
@@ -574,8 +667,7 @@
     if (!btn) return;
     const act = btn.dataset.act;
     if (act === "retry") load();
-    else if (act === "prev") changeDay(-1);
-    else if (act === "next") changeDay(1);
+    else if (act === "today" || act === "today-log") openLogView();
     else if (act === "scan") openScanChooser();
     else if (act === "ask") openChat();
     else if (act === "progress") openProgress();
@@ -1968,7 +2060,12 @@
   function chatHtml() {
     chatFoods = [];
     if (!state.chat.length) {
-      return `<p class="fuel-disclaimer">Ask anything about food and your macros today. Fuel can see what you've logged and what's left.</p>
+      // "What to eat next" lived on the main screen until the 2026-10-02
+      // redesign moved it in here — same ideasFor()/shownIdeas plumbing,
+      // just at the top of Ask Fuel's empty state instead.
+      const ideas = isToday() ? suggestionsHtml(3, false) : "";
+      return `${ideas}
+        <p class="fuel-disclaimer">Ask anything about food and your macros today. Fuel can see what you've logged and what's left.</p>
         <div class="fuel-serves">${CHAT_STARTERS.map((q) => `<button type="button" data-starter="${esc(q)}">${esc(q)}</button>`).join("")}</div>`;
     }
     return state.chat
@@ -2056,6 +2153,12 @@
           const starter = e.target.closest("[data-starter]");
           if (starter) {
             send(starter.dataset.starter);
+            return;
+          }
+          const ideaBtn = e.target.closest('[data-act="log-idea"]');
+          if (ideaBtn) {
+            await logIdea(ideaBtn);
+            paint();
             return;
           }
           const logBtn = e.target.closest("[data-chat-log]");
@@ -2842,11 +2945,9 @@
     }
   });
 
-  let startTab = "card";
-  try {
-    startTab = window.location.hash === "#fuel" ? "fuel" : localStorage.getItem(TAB_STORAGE) || "card";
-  } catch (err) {
-    startTab = window.location.hash === "#fuel" ? "fuel" : "card";
-  }
-  showTab(startTab === "fuel" ? "fuel" : "card", false);
+  // Which view opens is decided entirely by how they got here (the bottom
+  // nav's Profile vs Macros link) — never a remembered last tab, which used
+  // to mean tapping Profile could land back on Fuel. No in-page Card/Fuel
+  // switcher any more either (2026-10-02): the bottom nav already does that.
+  showTab(window.location.hash === "#fuel" ? "fuel" : "card");
 })();

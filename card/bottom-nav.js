@@ -48,11 +48,12 @@
     const id = memberId_();
     const qs = id ? `?id=${encodeURIComponent(id)}` : "";
     const active = activeKey_();
+    // Home (Profile) leftmost — Max's own convention for where "home" sits.
     const items = [
+      { key: "profile", label: "Profile", href: `/card/${qs}` },
       { key: "train", label: "Train", href: `/workout/${qs}` },
       { key: "muscles", label: "Muscles", href: `/workout/library.html${qs}` },
       { key: "macros", label: "Macros", href: `/card/${qs}#fuel` },
-      { key: "profile", label: "Profile", href: `/card/${qs}` },
     ];
 
     const nav = document.createElement("nav");

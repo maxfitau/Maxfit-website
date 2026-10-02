@@ -50,6 +50,41 @@ const ExercisePicker = (function () {
     return BODY_PART_COLORS[bodyPart] || FALLBACK_COLOR;
   }
 
+  // One colour per movement too, each picked from that movement's own body
+  // parts above so the two steps feel connected (tap an orange Push tile,
+  // land on orange-family Chest/Shoulders/Triceps/Traps tiles).
+  const MOVEMENT_COLORS_ = {
+    Push: "#e0954a",
+    Pull: "#4a8fd4",
+    Legs: "#5ac97a",
+    Core: "#9a7ad9",
+    Conditioning: "#9a9a9a",
+  };
+
+  // Cardio only (Conditioning works everything, so a muscle crop can't single
+  // anything out) — the rest get a crop of Max's own figure (muscle-map.js),
+  // tight on whichever region that movement's body parts actually light up,
+  // so the tile icon is a real "this is the muscle" symbol, not an arrow.
+  const CONDITIONING_ICON_ =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l1.5-4L12 17l2.5-9L16 12h5"/></svg>';
+
+  // view + a tight viewBox over the relevant region of muscle-map.js's
+  // 200x460 figure, chosen for whichever view covers more of that
+  // movement's own body parts (Push/Core read better from the front,
+  // Pull/Legs from the back — picked by checking shape coverage, not by eye).
+  const MOVEMENT_CROPS_ = {
+    Push: { view: "front", box: "25 45 150 110", keys: ["chest", "delts", "traps"] },
+    Pull: { view: "back", box: "35 45 130 150", keys: ["lats", "traps", "delts"] },
+    Legs: { view: "back", box: "45 210 110 200", keys: ["glutes", "hamstrings", "calves"] },
+    Core: { view: "front", box: "50 108 100 105", keys: ["abs", "obliques"] },
+  };
+
+  function movementIconHtml_(movement) {
+    const crop = MOVEMENT_CROPS_[movement];
+    if (!crop || typeof muscleCropSvg === "undefined") return CONDITIONING_ICON_;
+    return muscleCropSvg(crop.view, crop.box, crop.keys);
+  }
+
   let overlay, titleEl, backBtn, closeBtn, bodyEl;
   let onChoose = null;
   let exercisesCache = null; // { rows, col } from fetchExercises(), fetched once per open()
@@ -103,15 +138,20 @@ const ExercisePicker = (function () {
   }
 
   function showMovementStep() {
-    const tiles = MOVEMENTS.map(
-      (m) =>
+    const tiles = MOVEMENTS.map((m) => {
+      const color = MOVEMENT_COLORS_[m] || FALLBACK_COLOR;
+      return (
         `<button class="exercise-picker__tile" type="button" data-movement="${esc(m)}">` +
+        `<span class="exercise-picker__tile-icon exercise-picker__tile-icon--crop" style="background:${color}26;color:${color}">${movementIconHtml_(m)}</span>` +
         `<span class="exercise-picker__tile-label">${esc(m)}</span>` +
         `</button>`
-    ).join("");
+      );
+    }).join("");
     render("Add Exercise", `<div class="exercise-picker__grid">${tiles}</div>`, null);
     bodyEl.querySelectorAll("[data-movement]").forEach((btn) => {
       btn.addEventListener("click", () => showBodyPartStep(btn.dataset.movement));
+      const svg = btn.querySelector("svg[data-crop-keys]");
+      if (svg && typeof paintMuscleCrop === "function") paintMuscleCrop(svg);
     });
   }
 

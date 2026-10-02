@@ -204,6 +204,29 @@ function muscleFigureSvg(view, summaryId) {
 }
 
 /**
+ * A small icon-sized crop of the same figure — same shapes, same colours,
+ * just a tight viewBox over one region (e.g. shoulders-to-chest) instead of
+ * the full 200x460 body, so a highlighted muscle actually reads at 20-30px
+ * instead of being a fleck on a tiny full-body silhouette. `keys` are
+ * painted MUSCLE_PRIMARY_COLOR; everything else fades to near-invisible
+ * against the icon's own background rather than competing with it. Used by
+ * the workout builder's movement tiles (exercise-picker.js).
+ */
+function muscleCropSvg(view, viewBox, keys) {
+  const inner = view === "back" ? MUSCLE_BACK_SVG_ : MUSCLE_FRONT_SVG_;
+  return `<svg viewBox="${viewBox}" aria-hidden="true" data-crop-keys="${keys.join(",")}">${inner}</svg>`;
+}
+
+/** Paints a muscleCropSvg() once it's in the DOM — keys lit up, everything else nearly gone. */
+function paintMuscleCrop(svgRoot) {
+  if (!svgRoot) return;
+  const keys = (svgRoot.dataset.cropKeys || "").split(",").filter(Boolean);
+  svgRoot.querySelectorAll("[data-muscle]").forEach((el) => {
+    el.setAttribute("fill", keys.includes(el.getAttribute("data-muscle")) ? MUSCLE_PRIMARY_COLOR : "rgba(255,255,255,0.06)");
+  });
+}
+
+/**
  * Recolours every `[data-muscle]` group inside `svgRoot` (a front or back
  * muscleFigureSvg already in the DOM) to match primary/secondary, and
  * updates its `<title>` to a plain-text summary for screen readers — e.g.

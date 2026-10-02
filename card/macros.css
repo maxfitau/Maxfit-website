@@ -9,51 +9,6 @@
   --fuel-radius: 14px;
 }
 
-/* ---------- CARD | FUEL tabs ---------- */
-
-.card__tabs {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: var(--fuel-radius);
-  padding: 4px;
-  gap: 4px;
-  margin-top: -6px;
-}
-
-.card__tab {
-  font-family: var(--font-head);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  font-size: 13px;
-  color: var(--dim);
-  background: transparent;
-  border: none;
-  border-radius: 10px;
-  padding: 9px 0;
-  cursor: pointer;
-  position: relative;
-}
-
-.card__tab.is-active {
-  color: var(--white);
-  background: var(--bg-card);
-}
-
-.card__tab.is-active::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  bottom: 3px;
-  width: 18px;
-  height: 2px;
-  margin-left: -9px;
-  background: var(--red);
-  border-radius: 2px;
-}
-
 .card__panel {
   display: flex;
   flex-direction: column;
@@ -84,7 +39,7 @@ body {
 /* ---------- FUEL home ---------- */
 
 .fuel {
-  gap: 18px;
+  gap: 12px;
 }
 
 .fuel__head {
@@ -246,12 +201,12 @@ body {
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  font-size: 20px;
+  font-size: 18px;
   color: var(--on-red);
   background: var(--red);
   border: none;
   border-radius: var(--fuel-radius);
-  padding: 18px 16px;
+  padding: 13px 16px;
   cursor: pointer;
 }
 
@@ -2012,46 +1967,418 @@ a.fuel-btn {
   filter: brightness(0.88);
 }
 
-/* ---- The same plan metals, now on the whole Fuel screen (2026-10-01) ----
-   Max: "make the entire screen the theme of the tier", not just the badges
-   and buttons above. A direct copy of the bright badge gradients as a full
-   background would wreck the contrast every white/grey label in Fuel
-   depends on, so instead each tier tints the existing dark panel — a
-   coloured glow for Gold/Platinum, the same spinning rainbow edge the
-   Diamond plan card already uses (fuel-spin/--diamond-spectrum, above) for
-   Diamond. Silver gets none: same plain-grey treatment as its badge. */
+/* ---- The whole Fuel screen themed by tier (2026-10-02 redesign) ----
+   Superseded the 2026-10-01 version (a subtle glow on the plain dark panel)
+   with a real tier surface matching the "Fuel Tier Themes" mockup Max
+   approved: each tier is its own background gradient, not just an accent on
+   top of one shared dark panel — Silver a charcoal/graphite gradient,
+   Gold warm brown-to-black with a gold sheen, Platinum cool slate-lavender
+   with a slow drifting sheen, Diamond deep navy-to-black with an icy sheen,
+   sparkles and the rainbow edge (same conic-gradient/--diamond-spectrum
+   trick the 10-01 version used, border-box/padding-box layered so it
+   doesn't need a second, unclipped wrapper element).
+   --fuel-panel/-line, --fuel-ring-a/-b and --fuel-medal-grad below drive the
+   new Today ring+bars, the compact AI row, the quick-log tiles and the
+   Today's log / Ask Fuel rows, so every new piece stays in step with
+   whichever tier is showing. The hero above keeps its own established
+   --X-metal/--X-ink tokens (already matches the mockup) rather than being
+   rewired onto these — changing something already right wasn't worth the
+   risk. */
 
-#panelFuel[data-fuel-tier] {
-  border-radius: var(--radius);
+#panelFuel[data-tier] {
+  position: relative;
+  margin: 0 -22px -26px;
+  padding: 6px 22px 8px;
+  border-radius: 0 0 var(--radius) var(--radius);
+  overflow: hidden;
+  background: linear-gradient(165deg, var(--fuel-bg-top) 0%, var(--fuel-bg-mid) 48%, var(--fuel-bg-bottom) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
-#panelFuel[data-fuel-tier="gold"] {
-  background: radial-gradient(130% 70% at 50% -15%, rgba(240, 191, 90, 0.22), transparent 62%);
-  box-shadow: 0 0 46px -18px rgba(240, 191, 90, 0.55);
+#panelFuel[data-tier]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--fuel-sheen);
+  pointer-events: none;
 }
 
-#panelFuel[data-fuel-tier="platinum"] {
-  background:
-    radial-gradient(70% 45% at 20% -5%, rgba(214, 196, 255, 0.18), transparent 70%),
-    radial-gradient(60% 40% at 85% 25%, rgba(170, 224, 255, 0.16), transparent 70%),
-    radial-gradient(50% 30% at 50% 105%, rgba(255, 210, 230, 0.1), transparent 70%);
-  box-shadow: 0 0 46px -18px var(--platinum-glow);
+#panelFuel[data-tier] > * {
+  position: relative;
+  z-index: 1;
 }
 
-#panelFuel[data-fuel-tier="diamond"] {
+#panelFuel[data-tier="silver"] {
+  --fuel-bg-top: #4a4e55;
+  --fuel-bg-mid: #2c2e32;
+  --fuel-bg-bottom: #131416;
+  --fuel-panel: rgba(255, 255, 255, 0.05);
+  --fuel-panel-line: rgba(255, 255, 255, 0.16);
+  --fuel-sheen: radial-gradient(120% 60% at 50% -10%, rgba(255, 255, 255, 0.1), transparent 60%);
+  --fuel-ring-a: #f1f3f5;
+  --fuel-ring-b: #8d939a;
+  --fuel-medal-grad: linear-gradient(150deg, #f4f6f8 0%, #cbd0d6 45%, #868c93 100%);
+}
+
+#panelFuel[data-tier="gold"] {
+  --fuel-bg-top: #6b4a16;
+  --fuel-bg-mid: #3a2a0f;
+  --fuel-bg-bottom: #170f05;
+  --fuel-panel: rgba(255, 210, 120, 0.08);
+  --fuel-panel-line: rgba(255, 210, 120, 0.25);
+  --fuel-sheen:
+    radial-gradient(120% 60% at 50% -10%, rgba(255, 221, 150, 0.22), transparent 60%),
+    linear-gradient(115deg, transparent 40%, rgba(255, 230, 170, 0.14) 50%, transparent 60%);
+  --fuel-ring-a: #ffe9b0;
+  --fuel-ring-b: #a9772c;
+  --fuel-medal-grad: linear-gradient(150deg, #ffe9b0 0%, #e8b64a 42%, #8a601e 100%);
+}
+
+#panelFuel[data-tier="platinum"] {
+  --fuel-bg-top: #363a46;
+  --fuel-bg-mid: #1e2027;
+  --fuel-bg-bottom: #0e0f13;
+  --fuel-panel: rgba(225, 232, 240, 0.07);
+  --fuel-panel-line: rgba(225, 232, 240, 0.22);
+  --fuel-sheen:
+    radial-gradient(70% 40% at 25% 0%, rgba(214, 196, 255, 0.2), transparent 70%),
+    radial-gradient(60% 40% at 80% 55%, rgba(170, 224, 255, 0.18), transparent 70%),
+    radial-gradient(50% 30% at 50% 100%, rgba(255, 210, 230, 0.12), transparent 70%);
+  --fuel-ring-a: #ffffff;
+  --fuel-ring-b: #aab6c6;
+  --fuel-medal-grad: var(--platinum-metal);
+}
+
+#panelFuel[data-tier="platinum"]::before {
+  animation: fuel-sheen-drift 9s ease-in-out infinite;
+}
+
+@keyframes fuel-sheen-drift {
+  0%, 100% { opacity: 0.7; transform: translate(0, 0); }
+  50% { opacity: 1; transform: translate(10px, -6px); }
+}
+
+#panelFuel[data-tier="diamond"] {
+  --fuel-bg-top: #163449;
+  --fuel-bg-mid: #0c1b26;
+  --fuel-bg-bottom: #05090d;
+  --fuel-panel: rgba(170, 220, 255, 0.07);
+  --fuel-panel-line: rgba(180, 225, 255, 0.26);
+  --fuel-sheen:
+    radial-gradient(80% 45% at 50% -5%, rgba(140, 210, 255, 0.26), transparent 65%),
+    radial-gradient(45% 30% at 85% 70%, rgba(170, 160, 255, 0.14), transparent 70%);
+  --fuel-ring-a: #eafcff;
+  --fuel-ring-b: #4fa9e0;
+  --fuel-medal-grad: var(--diamond-metal);
   border: 2.5px solid transparent;
   background:
-    radial-gradient(90% 55% at 50% -10%, rgba(140, 210, 255, 0.22), transparent 65%) padding-box,
-    linear-gradient(var(--bg-card), var(--bg-card)) padding-box,
+    linear-gradient(165deg, var(--fuel-bg-top) 0%, var(--fuel-bg-mid) 48%, var(--fuel-bg-bottom) 100%) padding-box,
     conic-gradient(from var(--fuel-spin), var(--diamond-spectrum)) border-box;
-  box-shadow: 0 0 50px -14px var(--diamond-glow);
-  animation: fuel-spin 8s linear infinite;
+  animation: fuel-spin 7s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #panelFuel[data-fuel-tier="diamond"] {
+  #panelFuel[data-tier="platinum"]::before,
+  #panelFuel[data-tier="diamond"] {
     animation: none;
   }
+}
+
+.fuel-sparkle {
+  position: absolute;
+  color: #eafcff;
+  opacity: 0.8;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ---- Today: calorie ring + macro bars ---- */
+
+.fuel-today {
+  appearance: none;
+  -webkit-appearance: none;
+  border-radius: 18px;
+  background: var(--fuel-panel);
+  border: 1px solid var(--fuel-panel-line);
+  padding: 13px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+
+.fuel-today__body {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.fuel-ring {
+  position: relative;
+  width: 78px;
+  height: 78px;
+  flex-shrink: 0;
+}
+
+.fuel-ring svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.fuel-ring__label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.fuel-ring__num {
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 21px;
+  color: var(--white);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.fuel-ring__unit {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 9px;
+  color: var(--dim);
+  margin-top: 2px;
+  text-align: center;
+}
+
+.fuel-mbars {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  justify-content: center;
+}
+
+.fuel-mbar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fuel-mbar__head {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--grey);
+}
+
+.fuel-mbar__track {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.fuel-mbar__fill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--fuel-ring-b), var(--fuel-ring-a));
+  transition: width 0.4s ease;
+}
+
+/* ---- AI scans today: one compact row, hidden entirely for Silver (no AI
+   at all) rather than the old inline upsell nudge — keeps the no-AI
+   screen just as tight as everyone else's. ---- */
+
+.fuel-ai-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fuel-ai-compact__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.fuel-ai-compact__count {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--fuel-ring-a);
+  letter-spacing: 0.02em;
+}
+
+.fuel-ai-compact__track {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.fuel-ai-compact__fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--red);
+  transition: width 0.4s ease;
+}
+
+/* ---- Quick-log: the 2 tiles that replace the old, unbounded "tap to log
+   again" chip row (still used elsewhere — Favourites, saved meals — so
+   that chip style stays as it was; these are new, separate classes). ---- */
+
+.fuel-quicklog {
+  display: flex;
+  gap: 10px;
+}
+
+.fuel-quicklog__tile {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  border-radius: 14px;
+  background: var(--fuel-panel);
+  border: 1px solid var(--fuel-panel-line);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.fuel-quicklog__swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 7px;
+  background: var(--fuel-medal-grad);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.fuel-quicklog__name {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--white);
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fuel-quicklog__meta {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 10px;
+  color: var(--dim);
+}
+
+/* ---- The shared row style for "Today's log" and "Ask Fuel": an icon
+   badge, a title + one-line hint, and a trailing chevron or pill. Max's
+   spec asked for the log row to match the Ask Fuel row, so both are built
+   from this one class rather than two near-duplicates. ---- */
+
+.fuel-link-row {
+  appearance: none;
+  -webkit-appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: var(--fuel-panel);
+  border: 1px solid var(--fuel-panel-line);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+
+.fuel-link-row__icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--fuel-medal-grad);
+  color: var(--fuel-bg-bottom);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.fuel-link-row__text {
+  flex-grow: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fuel-link-row__title {
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  font-size: 14px;
+  color: var(--white);
+}
+
+.fuel-link-row__hint {
+  font-family: var(--font-body);
+  font-size: 11.5px;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fuel-link-row__chevron {
+  flex-shrink: 0;
+  color: var(--dim);
+}
+
+.fuel-link-row__tag {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 10px;
+  color: var(--fuel-ring-a);
+  border: 1px solid var(--fuel-panel-line);
+  border-radius: 999px;
+  padding: 4px 9px;
+  flex-shrink: 0;
+}
+
+/* ---- Scan Food: the same red CTA, with the mockup's slightly richer
+   gradient + shadow in place of the old flat fill. ---- */
+
+.fuel-scan {
+  background: linear-gradient(180deg, #ff2f2f 0%, var(--red) 55%, #b00000 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 10px 24px -10px rgba(224, 0, 0, 0.8);
 }
 
 /* ---- Tier hero: the "your plan" moment at the top of Fuel (2026-10-02) ----
@@ -2066,14 +2393,14 @@ a.fuel-btn {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 6px 0 4px;
+  gap: 4px;
+  padding: 0;
   position: relative;
 }
 
 .fuel-hero__medal {
-  width: 60px;
-  height: 60px;
+  width: 44px;
+  height: 44px;
   border-radius: 999px;
   display: flex;
   align-items: center;
@@ -2085,8 +2412,8 @@ a.fuel-btn {
 }
 
 .fuel-hero__medal svg {
-  width: 28px;
-  height: 28px;
+  width: 21px;
+  height: 21px;
 }
 
 .fuel-hero__eyebrow {
@@ -2103,7 +2430,7 @@ a.fuel-btn {
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.02em;
-  font-size: 32px;
+  font-size: 24px;
   line-height: 1;
 }
 
@@ -2343,8 +2670,7 @@ a.fuel-btn {
   line-height: 1.45;
 }
 
-/* Monthly / Yearly switch at the top of the plans sheet (same look as the
-   CARD | FUEL tabs). */
+/* Monthly / Yearly switch at the top of the plans sheet. */
 .fuel-interval {
   display: grid;
   grid-template-columns: 1fr 1fr;
