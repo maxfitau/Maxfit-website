@@ -55,19 +55,34 @@
       { key: "muscles", label: "Muscles", href: `/workout/library.html${qs}` },
       { key: "macros", label: "Macros", href: `/card/${qs}#fuel` },
     ];
+    const activeIndex = items.findIndex((item) => item.key === active);
 
     const nav = document.createElement("nav");
     nav.className = "bottom-nav";
     nav.setAttribute("aria-label", "Main");
-    nav.innerHTML = items
-      .map(
-        (item) =>
-          `<a class="bottom-nav__item${item.key === active ? " is-active" : ""}" href="${item.href}"${item.key === active ? ' aria-current="page"' : ""}>` +
-          `<span class="bottom-nav__icon">${ICONS_[item.key]}</span>` +
-          `<span class="bottom-nav__label">${item.label}</span>` +
-          "</a>"
-      )
-      .join("");
+
+    // One real "lens" element behind the active tab, positioned by index
+    // rather than four separately-styled items — see the CSS for why
+    // (sets up a later cross-document View Transition for free).
+    const lens = document.createElement("span");
+    lens.className = "bottom-nav__lens";
+    lens.setAttribute("aria-hidden", "true");
+    if (activeIndex < 0) lens.hidden = true;
+    else lens.style.setProperty("--lens-index", String(activeIndex));
+    nav.appendChild(lens);
+
+    nav.insertAdjacentHTML(
+      "beforeend",
+      items
+        .map(
+          (item) =>
+            `<a class="bottom-nav__item${item.key === active ? " is-active" : ""}" href="${item.href}"${item.key === active ? ' aria-current="page"' : ""}>` +
+            `<span class="bottom-nav__icon">${ICONS_[item.key]}</span>` +
+            `<span class="bottom-nav__label">${item.label}</span>` +
+            "</a>"
+        )
+        .join("")
+    );
 
     document.body.appendChild(nav);
 
