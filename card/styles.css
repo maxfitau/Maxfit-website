@@ -25,7 +25,7 @@
   --glass-border: rgba(255, 255, 255, 0.12);
   --glass-highlight: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0) 50%);
   --glass-blur: 20px;
-  --glass-saturate: 160%;
+  --glass-saturate: 190%;
   --glass-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   --radius-glass-lg: 24px;
   --radius-glass-md: 16px;
@@ -35,8 +35,8 @@
   --shadow-glass-lg: 0 16px 48px rgba(0, 0, 0, 0.45);
   /* Ambient background only — never used on text, icons or controls, so red
      stays the only real UI accent. */
-  --ambient-red: rgba(224, 0, 0, 0.16);
-  --ambient-blue: rgba(42, 74, 107, 0.22);
+  --ambient-red: rgba(224, 0, 0, 0.34);
+  --ambient-blue: rgba(56, 112, 172, 0.42);
 }
 
 /* A surface with no real blur support (or the user asked for less
@@ -105,9 +105,9 @@ body::before {
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(38% 30% at 18% 15%, var(--ambient-red), transparent 70%),
-    radial-gradient(34% 28% at 85% 20%, var(--ambient-blue), transparent 70%),
-    radial-gradient(40% 32% at 50% 92%, rgba(255, 255, 255, 0.05), transparent 70%);
+    radial-gradient(58% 44% at 15% 10%, var(--ambient-red), transparent 75%),
+    radial-gradient(54% 42% at 90% 22%, var(--ambient-blue), transparent 75%),
+    radial-gradient(50% 40% at 50% 98%, rgba(255, 255, 255, 0.08), transparent 75%);
   animation: ambient-drift 26s ease-in-out infinite alternate;
 }
 

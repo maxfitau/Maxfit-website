@@ -471,7 +471,7 @@
           .map(
             (t) => `
           <button class="fuel-quicklog__tile" type="button" data-act="${t.act}" data-kind="${t.kind || ""}" data-i="${t.i}">
-            <span class="fuel-quicklog__swatch"></span>
+            <span class="fuel-quicklog__swatch">${ICONS.bowl}</span>
             <span class="fuel-quicklog__name">${esc(t.name)}</span>
             <span class="fuel-quicklog__meta">${esc(t.meta)}</span>
           </button>`

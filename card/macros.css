@@ -1975,7 +1975,7 @@ a.fuel-btn {
   position: relative;
   margin: 0 -22px -26px;
   padding: 6px 22px 8px;
-  border-radius: 0 0 var(--radius) var(--radius);
+  border-radius: 0 0 var(--radius-glass-lg) var(--radius-glass-lg);
   overflow: hidden;
   background: linear-gradient(165deg, var(--fuel-bg-top) 0%, var(--fuel-bg-mid) 48%, var(--fuel-bg-bottom) 100%);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
@@ -2253,9 +2253,19 @@ a.fuel-btn {
 .fuel-quicklog__swatch {
   width: 20px;
   height: 20px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 7px;
   background: var(--fuel-medal-grad);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  color: var(--fuel-bg-bottom);
+}
+
+.fuel-quicklog__swatch svg {
+  width: 12px;
+  height: 12px;
 }
 
 .fuel-quicklog__name {
