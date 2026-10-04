@@ -35,10 +35,15 @@ function heatDateSortKey_(raw) {
 }
 
 /**
- * { key: weightedSets } for `memberId` over `range` ("today" | "week").
- * Unknown exercises (not in the Exercises sheet, or no muscle data yet)
- * are silently skipped — same "don't blow up on gaps" approach as the
- * rest of the muscle-data integration.
+ * `weighted` ({ group: primary*1 + secondary*0.5 }) for `memberId` over
+ * `range` ("today" | "week") — unchanged, still what the heat figure paints
+ * from. `weightedPrimary`/`weightedSecondary` (2026-10-04, for the This
+ * Week breakdown list's red/orange/yellow bar) are the same data kept
+ * SEPARATE instead of pre-blended, so the list can show how much of a
+ * muscle's week was direct work vs. just along for the ride. Unknown
+ * exercises (not in the Exercises sheet, or no muscle data yet) are
+ * silently skipped — same "don't blow up on gaps" approach as the rest of
+ * the muscle-data integration.
  */
 async function heatmapMuscleData(memberId, range) {
   const clientSlug = slugify(String(memberId || ""));
@@ -60,6 +65,8 @@ async function heatmapMuscleData(memberId, range) {
   const toKey = heatDateSortKey_(today);
 
   const weighted = {};
+  const weightedPrimary = {};
+  const weightedSecondary = {};
   let setsCounted = 0;
   setRows.forEach((row) => {
     if (String(setCol.client >= 0 ? row[setCol.client] : "").trim().toLowerCase() !== clientSlug) return;
@@ -69,13 +76,22 @@ async function heatmapMuscleData(memberId, range) {
     const muscles = muscleByExercise[exName];
     if (!muscles) return;
     setsCounted++;
+    // Normalized to the broad group (muscleGroupOf, card/muscle-map.js) even
+    // though the sheet may now hold v2 fine-grained keys ("chest-upper") —
+    // weekly volume is something people think about per whole muscle
+    // ("shoulders"), not per head, so this is deliberately coarser than the
+    // per-exercise Anatomy Lab figure.
     muscles.primary.forEach((m) => {
-      weighted[m] = (weighted[m] || 0) + 1;
+      const g = muscleGroupOf(m);
+      weighted[g] = (weighted[g] || 0) + 1;
+      weightedPrimary[g] = (weightedPrimary[g] || 0) + 1;
     });
     muscles.secondary.forEach((m) => {
-      weighted[m] = (weighted[m] || 0) + 0.5;
+      const g = muscleGroupOf(m);
+      weighted[g] = (weighted[g] || 0) + 0.5;
+      weightedSecondary[g] = (weightedSecondary[g] || 0) + 0.5;
     });
   });
 
-  return { weighted, setsCounted };
+  return { weighted, weightedPrimary, weightedSecondary, setsCounted };
 }

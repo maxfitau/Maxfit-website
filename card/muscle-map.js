@@ -30,7 +30,86 @@ const MUSCLE_KEYS = {
   hamstrings: "Hamstrings",
   calves: "Calves",
   traps: "Traps",
+  // v2 figure groups (2026-10-04) with no equivalent in the original 14 —
+  // real anatomy the old system couldn't express at all (e.g. the rotator
+  // cuff). A group only shows up anywhere real (the weekly breakdown list,
+  // say) once some exercise actually names it as a primary/secondary muscle.
+  neck: "Neck",
+  serratus: "Serratus",
+  hipflexors: "Hip Flexors",
+  adductors: "Adductors",
+  shins: "Shins",
+  rhomboids: "Rhomboids",
+  rotatorcuff: "Rotator Cuff",
+  teres: "Teres Major",
 };
+
+/**
+ * Fine v2 key (e.g. "chest-upper") -> its broad group (e.g. "chest") — the
+ * same mapping as each shape's own data-muscle/data-group pair in the
+ * figure SVG (see muscleRecolourForDarkCard_'s header comment), kept here
+ * too since weekly-volume code (workout/heatmap.js) needs to normalize a
+ * muscle key WITHOUT a shape in hand to look it up from.
+ */
+const MUSCLE_FINE_TO_GROUP_ = {
+  sternocleidomastoid: "neck",
+  "traps-upper": "traps",
+  "delts-front": "delts",
+  "delts-side": "delts",
+  "chest-upper": "chest",
+  "chest-mid": "chest",
+  "chest-lower": "chest",
+  serratus: "serratus",
+  "obliques-external": "obliques",
+  "abs-upper": "abs",
+  "abs-mid": "abs",
+  "abs-lower": "abs",
+  "abs-infra": "abs",
+  "triceps-lateral": "triceps",
+  brachialis: "biceps",
+  "biceps-long": "biceps",
+  "biceps-short": "biceps",
+  "triceps-long": "triceps",
+  brachioradialis: "forearms",
+  "pronator-teres": "forearms",
+  "forearm-flexors": "forearms",
+  "flexor-carpi-ulnaris": "forearms",
+  "glutes-med": "glutes",
+  "hip-flexors": "hipflexors",
+  tfl: "hipflexors",
+  sartorius: "quads",
+  "rectus-femoris": "quads",
+  "vastus-medialis": "quads",
+  "vastus-lateralis": "quads",
+  "adductor-longus": "adductors",
+  gracilis: "adductors",
+  "tibialis-anterior": "shins",
+  peroneus: "shins",
+  "calves-soleus": "calves",
+  "calves-gastroc-medial": "calves",
+  "traps-mid": "traps",
+  "traps-lower": "traps",
+  rhomboids: "rhomboids",
+  "delts-rear": "delts",
+  infraspinatus: "rotatorcuff",
+  "teres-minor": "rotatorcuff",
+  "teres-major": "teres",
+  "triceps-medial": "triceps",
+  "forearm-extensors": "forearms",
+  "extensor-carpi-ulnaris": "forearms",
+  "erector-spinae": "lowerback",
+  "glutes-max": "glutes",
+  "hamstrings-biceps-femoris": "hamstrings",
+  "hamstrings-semitendinosus": "hamstrings",
+  "hamstrings-semimembranosus": "hamstrings",
+  "adductor-magnus": "adductors",
+  "calves-gastroc-lateral": "calves",
+};
+
+/** Any muscle key (fine, e.g. "chest-upper", or already-broad, e.g. "chest") -> its broad group. A key this map doesn't recognise is assumed already-broad and returned as-is. */
+function muscleGroupOf(key) {
+  return MUSCLE_FINE_TO_GROUP_[key] || key;
+}
 
 const MUSCLE_PRIMARY_COLOR = "#ff2a1f";
 const MUSCLE_SECONDARY_COLOR = "#ff9a7a";
@@ -39,8 +118,68 @@ const MUSCLE_BASE_COLOR = "#2a2a2a"; // head, neck, hands, feet — never indivi
 const MUSCLE_TENDON_COLOR = "#333333"; // tendons/bony landmarks (v2 figure only) — between base and unused
 const MUSCLE_GAP_STROKE_COLOR = "#141414"; // outline between adjoining muscles, dark-card version
 
+// Display names for the v2 fine keys (maxfit-muscle-keys.json) — used only
+// for the accessible text summary (paintMuscleFigure's <title>); painting
+// itself never needs these, just the keys. Not every fine key has an entry
+// in MUSCLE_FINE_TO_GROUP_'s DOMAIN here on purpose — "lats" is both a fine
+// key and its own group, and already has a label via MUSCLE_KEYS.
+const MUSCLE_FINE_LABELS_ = {
+  sternocleidomastoid: "Sternocleidomastoid",
+  "traps-upper": "Upper Traps",
+  "delts-front": "Front Delt",
+  "delts-side": "Side Delt",
+  "chest-upper": "Upper Chest",
+  "chest-mid": "Mid Chest",
+  "chest-lower": "Lower Chest",
+  serratus: "Serratus Anterior",
+  "obliques-external": "External Obliques",
+  "abs-upper": "Upper Abs",
+  "abs-mid": "Mid Abs",
+  "abs-lower": "Lower Abs",
+  "abs-infra": "Lower Abs",
+  "triceps-lateral": "Triceps (Lateral Head)",
+  brachialis: "Brachialis",
+  "biceps-long": "Biceps (Long Head)",
+  "biceps-short": "Biceps (Short Head)",
+  "triceps-long": "Triceps (Long Head)",
+  brachioradialis: "Brachioradialis",
+  "pronator-teres": "Pronator Teres",
+  "forearm-flexors": "Forearm Flexors",
+  "flexor-carpi-ulnaris": "Flexor Carpi Ulnaris",
+  "glutes-med": "Glute Medius",
+  "hip-flexors": "Hip Flexors",
+  tfl: "Tensor Fasciae Latae",
+  sartorius: "Sartorius",
+  "rectus-femoris": "Rectus Femoris",
+  "vastus-medialis": "Vastus Medialis",
+  "vastus-lateralis": "Vastus Lateralis",
+  "adductor-longus": "Adductor Longus",
+  gracilis: "Gracilis",
+  "tibialis-anterior": "Tibialis Anterior",
+  peroneus: "Peroneus Longus",
+  "calves-soleus": "Soleus",
+  "calves-gastroc-medial": "Gastrocnemius",
+  "traps-mid": "Mid Traps",
+  "traps-lower": "Lower Traps",
+  rhomboids: "Rhomboids",
+  "delts-rear": "Rear Delt",
+  infraspinatus: "Infraspinatus",
+  "teres-minor": "Teres Minor",
+  "teres-major": "Teres Major",
+  "triceps-medial": "Triceps (Medial Head)",
+  "forearm-extensors": "Forearm Extensors",
+  "extensor-carpi-ulnaris": "Extensor Carpi Ulnaris",
+  "erector-spinae": "Erector Spinae",
+  "glutes-max": "Glute Max",
+  "hamstrings-biceps-femoris": "Biceps Femoris",
+  "hamstrings-semitendinosus": "Semitendinosus",
+  "hamstrings-semimembranosus": "Semimembranosus",
+  "adductor-magnus": "Adductor Magnus",
+  "calves-gastroc-lateral": "Gastrocnemius",
+};
+
 function muscleLabel_(key) {
-  return MUSCLE_KEYS[key] || key;
+  return MUSCLE_FINE_LABELS_[key] || MUSCLE_KEYS[key] || key;
 }
 
 /** "chest,delts" (as stored in the sheet) -> ["chest", "delts"], blanks dropped. */
@@ -725,11 +864,16 @@ function muscleCropSvg(view, viewBox, keys) {
 }
 
 /** Paints a muscleCropSvg() once it's in the DOM — keys lit up, everything else nearly gone. */
+/** A shape matches `keys` if EITHER its fine key (data-muscle, e.g. "chest-upper") or its broad one (data-group, e.g. "chest") is listed — so exercise data can mix fine and broad keys freely (see EXERCISE_MUSCLE_DATA_'s header comment in Code.gs) and both still paint correctly. */
+function muscleShapeMatches_(el, keys) {
+  return keys.includes(el.getAttribute("data-muscle")) || keys.includes(el.getAttribute("data-group"));
+}
+
 function paintMuscleCrop(svgRoot) {
   if (!svgRoot) return;
   const keys = (svgRoot.dataset.cropKeys || "").split(",").filter(Boolean);
   svgRoot.querySelectorAll("[data-muscle]").forEach((el) => {
-    el.setAttribute("fill", keys.includes(el.getAttribute("data-group")) ? MUSCLE_PRIMARY_COLOR : "rgba(255,255,255,0.06)");
+    el.setAttribute("fill", muscleShapeMatches_(el, keys) ? MUSCLE_PRIMARY_COLOR : "rgba(255,255,255,0.06)");
   });
 }
 
@@ -746,8 +890,7 @@ function paintMuscleFigure(svgRoot, primary, secondary) {
   const p = Array.isArray(primary) ? primary : parseMuscleKeys(primary);
   const s = Array.isArray(secondary) ? secondary : parseMuscleKeys(secondary);
   svgRoot.querySelectorAll("[data-muscle]").forEach((g) => {
-    const key = g.getAttribute("data-group");
-    g.setAttribute("fill", p.includes(key) ? MUSCLE_PRIMARY_COLOR : s.includes(key) ? MUSCLE_SECONDARY_COLOR : MUSCLE_UNUSED_COLOR);
+    g.setAttribute("fill", muscleShapeMatches_(g, p) ? MUSCLE_PRIMARY_COLOR : muscleShapeMatches_(g, s) ? MUSCLE_SECONDARY_COLOR : MUSCLE_UNUSED_COLOR);
   });
   const title = svgRoot.querySelector("title");
   if (title) {
@@ -778,8 +921,12 @@ function paintMuscleHeat(svgRoot, weighted, cap) {
   if (!svgRoot) return;
   const capVal = cap || 10;
   svgRoot.querySelectorAll("[data-muscle]").forEach((g) => {
-    const key = g.getAttribute("data-group");
-    const w = (weighted && weighted[key]) || 0;
+    // A shape's heat is whatever was logged against its OWN fine key (e.g.
+    // "chest-upper") plus whatever was logged against its broad group (e.g.
+    // "chest", from an exercise whose data never got the v2 upgrade) — the
+    // broad hit applies to every sub-region of that muscle, same as it
+    // would've painted the whole muscle before v2 existed.
+    const w = ((weighted && weighted[g.getAttribute("data-muscle")]) || 0) + ((weighted && weighted[g.getAttribute("data-group")]) || 0);
     g.setAttribute("fill", muscleHeatColor_(w / capVal));
   });
   const title = svgRoot.querySelector("title");

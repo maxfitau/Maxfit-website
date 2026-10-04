@@ -66,6 +66,7 @@
 }
 
 .lib-heat-row__track {
+  display: flex;
   height: 6px;
   border-radius: 3px;
   background: var(--bg);
@@ -75,8 +76,21 @@
 .lib-heat-row__fill {
   display: block;
   height: 100%;
-  border-radius: 3px;
+}
+
+/* Today keeps the original single red fill. This Week splits into three
+   stacked segments against a weekly target (heatWeekRowHtml_, library.js):
+   red = primary sets, orange = secondary, yellow = still short of it. */
+.lib-heat-row__fill--primary {
   background: var(--red);
+}
+
+.lib-heat-row__fill--secondary {
+  background: #e08a00;
+}
+
+.lib-heat-row__fill--gap {
+  background: #e0c200;
 }
 
 .lib-heat-row__num {

@@ -32,7 +32,7 @@ const GROCERY_SHEET_NAME = "Grocery Items";
 // Changes whenever this file does, and is shown when you open the deployed
 // URL in a browser (see doGet) — the quick way to tell whether a redeploy
 // actually took, instead of guessing from behaviour.
-const BACKEND_VERSION = "2026-10-04a";
+const BACKEND_VERSION = "2026-10-04b";
 
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -312,156 +312,180 @@ function exerciseMovementBodyPart_(category, primary) {
 }
 
 // [name, category, equipment, primary muscle keys, secondary muscle keys,
-// best view] — Max's fuller exercise library (2026-10-02), muscle keys as
-// MUSCLE_KEYS in card/muscle-map.js spells them out. category drives
+// best view] — Max's fuller exercise library (2026-10-02). category drives
 // exerciseMovementBodyPart_ above for any of these NOT already on the
 // sheet; see seedExerciseMuscleData_ for how an overlapping name (e.g.
 // "Pull-Up", already in EXERCISE_SEED_) is handled instead.
+//
+// v2 (2026-10-04, "hyperrealistic" per Max — e.g. "incline press does upper
+// chest"): keys are now a MIX of the original 14 broad groups (e.g. "chest")
+// and the ~50 fine-grained v2 figure keys (e.g. "chest-upper",
+// "triceps-lateral" — see maxfit-muscle-keys.json, card/muscle-map.js's
+// header comment). paintMuscleFigure/paintMuscleCrop/paintMuscleHeat match
+// BOTH a shape's data-muscle (fine) and data-group (broad), so either kind
+// of key works and they can mix freely in one exercise's lists. Fine keys
+// are used where the variation genuinely targets a specific head/region
+// (angle, grip, or joint-position driven — exactly Max's incline-press
+// example); genuinely compound, multi-joint lifts (squats, deadlifts, rows,
+// pull-ups, the Conditioning movements) are left at the broad group level,
+// since they don't actually isolate one sub-region — giving them fine keys
+// would be false precision, not more realism. A few keys here (e.g.
+// infraspinatus/teres-minor on Face Pull, hip-flexors) have NO broad-group
+// equivalent at all — real anatomy the old 14-key system couldn't express.
 const EXERCISE_MUSCLE_DATA_ = [
-  ["Barbell Bench Press", "Chest", "Barbell", ["chest"], ["delts", "triceps"], "front"],
-  ["Incline Barbell Bench Press", "Chest", "Barbell", ["chest", "delts"], ["triceps"], "front"],
-  ["Decline Barbell Bench Press", "Chest", "Barbell", ["chest"], ["triceps", "delts"], "front"],
-  ["Dumbbell Bench Press", "Chest", "Dumbbell", ["chest"], ["delts", "triceps"], "front"],
-  ["Incline Dumbbell Press", "Chest", "Dumbbell", ["chest", "delts"], ["triceps"], "front"],
-  ["Machine Chest Press", "Chest", "Machine", ["chest"], ["delts", "triceps"], "front"],
-  ["Smith Machine Bench Press", "Chest", "Smith machine", ["chest"], ["delts", "triceps"], "front"],
-  ["Dumbbell Fly", "Chest", "Dumbbell", ["chest"], ["delts"], "front"],
-  ["Incline Dumbbell Fly", "Chest", "Dumbbell", ["chest"], ["delts"], "front"],
-  ["High-to-Low Cable Fly", "Chest", "Cable", ["chest"], ["delts"], "front"],
-  ["Low-to-High Cable Fly", "Chest", "Cable", ["chest"], ["delts"], "front"],
-  ["Pec Deck", "Chest", "Machine", ["chest"], ["delts"], "front"],
-  ["Push-Up", "Chest", "Bodyweight", ["chest"], ["delts", "triceps", "abs"], "front"],
-  ["Incline Push-Up", "Chest", "Bodyweight", ["chest"], ["delts", "triceps"], "front"],
-  ["Decline Push-Up", "Chest", "Bodyweight", ["chest", "delts"], ["triceps", "abs"], "front"],
-  ["Chest Dip", "Chest", "Dip bars", ["chest"], ["triceps", "delts"], "front"],
+  ["Barbell Bench Press", "Chest", "Barbell", ["chest-mid"], ["chest-lower", "delts-front", "triceps-lateral", "triceps-long"], "front"],
+  ["Incline Barbell Bench Press", "Chest", "Barbell", ["chest-upper"], ["delts-front", "triceps-lateral", "triceps-long"], "front"],
+  ["Decline Barbell Bench Press", "Chest", "Barbell", ["chest-lower"], ["triceps-lateral", "triceps-long", "delts-front"], "front"],
+  ["Dumbbell Bench Press", "Chest", "Dumbbell", ["chest-mid"], ["chest-lower", "delts-front", "triceps-lateral"], "front"],
+  ["Incline Dumbbell Press", "Chest", "Dumbbell", ["chest-upper"], ["delts-front", "triceps-lateral"], "front"],
+  ["Machine Chest Press", "Chest", "Machine", ["chest-mid"], ["chest-lower", "delts-front", "triceps-lateral"], "front"],
+  ["Smith Machine Bench Press", "Chest", "Smith machine", ["chest-mid"], ["chest-lower", "delts-front", "triceps-lateral"], "front"],
+  ["Dumbbell Fly", "Chest", "Dumbbell", ["chest-mid"], ["delts-front"], "front"],
+  ["Incline Dumbbell Fly", "Chest", "Dumbbell", ["chest-upper"], ["delts-front"], "front"],
+  ["High-to-Low Cable Fly", "Chest", "Cable", ["chest-lower"], ["delts-front"], "front"],
+  ["Low-to-High Cable Fly", "Chest", "Cable", ["chest-upper"], ["delts-front"], "front"],
+  ["Pec Deck", "Chest", "Machine", ["chest-mid"], ["delts-front"], "front"],
+  ["Push-Up", "Chest", "Bodyweight", ["chest-mid", "chest-lower"], ["delts-front", "triceps-lateral", "abs-upper"], "front"],
+  // Push-up incline/decline is the OPPOSITE of bench-press terminology: hands
+  // raised (incline) is the easier variant and shifts emphasis to the lower
+  // chest, same role a decline bench press plays; feet raised (decline) is
+  // harder and shifts emphasis to the upper chest, like an incline press.
+  ["Incline Push-Up", "Chest", "Bodyweight", ["chest-lower"], ["triceps-lateral", "delts-front"], "front"],
+  ["Decline Push-Up", "Chest", "Bodyweight", ["chest-upper"], ["delts-front", "triceps-lateral", "abs-upper"], "front"],
+  ["Chest Dip", "Chest", "Dip bars", ["chest-lower"], ["triceps-lateral", "triceps-long", "delts-front"], "front"],
 
-  ["Conventional Deadlift", "Back", "Barbell", ["glutes", "hamstrings", "lowerback"], ["quads", "traps", "lats", "forearms"], "back"],
-  ["Pull-Up", "Back", "Pull-up bar", ["lats"], ["biceps", "delts", "forearms"], "back"],
-  ["Chin-Up", "Back", "Pull-up bar", ["lats", "biceps"], ["forearms"], "front"],
-  ["Assisted Pull-Up", "Back", "Machine", ["lats"], ["biceps", "delts"], "back"],
-  ["Wide-Grip Lat Pulldown", "Back", "Cable", ["lats"], ["biceps", "delts", "traps", "forearms"], "back"],
-  ["Close-Grip Lat Pulldown", "Back", "Cable", ["lats"], ["biceps", "forearms"], "back"],
-  ["Straight-Arm Cable Pulldown", "Back", "Cable", ["lats"], ["triceps", "abs"], "back"],
-  ["Barbell Bent-Over Row", "Back", "Barbell", ["lats", "traps"], ["biceps", "delts", "lowerback", "forearms"], "back"],
-  ["Pendlay Row", "Back", "Barbell", ["lats", "traps"], ["biceps", "lowerback"], "back"],
-  ["Single-Arm Dumbbell Row", "Back", "Dumbbell", ["lats"], ["biceps", "delts", "traps"], "back"],
-  ["Chest-Supported Dumbbell Row", "Back", "Dumbbell", ["lats", "traps"], ["biceps", "delts"], "back"],
-  ["T-Bar Row", "Back", "Barbell", ["lats", "traps"], ["biceps", "lowerback"], "back"],
-  ["Meadows Row", "Back", "Landmine", ["lats"], ["biceps", "traps", "forearms"], "back"],
-  ["Seated Cable Row", "Back", "Cable", ["lats", "traps"], ["biceps", "delts"], "back"],
-  ["Machine Row", "Back", "Machine", ["lats", "traps"], ["biceps"], "back"],
-  ["Inverted Row", "Back", "Barbell", ["lats", "traps"], ["biceps", "abs"], "back"],
-  ["Rack Pull", "Back", "Barbell", ["traps", "lowerback", "glutes"], ["hamstrings", "forearms"], "back"],
-  ["Back Extension", "Back", "Hyperextension bench", ["lowerback"], ["glutes", "hamstrings"], "back"],
-  ["Good Morning", "Back", "Barbell", ["hamstrings", "lowerback"], ["glutes"], "back"],
-  ["Superman", "Back", "Bodyweight", ["lowerback"], ["glutes"], "back"],
+  ["Conventional Deadlift", "Back", "Barbell", ["glutes-max", "erector-spinae", "hamstrings-biceps-femoris"], ["vastus-lateralis", "vastus-medialis", "traps-upper", "forearm-flexors"], "back"],
+  ["Pull-Up", "Back", "Pull-up bar", ["lats"], ["biceps-long", "biceps-short", "delts-rear", "forearm-flexors"], "back"],
+  ["Chin-Up", "Back", "Pull-up bar", ["lats", "biceps-short"], ["biceps-long", "forearm-flexors"], "front"],
+  ["Assisted Pull-Up", "Back", "Machine", ["lats"], ["biceps-short", "delts-rear"], "back"],
+  ["Wide-Grip Lat Pulldown", "Back", "Cable", ["lats"], ["biceps-long", "delts-rear", "traps-mid", "forearm-flexors"], "back"],
+  ["Close-Grip Lat Pulldown", "Back", "Cable", ["lats"], ["biceps-short", "forearm-flexors"], "back"],
+  ["Straight-Arm Cable Pulldown", "Back", "Cable", ["lats"], ["triceps-long", "abs-upper"], "back"],
+  ["Barbell Bent-Over Row", "Back", "Barbell", ["lats", "traps-mid"], ["biceps-long", "delts-rear", "erector-spinae", "forearm-flexors"], "back"],
+  ["Pendlay Row", "Back", "Barbell", ["lats", "traps-mid"], ["biceps-long", "erector-spinae"], "back"],
+  ["Single-Arm Dumbbell Row", "Back", "Dumbbell", ["lats"], ["biceps-long", "delts-rear", "traps-mid"], "back"],
+  ["Chest-Supported Dumbbell Row", "Back", "Dumbbell", ["lats", "traps-mid"], ["biceps-long", "delts-rear"], "back"],
+  ["T-Bar Row", "Back", "Barbell", ["lats", "traps-mid"], ["biceps-long", "erector-spinae"], "back"],
+  ["Meadows Row", "Back", "Landmine", ["lats"], ["biceps-long", "traps-mid", "forearm-flexors"], "back"],
+  ["Seated Cable Row", "Back", "Cable", ["lats", "traps-mid"], ["biceps-long", "delts-rear"], "back"],
+  ["Machine Row", "Back", "Machine", ["lats", "traps-mid"], ["biceps-short"], "back"],
+  ["Inverted Row", "Back", "Barbell", ["lats", "traps-mid"], ["biceps-long", "abs-upper"], "back"],
+  ["Rack Pull", "Back", "Barbell", ["traps-upper", "erector-spinae", "glutes-max"], ["hamstrings-biceps-femoris", "forearm-flexors"], "back"],
+  ["Back Extension", "Back", "Hyperextension bench", ["erector-spinae"], ["glutes-max", "hamstrings-biceps-femoris"], "back"],
+  ["Good Morning", "Back", "Barbell", ["hamstrings-biceps-femoris", "erector-spinae"], ["glutes-max"], "back"],
+  ["Superman", "Back", "Bodyweight", ["erector-spinae"], ["glutes-max"], "back"],
 
-  ["Barbell Overhead Press", "Shoulders & Traps", "Barbell", ["delts"], ["triceps", "traps", "abs"], "front"],
-  ["Seated Dumbbell Shoulder Press", "Shoulders & Traps", "Dumbbell", ["delts"], ["triceps"], "front"],
-  ["Arnold Press", "Shoulders & Traps", "Dumbbell", ["delts"], ["triceps"], "front"],
-  ["Machine Shoulder Press", "Shoulders & Traps", "Machine", ["delts"], ["triceps"], "front"],
-  ["Push Press", "Shoulders & Traps", "Barbell", ["delts"], ["triceps", "quads", "glutes"], "front"],
-  ["Landmine Press", "Shoulders & Traps", "Landmine", ["delts", "chest"], ["triceps", "abs"], "front"],
-  ["Dumbbell Lateral Raise", "Shoulders & Traps", "Dumbbell", ["delts"], ["traps"], "front"],
-  ["Cable Lateral Raise", "Shoulders & Traps", "Cable", ["delts"], ["traps"], "front"],
-  ["Machine Lateral Raise", "Shoulders & Traps", "Machine", ["delts"], ["traps"], "front"],
-  ["Dumbbell Front Raise", "Shoulders & Traps", "Dumbbell", ["delts"], ["chest"], "front"],
-  ["Dumbbell Rear Delt Fly", "Shoulders & Traps", "Dumbbell", ["delts"], ["traps"], "front"],
-  ["Reverse Pec Deck", "Shoulders & Traps", "Machine", ["delts"], ["traps"], "front"],
-  ["Face Pull", "Shoulders & Traps", "Cable", ["delts", "traps"], ["biceps"], "back"],
-  ["Upright Row", "Shoulders & Traps", "Barbell", ["delts", "traps"], ["biceps"], "back"],
-  ["Barbell Shrug", "Shoulders & Traps", "Barbell", ["traps"], ["forearms"], "back"],
-  ["Dumbbell Shrug", "Shoulders & Traps", "Dumbbell", ["traps"], ["forearms"], "back"],
+  ["Barbell Overhead Press", "Shoulders & Traps", "Barbell", ["delts-front"], ["triceps-lateral", "traps-upper", "abs-upper"], "front"],
+  ["Seated Dumbbell Shoulder Press", "Shoulders & Traps", "Dumbbell", ["delts-front"], ["delts-side", "triceps-lateral"], "front"],
+  ["Arnold Press", "Shoulders & Traps", "Dumbbell", ["delts-front", "delts-side"], ["triceps-lateral"], "front"],
+  ["Machine Shoulder Press", "Shoulders & Traps", "Machine", ["delts-front"], ["triceps-lateral"], "front"],
+  ["Push Press", "Shoulders & Traps", "Barbell", ["delts-front"], ["triceps-lateral", "vastus-lateralis", "glutes-max"], "front"],
+  ["Landmine Press", "Shoulders & Traps", "Landmine", ["delts-front", "chest-upper"], ["triceps-lateral", "abs-upper"], "front"],
+  ["Dumbbell Lateral Raise", "Shoulders & Traps", "Dumbbell", ["delts-side"], ["traps-upper"], "front"],
+  ["Cable Lateral Raise", "Shoulders & Traps", "Cable", ["delts-side"], ["traps-upper"], "front"],
+  ["Machine Lateral Raise", "Shoulders & Traps", "Machine", ["delts-side"], ["traps-upper"], "front"],
+  ["Dumbbell Front Raise", "Shoulders & Traps", "Dumbbell", ["delts-front"], ["chest-upper"], "front"],
+  ["Dumbbell Rear Delt Fly", "Shoulders & Traps", "Dumbbell", ["delts-rear"], ["traps-mid"], "front"],
+  ["Reverse Pec Deck", "Shoulders & Traps", "Machine", ["delts-rear"], ["traps-mid"], "front"],
+  // The classic rotator-cuff/rear-delt move — real anatomy with no broad-group equivalent at all in the old 14-key system.
+  ["Face Pull", "Shoulders & Traps", "Cable", ["delts-rear"], ["infraspinatus", "teres-minor", "traps-mid"], "back"],
+  ["Upright Row", "Shoulders & Traps", "Barbell", ["delts-side", "traps-upper"], ["biceps-short"], "back"],
+  ["Barbell Shrug", "Shoulders & Traps", "Barbell", ["traps-upper"], ["forearm-flexors"], "back"],
+  ["Dumbbell Shrug", "Shoulders & Traps", "Dumbbell", ["traps-upper"], ["forearm-flexors"], "back"],
 
-  ["Barbell Curl", "Biceps", "Barbell", ["biceps"], ["forearms"], "front"],
-  ["EZ-Bar Curl", "Biceps", "EZ bar", ["biceps"], ["forearms"], "front"],
-  ["Dumbbell Curl", "Biceps", "Dumbbell", ["biceps"], ["forearms"], "front"],
-  ["Hammer Curl", "Biceps", "Dumbbell", ["biceps", "forearms"], [], "front"],
-  ["Incline Dumbbell Curl", "Biceps", "Dumbbell", ["biceps"], [], "front"],
-  ["Preacher Curl", "Biceps", "Barbell", ["biceps"], ["forearms"], "front"],
-  ["Concentration Curl", "Biceps", "Dumbbell", ["biceps"], [], "front"],
-  ["Cable Curl", "Biceps", "Cable", ["biceps"], ["forearms"], "front"],
-  ["Bayesian Cable Curl", "Biceps", "Cable", ["biceps"], [], "front"],
-  ["Spider Curl", "Biceps", "Dumbbell", ["biceps"], [], "front"],
-  ["Reverse Curl", "Biceps", "Barbell", ["forearms"], ["biceps"], "front"],
+  ["Barbell Curl", "Biceps", "Barbell", ["biceps-long", "biceps-short"], ["brachialis", "brachioradialis"], "front"],
+  ["EZ-Bar Curl", "Biceps", "EZ bar", ["biceps-long", "biceps-short"], ["brachialis"], "front"],
+  ["Dumbbell Curl", "Biceps", "Dumbbell", ["biceps-long", "biceps-short"], ["brachialis"], "front"],
+  ["Hammer Curl", "Biceps", "Dumbbell", ["brachialis", "brachioradialis"], ["biceps-short"], "front"],
+  ["Incline Dumbbell Curl", "Biceps", "Dumbbell", ["biceps-long"], ["brachialis"], "front"],
+  ["Preacher Curl", "Biceps", "Barbell", ["biceps-short"], ["brachialis"], "front"],
+  ["Concentration Curl", "Biceps", "Dumbbell", ["biceps-short"], ["biceps-long"], "front"],
+  ["Cable Curl", "Biceps", "Cable", ["biceps-long", "biceps-short"], ["brachialis"], "front"],
+  ["Bayesian Cable Curl", "Biceps", "Cable", ["biceps-long"], ["biceps-short"], "front"],
+  ["Spider Curl", "Biceps", "Dumbbell", ["biceps-short"], ["brachialis"], "front"],
+  ["Reverse Curl", "Biceps", "Barbell", ["brachioradialis", "forearm-extensors"], ["biceps-short"], "front"],
 
-  ["Close-Grip Bench Press", "Triceps", "Barbell", ["triceps", "chest"], ["delts"], "front"],
-  ["EZ-Bar Skull Crusher", "Triceps", "EZ bar", ["triceps"], [], "back"],
-  ["Overhead Dumbbell Extension", "Triceps", "Dumbbell", ["triceps"], [], "back"],
-  ["Overhead Cable Extension", "Triceps", "Cable", ["triceps"], [], "back"],
-  ["Rope Pushdown", "Triceps", "Cable", ["triceps"], [], "back"],
-  ["Straight-Bar Pushdown", "Triceps", "Cable", ["triceps"], [], "back"],
-  ["Bench Dip", "Triceps", "Bench", ["triceps"], ["chest", "delts"], "back"],
-  ["Parallel Bar Dip (upright)", "Triceps", "Dip bars", ["triceps"], ["chest", "delts"], "back"],
-  ["Dumbbell Kickback", "Triceps", "Dumbbell", ["triceps"], [], "back"],
-  ["Diamond Push-Up", "Triceps", "Bodyweight", ["triceps"], ["chest", "delts"], "back"],
-  ["JM Press", "Triceps", "Barbell", ["triceps"], ["chest"], "back"],
+  ["Close-Grip Bench Press", "Triceps", "Barbell", ["triceps-long", "triceps-lateral"], ["chest-mid", "delts-front"], "front"],
+  ["EZ-Bar Skull Crusher", "Triceps", "EZ bar", ["triceps-long", "triceps-medial"], ["triceps-lateral"], "back"],
+  ["Overhead Dumbbell Extension", "Triceps", "Dumbbell", ["triceps-long"], ["triceps-lateral"], "back"],
+  ["Overhead Cable Extension", "Triceps", "Cable", ["triceps-long"], ["triceps-lateral"], "back"],
+  ["Rope Pushdown", "Triceps", "Cable", ["triceps-lateral", "triceps-medial"], ["triceps-long"], "back"],
+  ["Straight-Bar Pushdown", "Triceps", "Cable", ["triceps-lateral"], ["triceps-long"], "back"],
+  ["Bench Dip", "Triceps", "Bench", ["triceps-lateral"], ["chest-lower", "delts-front"], "back"],
+  ["Parallel Bar Dip (upright)", "Triceps", "Dip bars", ["triceps-lateral", "triceps-long"], ["chest-lower", "delts-front"], "back"],
+  ["Dumbbell Kickback", "Triceps", "Dumbbell", ["triceps-lateral"], ["triceps-medial"], "back"],
+  ["Diamond Push-Up", "Triceps", "Bodyweight", ["triceps-lateral"], ["chest-mid", "delts-front"], "back"],
+  ["JM Press", "Triceps", "Barbell", ["triceps-long", "triceps-lateral"], ["chest-mid"], "back"],
 
-  ["Wrist Curl", "Forearms & Grip", "Dumbbell", ["forearms"], [], "front"],
-  ["Reverse Wrist Curl", "Forearms & Grip", "Dumbbell", ["forearms"], [], "front"],
-  ["Farmer's Carry", "Forearms & Grip", "Dumbbell", ["forearms", "traps"], ["abs", "obliques", "quads", "glutes"], "back"],
-  ["Dead Hang", "Forearms & Grip", "Pull-up bar", ["forearms"], ["lats", "delts"], "front"],
+  ["Wrist Curl", "Forearms & Grip", "Dumbbell", ["forearm-flexors"], [], "front"],
+  ["Reverse Wrist Curl", "Forearms & Grip", "Dumbbell", ["forearm-extensors"], [], "front"],
+  ["Farmer's Carry", "Forearms & Grip", "Dumbbell", ["forearm-flexors", "traps-upper"], ["abs-upper", "obliques-external", "vastus-lateralis", "glutes-max"], "back"],
+  ["Dead Hang", "Forearms & Grip", "Pull-up bar", ["forearm-flexors"], ["lats", "delts-side"], "front"],
 
-  ["Back Squat", "Quads", "Barbell", ["quads", "glutes"], ["hamstrings", "lowerback", "abs"], "front"],
-  ["Front Squat", "Quads", "Barbell", ["quads"], ["glutes", "abs", "lowerback"], "front"],
-  ["Goblet Squat", "Quads", "Dumbbell", ["quads", "glutes"], ["abs"], "front"],
-  ["Box Squat", "Quads", "Barbell", ["quads", "glutes"], ["hamstrings", "lowerback"], "front"],
-  ["Pause Squat", "Quads", "Barbell", ["quads", "glutes"], ["lowerback", "abs"], "front"],
-  ["Smith Machine Squat", "Quads", "Smith machine", ["quads", "glutes"], ["hamstrings"], "front"],
-  ["Hack Squat", "Quads", "Machine", ["quads"], ["glutes"], "front"],
-  ["Leg Press", "Quads", "Machine", ["quads", "glutes"], ["hamstrings"], "front"],
-  ["Bulgarian Split Squat", "Quads", "Dumbbell", ["quads", "glutes"], ["hamstrings"], "front"],
-  ["Walking Lunge", "Quads", "Dumbbell", ["quads", "glutes"], ["hamstrings", "calves"], "front"],
-  ["Reverse Lunge", "Quads", "Dumbbell", ["glutes", "quads"], ["hamstrings"], "front"],
-  ["Step-Up", "Quads", "Dumbbell", ["quads", "glutes"], ["hamstrings"], "front"],
-  ["Leg Extension", "Quads", "Machine", ["quads"], [], "front"],
-  ["Sissy Squat", "Quads", "Bodyweight", ["quads"], [], "front"],
-  ["Pistol Squat", "Quads", "Bodyweight", ["quads", "glutes"], ["abs"], "front"],
-  ["Wall Sit", "Quads", "Bodyweight", ["quads"], ["glutes"], "front"],
-  ["Jump Squat", "Quads", "Bodyweight", ["quads", "glutes"], ["calves"], "front"],
-  ["Box Jump", "Quads", "Plyo box", ["quads", "glutes"], ["calves"], "front"],
+  ["Back Squat", "Quads", "Barbell", ["vastus-lateralis", "vastus-medialis", "glutes-max"], ["hamstrings-biceps-femoris", "erector-spinae", "abs-upper"], "front"],
+  ["Front Squat", "Quads", "Barbell", ["rectus-femoris", "vastus-medialis"], ["glutes-max", "abs-upper", "erector-spinae"], "front"],
+  ["Goblet Squat", "Quads", "Dumbbell", ["vastus-medialis", "glutes-max"], ["abs-upper"], "front"],
+  ["Box Squat", "Quads", "Barbell", ["vastus-lateralis", "glutes-max"], ["hamstrings-biceps-femoris", "erector-spinae"], "front"],
+  ["Pause Squat", "Quads", "Barbell", ["vastus-lateralis", "vastus-medialis", "glutes-max"], ["erector-spinae", "abs-upper"], "front"],
+  ["Smith Machine Squat", "Quads", "Smith machine", ["vastus-lateralis", "vastus-medialis", "glutes-max"], ["hamstrings-biceps-femoris"], "front"],
+  ["Hack Squat", "Quads", "Machine", ["vastus-lateralis", "vastus-medialis"], ["glutes-max"], "front"],
+  ["Leg Press", "Quads", "Machine", ["vastus-lateralis", "vastus-medialis", "glutes-max"], ["hamstrings-biceps-femoris"], "front"],
+  ["Bulgarian Split Squat", "Quads", "Dumbbell", ["rectus-femoris", "vastus-medialis", "glutes-max"], ["hamstrings-biceps-femoris"], "front"],
+  ["Walking Lunge", "Quads", "Dumbbell", ["vastus-medialis", "glutes-max"], ["hamstrings-biceps-femoris", "calves-gastroc-medial"], "front"],
+  ["Reverse Lunge", "Quads", "Dumbbell", ["glutes-max", "vastus-medialis"], ["hamstrings-biceps-femoris"], "front"],
+  ["Step-Up", "Quads", "Dumbbell", ["vastus-medialis", "glutes-max"], ["hamstrings-biceps-femoris"], "front"],
+  ["Leg Extension", "Quads", "Machine", ["rectus-femoris", "vastus-medialis", "vastus-lateralis"], [], "front"],
+  ["Sissy Squat", "Quads", "Bodyweight", ["rectus-femoris", "vastus-medialis"], [], "front"],
+  ["Pistol Squat", "Quads", "Bodyweight", ["vastus-medialis", "glutes-max"], ["abs-upper"], "front"],
+  ["Wall Sit", "Quads", "Bodyweight", ["vastus-lateralis", "vastus-medialis"], ["glutes-max"], "front"],
+  ["Jump Squat", "Quads", "Bodyweight", ["vastus-lateralis", "glutes-max"], ["calves-gastroc-medial"], "front"],
+  ["Box Jump", "Quads", "Plyo box", ["vastus-lateralis", "glutes-max"], ["calves-gastroc-medial"], "front"],
 
-  ["Romanian Deadlift", "Hamstrings & Glutes", "Barbell", ["hamstrings", "glutes"], ["lowerback", "forearms", "traps"], "back"],
-  ["Stiff-Leg Deadlift", "Hamstrings & Glutes", "Barbell", ["hamstrings"], ["glutes", "lowerback"], "back"],
-  ["Sumo Deadlift", "Hamstrings & Glutes", "Barbell", ["glutes", "quads", "hamstrings"], ["lowerback", "traps", "forearms"], "back"],
-  ["Trap Bar Deadlift", "Hamstrings & Glutes", "Trap bar", ["quads", "glutes"], ["hamstrings", "lowerback", "traps"], "front"],
-  ["Single-Leg Romanian Deadlift", "Hamstrings & Glutes", "Dumbbell", ["hamstrings", "glutes"], ["lowerback"], "back"],
-  ["Lying Leg Curl", "Hamstrings & Glutes", "Machine", ["hamstrings"], ["calves"], "back"],
-  ["Seated Leg Curl", "Hamstrings & Glutes", "Machine", ["hamstrings"], [], "back"],
-  ["Nordic Hamstring Curl", "Hamstrings & Glutes", "Bodyweight", ["hamstrings"], ["glutes"], "back"],
-  ["Barbell Hip Thrust", "Hamstrings & Glutes", "Barbell", ["glutes"], ["hamstrings"], "back"],
-  ["Glute Bridge", "Hamstrings & Glutes", "Bodyweight", ["glutes"], ["hamstrings"], "back"],
-  ["Single-Leg Glute Bridge", "Hamstrings & Glutes", "Bodyweight", ["glutes"], ["hamstrings", "abs"], "back"],
-  ["Cable Kickback", "Hamstrings & Glutes", "Cable", ["glutes"], ["hamstrings"], "back"],
-  ["Cable Pull-Through", "Hamstrings & Glutes", "Cable", ["glutes", "hamstrings"], ["lowerback"], "back"],
-  ["Kettlebell Swing", "Hamstrings & Glutes", "Kettlebell", ["glutes", "hamstrings"], ["lowerback", "delts", "abs"], "back"],
-  ["Hip Abduction Machine", "Hamstrings & Glutes", "Machine", ["glutes"], [], "back"],
+  ["Romanian Deadlift", "Hamstrings & Glutes", "Barbell", ["hamstrings-biceps-femoris", "hamstrings-semitendinosus", "glutes-max"], ["erector-spinae", "forearm-flexors"], "back"],
+  ["Stiff-Leg Deadlift", "Hamstrings & Glutes", "Barbell", ["hamstrings-biceps-femoris", "hamstrings-semitendinosus"], ["glutes-max", "erector-spinae"], "back"],
+  ["Sumo Deadlift", "Hamstrings & Glutes", "Barbell", ["glutes-max", "vastus-medialis"], ["hamstrings-biceps-femoris", "erector-spinae", "forearm-flexors"], "back"],
+  ["Trap Bar Deadlift", "Hamstrings & Glutes", "Trap bar", ["vastus-lateralis", "glutes-max"], ["hamstrings-biceps-femoris", "erector-spinae", "traps-upper"], "front"],
+  ["Single-Leg Romanian Deadlift", "Hamstrings & Glutes", "Dumbbell", ["hamstrings-biceps-femoris", "glutes-max"], ["erector-spinae"], "back"],
+  ["Lying Leg Curl", "Hamstrings & Glutes", "Machine", ["hamstrings-biceps-femoris", "hamstrings-semitendinosus"], ["calves-gastroc-medial"], "back"],
+  ["Seated Leg Curl", "Hamstrings & Glutes", "Machine", ["hamstrings-biceps-femoris", "hamstrings-semitendinosus"], [], "back"],
+  ["Nordic Hamstring Curl", "Hamstrings & Glutes", "Bodyweight", ["hamstrings-biceps-femoris", "hamstrings-semitendinosus"], ["glutes-max"], "back"],
+  ["Barbell Hip Thrust", "Hamstrings & Glutes", "Barbell", ["glutes-max"], ["hamstrings-biceps-femoris"], "back"],
+  ["Glute Bridge", "Hamstrings & Glutes", "Bodyweight", ["glutes-max"], ["hamstrings-biceps-femoris"], "back"],
+  ["Single-Leg Glute Bridge", "Hamstrings & Glutes", "Bodyweight", ["glutes-max"], ["hamstrings-biceps-femoris", "abs-upper"], "back"],
+  ["Cable Kickback", "Hamstrings & Glutes", "Cable", ["glutes-max"], ["hamstrings-biceps-femoris"], "back"],
+  ["Cable Pull-Through", "Hamstrings & Glutes", "Cable", ["glutes-max", "hamstrings-biceps-femoris"], ["erector-spinae"], "back"],
+  ["Kettlebell Swing", "Hamstrings & Glutes", "Kettlebell", ["glutes-max", "hamstrings-biceps-femoris"], ["erector-spinae", "delts-front", "abs-upper"], "back"],
+  // Glute Medius — the only one of these that targets the SIDE of the hip, not the main glute mass.
+  ["Hip Abduction Machine", "Hamstrings & Glutes", "Machine", ["glutes-med"], [], "back"],
 
-  ["Standing Calf Raise", "Calves", "Machine", ["calves"], [], "front"],
-  ["Seated Calf Raise", "Calves", "Machine", ["calves"], [], "front"],
-  ["Leg Press Calf Raise", "Calves", "Machine", ["calves"], [], "front"],
-  ["Single-Leg Calf Raise", "Calves", "Bodyweight", ["calves"], [], "front"],
-  ["Jump Rope", "Calves", "Jump rope", ["calves"], ["delts", "quads"], "front"],
+  ["Standing Calf Raise", "Calves", "Machine", ["calves-gastroc-medial", "calves-gastroc-lateral"], [], "front"],
+  ["Seated Calf Raise", "Calves", "Machine", ["calves-soleus"], [], "front"],
+  ["Leg Press Calf Raise", "Calves", "Machine", ["calves-gastroc-medial"], ["calves-soleus"], "front"],
+  ["Single-Leg Calf Raise", "Calves", "Bodyweight", ["calves-gastroc-medial", "calves-gastroc-lateral"], [], "front"],
+  ["Jump Rope", "Calves", "Jump rope", ["calves-gastroc-medial"], ["delts-side", "vastus-lateralis"], "front"],
 
-  ["Plank", "Core", "Bodyweight", ["abs"], ["obliques", "delts"], "front"],
-  ["Side Plank", "Core", "Bodyweight", ["obliques"], ["abs"], "front"],
-  ["Crunch", "Core", "Bodyweight", ["abs"], [], "front"],
-  ["Cable Crunch", "Core", "Cable", ["abs"], ["obliques"], "front"],
-  ["Decline Sit-Up", "Core", "Decline bench", ["abs"], ["obliques"], "front"],
-  ["Bicycle Crunch", "Core", "Bodyweight", ["abs", "obliques"], [], "front"],
-  ["Hanging Leg Raise", "Core", "Pull-up bar", ["abs"], ["obliques", "forearms"], "front"],
-  ["Hanging Knee Raise", "Core", "Pull-up bar", ["abs"], ["forearms"], "front"],
-  ["Lying Leg Raise", "Core", "Bodyweight", ["abs"], [], "front"],
-  ["V-Up", "Core", "Bodyweight", ["abs"], [], "front"],
-  ["Hollow Body Hold", "Core", "Bodyweight", ["abs"], [], "front"],
-  ["Dragon Flag", "Core", "Bodyweight", ["abs"], ["lats", "lowerback"], "front"],
-  ["Ab Wheel Rollout", "Core", "Ab wheel", ["abs"], ["lats", "delts"], "front"],
-  ["Russian Twist", "Core", "Bodyweight", ["obliques"], ["abs"], "front"],
-  ["Cable Woodchopper", "Core", "Cable", ["obliques"], ["abs", "delts"], "front"],
-  ["Pallof Press", "Core", "Cable", ["obliques", "abs"], [], "front"],
-  ["Dead Bug", "Core", "Bodyweight", ["abs"], [], "front"],
-  ["Bird Dog", "Core", "Bodyweight", ["lowerback", "abs"], ["glutes"], "front"],
+  ["Plank", "Core", "Bodyweight", ["abs-upper", "abs-mid"], ["obliques-external", "delts-front"], "front"],
+  ["Side Plank", "Core", "Bodyweight", ["obliques-external"], ["abs-mid"], "front"],
+  ["Crunch", "Core", "Bodyweight", ["abs-upper"], [], "front"],
+  ["Cable Crunch", "Core", "Cable", ["abs-upper"], ["obliques-external"], "front"],
+  ["Decline Sit-Up", "Core", "Decline bench", ["abs-upper", "abs-mid"], ["obliques-external", "hip-flexors"], "front"],
+  ["Bicycle Crunch", "Core", "Bodyweight", ["abs-upper", "obliques-external"], [], "front"],
+  // Any leg-raise pattern tilts the pelvis posteriorly, which is what actually loads the LOWER abs, not the upper.
+  ["Hanging Leg Raise", "Core", "Pull-up bar", ["abs-lower", "abs-infra"], ["obliques-external", "hip-flexors", "forearm-flexors"], "front"],
+  ["Hanging Knee Raise", "Core", "Pull-up bar", ["abs-lower"], ["hip-flexors", "forearm-flexors"], "front"],
+  ["Lying Leg Raise", "Core", "Bodyweight", ["abs-lower", "abs-infra"], ["hip-flexors"], "front"],
+  ["V-Up", "Core", "Bodyweight", ["abs-upper", "abs-lower"], ["hip-flexors"], "front"],
+  ["Hollow Body Hold", "Core", "Bodyweight", ["abs-lower", "abs-infra"], ["abs-upper"], "front"],
+  ["Dragon Flag", "Core", "Bodyweight", ["abs-lower", "abs-infra"], ["lats", "erector-spinae"], "front"],
+  ["Ab Wheel Rollout", "Core", "Ab wheel", ["abs-upper", "abs-mid"], ["lats", "delts-front"], "front"],
+  ["Russian Twist", "Core", "Bodyweight", ["obliques-external"], ["abs-mid"], "front"],
+  ["Cable Woodchopper", "Core", "Cable", ["obliques-external"], ["abs-mid", "delts-side"], "front"],
+  ["Pallof Press", "Core", "Cable", ["obliques-external", "abs-mid"], [], "front"],
+  ["Dead Bug", "Core", "Bodyweight", ["abs-lower", "abs-infra"], [], "front"],
+  ["Bird Dog", "Core", "Bodyweight", ["erector-spinae", "abs-mid"], ["glutes-max"], "front"],
 
+  // Conditioning stays at the broad-group level throughout — these move too
+  // many joints at once for any one sub-region to be "the" target.
   ["Burpee", "Full Body & Conditioning", "Bodyweight", ["quads", "chest"], ["delts", "triceps", "abs"], "front"],
   ["Thruster", "Full Body & Conditioning", "Barbell", ["quads", "delts"], ["glutes", "triceps", "abs"], "front"],
   ["Power Clean", "Full Body & Conditioning", "Barbell", ["glutes", "hamstrings", "traps"], ["quads", "delts", "lowerback"], "back"],
@@ -485,20 +509,20 @@ const EXERCISE_MUSCLE_DATA_ = [
   // muscle data even though a client may already have them assigned. Two
   // of these (Lat Pulldown, Overhead Press) are exactly Max's own example
   // exercises from his muscle-map brief.
-  ["Lat Pulldown", "Back", "Cable", ["lats"], ["biceps", "delts", "traps", "forearms"], "back"],
-  ["Overhead Press", "Shoulders & Traps", "Barbell", ["delts"], ["triceps", "traps", "abs"], "front"],
-  ["Barbell Row", "Back", "Barbell", ["lats", "traps"], ["biceps", "delts", "lowerback", "forearms"], "back"],
-  ["Tricep Pushdown", "Triceps", "Cable", ["triceps"], [], "back"],
-  ["Dumbbell Shoulder Press", "Shoulders & Traps", "Dumbbell", ["delts"], ["triceps"], "front"],
-  ["Lateral Raise", "Shoulders & Traps", "Dumbbell", ["delts"], ["traps"], "front"],
-  ["Front Raise", "Shoulders & Traps", "Dumbbell", ["delts"], ["chest"], "front"],
-  ["Overhead Tricep Extension", "Triceps", "Dumbbell", ["triceps"], [], "back"],
-  ["Dips", "Triceps", "Dip bars", ["triceps"], ["chest", "delts"], "back"],
-  ["Deadlift", "Back", "Barbell", ["glutes", "hamstrings", "lowerback"], ["quads", "traps", "lats", "forearms"], "back"],
-  ["Leg Curl", "Hamstrings & Glutes", "Machine", ["hamstrings"], ["calves"], "back"],
-  ["Hip Thrust", "Hamstrings & Glutes", "Barbell", ["glutes"], ["hamstrings"], "back"],
-  ["Sit-Up", "Core", "Bodyweight", ["abs"], ["obliques"], "front"],
-  ["Woodchopper", "Core", "Cable", ["obliques"], ["abs", "delts"], "front"],
+  ["Lat Pulldown", "Back", "Cable", ["lats"], ["biceps-long", "delts-rear", "traps-mid", "forearm-flexors"], "back"],
+  ["Overhead Press", "Shoulders & Traps", "Barbell", ["delts-front"], ["triceps-lateral", "traps-upper", "abs-upper"], "front"],
+  ["Barbell Row", "Back", "Barbell", ["lats", "traps-mid"], ["biceps-long", "delts-rear", "erector-spinae", "forearm-flexors"], "back"],
+  ["Tricep Pushdown", "Triceps", "Cable", ["triceps-lateral"], ["triceps-long"], "back"],
+  ["Dumbbell Shoulder Press", "Shoulders & Traps", "Dumbbell", ["delts-front"], ["delts-side", "triceps-lateral"], "front"],
+  ["Lateral Raise", "Shoulders & Traps", "Dumbbell", ["delts-side"], ["traps-upper"], "front"],
+  ["Front Raise", "Shoulders & Traps", "Dumbbell", ["delts-front"], ["chest-upper"], "front"],
+  ["Overhead Tricep Extension", "Triceps", "Dumbbell", ["triceps-long"], ["triceps-lateral"], "back"],
+  ["Dips", "Triceps", "Dip bars", ["triceps-lateral"], ["chest-lower", "delts-front"], "back"],
+  ["Deadlift", "Back", "Barbell", ["glutes-max", "erector-spinae", "hamstrings-biceps-femoris"], ["vastus-lateralis", "traps-upper", "lats", "forearm-flexors"], "back"],
+  ["Leg Curl", "Hamstrings & Glutes", "Machine", ["hamstrings-biceps-femoris", "hamstrings-semitendinosus"], ["calves-gastroc-medial"], "back"],
+  ["Hip Thrust", "Hamstrings & Glutes", "Barbell", ["glutes-max"], ["hamstrings-biceps-femoris"], "back"],
+  ["Sit-Up", "Core", "Bodyweight", ["abs-upper", "abs-mid"], ["obliques-external", "hip-flexors"], "front"],
+  ["Woodchopper", "Core", "Cable", ["obliques-external"], ["abs-mid", "delts-side"], "front"],
 ];
 
 /**
@@ -575,6 +599,51 @@ function seedExerciseMuscleData() {
     sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, header.length).setValues(newRows);
   }
   Logger.log("Added " + added + " exercise(s); filled in muscle data on " + filled + " existing one(s).");
+}
+
+/**
+ * One-time helper — run manually from the Apps Script editor, after pasting
+ * the v2 (hyperrealistic) EXERCISE_MUSCLE_DATA_ above. Unlike
+ * seedExerciseMuscleData() (which only fills BLANK cells), this OVERWRITES
+ * Primary/Secondary Muscles on any existing row whose name matches one in
+ * EXERCISE_MUSCLE_DATA_ — that's the whole point this time, since every one
+ * of those 150 rows already has v1 (broad-key) data in it. Movement/Body
+ * Part/Equipment/Best View are left untouched (nothing changed there), and
+ * a name NOT in EXERCISE_MUSCLE_DATA_ (something Max typed in himself) is
+ * left completely alone. Safe to re-run.
+ */
+function upgradeExerciseMuscleDataV2() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(EXERCISES_SHEET_NAME);
+  if (!sheet) {
+    Logger.log("No Exercises tab yet — run setupWorkoutSheets first.");
+    return;
+  }
+  const header = ensureExerciseColumns_(sheet);
+  const col = {
+    name: findColumn_(header, "Name"),
+    primary: findColumn_(header, "Primary Muscles"),
+    secondary: findColumn_(header, "Secondary Muscles"),
+  };
+
+  const lastRow = sheet.getLastRow();
+  const rowByName = {};
+  if (lastRow >= 2) {
+    const names = sheet.getRange(2, col.name + 1, lastRow - 1, 1).getDisplayValues();
+    names.forEach((r, i) => {
+      const n = String(r[0] || "").trim().toLowerCase();
+      if (n) rowByName[n] = i + 2;
+    });
+  }
+
+  let updated = 0;
+  EXERCISE_MUSCLE_DATA_.forEach(([name, , , primary, secondary]) => {
+    const row = rowByName[name.toLowerCase()];
+    if (!row) return; // not on the sheet yet — seedExerciseMuscleData() handles adding it
+    sheet.getRange(row, col.primary + 1).setValue(primary.join(","));
+    sheet.getRange(row, col.secondary + 1).setValue(secondary.join(","));
+    updated++;
+  });
+  Logger.log("Upgraded Primary/Secondary Muscles on " + updated + " exercise(s) to the v2 fine-grained keys.");
 }
 
 /**
