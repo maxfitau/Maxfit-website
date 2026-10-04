@@ -114,12 +114,34 @@
   gap: 10px;
 }
 
+/* The name gets its own full-width line — a coach needs to actually read
+   which exercise this is, and sharing one line with sets/reps/handle/
+   move/remove left it squeezed down to a sliver (and its muscle chips,
+   nested inside the same button, stacking one per line). Sets/reps and the
+   controls share the line below, the tip sits under that. (Children, in
+   order: 1 name, 2 sets, 3 reps, 4 drag handle, 5 up/down, 6 remove, then
+   the tip, then the superset toggle — see the nth-child rules below.) */
 .builder__row {
   display: grid;
-  grid-template-columns: 1fr 52px 76px 26px 26px 30px;
-  gap: 8px;
+  grid-template-columns: 56px 80px 1fr 26px 26px 30px;
+  column-gap: 8px;
+  row-gap: 6px;
   align-items: center;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
 }
+
+.builder__row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.builder__row > :nth-child(1) { grid-column: 1 / -1; grid-row: 1; }
+.builder__row > :nth-child(2) { grid-column: 1; grid-row: 2; }
+.builder__row > :nth-child(3) { grid-column: 2; grid-row: 2; }
+.builder__row > :nth-child(4) { grid-column: 4; grid-row: 2; }
+.builder__row > :nth-child(5) { grid-column: 5; grid-row: 2; }
+.builder__row > :nth-child(6) { grid-column: 6; grid-row: 2; }
 
 .builder__row input {
   font-family: var(--font-body);
@@ -164,7 +186,7 @@
 
 .builder__row-exercise-top {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   min-width: 0;
 }
@@ -189,9 +211,6 @@
 .builder__row-exercise-label {
   flex-grow: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .builder__row input[type="number"] {
@@ -203,6 +222,7 @@
    the LAST input in the row, so the first three inputs keep their meaning. */
 .builder__row .builder__row-tip {
   grid-column: 1 / -1;
+  grid-row: 3;
   font-size: 12.5px;
   font-weight: 500;
   padding: 8px 10px;
@@ -296,6 +316,7 @@
    "these go together" without needing a bracket graphic. */
 .builder__row .builder__superset-toggle {
   grid-column: 1 / -1;
+  grid-row: 4;
   font-family: var(--font-head);
   font-weight: 700;
   text-transform: uppercase;
@@ -331,6 +352,13 @@
   border-radius: var(--radius-sm);
   padding: 10px 10px 0;
   margin-bottom: -10px;
+}
+
+/* No seam between a linked pair, even with the row divider lines on. Must
+   come after the padding set above — it only overrides padding-bottom. */
+.builder__row[data-superset="true"] {
+  border-bottom: none;
+  padding-bottom: 10px;
 }
 
 .builder__row[data-superset="true"] + .builder__row {
@@ -387,40 +415,6 @@
   color: var(--grey-light);
   text-align: center;
   margin: 0;
-}
-
-/* Phones: name + sets + reps + the drag/move/remove controls can't share one
-   line — the name box shrinks to ~40px and you can't see what you're typing.
-   So the name gets its own full-width line, sets/reps and the controls share
-   the next one, and the tip sits underneath. (Children, in order: 1 name,
-   2 sets, 3 reps, 4 drag handle, 5 up/down, 6 remove, then the tip.) */
-@media (max-width: 440px) {
-  .builder__row {
-    grid-template-columns: 56px 80px 1fr 26px 26px 30px;
-    row-gap: 6px;
-    padding-bottom: 14px;
-    border-bottom: 1px solid var(--line);
-  }
-
-  .builder__row:last-child {
-    border-bottom: none;
-    padding-bottom: 0;
-  }
-
-  /* No seam between a linked pair, even with the mobile divider lines on. */
-  .builder__row[data-superset="true"] {
-    border-bottom: none;
-    padding-bottom: 10px;
-  }
-
-  .builder__row > :nth-child(1) { grid-column: 1 / -1; grid-row: 1; }
-  .builder__row > :nth-child(2) { grid-column: 1; grid-row: 2; }
-  .builder__row > :nth-child(3) { grid-column: 2; grid-row: 2; }
-  .builder__row > :nth-child(4) { grid-column: 4; grid-row: 2; }
-  .builder__row > :nth-child(5) { grid-column: 5; grid-row: 2; }
-  .builder__row > :nth-child(6) { grid-column: 6; grid-row: 2; }
-  .builder__row .builder__row-tip { grid-column: 1 / -1; grid-row: 3; }
-  .builder__row .builder__superset-toggle { grid-column: 1 / -1; grid-row: 4; }
 }
 
 /* The smallest phones: trim the fixed columns so the row still fits inside the card. */
