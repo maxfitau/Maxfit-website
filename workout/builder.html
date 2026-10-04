@@ -12,7 +12,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="../card/styles.css?v=20261003d" />
 <link rel="stylesheet" href="../checkin.css?v=20260917a" />
-<link rel="stylesheet" href="builder.css?v=20261005a" />
+<link rel="stylesheet" href="builder.css?v=20261005b" />
 <link rel="stylesheet" href="exercise-picker.css?v=20261004a" />
 </head>
 <body>
@@ -23,44 +23,57 @@
     <span class="card__tag">Build Workout</span>
   </div>
 
-  <div class="builder__field">
-    <span class="card__label">Client</span>
-    <select class="picker__input builder__select" id="clientSelect">
-      <option value="">Loading clients…</option>
-    </select>
+  <div class="builder__layout">
+    <div class="builder__main">
+      <div class="builder__field">
+        <span class="card__label">Client</span>
+        <select class="picker__input builder__select" id="clientSelect">
+          <option value="">Loading clients…</option>
+        </select>
+      </div>
+
+      <div class="builder__field">
+        <span class="card__label">Workout Name</span>
+        <input class="picker__input" id="workoutNameInput" type="text" placeholder="e.g. Push, Pull, Legs" list="workoutNameOptions" autocomplete="off" />
+        <div class="builder__chips" id="existingWorkoutChips"></div>
+      </div>
+
+      <div class="builder__field">
+        <span class="card__label">Which days? (optional)</span>
+        <div class="builder__days" id="daysPicker"></div>
+      </div>
+
+      <div class="builder__exercises" id="exerciseRows"></div>
+
+      <button class="builder__add" id="addExerciseButton" type="button">+ Add Exercise</button>
+
+      <div class="checkin__pin" id="pinRow">
+        <span class="card__label">Staff PIN</span>
+        <input class="picker__input" id="pinInput" type="tel" inputmode="numeric" autocomplete="off" placeholder="····" />
+      </div>
+
+      <button class="builder__save" id="saveButton" type="button">Save Workout</button>
+      <button class="builder__delete" id="deleteButton" type="button" hidden>Delete This Workout</button>
+      <p class="picker__error" id="builderError" hidden></p>
+      <p class="builder__success" id="builderSuccess" hidden>Saved — it'll show up on their card next time they open it.</p>
+    </div>
+
+    <aside class="builder__side">
+      <div class="builder__side-head">
+        <span class="card__label">Muscles Worked</span>
+        <span class="builder__side-sub">this workout</span>
+      </div>
+      <div class="builder__side-figs" id="builderSideFigs"></div>
+      <div class="builder__side-heat-list" id="builderSideHeatList"></div>
+    </aside>
   </div>
-
-  <div class="builder__field">
-    <span class="card__label">Workout Name</span>
-    <input class="picker__input" id="workoutNameInput" type="text" placeholder="e.g. Push, Pull, Legs" list="workoutNameOptions" autocomplete="off" />
-    <div class="builder__chips" id="existingWorkoutChips"></div>
-  </div>
-
-  <div class="builder__field">
-    <span class="card__label">Which days? (optional)</span>
-    <div class="builder__days" id="daysPicker"></div>
-  </div>
-
-  <div class="builder__exercises" id="exerciseRows"></div>
-
-  <button class="builder__add" id="addExerciseButton" type="button">+ Add Exercise</button>
-
-  <div class="checkin__pin" id="pinRow">
-    <span class="card__label">Staff PIN</span>
-    <input class="picker__input" id="pinInput" type="tel" inputmode="numeric" autocomplete="off" placeholder="····" />
-  </div>
-
-  <button class="builder__save" id="saveButton" type="button">Save Workout</button>
-  <button class="builder__delete" id="deleteButton" type="button" hidden>Delete This Workout</button>
-  <p class="picker__error" id="builderError" hidden></p>
-  <p class="builder__success" id="builderSuccess" hidden>Saved — it'll show up on their card next time they open it.</p>
 </main>
 
 <datalist id="workoutNameOptions"></datalist>
 
 <script src="../card/sheet.js?v=20261004a"></script>
 <script src="../card/muscle-map.js?v=20261004b"></script>
-<script src="builder.js?v=20261004a"></script>
+<script src="builder.js?v=20261005a"></script>
 <script src="exercise-picker.js?v=20261004a"></script>
 </body>
 </html>

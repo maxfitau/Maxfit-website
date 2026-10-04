@@ -8,6 +8,161 @@
   gap: 20px;
 }
 
+.builder__layout {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.builder__main {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+/* Side-by-side only once there's real room for it (a laptop window, which
+   is how Max actually uses this page — not a phone). Below this width
+   .builder__side just stacks under the form like any other section. */
+@media (min-width: 860px) {
+  .builder {
+    max-width: 900px;
+  }
+
+  .builder__layout {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 28px;
+  }
+
+  .builder__main {
+    flex: 1 1 460px;
+  }
+
+  .builder__side {
+    flex: 0 0 340px;
+  }
+}
+
+/* The live "how hard did this workout hit each muscle" summary — painted
+   client-side by refreshMuscleLoadPanel_ (builder.js) from the rows
+   currently in the workout (each row's own primary/secondary muscles x its
+   own Sets value), the same primary=1/secondary=0.5 weighting the Muscle
+   Heatmap uses. No network call, recomputed on every add/remove/sets-edit/
+   exercise-pick. Sticky so it stays in view while scrolling a long
+   exercise list on a wide window. Replaces the old per-row muscle chip
+   list (2026-10-05) — that spelled out every exercise's muscles on its own
+   row, which made a long workout very tall for the same information this
+   panel now shows once, aggregated, for the whole thing. */
+.builder__side {
+  position: sticky;
+  top: 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.builder__side-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.builder__side-sub {
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  color: var(--dim);
+}
+
+.builder__side-figs {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.builder__side-fig-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 140px;
+}
+
+.builder__side-figs svg {
+  width: 100%;
+  height: auto;
+}
+
+.builder__side-fig-caption {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.builder__side-heat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.builder__side-heat-row {
+  display: grid;
+  grid-template-columns: 74px 1fr 30px;
+  align-items: center;
+  gap: 8px;
+}
+
+.builder__side-heat-row__name {
+  font-family: var(--font-body);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--white);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.builder__side-heat-row__track {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.builder__side-heat-row__fill--primary {
+  background: var(--red);
+}
+
+.builder__side-heat-row__fill--secondary {
+  background: #e08a00;
+}
+
+.builder__side-heat-row__num {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 12.5px;
+  color: var(--grey);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.builder__side-empty {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--dim);
+  text-align: center;
+  padding: 6px 0;
+}
+
 .builder__field {
   display: flex;
   flex-direction: column;
@@ -189,14 +344,6 @@
   align-items: flex-start;
   gap: 8px;
   min-width: 0;
-}
-
-/* Which muscles this exercise works — filled in once an exercise is chosen
-   (see renderMuscleHighlight, card/muscle-map.js). Empty/hidden until then. */
-.builder__row-muscles {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 8px;
 }
 
 .builder__row-exercise:active {

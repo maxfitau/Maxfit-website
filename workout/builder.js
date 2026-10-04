@@ -32,6 +32,8 @@ const els = {
   deleteButton: document.getElementById("deleteButton"),
   error: document.getElementById("builderError"),
   success: document.getElementById("builderSuccess"),
+  sideFigs: document.getElementById("builderSideFigs"),
+  sideHeatList: document.getElementById("builderSideHeatList"),
 };
 
 // This client's existing workouts, keyed by lowercased name — refreshed
@@ -64,6 +66,13 @@ function currentPin() {
  * typo. The actual name travels in nameValueInput (a hidden input, read by
  * the save handler below) so the picked name survives the same as any
  * other field even though it isn't typed.
+ *
+ * No per-row muscle chip list any more (2026-10-05) — that detail used to
+ * be spelled out on every single row ("Mid Chest, Lower Chest, Front
+ * Delt..."), which made a long workout very tall for little reason once
+ * the side "Muscles Worked" panel shows the same thing once, aggregated,
+ * for the whole workout. The picked primary/secondary keys still travel
+ * with the row (on wrap.dataset) so refreshMuscleLoadPanel_ can read them.
  */
 function buildExerciseControl(exercise) {
   const wrap = document.createElement("button");
@@ -80,10 +89,6 @@ function buildExerciseControl(exercise) {
   const label = document.createElement("span");
   label.className = "builder__row-exercise-label";
 
-  const muscles = document.createElement("span");
-  muscles.className = "builder__row-muscles";
-  muscles.hidden = true;
-
   const nameValueInput = document.createElement("input");
   nameValueInput.type = "hidden";
   nameValueInput.className = "builder__row-name-value";
@@ -92,6 +97,8 @@ function buildExerciseControl(exercise) {
     nameValueInput.value = name || "";
     wrap.dataset.movement = movement || "";
     wrap.dataset.bodyPart = bodyPart || "";
+    wrap.dataset.primaryMuscles = (primaryMuscles || []).join(",");
+    wrap.dataset.secondaryMuscles = (secondaryMuscles || []).join(",");
     if (name) {
       label.textContent = name;
       wrap.classList.remove("builder__row-exercise--empty");
@@ -106,7 +113,6 @@ function buildExerciseControl(exercise) {
       wrap.classList.add("builder__row-exercise--empty");
       dot.hidden = true;
     }
-    renderMuscleHighlight(muscles, primaryMuscles, secondaryMuscles);
   }
 
   setChosen(
@@ -119,14 +125,16 @@ function buildExerciseControl(exercise) {
 
   wrap.addEventListener("click", () => {
     ExercisePicker.open({
-      onChoose: (picked) => setChosen(picked.name, picked.movement, picked.bodyPart, picked.primaryMuscles, picked.secondaryMuscles),
+      onChoose: (picked) => {
+        setChosen(picked.name, picked.movement, picked.bodyPart, picked.primaryMuscles, picked.secondaryMuscles);
+        refreshMuscleLoadPanel_();
+      },
     });
   });
 
   top.appendChild(dot);
   top.appendChild(label);
   wrap.appendChild(top);
-  wrap.appendChild(muscles);
   return { control: wrap, nameValueInput };
 }
 
@@ -174,6 +182,75 @@ function refreshSupersetAvailability_() {
   });
 }
 
+// How many weighted sets (primary counts 1, secondary 0.5 — same weighting
+// as the Muscle Heatmap, workout/heatmap.js) reads as "fully red" on the
+// side panel's figure. A single workout, not a week, so a much lower cap
+// than the heatmap's own.
+const BUILDER_MUSCLE_LOAD_CAP_ = 7;
+
+/**
+ * The side panel's live "Muscles Worked" summary — every row's own
+ * primary/secondary muscles (stashed on wrap.dataset by setChosen above),
+ * weighted by that row's own Sets value and summed across the whole
+ * workout currently being built. Pure client side, no network call, same
+ * as every other muscle-map computation in this app. Call after anything
+ * that changes which exercises are in the workout or how many sets they
+ * have: addRow, a row's remove button, a Sets edit, and an exercise being
+ * (re)picked (see the onChoose handler above).
+ */
+function refreshMuscleLoadPanel_() {
+  const weighted = {};
+  const primaryCount = {};
+  const secondaryCount = {};
+
+  Array.from(els.rows.children).forEach((row) => {
+    const control = row.querySelector(".builder__row-exercise");
+    const setsInput = row.querySelector("input");
+    const sets = setsInput ? Number(setsInput.value) : NaN;
+    if (!control || !Number.isFinite(sets) || sets <= 0) return;
+
+    const primary = (control.dataset.primaryMuscles || "").split(",").filter(Boolean);
+    const secondary = (control.dataset.secondaryMuscles || "").split(",").filter(Boolean);
+    primary.forEach((m) => {
+      const g = muscleGroupOf(m);
+      weighted[g] = (weighted[g] || 0) + sets;
+      primaryCount[g] = (primaryCount[g] || 0) + sets;
+    });
+    secondary.forEach((m) => {
+      const g = muscleGroupOf(m);
+      weighted[g] = (weighted[g] || 0) + sets * 0.5;
+      secondaryCount[g] = (secondaryCount[g] || 0) + sets;
+    });
+  });
+
+  const frontSvg = muscleFigureSvg("front", "builderSideFrontTitle");
+  const backSvg = muscleFigureSvg("back", "builderSideBackTitle");
+  els.sideFigs.innerHTML =
+    `<div class="builder__side-fig-col">${frontSvg}<span class="builder__side-fig-caption">Front</span></div>` +
+    `<div class="builder__side-fig-col">${backSvg}<span class="builder__side-fig-caption">Back</span></div>`;
+  els.sideFigs.querySelectorAll("svg.muscle-figure").forEach((svg) => paintMuscleHeat(svg, weighted, BUILDER_MUSCLE_LOAD_CAP_));
+
+  const entries = Object.keys(weighted).sort((a, b) => weighted[b] - weighted[a]);
+  els.sideHeatList.innerHTML = entries.length
+    ? entries.map((k) => builderHeatRowHtml_(k, primaryCount[k] || 0, secondaryCount[k] || 0)).join("")
+    : '<p class="builder__side-empty">Add exercises to see what this workout trains</p>';
+}
+
+/** One row of the side panel's breakdown list — same red/orange "primary+secondary set count" shape as the Muscles tab's This Week list (heatWeekRowHtml_, workout/library.js), just scoped to this one workout. */
+function builderHeatRowHtml_(key, primaryN, secondaryN) {
+  const primaryPct = Math.max(0, Math.min(100, (primaryN / BUILDER_MUSCLE_LOAD_CAP_) * 100));
+  const secondaryPct = Math.max(0, Math.min(100 - primaryPct, (secondaryN / BUILDER_MUSCLE_LOAD_CAP_) * 100));
+  return `
+    <div class="builder__side-heat-row">
+      <span class="builder__side-heat-row__name">${muscleLabel_(key)}</span>
+      <span class="builder__side-heat-row__track">
+        <span class="builder__side-heat-row__fill--primary" style="width:${primaryPct}%"></span>
+        <span class="builder__side-heat-row__fill--secondary" style="width:${secondaryPct}%"></span>
+      </span>
+      <span class="builder__side-heat-row__num">${primaryN}+${secondaryN}</span>
+    </div>`;
+}
+
 function addRow(exercise) {
   const row = document.createElement("div");
   row.className = "builder__row";
@@ -185,6 +262,7 @@ function addRow(exercise) {
   setsInput.inputMode = "numeric";
   setsInput.placeholder = "Sets";
   setsInput.value = exercise && exercise.sets ? exercise.sets : "";
+  setsInput.addEventListener("input", refreshMuscleLoadPanel_);
 
   const repsInput = document.createElement("input");
   repsInput.type = "text";
@@ -245,6 +323,7 @@ function addRow(exercise) {
   removeButton.addEventListener("click", () => {
     row.remove();
     refreshSupersetAvailability_();
+    refreshMuscleLoadPanel_();
   });
 
   const supersetToggle = buildSupersetToggle_(row, exercise && exercise.superset);
@@ -258,11 +337,12 @@ function addRow(exercise) {
   row.appendChild(tipInput);
   row.appendChild(supersetToggle);
   // Last, and hidden — keeps the elements above in the exact DOM order the
-  // CSS's nth-child mobile layout (builder.css) already expects, and keeps
+  // CSS's nth-child row layout (builder.css) already expects, and keeps
   // the picked name out of the save handler's positional input lookup below.
   row.appendChild(nameValueInput);
   els.rows.appendChild(row);
   refreshSupersetAvailability_();
+  refreshMuscleLoadPanel_();
 }
 
 /**
@@ -312,6 +392,7 @@ function makeRowDraggable(row, handle) {
 
 function clearRows() {
   els.rows.innerHTML = "";
+  refreshMuscleLoadPanel_();
 }
 
 /**
