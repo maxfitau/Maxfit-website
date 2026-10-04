@@ -76,12 +76,21 @@
   gap: 12px;
 }
 
-/* Movement step only: fill the available screen height across its 3 rows
-   (2+2+1 for 5 movements) instead of each tile sizing to a fixed, short
-   aspect-ratio — taller tiles, no dead space below the last row. */
+/* Movement step, and the body-part step after it: fill the available screen
+   height across however many rows that step actually has (3 for the 5
+   movements, 1-2 for a body part list) instead of each tile sizing to a
+   fixed, short aspect-ratio — taller tiles, no dead space below the last
+   row. grid-auto-rows (not a hardcoded row count) is what makes this work
+   for both steps despite their different tile counts. */
 .exercise-picker__grid--fill {
   flex-grow: 1;
-  grid-template-rows: repeat(3, 1fr);
+  grid-auto-rows: 1fr;
+}
+
+/* Conditioning's body-part step has exactly one tile ("Full Body") — let it
+   take the full width instead of sitting alone in the left column. */
+.exercise-picker__grid--fill .exercise-picker__tile--movement:only-child {
+  grid-column: 1 / -1;
 }
 
 .exercise-picker__tile {
@@ -139,11 +148,11 @@
   height: 22px;
 }
 
-/* Movement tiles (Push/Pull/Legs/Core/Conditioning): the muscle-crop icon
-   is the tile, not a small badge tucked in a corner — big, centred, with
-   the tinted background carrying the movement's colour so nothing's lost
-   by dropping the little badge circle. Body part tiles (the dot + label
-   step after this one) are untouched — still bottom-left, per .exercise-picker__tile. */
+/* Movement tiles (Push/Pull/Legs/Core/Conditioning) AND the body-part step
+   after them (Chest/Shoulders/…): the muscle-crop icon is the tile, not a
+   small badge tucked in a corner — big, centred, with the tinted background
+   carrying that step's own colour so nothing's lost by dropping the little
+   badge circle. Same class, same look, one level deeper. */
 .exercise-picker__tile--movement {
   aspect-ratio: auto;
   justify-content: center;

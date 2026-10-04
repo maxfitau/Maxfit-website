@@ -171,6 +171,7 @@ function fetchWorkoutExercises() {
           workoutOrder: findColumn(header, "Workout Order"),
           notes: findColumn(header, "Exercise Notes"), // the coach's tip for one exercise
           workoutNotes: findColumn(header, "Workout Notes"), // a note for the whole workout (repeated on each of its rows)
+          superset: findColumn(header, "Superset"), // "Y" = this exercise + the next one (by Order) are done back-to-back
         };
         return { rows, col };
       });

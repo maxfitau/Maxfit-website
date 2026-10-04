@@ -85,6 +85,35 @@ const ExercisePicker = (function () {
     return muscleCropSvg(crop.view, crop.box, crop.keys);
   }
 
+  // Same idea as MOVEMENT_CROPS_ above, one level deeper: a tight crop over
+  // just THIS body part's own shape(s), whichever view (front/back) actually
+  // has it — e.g. triceps only exists on the back view, biceps only on the
+  // front. "Full Body" (Conditioning's only body part) has no single muscle
+  // to single out, so it falls through to CONDITIONING_ICON_ like its
+  // movement tile does.
+  const BODY_PART_CROPS_ = {
+    Chest: { view: "front", box: "55 70 90 75", keys: ["chest"] },
+    Shoulders: { view: "front", box: "35 65 130 60", keys: ["delts"] },
+    Triceps: { view: "back", box: "30 100 140 60", keys: ["triceps"] },
+    Traps: { view: "back", box: "45 50 110 90", keys: ["traps"] },
+    Back: { view: "back", box: "48 90 105 100", keys: ["lats"] },
+    Biceps: { view: "front", box: "30 100 140 60", keys: ["biceps"] },
+    Forearms: { view: "front", box: "20 160 160 70", keys: ["forearms"] },
+    Quads: { view: "front", box: "55 245 90 100", keys: ["quads"] },
+    Hamstrings: { view: "back", box: "55 255 90 100", keys: ["hamstrings"] },
+    Glutes: { view: "back", box: "55 212 90 65", keys: ["glutes"] },
+    Calves: { view: "back", box: "50 335 100 85", keys: ["calves"] },
+    Abs: { view: "front", box: "65 110 70 105", keys: ["abs"] },
+    Obliques: { view: "front", box: "55 110 90 100", keys: ["obliques"] },
+    "Lower Back": { view: "back", box: "65 150 70 65", keys: ["lowerback"] },
+  };
+
+  function bodyPartIconHtml_(bodyPart) {
+    const crop = BODY_PART_CROPS_[bodyPart];
+    if (!crop || typeof muscleCropSvg === "undefined") return CONDITIONING_ICON_;
+    return muscleCropSvg(crop.view, crop.box, crop.keys);
+  }
+
   let overlay, titleEl, backBtn, closeBtn, bodyEl;
   let onChoose = null;
   let exercisesCache = null; // { rows, col } from fetchExercises(), fetched once per open()
@@ -158,17 +187,21 @@ const ExercisePicker = (function () {
   function showBodyPartStep(movement) {
     const parts = BODY_PARTS_BY_MOVEMENT[movement] || [];
     const tiles = parts
-      .map(
-        (bp) =>
-          `<button class="exercise-picker__tile" type="button" data-bodypart="${esc(bp)}">` +
-          `<span class="exercise-picker__tile-dot" style="background:${colorFor(bp)}"></span>` +
-          `<span class="exercise-picker__tile-label">${esc(bp)}</span>` +
+      .map((bp) => {
+        const color = colorFor(bp);
+        return (
+          `<button class="exercise-picker__tile exercise-picker__tile--movement" type="button" data-bodypart="${esc(bp)}" style="background:${color}14; border-color:${color}40">` +
+          `<span class="exercise-picker__tile-icon--big">${bodyPartIconHtml_(bp)}</span>` +
+          `<span class="exercise-picker__tile-label exercise-picker__tile-label--big">${esc(bp)}</span>` +
           "</button>"
-      )
+        );
+      })
       .join("");
-    render(movement, `<div class="exercise-picker__grid">${tiles}</div>`, showMovementStep);
+    render(movement, `<div class="exercise-picker__grid exercise-picker__grid--fill">${tiles}</div>`, showMovementStep);
     bodyEl.querySelectorAll("[data-bodypart]").forEach((btn) => {
       btn.addEventListener("click", () => showExerciseStep(movement, btn.dataset.bodypart));
+      const svg = btn.querySelector("svg[data-crop-keys]");
+      if (svg && typeof paintMuscleCrop === "function") paintMuscleCrop(svg);
     });
   }
 

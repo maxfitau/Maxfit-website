@@ -539,6 +539,32 @@ body {
   color: var(--grey-light);
 }
 
+/* Superset (set in the builder's "Superset with next" toggle): a left
+   accent bar runs the length of the whole chain, and the gap/divider
+   between its own members is closed so they read as one joined block —
+   same idea as the builder's own linked-row treatment, adapted to this
+   page's border-bottom-divider list instead of individually-bordered rows. */
+.workout__exercise--superset {
+  border-left: 3px solid var(--red);
+  padding-left: 14px;
+}
+
+.workout__exercise--superset-link {
+  border-bottom: none;
+  padding-bottom: 10px;
+  margin-bottom: -22px;
+}
+
+.workout__superset-label {
+  display: block;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 12px;
+  color: var(--red);
+}
+
 .workout__add-set {
   align-self: flex-start;
   font-family: var(--font-head);

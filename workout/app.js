@@ -574,6 +574,20 @@ function addExerciseSection(ctx, exercise, opts) {
   section.className = "workout__exercise";
   if (isExtra) section.classList.add("workout__exercise--extra");
 
+  // Superset grouping (builder.js's "Superset with next" toggle): a chain of
+  // 2+ exercises done back-to-back with minimal rest. --superset marks every
+  // member (the left accent bar); --superset-link additionally closes the
+  // gap to whichever section renders right after it, so the chain reads as
+  // one joined block instead of separate cards.
+  if (opts && opts.inSuperset) section.classList.add("workout__exercise--superset");
+  if (opts && opts.linksToNext) section.classList.add("workout__exercise--superset-link");
+  if (opts && opts.supersetLabel) {
+    const supersetLabel = document.createElement("span");
+    supersetLabel.className = "workout__superset-label";
+    supersetLabel.textContent = "Superset — back to back, minimal rest";
+    section.appendChild(supersetLabel);
+  }
+
   const head = document.createElement("div");
   head.className = "workout__exercise-head";
 
@@ -997,12 +1011,19 @@ function renderWorkout(shared, workoutName, exercises) {
   els.list.appendChild(ctx.addExerciseWrap);
 
   const assignedKeys = new Set();
-  for (const exercise of exercises) {
+  exercises.forEach((exercise, i) => {
     const lower = exercise.name.toLowerCase();
     assignedKeys.add(lower);
     const saved = savedByExercise.get(lower);
-    addExerciseSection(ctx, exercise, { isExtra: false, savedSets: saved ? saved.sets : null });
-  }
+    const prevLinksHere = i > 0 && exercises[i - 1].superset;
+    addExerciseSection(ctx, exercise, {
+      isExtra: false,
+      savedSets: saved ? saved.sets : null,
+      inSuperset: Boolean(exercise.superset || prevLinksHere),
+      linksToNext: Boolean(exercise.superset),
+      supersetLabel: Boolean(exercise.superset && !prevLinksHere), // first exercise of the chain only
+    });
+  });
 
   // Extras they'd saved earlier TODAY come back with the rest of today's
   // session. (Nothing from a previous workout carries over — those live in
@@ -1235,6 +1256,7 @@ async function init() {
         workoutOrder: workout.col.workoutOrder >= 0 ? Number(r[workout.col.workoutOrder]) : NaN,
         note: workout.col.notes >= 0 ? String(r[workout.col.notes] || "").trim() : "",
         workoutNote: workout.col.workoutNotes >= 0 ? String(r[workout.col.workoutNotes] || "").trim() : "",
+        superset: workout.col.superset >= 0 && String(r[workout.col.superset] || "").trim().toUpperCase() === "Y",
       }))
       .filter((ex) => ex.name && ex.sets > 0);
 

@@ -32,7 +32,7 @@ const GROCERY_SHEET_NAME = "Grocery Items";
 // Changes whenever this file does, and is shown when you open the deployed
 // URL in a browser (see doGet) — the quick way to tell whether a redeploy
 // actually took, instead of guessing from behaviour.
-const BACKEND_VERSION = "2026-10-02b";
+const BACKEND_VERSION = "2026-10-04a";
 
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -91,7 +91,7 @@ function backfillTokens() {
  */
 function setupWorkoutSheets() {
   getOrCreateSheetByName_(EXERCISES_SHEET_NAME, ["Name", "Movement", "Body Part", "Default Starting Weight (kg)"]);
-  getOrCreateSheetByName_(WORKOUT_EXERCISES_SHEET_NAME, ["Client", "Workout Name", "Order", "Exercise", "Target Sets", "Target Reps", "Days", "Workout Order", "Exercise Notes", "Workout Notes"]);
+  getOrCreateSheetByName_(WORKOUT_EXERCISES_SHEET_NAME, ["Client", "Workout Name", "Order", "Exercise", "Target Sets", "Target Reps", "Days", "Workout Order", "Exercise Notes", "Workout Notes", "Superset"]);
   getOrCreateSheetByName_(LOGGED_SETS_SHEET_NAME, ["Client", "Workout Name", "Exercise", "Set Number", "Weight (kg)", "Reps", "Date", "Timestamp", "Notes"]);
   Logger.log("Workout sheets ready.");
 }
@@ -1275,6 +1275,7 @@ function handleAssignWorkout_(payload) {
     workoutOrder: findColumn_(header, "Workout Order"),
     exerciseNotes: findColumn_(header, "Exercise Notes"),
     workoutNotes: findColumn_(header, "Workout Notes"),
+    superset: findColumn_(header, "Superset"),
   };
 
   // A resave keeps this workout's existing position in the chip/picker
@@ -1317,6 +1318,12 @@ function handleAssignWorkout_(payload) {
     // The workout-level note is repeated on every row, same as Days.
     row[col.exerciseNotes] = cleanNote_(ex && ex.note, 300);
     row[col.workoutNotes] = workoutNote;
+    // "Y" means this exercise and the NEXT one (by Order) are a superset —
+    // done back-to-back with minimal rest before moving on. Chains for a
+    // tri-set etc. by just marking each exercise but the last in the chain.
+    // Lives on the exercise, not a separate group id, so reordering rows in
+    // the builder can't leave a stale/mismatched group label behind.
+    if (col.superset >= 0) row[col.superset] = (ex && ex.superset) ? "Y" : "";
     return row;
   });
   sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, header.length).setValues(newRows);
@@ -1534,7 +1541,7 @@ function ensureLoggedSetsColumns_(sheet) {
  * workout is saved rather than needing a manual migration.
  */
 function ensureWorkoutExercisesColumns_(sheet) {
-  return ensureColumns_(sheet, ["Exercise Notes", "Workout Notes"]);
+  return ensureColumns_(sheet, ["Exercise Notes", "Workout Notes", "Superset"]);
 }
 
 function ensureExerciseColumns_(sheet) {

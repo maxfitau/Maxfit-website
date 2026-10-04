@@ -130,6 +130,50 @@ function buildExerciseControl(exercise) {
   return { control: wrap, nameValueInput };
 }
 
+/**
+ * The "+ Superset with next" toggle at the bottom of a row — lives inside
+ * the row (not a separate element between rows) so it travels automatically
+ * with drag-reordering and the up/down buttons, same as everything else on
+ * the row. Means "this exercise and whichever one ends up right after it
+ * are done back-to-back, minimal rest" — chains naturally for a tri-set by
+ * marking every exercise but the last in the group, and never goes stale
+ * when rows are reordered since it's not a separate named group to keep in
+ * sync. The last row in the list never gets to be "linked to next" (there
+ * is no next) — refreshSupersetAvailability_ keeps that in sync.
+ */
+function buildSupersetToggle_(row, initial) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "builder__superset-toggle";
+  row.dataset.superset = initial ? "true" : "false";
+
+  function render() {
+    const on = row.dataset.superset === "true";
+    btn.classList.toggle("builder__superset-toggle--on", on);
+    btn.textContent = on ? "⚡ Superset with next — tap to unlink" : "+ Superset with next exercise";
+  }
+  render();
+
+  btn.addEventListener("click", () => {
+    row.dataset.superset = row.dataset.superset === "true" ? "false" : "true";
+    render();
+  });
+
+  return btn;
+}
+
+/** Hides the superset toggle on whichever row is currently last — there's no "next" for it to link to. Call after any add/remove/reorder. */
+function refreshSupersetAvailability_() {
+  const rows = Array.from(els.rows.children);
+  rows.forEach((row, i) => {
+    const btn = row.querySelector(".builder__superset-toggle");
+    if (!btn) return;
+    const isLast = i === rows.length - 1;
+    btn.hidden = isLast;
+    if (isLast) row.dataset.superset = "false"; // nothing to link to — don't silently save a stale "true"
+  });
+}
+
 function addRow(exercise) {
   const row = document.createElement("div");
   row.className = "builder__row";
@@ -176,6 +220,7 @@ function addRow(exercise) {
   upButton.addEventListener("click", () => {
     const prev = row.previousElementSibling;
     if (prev) els.rows.insertBefore(row, prev);
+    refreshSupersetAvailability_();
   });
 
   const downButton = document.createElement("button");
@@ -186,6 +231,7 @@ function addRow(exercise) {
   downButton.addEventListener("click", () => {
     const next = row.nextElementSibling;
     if (next) els.rows.insertBefore(next, row);
+    refreshSupersetAvailability_();
   });
 
   moveWrap.appendChild(upButton);
@@ -196,7 +242,12 @@ function addRow(exercise) {
   removeButton.className = "builder__row-remove";
   removeButton.textContent = "×";
   removeButton.setAttribute("aria-label", "Remove exercise");
-  removeButton.addEventListener("click", () => row.remove());
+  removeButton.addEventListener("click", () => {
+    row.remove();
+    refreshSupersetAvailability_();
+  });
+
+  const supersetToggle = buildSupersetToggle_(row, exercise && exercise.superset);
 
   row.appendChild(nameControl);
   row.appendChild(setsInput);
@@ -205,11 +256,13 @@ function addRow(exercise) {
   row.appendChild(moveWrap);
   row.appendChild(removeButton);
   row.appendChild(tipInput);
-  // Last, and hidden — keeps the 7 elements above in the exact DOM order the
+  row.appendChild(supersetToggle);
+  // Last, and hidden — keeps the elements above in the exact DOM order the
   // CSS's nth-child mobile layout (builder.css) already expects, and keeps
   // the picked name out of the save handler's positional input lookup below.
   row.appendChild(nameValueInput);
   els.rows.appendChild(row);
+  refreshSupersetAvailability_();
 }
 
 /**
@@ -248,6 +301,7 @@ function makeRowDraggable(row, handle) {
       handle.removeEventListener("pointermove", onMove);
       handle.removeEventListener("pointerup", onUp);
       handle.removeEventListener("pointercancel", onUp);
+      refreshSupersetAvailability_();
     }
 
     handle.addEventListener("pointermove", onMove);
@@ -399,6 +453,7 @@ async function loadClientWorkouts(clientSlug) {
             workoutOrder: col.workoutOrder >= 0 ? Number(r[col.workoutOrder]) : NaN,
             note: col.notes >= 0 ? String(r[col.notes] || "").trim() : "",
             workoutNote: col.workoutNotes >= 0 ? String(r[col.workoutNotes] || "").trim() : "",
+            superset: col.superset >= 0 && String(r[col.superset] || "").trim().toUpperCase() === "Y",
           };
         })
     );
@@ -612,6 +667,7 @@ els.saveButton.addEventListener("click", async () => {
         sets: Number(setsInput.value),
         reps: repsInput.value.trim(),
         note: tipInput ? tipInput.value.trim() : "",
+        superset: row.dataset.superset === "true",
       };
     })
     .filter((ex) => ex.name);

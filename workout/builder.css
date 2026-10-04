@@ -290,6 +290,55 @@
   border-color: var(--red);
 }
 
+/* Superset: the toggle itself (full-width, own row — see builder.js), plus
+   the visual "joined pair" treatment on a linked row and whichever row
+   lands right after it. A tinted band with no seam between them reads as
+   "these go together" without needing a bracket graphic. */
+.builder__row .builder__superset-toggle {
+  grid-column: 1 / -1;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 11.5px;
+  color: var(--dim);
+  background: transparent;
+  border: 1px dashed var(--line-strong, var(--line));
+  border-radius: var(--radius-sm);
+  padding: 9px;
+  cursor: pointer;
+}
+
+.builder__row .builder__superset-toggle:active {
+  border-color: var(--red);
+  color: var(--white);
+}
+
+.builder__row .builder__superset-toggle--on {
+  border-style: solid;
+  border-color: var(--red);
+  color: var(--white);
+  background: rgba(224, 0, 0, 0.1);
+}
+
+.builder__row .builder__superset-toggle[hidden] {
+  display: none;
+}
+
+.builder__row[data-superset="true"] {
+  position: relative;
+  background: rgba(224, 0, 0, 0.06);
+  border-radius: var(--radius-sm);
+  padding: 10px 10px 0;
+  margin-bottom: -10px;
+}
+
+.builder__row[data-superset="true"] + .builder__row {
+  background: rgba(224, 0, 0, 0.06);
+  border-radius: var(--radius-sm);
+  padding: 10px 10px 10px;
+}
+
 .builder__add {
   font-family: var(--font-head);
   font-weight: 700;
@@ -358,6 +407,12 @@
     padding-bottom: 0;
   }
 
+  /* No seam between a linked pair, even with the mobile divider lines on. */
+  .builder__row[data-superset="true"] {
+    border-bottom: none;
+    padding-bottom: 10px;
+  }
+
   .builder__row > :nth-child(1) { grid-column: 1 / -1; grid-row: 1; }
   .builder__row > :nth-child(2) { grid-column: 1; grid-row: 2; }
   .builder__row > :nth-child(3) { grid-column: 2; grid-row: 2; }
@@ -365,6 +420,7 @@
   .builder__row > :nth-child(5) { grid-column: 5; grid-row: 2; }
   .builder__row > :nth-child(6) { grid-column: 6; grid-row: 2; }
   .builder__row .builder__row-tip { grid-column: 1 / -1; grid-row: 3; }
+  .builder__row .builder__superset-toggle { grid-column: 1 / -1; grid-row: 4; }
 }
 
 /* The smallest phones: trim the fixed columns so the row still fits inside the card. */
