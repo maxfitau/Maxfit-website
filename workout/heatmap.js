@@ -37,11 +37,13 @@ function heatDateSortKey_(raw) {
 /**
  * `weighted` ({ group: primary*1 + secondary*0.5 }) for `memberId` over
  * `range` ("today" | "week") — unchanged, still what the heat figure paints
- * from. `weightedPrimary`/`weightedSecondary` (2026-10-04, for the This
- * Week breakdown list's red/orange/yellow bar) are the same data kept
- * SEPARATE instead of pre-blended, so the list can show how much of a
- * muscle's week was direct work vs. just along for the ride. Unknown
- * exercises (not in the Exercises sheet, or no muscle data yet) are
+ * from (secondary counts for less since it's along for the ride, not the
+ * muscle actually being trained). `primaryCount`/`secondaryCount` (2026-10-04)
+ * are plain, unweighted tallies of how many sets actually hit each muscle
+ * each way — what the This Week breakdown list's red/orange bar shows,
+ * since that list is meant to read as literal set counts ("3 direct sets,
+ * plus 4 more where it was a secondary mover"), not an intensity score.
+ * Unknown exercises (not in the Exercises sheet, or no muscle data yet) are
  * silently skipped — same "don't blow up on gaps" approach as the rest of
  * the muscle-data integration.
  */
@@ -65,8 +67,8 @@ async function heatmapMuscleData(memberId, range) {
   const toKey = heatDateSortKey_(today);
 
   const weighted = {};
-  const weightedPrimary = {};
-  const weightedSecondary = {};
+  const primaryCount = {};
+  const secondaryCount = {};
   let setsCounted = 0;
   setRows.forEach((row) => {
     if (String(setCol.client >= 0 ? row[setCol.client] : "").trim().toLowerCase() !== clientSlug) return;
@@ -84,14 +86,14 @@ async function heatmapMuscleData(memberId, range) {
     muscles.primary.forEach((m) => {
       const g = muscleGroupOf(m);
       weighted[g] = (weighted[g] || 0) + 1;
-      weightedPrimary[g] = (weightedPrimary[g] || 0) + 1;
+      primaryCount[g] = (primaryCount[g] || 0) + 1;
     });
     muscles.secondary.forEach((m) => {
       const g = muscleGroupOf(m);
       weighted[g] = (weighted[g] || 0) + 0.5;
-      weightedSecondary[g] = (weightedSecondary[g] || 0) + 0.5;
+      secondaryCount[g] = (secondaryCount[g] || 0) + 1;
     });
   });
 
-  return { weighted, weightedPrimary, weightedSecondary, setsCounted };
+  return { weighted, primaryCount, secondaryCount, setsCounted };
 }

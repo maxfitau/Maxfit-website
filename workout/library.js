@@ -205,14 +205,14 @@ async function loadHeat(range) {
   const svgs = libEls.heatFigures.querySelectorAll("svg.muscle-figure");
 
   let weighted = {};
-  let weightedPrimary = {};
-  let weightedSecondary = {};
+  let primaryCount = {};
+  let secondaryCount = {};
   let setsCounted = 0;
   try {
     const data = await heatmapMuscleData(libMemberId, range);
     weighted = data.weighted;
-    weightedPrimary = data.weightedPrimary;
-    weightedSecondary = data.weightedSecondary;
+    primaryCount = data.primaryCount;
+    secondaryCount = data.secondaryCount;
     setsCounted = data.setsCounted;
   } catch (err) {
     // A quiet, all-grey figure beats a crash — the breakdown list below
@@ -226,7 +226,7 @@ async function loadHeat(range) {
     .filter((k) => weighted[k] > 0)
     .sort((a, b) => weighted[b] - weighted[a]);
   libEls.heatBreakdown.innerHTML = entries
-    .map((k) => range === "week" ? heatWeekRowHtml_(k, weightedPrimary[k] || 0, weightedSecondary[k] || 0) : heatTodayRowHtml_(k, weighted[k]))
+    .map((k) => range === "week" ? heatWeekRowHtml_(k, primaryCount[k] || 0, secondaryCount[k] || 0) : heatTodayRowHtml_(k, weighted[k]))
     .join("");
 }
 
@@ -240,36 +240,29 @@ function heatTodayRowHtml_(key, n) {
     </div>`;
 }
 
-// How many weighted sets (primary counts 1, secondary counts 0.5 — same
-// weighting as everywhere else this app counts a set) reads as "hit your
-// target" for a muscle's week. One number for every muscle, not a table of
-// per-muscle research targets — Max's own example number, easy to retune
-// here if he wants it different later.
-const HEAT_WEEKLY_TARGET_ = 11;
+// Same "how long is the bar" scale the Today row already uses below (10 sets
+// = a full bar) — reused here rather than invented fresh, so switching the
+// Today/This Week toggle doesn't change what a given bar length means.
+const HEAT_BAR_FULL_SETS_ = 10;
 
 /**
- * This Week: a stacked bar against HEAT_WEEKLY_TARGET_ — red = primary sets,
- * orange = secondary sets (both as a fraction of the target), yellow = the
- * gap still left to reach it. Hitting or passing the target just fills the
- * bar red+orange with no yellow, capped at 100% width so a big week doesn't
- * overflow the row.
+ * This Week: a plain stacked bar of literal set counts — red = how many
+ * sets hit this muscle as the PRIMARY mover, orange = how many more hit it
+ * as a SECONDARY one (e.g. 3 direct sets of curls, plus 4 more where it
+ * was along for the ride in pull-ups). No target, no fraction — just the
+ * two real numbers, which is also what the "3+4" label shows.
  */
 function heatWeekRowHtml_(key, primaryN, secondaryN) {
-  const total = primaryN + secondaryN * 0.5;
-  const pct = (n) => Math.max(0, Math.min(100, (n / HEAT_WEEKLY_TARGET_) * 100));
-  const primaryPct = pct(primaryN);
-  const secondaryPct = pct(primaryN + secondaryN * 0.5) - primaryPct;
-  const gapPct = Math.max(0, 100 - primaryPct - secondaryPct);
-  const fmt = (n) => (n % 1 === 0 ? n : n.toFixed(1));
+  const primaryPct = Math.max(0, Math.min(100, (primaryN / HEAT_BAR_FULL_SETS_) * 100));
+  const secondaryPct = Math.max(0, Math.min(100 - primaryPct, (secondaryN / HEAT_BAR_FULL_SETS_) * 100));
   return `
     <div class="lib-heat-row">
       <span class="lib-heat-row__name">${libEsc(muscleLabel_(key))}</span>
       <span class="lib-heat-row__track">
         <span class="lib-heat-row__fill lib-heat-row__fill--primary" style="width:${primaryPct}%"></span>
         <span class="lib-heat-row__fill lib-heat-row__fill--secondary" style="width:${secondaryPct}%"></span>
-        <span class="lib-heat-row__fill lib-heat-row__fill--gap" style="width:${gapPct}%"></span>
       </span>
-      <span class="lib-heat-row__num">${fmt(total)}/${HEAT_WEEKLY_TARGET_}</span>
+      <span class="lib-heat-row__num">${primaryN}+${secondaryN}</span>
     </div>`;
 }
 
