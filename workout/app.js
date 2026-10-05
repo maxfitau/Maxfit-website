@@ -559,6 +559,103 @@ function buildSetRow(exercise, setNumber, initial, onSave) {
 // extra fetch or needing to become async itself.
 let exerciseMusclesByName_ = {};
 
+/**
+ * The "Muscles Worked" panel at the top of the list (2026-10-05) — the same
+ * live muscle-tracking concept as the coach builder's side panel
+ * (refreshMuscleLoadPanel_, workout/builder.js) and the Muscles tab's
+ * heatmap (workout/heatmap.js), applied here so a client can see what THIS
+ * session is actually training as they go. Unlike either of those: it
+ * counts real SAVED sets (ctx.collectSets()), not planned/target sets or
+ * logged history, so it reads as "what have I done so far today" and
+ * grows as the workout happens. Built once per renderWorkout; repainted by
+ * refreshMuscleLoadSection_ below, piggybacking on ctx.updateSummary
+ * (buildLogSection) — the same existing hook that already fires after
+ * every set save and once at the end of the initial render, so a reload
+ * with sets restored from today's draft shows the real state immediately,
+ * not just after the next new save.
+ */
+function buildMuscleLoadSection(ctx) {
+  const wrap = document.createElement("div");
+  wrap.className = "workout__muscle-load";
+
+  const head = document.createElement("div");
+  head.className = "workout__muscle-load-head";
+  const label = document.createElement("span");
+  label.className = "card__label";
+  label.textContent = "Muscles Worked";
+  const sub = document.createElement("span");
+  sub.className = "workout__muscle-load-sub";
+  sub.textContent = "this session";
+  head.appendChild(label);
+  head.appendChild(sub);
+  wrap.appendChild(head);
+
+  const figs = document.createElement("div");
+  figs.className = "workout__muscle-load-figs";
+  wrap.appendChild(figs);
+
+  const list = document.createElement("div");
+  list.className = "workout__muscle-load-list";
+  wrap.appendChild(list);
+
+  ctx.muscleLoadFigs = figs;
+  ctx.muscleLoadList = list;
+  return wrap;
+}
+
+// Same "fully red" scale as the builder's side panel — a session, not a week.
+const MUSCLE_LOAD_CAP_ = 7;
+
+/** One row of the breakdown — same red/orange "primary+secondary SET count" shape as the builder's side panel (builderHeatRowHtml_, workout/builder.js) and the Muscles tab's weekly list (heatWeekRowHtml_, workout/library.js). */
+function muscleLoadRowHtml_(key, primaryN, secondaryN) {
+  const primaryPct = Math.max(0, Math.min(100, (primaryN / MUSCLE_LOAD_CAP_) * 100));
+  const secondaryPct = Math.max(0, Math.min(100 - primaryPct, (secondaryN / MUSCLE_LOAD_CAP_) * 100));
+  return `
+    <div class="workout__muscle-load-row">
+      <span class="workout__muscle-load-row__name">${muscleLabel_(key)}</span>
+      <span class="workout__muscle-load-row__track">
+        <span class="workout__muscle-load-row__fill--primary" style="width:${primaryPct}%"></span>
+        <span class="workout__muscle-load-row__fill--secondary" style="width:${secondaryPct}%"></span>
+      </span>
+      <span class="workout__muscle-load-row__num">${primaryN}+${secondaryN}</span>
+    </div>`;
+}
+
+/** Repaints ctx's Muscles Worked panel from the sets actually saved so far this session — primary=1/secondary=0.5 per set, same weighting as everywhere else this app scores a set. */
+function refreshMuscleLoadSection_(ctx) {
+  if (!ctx.muscleLoadFigs) return;
+
+  const weighted = {};
+  const primaryCount = {};
+  const secondaryCount = {};
+  ctx.collectSets().forEach((s) => {
+    const muscles = exerciseMusclesByName_[String(s.exercise || "").toLowerCase()];
+    if (!muscles) return;
+    muscles.primary.forEach((m) => {
+      const g = muscleGroupOf(m);
+      weighted[g] = (weighted[g] || 0) + 1;
+      primaryCount[g] = (primaryCount[g] || 0) + 1;
+    });
+    muscles.secondary.forEach((m) => {
+      const g = muscleGroupOf(m);
+      weighted[g] = (weighted[g] || 0) + 0.5;
+      secondaryCount[g] = (secondaryCount[g] || 0) + 1;
+    });
+  });
+
+  const frontSvg = muscleFigureSvg("front", "muscleLoadFrontTitle");
+  const backSvg = muscleFigureSvg("back", "muscleLoadBackTitle");
+  ctx.muscleLoadFigs.innerHTML =
+    `<div class="workout__muscle-load-fig-col">${frontSvg}<span class="workout__muscle-load-fig-caption">Front</span></div>` +
+    `<div class="workout__muscle-load-fig-col">${backSvg}<span class="workout__muscle-load-fig-caption">Back</span></div>`;
+  ctx.muscleLoadFigs.querySelectorAll("svg.muscle-figure").forEach((svg) => paintMuscleHeat(svg, weighted, MUSCLE_LOAD_CAP_));
+
+  const entries = Object.keys(weighted).sort((a, b) => weighted[b] - weighted[a]);
+  ctx.muscleLoadList.innerHTML = entries.length
+    ? entries.map((k) => muscleLoadRowHtml_(k, primaryCount[k] || 0, secondaryCount[k] || 0)).join("")
+    : '<p class="workout__muscle-load-empty">Save a set to see what this session trains</p>';
+}
+
 function addExerciseSection(ctx, exercise, opts) {
   const { clientSlug, setRows, setCol, startingWeights } = ctx;
   const isExtra = Boolean(opts && opts.isExtra);
@@ -827,6 +924,10 @@ function buildLogSection(ctx) {
     summary.textContent = count
       ? `${count} set${count === 1 ? "" : "s"} saved — tap Log Workout when you're done.`
       : "Tap Save after each set so nothing gets lost.";
+    // Piggybacks on this hook rather than adding a new call site — it
+    // already fires at exactly the right moments (every save, and once at
+    // the end of the initial render after any draft sets are restored).
+    refreshMuscleLoadSection_(ctx);
   };
   ctx.updateSummary();
 
@@ -1002,6 +1103,8 @@ function renderWorkout(shared, workoutName, exercises) {
     if (!before || !after || after.rev !== before.rev) els.done.hidden = true; // changed since it was logged — needs logging again
     ctx.updateSummary();
   };
+
+  els.list.appendChild(buildMuscleLoadSection(ctx));
 
   // The coach's note for the whole workout, if there is one, sits above the exercises.
   const coachNote = shared.workoutNotes ? shared.workoutNotes[workoutName] : "";

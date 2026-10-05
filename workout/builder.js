@@ -478,33 +478,53 @@ async function loadClientList() {
 // built once from fetchExercises() — the Workout Exercises tab only stores
 // an exercise's NAME against a client, not its category or muscles, so
 // re-opening a saved workout needs this lookup to show the same colour dot
-// and muscle chips a freshly-picked exercise gets.
-let exerciseCategoryByName_ = null;
+// and muscle data a freshly-picked exercise gets.
+//
+// Cached as the in-flight PROMISE, not the (eventually-filled) map itself
+// (2026-10-05 fix) — loadClientWorkouts below calls exerciseCategoryFor_
+// for every exercise in the workout at once, via Promise.all, so all of
+// them run their first synchronous line before any of them finish loading.
+// Caching the plain object meant only the very first caller actually
+// waited for fetchExercises(): every other exercise in the SAME workout
+// saw a cache that already existed but was still empty, and silently got
+// EXERCISE_CATEGORY_FALLBACK_ — no muscles, no colour dot. A workout's
+// first exercise always looked right; everything after it never did.
+// Caching the promise itself means every concurrent caller awaits the
+// exact same fetch and sees the real, fully-populated map.
+let exerciseCategoryByNamePromise_ = null;
 const EXERCISE_CATEGORY_FALLBACK_ = { movement: "", bodyPart: "", primaryMuscles: [], secondaryMuscles: [], bestView: "" };
 
-async function exerciseCategoryFor_(name) {
-  if (!exerciseCategoryByName_) {
-    exerciseCategoryByName_ = {};
-    try {
-      const { rows, col } = await fetchExercises();
-      if (col.name >= 0) {
-        for (const r of rows) {
-          const n = String(r[col.name] || "").trim();
-          if (!n) continue;
-          exerciseCategoryByName_[n.toLowerCase()] = {
-            movement: col.movement >= 0 ? String(r[col.movement] || "").trim() : "",
-            bodyPart: col.bodyPart >= 0 ? String(r[col.bodyPart] || "").trim() : "",
-            primaryMuscles: col.primaryMuscles >= 0 ? parseMuscleKeys(r[col.primaryMuscles]) : [],
-            secondaryMuscles: col.secondaryMuscles >= 0 ? parseMuscleKeys(r[col.secondaryMuscles]) : [],
-            bestView: col.bestView >= 0 ? String(r[col.bestView] || "").trim() : "",
-          };
+function loadExerciseCategoryMap_() {
+  if (!exerciseCategoryByNamePromise_) {
+    exerciseCategoryByNamePromise_ = (async () => {
+      const map = {};
+      try {
+        const { rows, col } = await fetchExercises();
+        if (col.name >= 0) {
+          for (const r of rows) {
+            const n = String(r[col.name] || "").trim();
+            if (!n) continue;
+            map[n.toLowerCase()] = {
+              movement: col.movement >= 0 ? String(r[col.movement] || "").trim() : "",
+              bodyPart: col.bodyPart >= 0 ? String(r[col.bodyPart] || "").trim() : "",
+              primaryMuscles: col.primaryMuscles >= 0 ? parseMuscleKeys(r[col.primaryMuscles]) : [],
+              secondaryMuscles: col.secondaryMuscles >= 0 ? parseMuscleKeys(r[col.secondaryMuscles]) : [],
+              bestView: col.bestView >= 0 ? String(r[col.bestView] || "").trim() : "",
+            };
+          }
         }
+      } catch (err) {
+        // Lookup stays empty — rows just render without a colour dot or muscle data.
       }
-    } catch (err) {
-      // Lookup stays empty — rows just render without a colour dot or muscle chips.
-    }
+      return map;
+    })();
   }
-  return exerciseCategoryByName_[name.trim().toLowerCase()] || EXERCISE_CATEGORY_FALLBACK_;
+  return exerciseCategoryByNamePromise_;
+}
+
+async function exerciseCategoryFor_(name) {
+  const map = await loadExerciseCategoryMap_();
+  return map[name.trim().toLowerCase()] || EXERCISE_CATEGORY_FALLBACK_;
 }
 
 /** Loads every workout name this client already has, grouped into { lowercaseName: { name, exercises } }. */
