@@ -607,17 +607,23 @@ function buildMuscleLoadSection(ctx) {
 const MUSCLE_LOAD_CAP_ = 7;
 
 /** One row of the breakdown — same red/orange "primary+secondary SET count" shape as the builder's side panel (builderHeatRowHtml_, workout/builder.js) and the Muscles tab's weekly list (heatWeekRowHtml_, workout/library.js). */
+/** Each count sits directly under its own bar segment (2026-10-05, was a combined "3+5" off to the side) so it's unambiguous which number is which. A zero-count side renders no number — an empty segment already shows zero. */
 function muscleLoadRowHtml_(key, primaryN, secondaryN) {
   const primaryPct = Math.max(0, Math.min(100, (primaryN / MUSCLE_LOAD_CAP_) * 100));
   const secondaryPct = Math.max(0, Math.min(100 - primaryPct, (secondaryN / MUSCLE_LOAD_CAP_) * 100));
   return `
     <div class="workout__muscle-load-row">
       <span class="workout__muscle-load-row__name">${muscleLabel_(key)}</span>
-      <span class="workout__muscle-load-row__track">
-        <span class="workout__muscle-load-row__fill--primary" style="width:${primaryPct}%"></span>
-        <span class="workout__muscle-load-row__fill--secondary" style="width:${secondaryPct}%"></span>
+      <span class="workout__muscle-load-row__bar">
+        <span class="workout__muscle-load-row__track">
+          <span class="workout__muscle-load-row__fill--primary" style="width:${primaryPct}%"></span>
+          <span class="workout__muscle-load-row__fill--secondary" style="width:${secondaryPct}%"></span>
+        </span>
+        <span class="workout__muscle-load-row__nums">
+          ${primaryN > 0 ? `<span class="workout__muscle-load-row__segnum--primary" style="width:${primaryPct}%">${primaryN}</span>` : ""}
+          ${secondaryN > 0 ? `<span class="workout__muscle-load-row__segnum--secondary" style="width:${secondaryPct}%">${secondaryN}</span>` : ""}
+        </span>
       </span>
-      <span class="workout__muscle-load-row__num">${primaryN}+${secondaryN}</span>
     </div>`;
 }
 
@@ -631,15 +637,19 @@ function refreshMuscleLoadSection_(ctx) {
   ctx.collectSets().forEach((s) => {
     const muscles = exerciseMusclesByName_[String(s.exercise || "").toLowerCase()];
     if (!muscles) return;
-    muscles.primary.forEach((m) => {
-      const g = muscleGroupOf(m);
-      weighted[g] = (weighted[g] || 0) + 1;
-      primaryCount[g] = (primaryCount[g] || 0) + 1;
+    // Keyed by whatever the exercise data actually says — a fine key
+    // ("delts-front") if it has one, a broad one ("delts") if it doesn't —
+    // not folded into the broad group, so front/side/rear delt (and any
+    // other fine-grained region) show as their own row (2026-10-05).
+    // De-duplicated against the raw key list — belt and suspenders against
+    // the same key appearing twice; harmless either way.
+    new Set(muscles.primary).forEach((k) => {
+      weighted[k] = (weighted[k] || 0) + 1;
+      primaryCount[k] = (primaryCount[k] || 0) + 1;
     });
-    muscles.secondary.forEach((m) => {
-      const g = muscleGroupOf(m);
-      weighted[g] = (weighted[g] || 0) + 0.5;
-      secondaryCount[g] = (secondaryCount[g] || 0) + 1;
+    new Set(muscles.secondary).forEach((k) => {
+      weighted[k] = (weighted[k] || 0) + 0.5;
+      secondaryCount[k] = (secondaryCount[k] || 0) + 1;
     });
   });
 

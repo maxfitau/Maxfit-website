@@ -51,6 +51,13 @@
   min-height: 32px;
 }
 
+/* This Week's rows carry their own count(s) under the bar instead of in a
+   plain right-hand number column, so they don't need that 3rd column. */
+.lib-heat-row--week {
+  grid-template-columns: 104px 1fr;
+  align-items: flex-start;
+}
+
 .lib-heat-row + .lib-heat-row {
   margin-top: 8px;
 }
@@ -88,6 +95,39 @@
 
 .lib-heat-row__fill--secondary {
   background: #e08a00;
+}
+
+/* This Week only: the bar + its own count(s) stacked together, so the
+   numbers below line up under the segment they belong to. */
+.lib-heat-row__bar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lib-heat-row__nums {
+  display: flex;
+  height: 14px;
+}
+
+.lib-heat-row__segnum--primary,
+.lib-heat-row__segnum--secondary {
+  display: flex;
+  justify-content: center;
+  overflow: visible;
+  white-space: nowrap;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.lib-heat-row__segnum--primary {
+  color: var(--red);
+}
+
+.lib-heat-row__segnum--secondary {
+  color: #e08a00;
 }
 
 .lib-heat-row__num {

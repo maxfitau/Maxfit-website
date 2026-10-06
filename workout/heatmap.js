@@ -35,7 +35,7 @@ function heatDateSortKey_(raw) {
 }
 
 /**
- * `weighted` ({ group: primary*1 + secondary*0.5 }) for `memberId` over
+ * `weighted` ({ key: primary*1 + secondary*0.5 }) for `memberId` over
  * `range` ("today" | "week") — unchanged, still what the heat figure paints
  * from (secondary counts for less since it's along for the ride, not the
  * muscle actually being trained). `primaryCount`/`secondaryCount` (2026-10-04)
@@ -43,6 +43,14 @@ function heatDateSortKey_(raw) {
  * each way — what the This Week breakdown list's red/orange bar shows,
  * since that list is meant to read as literal set counts ("3 direct sets,
  * plus 4 more where it was a secondary mover"), not an intensity score.
+ *
+ * Keyed by whatever the exercise data actually says (2026-10-05) — a fine
+ * key ("delts-front") if the exercise has one, a broad one ("delts") if it
+ * doesn't — not pre-collapsed to the broad group any more. Max's own ask:
+ * he wants to see front vs side vs rear delt separately, not folded into
+ * one "Shoulders" row, and the figure already has a separate shape for
+ * each (card/muscle-map.js) — so there's nothing to lose by keeping the
+ * real precision the exercise data already has.
  * Unknown exercises (not in the Exercises sheet, or no muscle data yet) are
  * silently skipped — same "don't blow up on gaps" approach as the rest of
  * the muscle-data integration.
@@ -78,20 +86,16 @@ async function heatmapMuscleData(memberId, range) {
     const muscles = muscleByExercise[exName];
     if (!muscles) return;
     setsCounted++;
-    // Normalized to the broad group (muscleGroupOf, card/muscle-map.js) even
-    // though the sheet may now hold v2 fine-grained keys ("chest-upper") —
-    // weekly volume is something people think about per whole muscle
-    // ("shoulders"), not per head, so this is deliberately coarser than the
-    // per-exercise Anatomy Lab figure.
-    muscles.primary.forEach((m) => {
-      const g = muscleGroupOf(m);
-      weighted[g] = (weighted[g] || 0) + 1;
-      primaryCount[g] = (primaryCount[g] || 0) + 1;
+    // De-duplicated against the raw key list, not one increment per array
+    // entry — belt and suspenders against the data itself ever listing the
+    // same key twice; harmless either way.
+    new Set(muscles.primary).forEach((k) => {
+      weighted[k] = (weighted[k] || 0) + 1;
+      primaryCount[k] = (primaryCount[k] || 0) + 1;
     });
-    muscles.secondary.forEach((m) => {
-      const g = muscleGroupOf(m);
-      weighted[g] = (weighted[g] || 0) + 0.5;
-      secondaryCount[g] = (secondaryCount[g] || 0) + 1;
+    new Set(muscles.secondary).forEach((k) => {
+      weighted[k] = (weighted[k] || 0) + 0.5;
+      secondaryCount[k] = (secondaryCount[k] || 0) + 1;
     });
   });
 

@@ -442,8 +442,8 @@ body {
 
 .workout__muscle-load-row {
   display: grid;
-  grid-template-columns: 88px 1fr 36px;
-  align-items: center;
+  grid-template-columns: 108px 1fr;
+  align-items: flex-start;
   gap: 10px;
 }
 
@@ -455,6 +455,15 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The bar + its own count(s) stacked together, so the numbers below line
+   up under the segment they belong to (2026-10-05, was a combined "3+5"
+   off to the side in its own column). */
+.workout__muscle-load-row__bar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .workout__muscle-load-row__track {
@@ -473,13 +482,29 @@ body {
   background: #e08a00;
 }
 
-.workout__muscle-load-row__num {
+.workout__muscle-load-row__nums {
+  display: flex;
+  height: 14px;
+}
+
+.workout__muscle-load-row__segnum--primary,
+.workout__muscle-load-row__segnum--secondary {
+  display: flex;
+  justify-content: center;
+  overflow: visible;
+  white-space: nowrap;
   font-family: var(--font-head);
   font-weight: 700;
   font-size: 13px;
-  color: var(--grey);
-  text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+.workout__muscle-load-row__segnum--primary {
+  color: var(--red);
+}
+
+.workout__muscle-load-row__segnum--secondary {
+  color: #e08a00;
 }
 
 .workout__muscle-load-empty {

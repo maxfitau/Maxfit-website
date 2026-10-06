@@ -44,73 +44,6 @@ const MUSCLE_KEYS = {
   teres: "Teres Major",
 };
 
-/**
- * Fine v2 key (e.g. "chest-upper") -> its broad group (e.g. "chest") — the
- * same mapping as each shape's own data-muscle/data-group pair in the
- * figure SVG (see muscleRecolourForDarkCard_'s header comment), kept here
- * too since weekly-volume code (workout/heatmap.js) needs to normalize a
- * muscle key WITHOUT a shape in hand to look it up from.
- */
-const MUSCLE_FINE_TO_GROUP_ = {
-  sternocleidomastoid: "neck",
-  "traps-upper": "traps",
-  "delts-front": "delts",
-  "delts-side": "delts",
-  "chest-upper": "chest",
-  "chest-mid": "chest",
-  "chest-lower": "chest",
-  serratus: "serratus",
-  "obliques-external": "obliques",
-  "abs-upper": "abs",
-  "abs-mid": "abs",
-  "abs-lower": "abs",
-  "abs-infra": "abs",
-  "triceps-lateral": "triceps",
-  brachialis: "biceps",
-  "biceps-long": "biceps",
-  "biceps-short": "biceps",
-  "triceps-long": "triceps",
-  brachioradialis: "forearms",
-  "pronator-teres": "forearms",
-  "forearm-flexors": "forearms",
-  "flexor-carpi-ulnaris": "forearms",
-  "glutes-med": "glutes",
-  "hip-flexors": "hipflexors",
-  tfl: "hipflexors",
-  sartorius: "quads",
-  "rectus-femoris": "quads",
-  "vastus-medialis": "quads",
-  "vastus-lateralis": "quads",
-  "adductor-longus": "adductors",
-  gracilis: "adductors",
-  "tibialis-anterior": "shins",
-  peroneus: "shins",
-  "calves-soleus": "calves",
-  "calves-gastroc-medial": "calves",
-  "traps-mid": "traps",
-  "traps-lower": "traps",
-  rhomboids: "rhomboids",
-  "delts-rear": "delts",
-  infraspinatus: "rotatorcuff",
-  "teres-minor": "rotatorcuff",
-  "teres-major": "teres",
-  "triceps-medial": "triceps",
-  "forearm-extensors": "forearms",
-  "extensor-carpi-ulnaris": "forearms",
-  "erector-spinae": "lowerback",
-  "glutes-max": "glutes",
-  "hamstrings-biceps-femoris": "hamstrings",
-  "hamstrings-semitendinosus": "hamstrings",
-  "hamstrings-semimembranosus": "hamstrings",
-  "adductor-magnus": "adductors",
-  "calves-gastroc-lateral": "calves",
-};
-
-/** Any muscle key (fine, e.g. "chest-upper", or already-broad, e.g. "chest") -> its broad group. A key this map doesn't recognise is assumed already-broad and returned as-is. */
-function muscleGroupOf(key) {
-  return MUSCLE_FINE_TO_GROUP_[key] || key;
-}
-
 const MUSCLE_PRIMARY_COLOR = "#ff2a1f";
 const MUSCLE_SECONDARY_COLOR = "#ff9a7a";
 const MUSCLE_UNUSED_COLOR = "#3c3c3c"; // a muscle key that exists, but isn't part of this exercise
@@ -118,11 +51,13 @@ const MUSCLE_BASE_COLOR = "#2a2a2a"; // head, neck, hands, feet — never indivi
 const MUSCLE_TENDON_COLOR = "#333333"; // tendons/bony landmarks (v2 figure only) — between base and unused
 const MUSCLE_GAP_STROKE_COLOR = "#141414"; // outline between adjoining muscles, dark-card version
 
-// Display names for the v2 fine keys (maxfit-muscle-keys.json) — used only
-// for the accessible text summary (paintMuscleFigure's <title>); painting
-// itself never needs these, just the keys. Not every fine key has an entry
-// in MUSCLE_FINE_TO_GROUP_'s DOMAIN here on purpose — "lats" is both a fine
-// key and its own group, and already has a label via MUSCLE_KEYS.
+// Display names for the v2 fine keys (maxfit-muscle-keys.json) — used for
+// the accessible text summary (paintMuscleFigure's <title>) and for the
+// muscle breakdown lists (muscleLabel_ below checks this first, falling
+// back to MUSCLE_KEYS for a key that's already broad). Painting itself
+// never needs these, just the keys. Not every fine key has an entry here
+// on purpose — "lats" is both a fine key and its own group, and already
+// has a label via MUSCLE_KEYS.
 const MUSCLE_FINE_LABELS_ = {
   sternocleidomastoid: "Sternocleidomastoid",
   "traps-upper": "Upper Traps",
@@ -136,7 +71,7 @@ const MUSCLE_FINE_LABELS_ = {
   "abs-upper": "Upper Abs",
   "abs-mid": "Mid Abs",
   "abs-lower": "Lower Abs",
-  "abs-infra": "Lower Abs",
+  "abs-infra": "Deep Lower Abs",
   "triceps-lateral": "Triceps (Lateral Head)",
   brachialis: "Brachialis",
   "biceps-long": "Biceps (Long Head)",
@@ -158,7 +93,7 @@ const MUSCLE_FINE_LABELS_ = {
   "tibialis-anterior": "Tibialis Anterior",
   peroneus: "Peroneus Longus",
   "calves-soleus": "Soleus",
-  "calves-gastroc-medial": "Gastrocnemius",
+  "calves-gastroc-medial": "Gastrocnemius (Medial)",
   "traps-mid": "Mid Traps",
   "traps-lower": "Lower Traps",
   rhomboids: "Rhomboids",
@@ -175,7 +110,7 @@ const MUSCLE_FINE_LABELS_ = {
   "hamstrings-semitendinosus": "Semitendinosus",
   "hamstrings-semimembranosus": "Semimembranosus",
   "adductor-magnus": "Adductor Magnus",
-  "calves-gastroc-lateral": "Gastrocnemius",
+  "calves-gastroc-lateral": "Gastrocnemius (Lateral)",
 };
 
 function muscleLabel_(key) {

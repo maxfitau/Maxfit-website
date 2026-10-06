@@ -211,15 +211,20 @@ function refreshMuscleLoadPanel_() {
 
     const primary = (control.dataset.primaryMuscles || "").split(",").filter(Boolean);
     const secondary = (control.dataset.secondaryMuscles || "").split(",").filter(Boolean);
-    primary.forEach((m) => {
-      const g = muscleGroupOf(m);
-      weighted[g] = (weighted[g] || 0) + sets;
-      primaryCount[g] = (primaryCount[g] || 0) + sets;
+    // Keyed by whatever the exercise data actually says — a fine key
+    // ("delts-front") if it has one, a broad one ("delts") if it doesn't —
+    // not folded into the broad group. Max wants front/side/rear delt (and
+    // any other fine-grained region the data already tracks) visible as
+    // its own row, not merged into one "Shoulders" line (2026-10-05).
+    // De-duplicated against the raw key list — belt and suspenders against
+    // the same key appearing twice; harmless either way.
+    new Set(primary).forEach((k) => {
+      weighted[k] = (weighted[k] || 0) + sets;
+      primaryCount[k] = (primaryCount[k] || 0) + sets;
     });
-    secondary.forEach((m) => {
-      const g = muscleGroupOf(m);
-      weighted[g] = (weighted[g] || 0) + sets * 0.5;
-      secondaryCount[g] = (secondaryCount[g] || 0) + sets;
+    new Set(secondary).forEach((k) => {
+      weighted[k] = (weighted[k] || 0) + sets * 0.5;
+      secondaryCount[k] = (secondaryCount[k] || 0) + sets;
     });
   });
 
@@ -236,18 +241,31 @@ function refreshMuscleLoadPanel_() {
     : '<p class="builder__side-empty">Add exercises to see what this workout trains</p>';
 }
 
-/** One row of the side panel's breakdown list — same red/orange "primary+secondary set count" shape as the Muscles tab's This Week list (heatWeekRowHtml_, workout/library.js), just scoped to this one workout. */
+/**
+ * One row of the side panel's breakdown list — same red/orange "primary +
+ * secondary set count" shape as the Muscles tab's This Week list
+ * (heatWeekRowHtml_, workout/library.js), just scoped to this one workout.
+ * Each count sits directly under its own segment (2026-10-05, was a
+ * combined "3+5" off to the side) so it's unambiguous which number is
+ * which. A zero-count side renders no number — an empty segment already
+ * shows zero.
+ */
 function builderHeatRowHtml_(key, primaryN, secondaryN) {
   const primaryPct = Math.max(0, Math.min(100, (primaryN / BUILDER_MUSCLE_LOAD_CAP_) * 100));
   const secondaryPct = Math.max(0, Math.min(100 - primaryPct, (secondaryN / BUILDER_MUSCLE_LOAD_CAP_) * 100));
   return `
     <div class="builder__side-heat-row">
       <span class="builder__side-heat-row__name">${muscleLabel_(key)}</span>
-      <span class="builder__side-heat-row__track">
-        <span class="builder__side-heat-row__fill--primary" style="width:${primaryPct}%"></span>
-        <span class="builder__side-heat-row__fill--secondary" style="width:${secondaryPct}%"></span>
+      <span class="builder__side-heat-row__bar">
+        <span class="builder__side-heat-row__track">
+          <span class="builder__side-heat-row__fill--primary" style="width:${primaryPct}%"></span>
+          <span class="builder__side-heat-row__fill--secondary" style="width:${secondaryPct}%"></span>
+        </span>
+        <span class="builder__side-heat-row__nums">
+          ${primaryN > 0 ? `<span class="builder__side-heat-row__segnum--primary" style="width:${primaryPct}%">${primaryN}</span>` : ""}
+          ${secondaryN > 0 ? `<span class="builder__side-heat-row__segnum--secondary" style="width:${secondaryPct}%">${secondaryN}</span>` : ""}
+        </span>
       </span>
-      <span class="builder__side-heat-row__num">${primaryN}+${secondaryN}</span>
     </div>`;
 }
 

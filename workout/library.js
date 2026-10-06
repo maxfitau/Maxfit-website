@@ -249,20 +249,29 @@ const HEAT_BAR_FULL_SETS_ = 10;
  * This Week: a plain stacked bar of literal set counts — red = how many
  * sets hit this muscle as the PRIMARY mover, orange = how many more hit it
  * as a SECONDARY one (e.g. 3 direct sets of curls, plus 4 more where it
- * was along for the ride in pull-ups). No target, no fraction — just the
- * two real numbers, which is also what the "3+4" label shows.
+ * was along for the ride in pull-ups). No target, no fraction. Each
+ * count sits directly under its own segment (2026-10-05, was a combined
+ * "3+4" off to the side) rather than in its own column — ties each number
+ * straight to its colour. A zero-count side renders no number at all: an
+ * empty segment already shows zero, a "0" floating with no colour under it
+ * would just look like a glitch.
  */
 function heatWeekRowHtml_(key, primaryN, secondaryN) {
   const primaryPct = Math.max(0, Math.min(100, (primaryN / HEAT_BAR_FULL_SETS_) * 100));
   const secondaryPct = Math.max(0, Math.min(100 - primaryPct, (secondaryN / HEAT_BAR_FULL_SETS_) * 100));
   return `
-    <div class="lib-heat-row">
+    <div class="lib-heat-row lib-heat-row--week">
       <span class="lib-heat-row__name">${libEsc(muscleLabel_(key))}</span>
-      <span class="lib-heat-row__track">
-        <span class="lib-heat-row__fill lib-heat-row__fill--primary" style="width:${primaryPct}%"></span>
-        <span class="lib-heat-row__fill lib-heat-row__fill--secondary" style="width:${secondaryPct}%"></span>
+      <span class="lib-heat-row__bar">
+        <span class="lib-heat-row__track">
+          <span class="lib-heat-row__fill lib-heat-row__fill--primary" style="width:${primaryPct}%"></span>
+          <span class="lib-heat-row__fill lib-heat-row__fill--secondary" style="width:${secondaryPct}%"></span>
+        </span>
+        <span class="lib-heat-row__nums">
+          ${primaryN > 0 ? `<span class="lib-heat-row__segnum lib-heat-row__segnum--primary" style="width:${primaryPct}%">${primaryN}</span>` : ""}
+          ${secondaryN > 0 ? `<span class="lib-heat-row__segnum lib-heat-row__segnum--secondary" style="width:${secondaryPct}%">${secondaryN}</span>` : ""}
+        </span>
       </span>
-      <span class="lib-heat-row__num">${primaryN}+${secondaryN}</span>
     </div>`;
 }
 
