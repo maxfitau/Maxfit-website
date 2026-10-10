@@ -307,12 +307,14 @@ const MacroCore = (function () {
   const TRIAL_DAYS = 7;
   // The free week gives the top plan, so new clients try everything.
   const TRIAL_TIER = "diamond";
-  // Lowest to highest. Silver is free (no AI).
-  const TIERS = ["silver", "gold", "platinum", "diamond"];
+  // Lowest to highest. Silver is free (no AI). Platinum was retired on
+  // 10 Oct 2026 (Diamond took its $9.99 price), so an old "platinum" on
+  // file or in a Stripe lookup key counts as Diamond.
+  const TIERS = ["silver", "gold", "diamond"];
 
-  /** 0 (Silver) to 3 (Diamond). A paid plan with no tier on file counts as Gold. */
+  /** 0 (Silver) to 2 (Diamond). A paid plan with no tier on file counts as Gold. */
   function tierRank(tier) {
-    const i = TIERS.indexOf(tier);
+    const i = TIERS.indexOf(tier === "platinum" ? "diamond" : tier);
     return i >= 0 ? i : 1;
   }
   // Stripe subscription statuses that still get Fuel AI. past_due is a card
@@ -344,7 +346,7 @@ const MacroCore = (function () {
    * comp_until (dates as "YYYY-MM-DD"), plan_tier and comp_tier; `today`
    * is a Sydney date.
    *
-   * tier: "silver" (free, no AI) | "gold" | "platinum" | "diamond". The
+   * tier: "silver" (free, no AI) | "gold" | "diamond". The
    *       free week is Diamond.
    * kind: "paid" | "comp" (a free month from Max) | "trial" |
    *       "trial_over" | "lapsed" (subscription ended) | "not_started"
@@ -353,7 +355,7 @@ const MacroCore = (function () {
   function planState(m, today) {
     m = m || {};
     const status = String(m.plan_status || "");
-    const tierOf = (t) => (t === "platinum" || t === "diamond" ? t : "gold");
+    const tierOf = (t) => (t === "platinum" || t === "diamond" ? "diamond" : "gold");
     const comp = String(m.comp_until || "");
     const compState =
       isYmd_(comp) && comp >= today

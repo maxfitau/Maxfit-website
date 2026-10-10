@@ -17,27 +17,26 @@
  *   MACRO_SHEET_ID     — id of the private "MaxFit Macros" sheet
  *   MAIN_SHEET_ID      — the CRM sheet (read-only here, for client names)
  *   GOLD_DAILY_AI      — optional, AI uses per day on Gold (default 5)
- *   PLATINUM_DAILY_AI  — optional, AI uses per day on Platinum (default 10)
- *   DIAMOND_DAILY_AI   — optional, Diamond's fair-use ceiling (default 20)
+ *   DIAMOND_DAILY_AI   — optional, AI uses per day on Diamond (default 20)
  *   STRIPE_SECRET_KEY  — Stripe RESTRICTED key, read-only on Checkout
  *                        Sessions and Subscriptions
  *   Stripe Payment Links, one per plan and billing period:
  *     STRIPE_FUEL_LINK / STRIPE_GOLD_YEAR_LINK         Gold $5.99 / $53.99
- *     STRIPE_PLATINUM_LINK / STRIPE_PLATINUM_YEAR_LINK Platinum $9.99 / $89.99
- *     STRIPE_DIAMOND_LINK / STRIPE_DIAMOND_YEAR_LINK   Diamond $14.99 / $134.99
+ *     STRIPE_DIAMOND_LINK / STRIPE_DIAMOND_YEAR_LINK   Diamond $9.99 / $89.99
  *   STRIPE_PORTAL_LINK — Stripe customer-portal login link (manage, switch
  *                        plan or monthly ↔ yearly, cancel)
  *
  * Plans: Silver is free (barcodes, search, saved meals, typed-in numbers,
- * targets, totals, suggestions, progress). Gold, Platinum and Diamond add
- * Fuel AI: photo and label scans and Describe it, from one daily pool of AI
- * uses (Gold 5, Platinum 10; Diamond is "unlimited" with a fair-use ceiling
- * of 20). Ask Fuel (the chat) is Platinum and Diamond only, and its
+ * targets, totals, suggestions, progress). Gold and Diamond add Fuel AI:
+ * photo and label scans and Describe it, from one daily pool of AI uses
+ * (Gold 5, Diamond 20). Ask Fuel (the chat) is Diamond only, and its
  * messages come out of the same pool. New clients get 7 days of Diamond
  * from the first time they open FUEL; after that it's a Stripe subscription
  * (monthly, or yearly at 3 months free) or a free month from Max. A
- * subscription's tier comes from its price's lookup key ("fuel_gold",
- * "fuel_platinum_year", "fuel_diamond", …) and its period from the price.
+ * subscription's tier comes from its price's lookup key: "diamond" or
+ * "platinum" in it is Diamond, anything else Gold; the period comes from
+ * the price. (Platinum was retired on 10 Oct 2026: its Stripe product was
+ * renamed Fuel Diamond and kept its fuel_platinum lookup keys.)
  *
  * Stripe is never called by webhook (Apps Script can't read webhook
  * headers to verify them). Instead syncStripe() asks Stripe's API: every
@@ -61,7 +60,7 @@
  * or change rows carrying their own id.
  */
 
-const MACROS_VERSION = "2026-10-01a";
+const MACROS_VERSION = "2026-10-10a";
 const TIMEZONE = "Australia/Sydney";
 const MAIN_SESSIONS_GID = 1169726169; // "Sessions Remaining" in the CRM sheet
 const CARD_URL = "https://maxfit.now/card/";
@@ -538,12 +537,10 @@ function favouritesFor_(slug) {
 }
 
 // Daily AI uses per tier: one pool for photo and label scans, Describe it
-// and (Platinum and Diamond) Ask Fuel messages. Diamond is sold as
-// unlimited; its number is a fair-use ceiling nobody logging real meals
-// reaches, so a runaway phone can't run up the Claude bill. Override with
-// GOLD_DAILY_AI / PLATINUM_DAILY_AI / DIAMOND_DAILY_AI.
-const DEFAULT_DAILY_AI = { gold: 5, platinum: 10, diamond: 20 };
-const DAILY_AI_PROPS = { gold: "GOLD_DAILY_AI", platinum: "PLATINUM_DAILY_AI", diamond: "DIAMOND_DAILY_AI" };
+// and (Diamond) Ask Fuel messages. Override with GOLD_DAILY_AI /
+// DIAMOND_DAILY_AI.
+const DEFAULT_DAILY_AI = { gold: 5, diamond: 20 };
+const DAILY_AI_PROPS = { gold: "GOLD_DAILY_AI", diamond: "DIAMOND_DAILY_AI" };
 
 function dailyAiFor_(tier) {
   if (!DEFAULT_DAILY_AI[tier]) return 0; // silver
@@ -560,12 +557,12 @@ function aiUsedToday_(slug) {
   }).length;
 }
 
-/** { tier, used, limit, left, unlimited } for the meter on the card. */
+/** { tier, used, limit, left } for the meter on the card. */
 function aiToday_(member) {
   const plan = planFor_(member);
   const limit = plan.access ? dailyAiFor_(plan.tier) : 0;
   const used = aiUsedToday_(String(member.slug));
-  return { tier: plan.tier, used: used, limit: limit, left: Math.max(0, limit - used), unlimited: plan.access && plan.tier === "diamond" };
+  return { tier: plan.tier, used: used, limit: limit, left: Math.max(0, limit - used) };
 }
 
 /** Photo scanning and Ask Fuel need a Claude API key on the server. */
@@ -596,11 +593,11 @@ function requireFuelAi_(member) {
   }
 }
 
-/** Ask Fuel is Platinum and Diamond only (paying, a free month from Max, or the free week). */
+/** Ask Fuel is Diamond only (paying, a free month from Max, or the free week). */
 function requireAskFuel_(member) {
   requireFuelAi_(member);
-  if (MacroCore.tierRank(planFor_(member).tier) < MacroCore.tierRank("platinum")) {
-    throw userError_("platinum", "Ask Fuel comes with Fuel Platinum and Diamond. Photo scans, labels and Describe it stay on Gold.");
+  if (MacroCore.tierRank(planFor_(member).tier) < MacroCore.tierRank("diamond")) {
+    throw userError_("diamond", "Ask Fuel comes with Fuel Diamond. Photo scans, labels and Describe it stay on Gold.");
   }
 }
 
@@ -614,7 +611,6 @@ function upgradeUrl_(slug, property) {
 // Each plan's Payment Link, per billing period.
 const PLAN_LINK_PROPS = {
   gold: { month: "STRIPE_FUEL_LINK", year: "STRIPE_GOLD_YEAR_LINK" },
-  platinum: { month: "STRIPE_PLATINUM_LINK", year: "STRIPE_PLATINUM_YEAR_LINK" },
   diamond: { month: "STRIPE_DIAMOND_LINK", year: "STRIPE_DIAMOND_YEAR_LINK" },
 };
 
@@ -1144,17 +1140,10 @@ function reserveAi_(member, kind, model) {
   return withLock_(() => {
     const today = aiToday_(member);
     if (today.left <= 0) {
-      if (today.tier === "diamond") {
-        throw userError_(
-          "limit",
-          "That's a big logging day! You've reached Diamond's fair-use limit of " + today.limit +
-            " AI uses. It resets at midnight, and barcodes, search and saved meals still work."
-        );
-      }
-      const next = today.tier === "gold" ? "Platinum gives you " + dailyAiFor_("platinum") + " a day." : "Diamond has no daily limit.";
+      const next = today.tier === "gold" ? "Diamond gives you " + dailyAiFor_("diamond") + " a day, plus Ask Fuel." : "";
       throw userError_(
         "limit",
-        "That's all " + today.limit + " AI uses for today. They reset at midnight, and barcodes, search and saved meals still work. " + next
+        ("That's all " + today.limit + " AI uses for today. They reset at midnight, and barcodes, search and saved meals still work. " + next).trim()
       );
     }
     return appendRow_("usage", {
@@ -1556,7 +1545,7 @@ function actionCoachGiveMonth_(payload) {
     // Stack onto an existing free month rather than overlapping it.
     const from = current && current >= today ? MacroCore.addDays(current, 1) : today;
     const until = MacroCore.addDays(from, 29);
-    const tier = payload.tier === "diamond" || payload.tier === "platinum" ? payload.tier : "gold";
+    const tier = payload.tier === "diamond" ? "diamond" : "gold";
     updateRow_("members", member._row, { comp_until: until, comp_tier: tier });
     member.comp_until = until;
     member.comp_tier = tier;
@@ -1633,11 +1622,12 @@ function applySubscription_(member, sub) {
   const item = sub.items && sub.items.data && sub.items.data[0];
   const end = sub.current_period_end || (item && item.current_period_end);
   const until = end ? Utilities.formatDate(new Date(end * 1000), TIMEZONE, "yyyy-MM-dd") : "";
-  // The tier is in the price's lookup key ("fuel_diamond_year",
-  // "fuel_platinum", …); anything else is Gold. The period is the price's.
+  // The tier is in the price's lookup key: "diamond" or "platinum" (the
+  // renamed Platinum product's keys) is Diamond, anything else Gold. The
+  // period is the price's.
   const price = (item && item.price) || {};
   const lookup = String(price.lookup_key || "");
-  const tier = lookup.indexOf("diamond") >= 0 ? "diamond" : lookup.indexOf("platinum") >= 0 ? "platinum" : "gold";
+  const tier = lookup.indexOf("diamond") >= 0 || lookup.indexOf("platinum") >= 0 ? "diamond" : "gold";
   const interval = price.recurring && price.recurring.interval === "year" ? "year" : "month";
   if (
     String(member.plan_status) === sub.status &&
@@ -1855,7 +1845,7 @@ function foodsList_() {
 }
 
 // ---------------------------------------------------------------------------
-// Ask Fuel: the AI copilot chat (Platinum only)
+// Ask Fuel: the AI copilot chat (Diamond only)
 // ---------------------------------------------------------------------------
 
 const CHAT_SYSTEM_PROMPT = [

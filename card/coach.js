@@ -8,8 +8,8 @@
  *   - set a client's targets in grams (kcal = 4P + 4C + 9F), approving
  *     anything under the 1,500 / 1,200 kcal floor explicitly
  *   - hand targets back to the client's own calculator
- *   - see each client's plan (Silver / Gold / Platinum: trial, paying or
- *     free month), give a free month of Gold or Platinum, and ask the
+ *   - see each client's plan (Silver / Gold / Diamond: trial, paying or
+ *     free month), give a free month of Gold or Diamond, and ask the
  *     backend to check Stripe now
  *   - log a client's weight after a session, set their goal weight and
  *     pace, and see this week's green days and their nutrition punches
@@ -128,7 +128,7 @@
         <div class="coach-actions">
           ${c.link ? '<button class="fuel-btn" type="button" data-a="copy">Copy link</button>' : '<button class="fuel-btn" type="button" data-a="issue">Create Fuel link</button>'}
           <button class="fuel-btn fuel-btn--ghost" type="button" data-a="targets">Set targets</button>
-          ${c.hasKey && aiEnabled ? ["gold", "platinum", "diamond"].map((t) => `<button class="fuel-btn fuel-btn--ghost" type="button" data-a="giveMonth" data-tier="${t}">Free month of ${TIER_NAMES[t]}</button>`).join("") : ""}
+          ${c.hasKey && aiEnabled ? ["gold", "diamond"].map((t) => `<button class="fuel-btn fuel-btn--ghost" type="button" data-a="giveMonth" data-tier="${t}">Free month of ${TIER_NAMES[t]}</button>`).join("") : ""}
           ${c.hasKey ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="weight">Log weight</button>' : ""}
           ${c.hasKey && c.targets ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="goal">Set goal</button>' : ""}
           ${c.link ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="rotate">New link</button>' : ""}
@@ -196,7 +196,8 @@
     return bits.join(" · ") || "No weigh-ins or green days yet";
   }
 
-  const TIER_NAMES = { gold: "Gold", platinum: "Platinum", diamond: "Diamond" };
+  // "platinum" was retired on 10 Oct 2026; an old one on file is Diamond.
+  const TIER_NAMES = { gold: "Gold", platinum: "Diamond", diamond: "Diamond" };
 
   /** A client's Fuel AI status in a few words. */
   function planText(p) {

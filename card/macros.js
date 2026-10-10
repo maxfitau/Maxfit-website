@@ -10,8 +10,9 @@
  *   targets  — Max's targets (read-only) or the calculator
  *   settings — hide calories, Fuel AI plan, disclaimer
  *   suggest  — "what to eat next" from Max's Foods list (free, no AI)
- *   chat     — Ask Fuel, the AI copilot (Platinum only)
- *   upsell   — Fuel AI: 7-day trial, then $9.99/month (members) via Stripe
+ *   chat     — Ask Fuel, the AI copilot (Diamond only)
+ *   upsell   — Fuel plans: 7-day Diamond trial, then Gold $5.99 or Diamond
+ *              $9.99 a month (or yearly) via Stripe
  *   progress — weight trend vs goal, calorie target steps, last 14 days
  *              with green days and the nutrition punches (free)
  *
@@ -57,7 +58,6 @@
   const FUEL_TIER_ICONS = {
     silver: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2 L19 5 V11 C19 16 15.5 20 12 22 C8.5 20 5 16 5 11 V5 Z"/></svg>',
     gold: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2 L14.5 9 L22 9.5 L16 14.3 L18 21.5 L12 17.5 L6 21.5 L8 14.3 L2 9.5 L9.5 9 Z"/></svg>',
-    platinum: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 9 L12 3 L18 9 L12 21 Z"/></svg>',
     diamond:
       '<svg viewBox="0 0 24 24" aria-hidden="true">' +
       '<path fill="currentColor" d="M4 9 L12 2 L20 9 L12 22 Z"/>' +
@@ -75,7 +75,7 @@
     recent: [],
     favourites: [],
     meals: [], // saved meals: { id, name, items }
-    aiToday: null, // { tier, used, limit, left, unlimited } from the server
+    aiToday: null, // { tier, used, limit, left } from the server
     busy: false,
     confirm: null,
     pendingPhotoMode: null,
@@ -543,16 +543,16 @@
   /** Compact "AI scans today" row — hidden entirely for Silver/no AI (spec: hide rather than nudge inline). */
   function fuelAiCompactHtml() {
     if (!fuelAi()) return "";
-    const a = state.aiToday || { used: 0, limit: 0, left: 0, unlimited: false };
-    const countText = a.unlimited ? `${a.used} · Unlimited` : `${a.left} of ${a.limit}`;
-    const pct = a.unlimited ? Math.min(70, a.used * 8) : a.limit ? Math.min(100, Math.round((a.used / a.limit) * 100)) : 0;
+    const a = state.aiToday || { used: 0, limit: 0, left: 0 };
+    const countText = `${a.left} of ${a.limit}`;
+    const pct = a.limit ? Math.min(100, Math.round((a.used / a.limit) * 100)) : 0;
     return `
       <div class="fuel-ai-compact">
         <div class="fuel-ai-compact__head">
           <span class="card__label">AI scans today</span>
           <span class="fuel-ai-compact__count">${esc(countText)}</span>
         </div>
-        <div class="fuel-ai-compact__track" role="progressbar" aria-valuemin="0" aria-valuemax="${a.unlimited ? 100 : a.limit}" aria-valuenow="${a.used}" aria-label="AI scans today">
+        <div class="fuel-ai-compact__track" role="progressbar" aria-valuemin="0" aria-valuemax="${a.limit}" aria-valuenow="${a.used}" aria-label="AI scans today">
           <div class="fuel-ai-compact__fill" style="width:${pct}%"></div>
         </div>
       </div>`;
@@ -586,9 +586,9 @@
         <span class="fuel-link-row__icon">${ICONS.chat}</span>
         <span class="fuel-link-row__text">
           <span class="fuel-link-row__title">Ask Fuel</span>
-          <span class="fuel-link-row__hint">${on ? "Your AI nutrition copilot" : "Unlocks on Platinum"}</span>
+          <span class="fuel-link-row__hint">${on ? "Your AI nutrition copilot" : "Unlocks on Diamond"}</span>
         </span>
-        ${on ? `<span class="fuel-link-row__chevron">${ICONS.chevron}</span>` : '<span class="fuel-link-row__tag">Platinum</span>'}
+        ${on ? `<span class="fuel-link-row__chevron">${ICONS.chevron}</span>` : '<span class="fuel-link-row__tag">Diamond</span>'}
       </button>`;
   }
 
@@ -919,31 +919,32 @@
   // Scan chooser + photos
   // ---------------------------------------------------------------------------
 
-  /** Fuel AI (scans, Describe it): API key on the server AND Gold, Platinum or Diamond (paid, free month or trial). */
+  /** Fuel AI (scans, Describe it): API key on the server AND Gold or Diamond (paid, free month or trial). */
   function fuelAi() {
     return state.aiEnabled && !!(state.plan && state.plan.access);
   }
 
-  const TIER_NAMES = { silver: "Silver", gold: "Gold", platinum: "Platinum", diamond: "Diamond" };
+  const TIER_NAMES = { silver: "Silver", gold: "Gold", diamond: "Diamond" };
   // What the plans sheet shows. Yearly is 3 months free (pay for 9, get 12);
   // `save` is 12 months minus the yearly price. Keep in step with Stripe.
   const TIER_PRICES = {
     gold: { month: "$5.99", year: "$53.99", save: "$17.89" },
-    platinum: { month: "$9.99", year: "$89.99", save: "$29.89" },
-    diamond: { month: "$14.99", year: "$134.99", save: "$44.89" },
+    diamond: { month: "$9.99", year: "$89.99", save: "$29.89" },
   };
-  const PAID_TIERS = ["gold", "platinum", "diamond"];
+  const PAID_TIERS = ["gold", "diamond"];
 
+  /** "silver" | "gold" | "diamond". An old "platinum" (retired 10 Oct 2026) is Diamond. */
   function tier() {
-    return (state.plan && state.plan.tier) || (fuelAi() ? "gold" : "silver");
+    const t = (state.plan && state.plan.tier) || (fuelAi() ? "gold" : "silver");
+    return t === "platinum" ? "diamond" : t;
   }
 
-  /** Ask Fuel is Platinum and Diamond (paying, a free month from Max, or the free week). */
+  /** Ask Fuel is Diamond only (paying, a free month from Max, or the free week). */
   function askFuelOn() {
-    return fuelAi() && MacroCore.tierRank(tier()) >= MacroCore.tierRank("platinum");
+    return fuelAi() && tier() === "diamond";
   }
 
-  /** Any paid plan with none of today's AI uses left (Diamond: its fair-use ceiling). */
+  /** Any paid plan with none of today's AI uses left. */
   function aiUsedUp() {
     return fuelAi() && !!state.aiToday && state.aiToday.left <= 0;
   }
@@ -956,11 +957,10 @@
     render();
   }
 
-  /** "3 of 5 AI uses left today", or on Diamond "Unlimited · 4 used today". */
+  /** "3 of 5 AI uses left today". */
   function aiLeftText() {
     const a = state.aiToday;
     if (!a || !a.limit) return "";
-    if (a.unlimited) return a.left > 0 ? `Unlimited · ${a.used} used today` : "Fair-use limit reached today · back at midnight";
     return a.left > 0 ? `${a.left} of ${a.limit} AI uses left today` : `All ${a.limit} AI uses used today · back at midnight`;
   }
 
@@ -974,17 +974,14 @@
             <span class="card__label">AI today</span>
             <span class="fuel-tier fuel-tier--silver">Silver</span>
           </div>
-          <p class="fuel-meter__text">Photo scans and Describe it come with Gold. Ask Fuel comes with Platinum.</p>
+          <p class="fuel-meter__text">Photo scans and Describe it come with Gold. Ask Fuel comes with Diamond.</p>
           <button class="fuel-link" type="button" data-act="plans">See plans</button>
         </div>`;
     }
     const a = state.aiToday || { used: 0, limit: 0, left: 0 };
     const pct = a.limit ? Math.min(100, Math.round((a.used / a.limit) * 100)) : 0;
     const t = tier();
-    // Diamond has no count to run down: a full, sparkling bar instead.
-    const bar = a.unlimited
-      ? '<div class="fuel-meter__bar" role="img" aria-label="Unlimited AI today"><span style="width:100%"></span></div>'
-      : `<div class="fuel-meter__bar" role="progressbar" aria-valuemin="0" aria-valuemax="${a.limit}" aria-valuenow="${a.used}" aria-label="AI uses today">
+    const bar = `<div class="fuel-meter__bar" role="progressbar" aria-valuemin="0" aria-valuemax="${a.limit}" aria-valuenow="${a.used}" aria-label="AI uses today">
           <span style="width:${pct}%"></span>
         </div>`;
     return `
@@ -1010,11 +1007,11 @@
     return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-AU", opts);
   }
 
-  /** "Diamond free trial · 5 days left", "Platinum · renews 23 Oct", … or "" when Fuel AI is off for everyone. */
+  /** "Diamond free trial · 5 days left", "Gold · renews 23 Oct", … or "" when Fuel AI is off for everyone. */
   function planText() {
     const p = state.plan;
     if (!state.aiEnabled || !p) return "";
-    const name = TIER_NAMES[p.tier] || "Gold";
+    const name = TIER_NAMES[tier()] || "Gold";
     if (p.kind === "paid") {
       const yearly = p.interval === "year" ? " · yearly" : "";
       return p.until ? `${name} · renews ${fmtDate(p.until)}${yearly}` : `${name} is on${yearly}`;
@@ -1292,10 +1289,10 @@
   // ---------------------------------------------------------------------------
 
   /**
-   * The plans: Silver (free), Gold, Platinum and Diamond, each monthly or
-   * yearly (3 months free). opts.reason "limit" = they just ran out of
-   * today's AI uses (opts.message is the server's wording); "ask" = they
-   * tapped Ask Fuel, which needs Platinum or Diamond.
+   * The plans: Silver (free), Gold and Diamond, each monthly or yearly
+   * (3 months free). opts.reason "limit" = they just ran out of today's AI
+   * uses (opts.message is the server's wording); "ask" = they tapped Ask
+   * Fuel, which needs Diamond.
    *
    * Anyone not paying buys through that plan's Payment Link. A paying
    * client changes plan (or monthly ↔ yearly) in Stripe's billing page,
@@ -1308,7 +1305,7 @@
     const p = state.plan || {};
     const t = tier();
     const paying = p.kind === "paid";
-    const perDay = p.aiPerDay || { gold: 5, platinum: 10, diamond: 20 };
+    const perDay = p.aiPerDay || { gold: 5, diamond: 20 };
     const links = p.links || {};
     const hasYear = PAID_TIERS.some((k) => links[k] && links[k].year);
     plansInterval = hasYear && paying && p.interval === "year" ? "year" : "month";
@@ -1316,7 +1313,7 @@
       opts.reason === "limit"
         ? opts.message || "That's all your AI uses for today."
         : opts.reason === "ask"
-        ? "Ask Fuel, your AI nutrition coach, comes with Platinum and Diamond."
+        ? "Ask Fuel, your AI nutrition coach, comes with Diamond."
         : p.kind === "trial_over" || p.kind === "lapsed"
         ? planText() + "."
         : "Your AI nutrition coach, in your pocket. Cancel any time.";
@@ -1327,9 +1324,7 @@
 
     const DESCRIPTIONS = {
       gold: `<p><b>${perDay.gold} AI uses a day:</b> snap a meal, scan a label or Describe it.</p>`,
-      platinum: `<p><b>${perDay.platinum} AI uses a day, plus Ask Fuel</b>, your AI nutrition coach: what to eat next, what to order when you're out, and help when you're over.</p>`,
-      diamond: `<p><b>Unlimited AI and Ask Fuel.</b> Log every meal, snack and question without counting.</p>
-        <p class="fuel-plan-card__note">Fair use: up to ${perDay.diamond} AI uses a day.</p>`,
+      diamond: `<p><b>${perDay.diamond} AI uses a day, plus Ask Fuel</b>, your AI nutrition coach: what to eat next, what to order when you're out, and help when you're over.</p>`,
     };
 
     function action(k, iv) {
@@ -2128,12 +2123,14 @@
             const left = body.querySelector("[data-chat-left]");
             if (left) left.textContent = aiLeftText();
           } catch (err) {
-            if (err.code === "no_plan" || err.code === "limit" || err.code === "platinum") {
+            // "platinum" is the code an older backend sends for the same thing.
+            const needsDiamond = err.code === "diamond" || err.code === "platinum";
+            if (err.code === "no_plan" || err.code === "limit" || needsDiamond) {
               state.chat.pop();
               state.chat.pop(); // their question too: it didn't go anywhere
               state.busy = false;
               if (err.code === "no_plan" && state.plan) state.plan.access = false;
-              openUpsell({ reason: err.code === "limit" ? "limit" : err.code === "platinum" ? "ask" : "", message: err.message });
+              openUpsell({ reason: err.code === "limit" ? "limit" : needsDiamond ? "ask" : "", message: err.message });
               render();
               return;
             }

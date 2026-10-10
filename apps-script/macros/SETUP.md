@@ -29,8 +29,7 @@ Click **Project Settings** (the gear icon on the left), then **Script Properties
 | `MACRO_SHEET_ID` | The ID you copied in step 1. |
 | `MAIN_SHEET_ID` | `1dGQyIoJ2_XrkbvvPvM2JAY0xdeYQfsCnYHal8WZojUg` |
 | `GOLD_DAILY_AI` | Optional. AI uses per day on Gold (default 5). |
-| `PLATINUM_DAILY_AI` | Optional. AI uses per day on Platinum (default 10). |
-| `DIAMOND_DAILY_AI` | Optional. Diamond's fair-use ceiling per day (default 20). |
+| `DIAMOND_DAILY_AI` | Optional. AI uses per day on Diamond (default 20). |
 
 The three Stripe properties are covered in step 7.
 
@@ -75,10 +74,11 @@ Paste the new code in and save. Then go to **Deploy** → **Manage deployments**
 |---|---|---|---|
 | **Silver** | Free | | Barcodes, search, saved meals, typed-in numbers, targets, ideas and progress |
 | **Gold** | $5.99 | $53.99 | 5 AI uses a day: photo and label scans, Describe it |
-| **Platinum** | $9.99 | $89.99 | 10 AI uses a day, plus **Ask Fuel** (the AI chat) |
-| **Diamond** | $14.99 | $134.99 | Unlimited AI and Ask Fuel (fair use: 20 a day, shown on the plans screen) |
+| **Diamond** | $9.99 | $89.99 | 20 AI uses a day, plus **Ask Fuel** (the AI chat) |
 
-Everything comes from one daily pool that resets at midnight, and the card shows each client how many they have left. New clients get **7 days of Diamond** from the first time they open FUEL. On the coach page each client shows their plan, and **Free month of Gold / Platinum / Diamond** unlocks it for 30 days without payment. To change the daily numbers, add `GOLD_DAILY_AI`, `PLATINUM_DAILY_AI` or `DIAMOND_DAILY_AI` in Script Properties; no redeploy is needed.
+Platinum was retired on 10 Oct 2026 (Max's brother's idea: 3 plans, not 4). Its Stripe product was renamed **Fuel Diamond** and kept its `fuel_platinum` / `fuel_platinum_year` lookup keys, which the backend reads as Diamond. Anyone still on "platinum" in the Members tab also counts as Diamond.
+
+Everything comes from one daily pool that resets at midnight, and the card shows each client how many they have left. New clients get **7 days of Diamond** from the first time they open FUEL. On the coach page each client shows their plan, and **Free month of Gold / Diamond** unlocks it for 30 days without payment. To change the daily numbers, add `GOLD_DAILY_AI` or `DIAMOND_DAILY_AI` in Script Properties; no redeploy is needed.
 
 Lost phone, or a link shared by mistake? Tap **New link** on the coach page. The old link stops working for FUEL straight away.
 
@@ -88,10 +88,9 @@ Stripe moves its menus around. If you can't find something, type its name ("Paym
 
 1. Sign in to **stripe.com**, or create an account for MaxFit. Your business and bank details are yours to enter.
 2. Turn on **Test mode** (the switch at the top right), so nothing is really charged while we test.
-3. **Product catalogue → Add product**, three of them, each with two **Recurring** prices (monthly and yearly). Set each price's **lookup key** (under Advanced). The backend reads it to know the plan: anything containing `diamond` is Diamond, `platinum` is Platinum, anything else Gold. The billing period comes from the price itself.
+3. **Product catalogue → Add product**, two of them, each with two **Recurring** prices (monthly and yearly). Set each price's **lookup key** (under Advanced). The backend reads it to know the plan: anything containing `diamond` (or the old `platinum`) is Diamond, anything else Gold. The billing period comes from the price itself.
    - **Fuel Gold:** 5.99 AUD monthly (`fuel_gold`) and 53.99 AUD yearly (`fuel_gold_year`).
-   - **Fuel Platinum:** 9.99 AUD monthly (`fuel_platinum`) and 89.99 AUD yearly (`fuel_platinum_year`).
-   - **Fuel Diamond:** 14.99 AUD monthly (`fuel_diamond`) and 134.99 AUD yearly (`fuel_diamond_year`).
+   - **Fuel Diamond:** 9.99 AUD monthly and 89.99 AUD yearly. The live product uses the keys `fuel_platinum` and `fuel_platinum_year` (see above); a fresh setup can use `fuel_diamond` and `fuel_diamond_year`.
 4. **Payment Links → New**, one for each of the six prices. Don't add a free trial in Stripe. On the **After payment** tab, choose **Don't show confirmation page → Redirect customers to your website**, and enter exactly:
    `https://maxfit.now/card/?paid={CHECKOUT_SESSION_ID}`
    Copy all six links. They start with `https://buy.stripe.com/`.
@@ -104,8 +103,6 @@ Stripe moves its menus around. If you can't find something, type its name ("Paym
 | `STRIPE_SECRET_KEY` | the restricted key from step 6 |
 | `STRIPE_FUEL_LINK` | the Gold monthly payment link from step 4 |
 | `STRIPE_GOLD_YEAR_LINK` | the Gold yearly link |
-| `STRIPE_PLATINUM_LINK` | the Platinum monthly link |
-| `STRIPE_PLATINUM_YEAR_LINK` | the Platinum yearly link |
 | `STRIPE_DIAMOND_LINK` | the Diamond monthly link |
 | `STRIPE_DIAMOND_YEAR_LINK` | the Diamond yearly link |
 | `STRIPE_PORTAL_LINK` | the portal login link from step 5 |
@@ -113,7 +110,7 @@ Stripe moves its menus around. If you can't find something, type its name ("Paym
 A plan whose link isn't set simply has no buy button, and the Monthly / Yearly switch only appears once at least one yearly link is set.
 
 8. Back in the editor, choose **installStripeSync** in the function dropdown and press **Run** (allow permissions if asked). From now on the backend checks Stripe every 15 minutes, and straight away whenever a client comes back from paying.
-9. **Test on yourself:** open your own FUEL tab → **See plans** → **Get Gold** (or Platinum), and pay with Stripe's test card `4242 4242 4242 4242` (any future expiry date, any CVC). You should land back on the card with "Gold is on", and the coach page should say "Gold: paying · renews …".
+9. **Test on yourself:** open your own FUEL tab → **See plans** → **Get Gold** (or Diamond), and pay with Stripe's test card `4242 4242 4242 4242` (any future expiry date, any CVC). You should land back on the card with "Gold is on", and the coach page should say "Gold: paying · renews …".
 10. **Go live:** turn Test mode off and repeat steps 3–6 in live mode (test products, links and keys don't carry over). Then replace the three Stripe Script Properties with the live values. Finally, in the Macros sheet's **Members** tab, clear `stripe_customer`, `stripe_subscription`, `plan_status` and `plan_until` on any row that paid in test mode (your own, for one). Live mode can't see test subscriptions, so those rows would otherwise stay "paying" until the test renewal date. Use **Give a free month** on the coach page if you want to keep Fuel AI on for yourself.
 
 ## 8. Progress and nutrition punches
