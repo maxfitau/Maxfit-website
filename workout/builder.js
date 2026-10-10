@@ -286,9 +286,8 @@ function refreshMuscleLoadPanel_() {
 /**
  * One row of the side panel's breakdown list — the same red/orange
  * "primary + secondary set count" shape the Muscles tab's weekly list used
- * before it moved to target-status colouring (heatWeekTargetRowHtml_,
- * workout/library.js, 2026-10-09) — this panel stays a direct-count view,
- * scoped to just this one workout, not a weekly target. Each count sits
+ * before it moved to a single red bar (heatRowHtml_, workout/library.js) —
+ * this panel stays a direct-count view, scoped to just this one workout. Each count sits
  * directly under its own segment (2026-10-05, was a
  * combined "3+5" off to the side) so it's unambiguous which number is
  * which. A zero-count side renders no number — an empty segment already

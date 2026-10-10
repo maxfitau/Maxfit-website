@@ -199,11 +199,16 @@ function parseMuscleKeys(raw) {
 // used to do its own lookup.
 //
 // Matching order, every time: exact name -> normalized name -> an explicit
-// alias from the sheet's own Aliases column. Never a fourth, fuzzier step —
-// an exercise that still doesn't match after these three is reported as
-// UNMATCHED, never silently guessed at (e.g. "Tricep Kickbacks" must never
-// quietly become "Cable Kickback" just because they share a word — that
-// would wrongly credit triceps work to glutes).
+// alias from the sheet's own Aliases column -> then two general fallbacks
+// Max asked for on 2026-10-10 ("Calf Raises" was going uncounted):
+//   4. Words: every word of the logged name appears in ONE library name
+//      family, e.g. "Calf Raises" -> Standing Calf Raise. Only when every
+//      candidate shares the same Body Part, so "Curls" (biceps curls AND
+//      leg curl AND wrist curl) stays unmatched rather than guessed.
+//   5. Muscle word: the name says the muscle ("Tricep Kickbacks", "Bicep
+//      Curls"), so the set counts for that muscle group. This is why
+//      "Tricep Kickbacks" credits triceps, never the glute Cable Kickback.
+// Anything that still doesn't match is reported as UNMATCHED.
 // ---------------------------------------------------------------------------
 
 /**
@@ -298,8 +303,33 @@ function buildExerciseIndex_(rows, col) {
     });
   });
 
-  return { byExact, byNormalized };
+  // Every catalog name's words, in sheet order, for the word fallback.
+  const byWords = [];
+  rows.forEach((r) => {
+    const name = col.name >= 0 ? String(r[col.name] || "").trim() : "";
+    const entry = byExact[name.toLowerCase()];
+    if (name && entry) byWords.push({ words: exerciseWords_(name), entry: entry });
+  });
+
+  return { byExact, byNormalized, byWords };
 }
+
+/** A name's words, lowercased and each made singular: "Calf Raises" -> ["calf", "raise"]. */
+function exerciseWords_(name) {
+  const s = normalizeExerciseName_(name);
+  if (!s) return [];
+  return s.split(" ").map((w) => {
+    if (w === "calves" || w === "calve") return "calf";
+    return w.length > 2 && w.endsWith("s") && !w.endsWith("ss") ? w.slice(0, -1) : w;
+  });
+}
+
+// Step 5: a muscle named in the exercise's own name -> that muscle group.
+const MUSCLE_WORD_GROUP_ = {
+  calf: "calves", bicep: "biceps", tricep: "triceps", chest: "chest", pec: "chest",
+  glute: "glutes", hamstring: "hamstrings", quad: "quads", ab: "abs", oblique: "obliques",
+  lat: "lats", trap: "traps", shoulder: "delts", delt: "delts", forearm: "forearms",
+};
 
 /**
  * The one lookup every page uses: a logged/assigned exercise NAME -> its
@@ -316,6 +346,20 @@ function resolveExerciseMuscles_(name, index) {
   if (exact) return Object.assign({}, exact, { matched: true, matchedVia: "exact" });
   const normalized = index.byNormalized[normalizeExerciseName_(trimmed)];
   if (normalized) return Object.assign({}, normalized, { matched: true, matchedVia: "normalized" });
+
+  const words = exerciseWords_(trimmed);
+  const candidates = (index.byWords || []).filter((c) => words.every((w) => c.words.includes(w)));
+  const bodyParts = new Set(candidates.map((c) => c.entry.bodyPart.toLowerCase()));
+  if (candidates.length && bodyParts.size === 1 && !bodyParts.has("")) {
+    // The plainest one (fewest words), first in sheet order on a tie.
+    const best = candidates.reduce((a, b) => (b.words.length < a.words.length ? b : a));
+    return Object.assign({}, best.entry, { matched: true, matchedVia: "words" });
+  }
+
+  const groups = new Set(words.map((w) => MUSCLE_WORD_GROUP_[w]).filter(Boolean));
+  if (groups.size === 1) {
+    return Object.assign({}, empty, { matched: true, matchedVia: "muscle", primary: [...groups] });
+  }
   return empty;
 }
 
@@ -1317,36 +1361,13 @@ function paintMuscleHeat(svgRoot, weighted, cap) {
 }
 
 // ---------------------------------------------------------------------------
-// Weekly targets (2026-10-09, Goal 3) — colour by status against a target
-// range instead of relative to whatever's trained hardest this week, so a
-// quiet week doesn't paint itself falsely "fully red" and a heavy week
-// doesn't look identical to a moderate one. One shared default per tracked
-// muscle; override individual keys here if a specific muscle ever needs a
-// different range, so a tweak stays a one-line diff.
-const MUSCLE_WEEKLY_TARGET_DEFAULT_ = { min: 10, max: 20 };
-const MUSCLE_WEEKLY_TARGET_OVERRIDES_ = {};
-function muscleWeeklyTarget_(key) {
-  return MUSCLE_WEEKLY_TARGET_OVERRIDES_[key] || MUSCLE_WEEKLY_TARGET_DEFAULT_;
-}
-
-/** "under" (below target.min), "above" (over target.max), else "in-range". */
-function muscleTargetStatus_(value, target) {
-  if (value < target.min) return "under";
-  if (value > target.max) return "above";
-  return "in-range";
-}
-
-// Grey for "under" (same as an untrained muscle — not enough yet, not a
-// failure colour), the brand red for "in-range" (used positively here:
-// on target), and the app's existing amber for "above" — deliberately NOT
-// a louder/alarm red, per Max's own "no shaming, no red failure screens"
-// rule. Text uses --grey (not --dim) for "under" so it still reads at his
-// brightness bar for anything a client reads.
-const MUSCLE_STATUS_COLOR_ = { under: "#3c3c3c", "in-range": "#ff2a1f", above: "#e08a00" };
-
+// This Week's figure. Weekly targets (10–20 sets, grey under / red on /
+// amber over) were removed on 2026-10-10: Max found them demotivating, and
+// a muscle under 10 sets drew grey like an untrained one, so a normal week
+// showed almost nothing. Now every trained muscle shows red.
 // The 4 abs sub-region shapes all display as the single merged "Rectus
 // Abdominis" row (workout/library.js's own merge) — shared here so the
-// status figure (below) and the tooltip (further below) redirect to it
+// week figure (below) and the tooltip (further below) redirect to it
 // identically, rather than two copies of the same little lookup table.
 const MUSCLE_ABS_SHAPE_REDIRECT_ = { "abs-upper": "abs-rectus", "abs-mid": "abs-rectus", "abs-lower": "abs-rectus", "abs-infra": "abs-rectus" };
 function muscleAbsDisplayKey_(rawKey) {
@@ -1354,36 +1375,31 @@ function muscleAbsDisplayKey_(rawKey) {
 }
 
 /**
- * Colours every `[data-muscle]` shape by its weekly TARGET STATUS instead
- * of paintMuscleHeat's continuous grey-to-red intensity — for the Muscles
- * tab's This Week view only (Today keeps the old relative scaling; a
- * single day isn't comparable to a weekly target). `weighted` must already
- * have the abs sub-regions merged into "abs-rectus" (workout/library.js's
- * own merge, done once and shared between the list and this figure) —
- * every real abs-* shape here is redirected to read that merged value, so
- * the 4 ab regions on the figure always agree with the single merged row
- * the list shows, rather than quietly reflecting a split the list no
- * longer displays.
+ * Colours every `[data-muscle]` shape for the Muscles tab's This Week view:
+ * grey if untrained, otherwise red, brighter the more it was trained
+ * relative to this week's busiest muscle. The floor (0.35) keeps a muscle
+ * with only a set or two clearly red rather than nearly grey. `weighted`
+ * must already have the abs sub-regions merged into "abs-rectus"
+ * (workout/library.js's own merge), so the 4 ab regions on the figure
+ * agree with the single merged row the list shows.
  */
-function paintMuscleHeatByStatus_(svgRoot, weighted) {
+function paintMuscleHeatWeek_(svgRoot, weighted) {
   if (!svgRoot) return;
-  svgRoot.querySelectorAll("[data-muscle]").forEach((g) => {
+  const shapes = Array.from(svgRoot.querySelectorAll("[data-muscle]"));
+  // Prefer the shape's own fine-key value whenever anything has touched it;
+  // only fall back to the bare group's value for a shape whose fine key has
+  // no data at all. Adding the two double-counts whenever a Conditioning
+  // exercise also logs the bare group name (found 2026-10-09).
+  const valueOf = (g) => {
     const key = muscleAbsDisplayKey_(g.getAttribute("data-muscle"));
-    // Unlike paintMuscleHeat's continuous scale, status needs ONE real
-    // number to judge against this muscle's own target — adding the fine
-    // key's value to its bare coarse group's (the old fallback, meant for
-    // legacy coarse-only data lighting up every sub-region) double-counts
-    // whenever something ALSO logs the bare group name on its own, which
-    // every Conditioning-category exercise does (e.g. a real "delts-side"
-    // entry plus an unrelated bare "delts" one from a burpee) — inflating a
-    // muscle's status past what it actually earned. Prefer the shape's own
-    // fine-key value whenever anything has ever touched it; only fall back
-    // to the bare group's value for a shape whose fine key has no data at
-    // all (found 2026-10-09 verifying this against real data — several
-    // under-target muscles were painting as in-range).
     const groupKey = g.getAttribute("data-group");
-    const value = weighted && Object.prototype.hasOwnProperty.call(weighted, key) ? weighted[key] : (weighted && weighted[groupKey]) || 0;
-    g.setAttribute("fill", MUSCLE_STATUS_COLOR_[muscleTargetStatus_(value, muscleWeeklyTarget_(key))]);
+    return weighted && Object.prototype.hasOwnProperty.call(weighted, key) ? weighted[key] : (weighted && weighted[groupKey]) || 0;
+  };
+  const values = shapes.map(valueOf);
+  const max = Math.max(0, ...values);
+  shapes.forEach((g, i) => {
+    const v = values[i];
+    g.setAttribute("fill", v > 0 && max > 0 ? muscleHeatColor_(0.35 + 0.65 * (v / max)) : MUSCLE_UNUSED_COLOR);
   });
   const title = svgRoot.querySelector("title");
   if (title) title.textContent = svgRoot.dataset.view === "back" ? "Back view" : "Front view";
@@ -1442,17 +1458,13 @@ function muscleTooltipPosition_(el, shapeEl) {
 }
 
 /**
- * The tooltip's inner HTML for one muscle. `target` ({min,max}) is optional
- * — pass it for "x.x / min–max" (the Muscles tab's This Week view); omit it
- * for a plain "x.x effective sets" (Today, and the builder's single-workout
- * preview, neither of which compares against a weekly target).
- * `contributions` is muscleTopContributions_'s own output.
+ * The tooltip's inner HTML for one muscle: "x.x effective sets", the
+ * direct/indirect split and its top exercises. `contributions` is
+ * muscleTopContributions_'s own output.
  */
-function muscleTooltipContentHtml_(key, weightedValue, primaryN, secondaryN, contributions, target) {
+function muscleTooltipContentHtml_(key, weightedValue, primaryN, secondaryN, contributions) {
   const value = weightedValue || 0;
-  const valueText = target
-    ? `${value.toFixed(1)} / ${target.min}–${target.max} effective sets`
-    : `${value.toFixed(1)} effective sets`;
+  const valueText = `${value.toFixed(1)} effective sets`;
   const p = primaryN || 0;
   const s = secondaryN || 0;
   const splitText = p || s ? `${p} direct set${p === 1 ? "" : "s"}, ${s} indirect set${s === 1 ? "" : "s"}` : "No sets yet";

@@ -274,15 +274,13 @@ function libGroupedHeatEntries_(merged) {
  * reused directly rather than duplicated, since both are "tap a heading to
  * expand a body-region" on the same page. Open/closed state is read here
  * and written back by loadHeat's toggle listener. This Week shows each
- * muscle's weighted total against its weekly target (Goal 3, 2026-10-09);
- * Today keeps the older plain count — a single day isn't comparable to a
- * weekly target.
+ * muscle's weighted total as a bar. Today's bars fill at 10 sets; This
+ * Week's are relative to the week's busiest muscle (`weekMax`), since the
+ * weekly targets were removed on 2026-10-10 (Max: demotivating).
  */
-function libMuscleGroupHtml_(group, rows, range) {
+function libMuscleGroupHtml_(group, rows, range, weekMax) {
   const open = libGroupIsOpen_(group) ? " open" : "";
-  const rowsHtml = rows
-    .map((r) => (range === "week" ? heatWeekTargetRowHtml_(r.key, r.weighted) : heatTodayRowHtml_(r.key, r.weighted)))
-    .join("");
+  const rowsHtml = rows.map((r) => heatRowHtml_(r.key, r.weighted, range === "week" ? weekMax : 10)).join("");
   return (
     `<details class="lib-movement"${open} data-group="${libEsc(group)}">` +
     `<summary class="lib-movement__head"><span>${libEsc(group)}</span><span class="lib-movement__count">${rows.length}</span>${LIB_CHEVRON_SVG_}</summary>` +
@@ -361,21 +359,20 @@ async function loadHeat(range) {
     // staying empty already says nothing was found.
   }
 
-  // This Week colours by target status (Goal 3) — a weekly target isn't
-  // comparable to a single day, so Today keeps the older relative scaling.
+  // This Week: every trained muscle red, brighter the more it was trained
+  // (paintMuscleHeatWeek_). Today keeps paintMuscleHeat's 10-set scale.
   const merged = libMergedWeighted_(weighted, primaryCount, secondaryCount, contributionsByMuscle);
-  // paintMuscleHeatByStatus_ wants a flat { key: number }, same shape as
+  // paintMuscleHeatWeek_ wants a flat { key: number }, same shape as
   // paintMuscleHeat's own `weighted` — merged's values are the richer
   // { weighted, primaryCount, secondaryCount, contributions } the grouped
   // LIST and the tooltip need, so pull just the number back out here rather
   // than changing that shape.
   const mergedWeightedOnly = {};
   Object.keys(merged).forEach((k) => (mergedWeightedOnly[k] = merged[k].weighted));
-  svgs.forEach((svg) => (range === "week" ? paintMuscleHeatByStatus_(svg, mergedWeightedOnly) : paintMuscleHeat(svg, weighted)));
+  svgs.forEach((svg) => (range === "week" ? paintMuscleHeatWeek_(svg, mergedWeightedOnly) : paintMuscleHeat(svg, weighted)));
 
-  // Goal 4 (2026-10-09): hover/tap a shape for its own breakdown. Today has
-  // no weekly target to show; This Week does. Tapping a shape also
-  // expands/highlights its group in the list below.
+  // Goal 4 (2026-10-09): hover/tap a shape for its own breakdown. Tapping a
+  // shape also expands/highlights its group in the list below.
   svgs.forEach((svg) =>
     wireMuscleTooltips_(
       svg,
@@ -383,8 +380,7 @@ async function loadHeat(range) {
         const key = muscleAbsDisplayKey_(rawKey);
         const m = merged[key];
         if (!m || m.weighted <= 0) return null;
-        const target = range === "week" ? muscleWeeklyTarget_(key) : null;
-        return muscleTooltipContentHtml_(key, m.weighted, m.primaryCount, m.secondaryCount, muscleTopContributions_(m.contributions), target);
+        return muscleTooltipContentHtml_(key, m.weighted, m.primaryCount, m.secondaryCount, muscleTopContributions_(m.contributions));
       },
       (key) => libExpandGroupFor_(key)
     )
@@ -392,7 +388,8 @@ async function loadHeat(range) {
 
   libEls.heatEmpty.hidden = setsCounted > 0;
   const groups = libGroupedHeatEntries_(merged);
-  libEls.heatBreakdown.innerHTML = groups.map((g) => libMuscleGroupHtml_(g.group, g.rows, range)).join("");
+  const weekMax = Math.max(1, ...Object.keys(merged).map((k) => merged[k].weighted));
+  libEls.heatBreakdown.innerHTML = groups.map((g) => libMuscleGroupHtml_(g.group, g.rows, range, weekMax)).join("");
   libEls.heatBreakdown.querySelectorAll("details[data-group]").forEach((el) => {
     el.addEventListener("toggle", () => libSetGroupOpen_(el.dataset.group, el.open));
   });
@@ -409,40 +406,13 @@ async function loadHeat(range) {
   }
 }
 
-/** Today: unchanged from before v2 — one red fill, just "how much", no weekly target. */
-function heatTodayRowHtml_(key, n) {
+/** One muscle's row: name, a red bar that's full at `scale` sets, and the number. */
+function heatRowHtml_(key, n, scale) {
   return `
     <div class="lib-heat-row">
       <span class="lib-heat-row__name">${libEsc(muscleLabel_(key))}</span>
-      <span class="lib-heat-row__track"><span class="lib-heat-row__fill lib-heat-row__fill--primary" style="width:${Math.min(100, (n / 10) * 100)}%"></span></span>
+      <span class="lib-heat-row__track"><span class="lib-heat-row__fill lib-heat-row__fill--primary" style="width:${Math.min(100, (n / scale) * 100)}%"></span></span>
       <span class="lib-heat-row__num">${n % 1 === 0 ? n : n.toFixed(1)}</span>
-    </div>`;
-}
-
-/**
- * This Week (Goal 3, 2026-10-09): a single bar coloured by status against
- * the muscle's weekly target range (muscleTargetStatus_/muscleWeeklyTarget_,
- * card/muscle-map.js) — grey under target, red in range, amber above —
- * instead of the old primary/secondary direct-vs-indirect split. "x.x /
- * min–max" to one decimal, per Max's own spec. The direct/indirect detail
- * this replaced moves to the per-muscle tooltip instead (Goal 4, not yet
- * built), not lost, just no longer the headline number.
- *
- * The bar's track represents target.max * 1.5, not just target.max, so an
- * "above" muscle still shows visibly more fill rather than every
- * over-target muscle instantly pegging at 100% — the number next to it
- * carries the exact value regardless of how full the bar looks.
- */
-function heatWeekTargetRowHtml_(key, value) {
-  const target = muscleWeeklyTarget_(key);
-  const status = muscleTargetStatus_(value, target);
-  const ceiling = target.max * 1.5;
-  const pct = Math.max(0, Math.min(100, (value / ceiling) * 100));
-  return `
-    <div class="lib-heat-row lib-heat-row--target">
-      <span class="lib-heat-row__name">${libEsc(muscleLabel_(key))}</span>
-      <span class="lib-heat-row__track"><span class="lib-heat-row__fill lib-heat-row__fill--${status}" style="width:${pct}%"></span></span>
-      <span class="lib-heat-row__target-num lib-heat-row__target-num--${status}">${value.toFixed(1)}<span class="lib-heat-row__target-range"> / ${target.min}–${target.max}</span></span>
     </div>`;
 }
 

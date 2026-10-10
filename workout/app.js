@@ -606,7 +606,7 @@ function buildMuscleLoadSection(ctx) {
 // Same "fully red" scale as the builder's side panel — a session, not a week.
 const MUSCLE_LOAD_CAP_ = 7;
 
-/** One row of the breakdown — same red/orange "primary+secondary SET count" shape as the builder's side panel (builderHeatRowHtml_, workout/builder.js); this session view stays a direct-count view, same as that panel, not the weekly target-status colouring the Muscles tab's weekly list moved to (heatWeekTargetRowHtml_, workout/library.js, 2026-10-09). */
+/** One row of the breakdown — same red/orange "primary+secondary SET count" shape as the builder's side panel (builderHeatRowHtml_, workout/builder.js); this session view stays a direct-count view, same as that panel, not the single red bar the Muscles tab's lists use (heatRowHtml_, workout/library.js). */
 /** Each count sits directly under its own bar segment (2026-10-05, was a combined "3+5" off to the side) so it's unambiguous which number is which. A zero-count side renders no number — an empty segment already shows zero. */
 function muscleLoadRowHtml_(key, primaryN, secondaryN) {
   const primaryPct = Math.max(0, Math.min(100, (primaryN / MUSCLE_LOAD_CAP_) * 100));

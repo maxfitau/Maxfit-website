@@ -51,12 +51,6 @@
   min-height: 32px;
 }
 
-/* This Week's target number ("14.5 / 10–20") is wider than Today's plain
-   count, so it gets its own sized column instead of the fixed 32px one. */
-.lib-heat-row--target {
-  grid-template-columns: 84px 1fr auto;
-}
-
 .lib-heat-row + .lib-heat-row {
   margin-top: 8px;
 }
@@ -84,7 +78,7 @@
   height: 100%;
 }
 
-/* Today keeps the original single red fill ("how much", no target). */
+/* One red fill: "how much" (Today and This Week). */
 .lib-heat-row__fill--primary {
   background: var(--red);
 }
@@ -102,51 +96,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* This Week (Goal 3, 2026-10-09): coloured by status against the muscle's
-   weekly target, not a primary/secondary split any more. Grey = under
-   target (not enough yet — same colour as untrained, not a failure
-   colour), red = in range, amber = above (a heads-up, deliberately not a
-   louder/alarm red — Max's own "no shaming" rule). */
-.lib-heat-row__fill--under {
-  background: #3c3c3c;
-}
-
-.lib-heat-row__fill--in-range {
-  background: var(--red);
-}
-
-.lib-heat-row__fill--above {
-  background: #e08a00;
-}
-
-.lib-heat-row__target-num {
-  font-family: var(--font-head);
-  font-weight: 700;
-  font-size: 14px;
-  text-align: right;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-
-/* --under uses --grey, not --dim, so it still clears Max's own "bright
-   enough for a client to read" bar even while it's the "not there yet"
-   colour. */
-.lib-heat-row__target-num--under {
-  color: var(--grey);
-}
-
-.lib-heat-row__target-num--in-range {
-  color: var(--red);
-}
-
-.lib-heat-row__target-num--above {
-  color: #e08a00;
-}
-
-.lib-heat-row__target-range {
-  font-weight: 600;
-  color: var(--dim);
-}
 
 .lib-browse {
   appearance: none;
