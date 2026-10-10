@@ -55,6 +55,70 @@
   margin-top: 8px;
 }
 
+/* A muscle (Quads, Hamstrings...) that opens to its heads (2026-10-10).
+   Its summary is a normal heat row plus a chevron; the heads sit indented
+   underneath, a step quieter. */
+.lib-heat-row + .lib-family,
+.lib-family + .lib-family,
+.lib-family + .lib-heat-row {
+  margin-top: 8px;
+}
+
+.lib-family__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.lib-family__head::-webkit-details-marker {
+  display: none;
+}
+
+.lib-family__head .lib-heat-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.lib-family__chevron {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: var(--grey);
+  transition: transform 0.2s ease;
+}
+
+.lib-family[open] > .lib-family__head .lib-family__chevron {
+  transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lib-family__chevron {
+    transition: none;
+  }
+}
+
+.lib-family__body {
+  margin: 4px 26px 10px 2px;
+  padding-left: 12px;
+  border-left: 2px solid var(--line);
+}
+
+/* Head names are long ("Gastrocnemius (Medial)"), so they get a wider
+   column and wrap rather than being cut off. */
+.lib-family__body .lib-heat-row {
+  grid-template-columns: 128px 1fr 32px;
+}
+
+.lib-family__body .lib-heat-row__name {
+  color: var(--grey);
+  font-weight: 500;
+  white-space: normal;
+  line-height: 1.25;
+}
+
 .lib-heat-row__name {
   font-family: var(--font-body);
   font-size: 15px;

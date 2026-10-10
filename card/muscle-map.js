@@ -179,6 +179,66 @@ function muscleUiGroupOf_(key) {
   return MUSCLE_UI_GROUP_OF_[key] || "Other";
 }
 
+// The middle level of the muscle lists (2026-10-10, Max: "legs/hips then
+// into quads then into specific groups"): section -> muscle -> heads, on
+// the Muscles tab and the builder's side panel. `whole` keys mean the
+// whole muscle, so a muscle trained only through those shows as one plain
+// row with nothing to open. A key not listed is its own muscle.
+const MUSCLE_FAMILIES_ = [
+  { name: "Chest", keys: ["chest-upper", "chest-mid", "chest-lower", "chest"], whole: ["chest"] },
+  { name: "Serratus", keys: ["serratus"] },
+  { name: "Delts", keys: ["delts-front", "delts-side", "delts-rear", "delts"], whole: ["delts"] },
+  { name: "Rotator Cuff", keys: ["infraspinatus", "teres-minor", "teres-major", "rotatorcuff", "teres"], whole: ["rotatorcuff"] },
+  { name: "Biceps", keys: ["biceps-long", "biceps-short", "biceps", "brachialis"], whole: ["biceps"] },
+  { name: "Triceps", keys: ["triceps-lateral", "triceps-medial", "triceps-long", "triceps"], whole: ["triceps"] },
+  { name: "Forearms", keys: ["forearm-flexors", "forearm-extensors", "brachioradialis", "pronator-teres", "flexor-carpi-ulnaris", "extensor-carpi-ulnaris", "forearms"], whole: ["forearms"] },
+  { name: "Lats", keys: ["lats"] },
+  { name: "Traps", keys: ["traps-upper", "traps-mid", "traps-lower", "traps"], whole: ["traps"] },
+  { name: "Rhomboids", keys: ["rhomboids"] },
+  { name: "Lower Back", keys: ["erector-spinae", "lowerback"], whole: ["erector-spinae", "lowerback"] },
+  { name: "Neck", keys: ["sternocleidomastoid", "neck"], whole: ["sternocleidomastoid", "neck"] },
+  { name: "Abs", keys: ["abs-rectus", "abs-upper", "abs-mid", "abs-lower", "abs-infra", "abs"], whole: ["abs-rectus", "abs"] },
+  { name: "Obliques", keys: ["obliques-external", "obliques"], whole: ["obliques-external", "obliques"] },
+  { name: "Quads", keys: ["rectus-femoris", "vastus-medialis", "vastus-lateralis", "quads"], whole: ["quads"] },
+  { name: "Hamstrings", keys: ["hamstrings-biceps-femoris", "hamstrings-semitendinosus", "hamstrings-semimembranosus", "hamstrings"], whole: ["hamstrings"] },
+  { name: "Glutes", keys: ["glutes-max", "glutes-med", "tfl", "glutes"], whole: ["glutes"] },
+  { name: "Calves", keys: ["calves-gastroc-medial", "calves-gastroc-lateral", "calves-soleus", "calves"], whole: ["calves"] },
+  { name: "Hip Flexors", keys: ["hip-flexors", "sartorius", "hipflexors"], whole: ["hip-flexors", "hipflexors"] },
+  { name: "Adductors", keys: ["adductor-longus", "adductor-magnus", "gracilis", "adductors"], whole: ["adductors"] },
+  { name: "Shins", keys: ["tibialis-anterior", "peroneus", "shins"], whole: ["shins"] },
+];
+const MUSCLE_FAMILY_OF_ = {};
+MUSCLE_FAMILIES_.forEach((f) => f.keys.forEach((k) => (MUSCLE_FAMILY_OF_[k] = f)));
+
+/** "Quads" for "vastus-medialis"; an unlisted key is its own muscle. */
+function muscleFamilyName_(key) {
+  return MUSCLE_FAMILY_OF_[key] ? MUSCLE_FAMILY_OF_[key].name : muscleLabel_(key);
+}
+
+/**
+ * Trained keys grouped section -> muscle, sections in MUSCLE_UI_GROUPS_
+ * order: [{ section, families: [{ name, keys, plain }] }]. `plain` = no
+ * heads to open (Lats, or Quads logged only as "quads"), so it shows as
+ * one row. Callers add their own numbers and sort.
+ */
+function muscleTree_(keys) {
+  const bySection = {};
+  keys.forEach((key) => {
+    const section = muscleUiGroupOf_(key);
+    const name = muscleFamilyName_(key);
+    const fams = (bySection[section] = bySection[section] || {});
+    (fams[name] = fams[name] || { name, keys: [] }).keys.push(key);
+  });
+  return MUSCLE_UI_GROUPS_.filter((s) => bySection[s]).map((section) => ({
+    section,
+    families: Object.values(bySection[section]).map((f) => {
+      const def = MUSCLE_FAMILY_OF_[f.keys[0]];
+      const plain = !def || def.keys.length === 1 || f.keys.every((k) => (def.whole || []).includes(k));
+      return Object.assign(f, { plain });
+    }),
+  }));
+}
+
 /** "chest,delts" (as stored in the sheet) -> ["chest", "delts"], blanks dropped. */
 function parseMuscleKeys(raw) {
   return String(raw || "")

@@ -215,10 +215,18 @@ const BUILDER_MUSCLE_LOAD_CAP_ = 7;
  * have: addRow, a row's remove button, a Sets edit, and an exercise being
  * (re)picked (see the onChoose handler above).
  */
+// Which muscles (Quads, Hamstrings...) are open in the side panel's list,
+// kept across the rebuild that every Sets keystroke triggers.
+const builderOpenFamilies_ = new Set();
+
 function refreshMuscleLoadPanel_() {
   const weighted = {};
   const primaryCount = {};
   const secondaryCount = {};
+  // The same tally per muscle (Quads, not each quad head): a row's sets
+  // count once for a muscle, as primary if any of its heads is primary.
+  const familyPrimary = {};
+  const familySecondary = {};
   // Per muscle, how much each exercise NAME in this workout contributes —
   // the figure tooltip's "top 3 contributing exercises" (Goal 4, 2026-10-09).
   const contributionsByMuscle = {};
@@ -253,6 +261,13 @@ function refreshMuscleLoadPanel_() {
     new Set(secondary).forEach((k) => {
       secondaryCount[k] = (secondaryCount[k] || 0) + sets;
     });
+    const famP = new Set(primary.map(muscleFamilyName_));
+    new Set(secondary.map(muscleFamilyName_)).forEach((f) => {
+      if (!famP.has(f)) familySecondary[f] = (familySecondary[f] || 0) + sets;
+    });
+    famP.forEach((f) => {
+      familyPrimary[f] = (familyPrimary[f] || 0) + sets;
+    });
   });
 
   // Any open tooltip is anchored to a shape from the figure we're about to
@@ -277,10 +292,35 @@ function refreshMuscleLoadPanel_() {
     })
   );
 
-  const entries = Object.keys(weighted).sort((a, b) => weighted[b] - weighted[a]);
-  els.sideHeatList.innerHTML = entries.length
-    ? entries.map((k) => builderHeatRowHtml_(k, primaryCount[k] || 0, secondaryCount[k] || 0)).join("")
+  // Muscles (Quads, Hamstrings...), busiest first, each opening to its
+  // heads (2026-10-10, Max: the flat list of every head was too long).
+  const families = muscleTree_(Object.keys(weighted).filter((k) => weighted[k] > 0))
+    .flatMap((s) => s.families)
+    .sort((a, b) => (familyPrimary[b.name] || 0) - (familyPrimary[a.name] || 0) || (familySecondary[b.name] || 0) - (familySecondary[a.name] || 0));
+  els.sideHeatList.innerHTML = families.length
+    ? families.map((f) => builderFamilyHtml_(f, familyPrimary[f.name] || 0, familySecondary[f.name] || 0, primaryCount, secondaryCount, weighted)).join("")
     : '<p class="builder__side-empty">Add exercises to see what this workout trains</p>';
+  els.sideHeatList.querySelectorAll("details[data-family]").forEach((el) => {
+    el.addEventListener("toggle", () => (el.open ? builderOpenFamilies_.add(el.dataset.family) : builderOpenFamilies_.delete(el.dataset.family)));
+  });
+}
+
+/** One muscle in the side panel: a plain row, or a dropdown row that opens to its heads. */
+function builderFamilyHtml_(f, primaryN, secondaryN, primaryCount, secondaryCount, weighted) {
+  const head = builderHeatRowHtml_(f.name, primaryN, secondaryN);
+  if (f.plain) return head;
+  const heads = f.keys
+    .slice()
+    .sort((a, b) => weighted[b] - weighted[a])
+    .map((k) => builderHeatRowHtml_(muscleLabel_(k), primaryCount[k] || 0, secondaryCount[k] || 0))
+    .join("");
+  const open = builderOpenFamilies_.has(f.name) ? " open" : "";
+  return (
+    `<details class="builder__side-fam"${open} data-family="${f.name}">` +
+    `<summary class="builder__side-fam-head">${head}<svg class="builder__side-fam-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></summary>` +
+    `<div class="builder__side-fam-body">${heads}</div>` +
+    "</details>"
+  );
 }
 
 /**
@@ -293,12 +333,12 @@ function refreshMuscleLoadPanel_() {
  * which. A zero-count side renders no number — an empty segment already
  * shows zero.
  */
-function builderHeatRowHtml_(key, primaryN, secondaryN) {
+function builderHeatRowHtml_(label, primaryN, secondaryN) {
   const primaryPct = Math.max(0, Math.min(100, (primaryN / BUILDER_MUSCLE_LOAD_CAP_) * 100));
   const secondaryPct = Math.max(0, Math.min(100 - primaryPct, (secondaryN / BUILDER_MUSCLE_LOAD_CAP_) * 100));
   return `
     <div class="builder__side-heat-row">
-      <span class="builder__side-heat-row__name">${muscleLabel_(key)}</span>
+      <span class="builder__side-heat-row__name">${label}</span>
       <span class="builder__side-heat-row__bar">
         <span class="builder__side-heat-row__track">
           <span class="builder__side-heat-row__fill--primary" style="width:${primaryPct}%"></span>

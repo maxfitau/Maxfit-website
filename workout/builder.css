@@ -113,6 +113,58 @@
   gap: 7px;
 }
 
+/* A muscle (Quads, Hamstrings...) that opens to its heads (2026-10-10). */
+.builder__side-fam-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.builder__side-fam-head::-webkit-details-marker {
+  display: none;
+}
+
+.builder__side-fam-head .builder__side-heat-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.builder__side-fam-chevron {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--grey);
+  transition: transform 0.2s ease;
+}
+
+.builder__side-fam[open] > .builder__side-fam-head .builder__side-fam-chevron {
+  transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .builder__side-fam-chevron {
+    transition: none;
+  }
+}
+
+.builder__side-fam-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 22px 4px 4px;
+  padding-left: 10px;
+  border-left: 2px solid var(--line);
+}
+
+.builder__side-fam-body .builder__side-heat-row__name {
+  color: var(--grey);
+  font-weight: 500;
+  white-space: normal;
+  line-height: 1.25;
+}
+
 .builder__side-heat-row {
   display: grid;
   grid-template-columns: 92px 1fr;

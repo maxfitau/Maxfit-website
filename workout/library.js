@@ -63,12 +63,13 @@ let libHeatRange = "today";
 // (first visit, or storage unavailable) defaults to OPEN, matching how the
 // old flat list showed everything at once with nothing to expand.
 const LIB_GROUP_STATE_PREFIX_ = "maxfitMuscleGroupOpen:";
-function libGroupIsOpen_(groupName) {
+/** Remembered open/closed state; sections start open, muscles (`fallback` false) closed. */
+function libGroupIsOpen_(groupName, fallback = true) {
   try {
     const v = localStorage.getItem(LIB_GROUP_STATE_PREFIX_ + groupName);
-    return v === null ? true : v === "1";
+    return v === null ? fallback : v === "1";
   } catch (err) {
-    return true;
+    return fallback;
   }
 }
 function libSetGroupOpen_(groupName, open) {
@@ -248,43 +249,51 @@ function libMergedWeighted_(weighted, primaryCount, secondaryCount, contribution
 }
 
 /**
- * Buckets an already-merged map (libMergedWeighted_) into Max's 6
- * top-level sections (muscleUiGroupOf_, card/muscle-map.js). Returns
- * [{ group, rows }] in MUSCLE_UI_GROUPS_ order, each rows list sorted by
- * weighted desc; a group with nothing trained in range is left out
- * entirely — same "don't show empty" rule the old flat list already had.
+ * An already-merged map (libMergedWeighted_) as section -> muscle -> heads
+ * (muscleTree_, card/muscle-map.js), each muscle with its total (heads'
+ * effective sets added up) and both levels sorted busiest first. Untrained
+ * keys are left out, same "don't show empty" rule as before.
  */
-function libGroupedHeatEntries_(merged) {
-  const byGroup = {};
-  Object.keys(merged).forEach((key) => {
-    if (merged[key].weighted <= 0) return;
-    const group = muscleUiGroupOf_(key);
-    (byGroup[group] = byGroup[group] || []).push(Object.assign({ key }, merged[key]));
-  });
-
-  return MUSCLE_UI_GROUPS_.filter((g) => byGroup[g] && byGroup[g].length).map((group) => ({
-    group,
-    rows: byGroup[group].sort((a, b) => b.weighted - a.weighted),
+function libHeatTree_(merged) {
+  const trained = Object.keys(merged).filter((k) => merged[k].weighted > 0);
+  return muscleTree_(trained).map((s) => ({
+    section: s.section,
+    families: s.families
+      .map((f) => {
+        const rows = f.keys.map((key) => ({ key, weighted: merged[key].weighted })).sort((x, y) => y.weighted - x.weighted);
+        return Object.assign({}, f, { rows, total: rows.reduce((t, r) => t + r.weighted, 0) });
+      })
+      .sort((x, y) => y.total - x.total),
   }));
 }
 
 /**
- * One collapsible section of the heat breakdown — same visual language as
- * the exercise list's Movement <details> below (lib-movement family),
- * reused directly rather than duplicated, since both are "tap a heading to
- * expand a body-region" on the same page. Open/closed state is read here
- * and written back by loadHeat's toggle listener. This Week shows each
- * muscle's weighted total as a bar. Today's bars fill at 10 sets; This
- * Week's are relative to the week's busiest muscle (`weekMax`), since the
- * weekly targets were removed on 2026-10-10 (Max: demotivating).
+ * One collapsible section of the heat breakdown (Chest, Legs & Hips...),
+ * reusing the exercise list's Movement <details> look (lib-movement). Inside,
+ * each muscle (Quads, Hamstrings...) is its own dropdown of heads, or one
+ * plain row when it has none (libFamilyHtml_). Bars are full at `scale`
+ * sets: 10 for Today, the week's busiest muscle for This Week (no weekly
+ * targets since 2026-10-10, Max: demotivating).
  */
-function libMuscleGroupHtml_(group, rows, range, weekMax) {
-  const open = libGroupIsOpen_(group) ? " open" : "";
-  const rowsHtml = rows.map((r) => heatRowHtml_(r.key, r.weighted, range === "week" ? weekMax : 10)).join("");
+function libMuscleGroupHtml_(s, scale) {
+  const open = libGroupIsOpen_(s.section) ? " open" : "";
   return (
-    `<details class="lib-movement"${open} data-group="${libEsc(group)}">` +
-    `<summary class="lib-movement__head"><span>${libEsc(group)}</span><span class="lib-movement__count">${rows.length}</span>${LIB_CHEVRON_SVG_}</summary>` +
-    `<div class="lib-movement__body">${rowsHtml}</div>` +
+    `<details class="lib-movement"${open} data-group="${libEsc(s.section)}">` +
+    `<summary class="lib-movement__head"><span>${libEsc(s.section)}</span><span class="lib-movement__count">${s.families.length}</span>${LIB_CHEVRON_SVG_}</summary>` +
+    `<div class="lib-movement__body">${s.families.map((f) => libFamilyHtml_(s.section, f, scale)).join("")}</div>` +
+    "</details>"
+  );
+}
+
+/** One muscle: a dropdown row (total) that opens to its heads, or a plain row. */
+function libFamilyHtml_(section, f, scale) {
+  if (f.plain) return heatRowHtml_(f.keys[0], f.total, scale, f.name);
+  const id = `${section}/${f.name}`;
+  const open = libGroupIsOpen_(id, false) ? " open" : "";
+  return (
+    `<details class="lib-family"${open} data-family="${libEsc(id)}">` +
+    `<summary class="lib-family__head">${heatRowHtml_(f.keys[0], f.total, scale, f.name)}${LIB_CHEVRON_SVG_.replace("lib-movement__chevron", "lib-family__chevron")}</summary>` +
+    `<div class="lib-family__body">${f.rows.map((r) => heatRowHtml_(r.key, r.weighted, scale)).join("")}</div>` +
     "</details>"
   );
 }
@@ -297,7 +306,7 @@ function libMuscleGroupHtml_(group, rows, range, weekMax) {
  * just responded to the tap. A muscle whose group isn't currently rendered
  * (shouldn't happen — wireMuscleTooltips_ only calls this for a shape that
  * already has a tooltip, which means it has real data, which means
- * libGroupedHeatEntries_ included its group) is a harmless no-op.
+ * libHeatTree_ included its group) is a harmless no-op.
  */
 function libExpandGroupFor_(key) {
   const group = muscleUiGroupOf_(key);
@@ -306,6 +315,12 @@ function libExpandGroupFor_(key) {
   if (!details.open) {
     details.open = true;
     libSetGroupOpen_(group, true);
+  }
+  // ...and the muscle inside it (Quads for a quad head), if it's a dropdown.
+  const fam = details.querySelector(`details[data-family="${CSS.escape(`${group}/${muscleFamilyName_(key)}`)}"]`);
+  if (fam && !fam.open) {
+    fam.open = true;
+    libSetGroupOpen_(fam.dataset.family, true);
   }
   details.scrollIntoView({ behavior: "smooth", block: "nearest" });
   // The class is added instantly (nothing to transition FROM yet) and
@@ -387,11 +402,11 @@ async function loadHeat(range) {
   );
 
   libEls.heatEmpty.hidden = setsCounted > 0;
-  const groups = libGroupedHeatEntries_(merged);
-  const weekMax = Math.max(1, ...Object.keys(merged).map((k) => merged[k].weighted));
-  libEls.heatBreakdown.innerHTML = groups.map((g) => libMuscleGroupHtml_(g.group, g.rows, range, weekMax)).join("");
-  libEls.heatBreakdown.querySelectorAll("details[data-group]").forEach((el) => {
-    el.addEventListener("toggle", () => libSetGroupOpen_(el.dataset.group, el.open));
+  const tree = libHeatTree_(merged);
+  const scale = range === "week" ? Math.max(1, ...tree.flatMap((s) => s.families.map((f) => f.total))) : 10;
+  libEls.heatBreakdown.innerHTML = tree.map((s) => libMuscleGroupHtml_(s, scale)).join("");
+  libEls.heatBreakdown.querySelectorAll("details[data-group], details[data-family]").forEach((el) => {
+    el.addEventListener("toggle", () => libSetGroupOpen_(el.dataset.family || el.dataset.group, el.open));
   });
 
   // Sets whose exercise name doesn't resolve to the Exercises catalog never
@@ -406,13 +421,14 @@ async function loadHeat(range) {
   }
 }
 
-/** One muscle's row: name, a red bar that's full at `scale` sets, and the number. */
-function heatRowHtml_(key, n, scale) {
+/** One row: name (`label`, else the muscle's own), a red bar that's full at `scale` sets, and the number. */
+function heatRowHtml_(key, n, scale, label) {
+  const v = Math.round(n * 10) / 10; // 5.9999 from adding heads up shows as 6, not 6.0
   return `
     <div class="lib-heat-row">
-      <span class="lib-heat-row__name">${libEsc(muscleLabel_(key))}</span>
+      <span class="lib-heat-row__name">${libEsc(label || muscleLabel_(key))}</span>
       <span class="lib-heat-row__track"><span class="lib-heat-row__fill lib-heat-row__fill--primary" style="width:${Math.min(100, (n / scale) * 100)}%"></span></span>
-      <span class="lib-heat-row__num">${n % 1 === 0 ? n : n.toFixed(1)}</span>
+      <span class="lib-heat-row__num">${v % 1 === 0 ? v : v.toFixed(1)}</span>
     </div>`;
 }
 
