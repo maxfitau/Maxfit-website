@@ -141,6 +141,8 @@ function fetchExercises() {
           primaryMuscles: findColumn(header, "Primary Muscles"),
           secondaryMuscles: findColumn(header, "Secondary Muscles"),
           bestView: findColumn(header, "Best View"),
+          aliases: findColumn(header, "Aliases"),
+          muscleWeights: findColumn(header, "Muscle Weights"),
         };
         return { rows, col };
       });

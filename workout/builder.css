@@ -385,6 +385,29 @@
   min-width: 0;
 }
 
+/* A row whose exercise name has no muscle data at all — not in the
+   Exercises catalog under this exact or a normalised name, or matched a
+   row that itself has none set yet (2026-10-09). Sits under the name/dot
+   line; no separate button, since the row itself already reopens the
+   picker on tap. */
+.builder__row-exercise-warning {
+  text-align: left;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--red);
+}
+
+/* `display: block` only when actually shown — an unconditional one here
+   would override the browser's own `[hidden] { display: none }` rule
+   (same specificity, later in the cascade), making `.hidden = true` a
+   no-op and showing the warning on every row regardless (found 2026-10-09
+   while verifying the effective-sets engine in a real browser — the
+   warning was rendering for every exercise, matched or not). */
+.builder__row-exercise-warning:not([hidden]) {
+  display: block;
+}
+
 .builder__row input[type="number"] {
   text-align: center;
   padding: 11px 4px;

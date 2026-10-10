@@ -231,6 +231,7 @@ const ExercisePicker = (function () {
               primaryMuscles: col.primaryMuscles >= 0 ? parseMuscleKeys(r[col.primaryMuscles]) : [],
               secondaryMuscles: col.secondaryMuscles >= 0 ? parseMuscleKeys(r[col.secondaryMuscles]) : [],
               bestView: col.bestView >= 0 ? String(r[col.bestView] || "").trim() : "",
+              muscleWeights: col.muscleWeights >= 0 ? String(r[col.muscleWeights] || "").trim() : "",
             }))
             .filter((ex) => ex.name && ex.movement === movement && ex.bodyPart === bodyPart)
             .sort((a, b) => a.name.localeCompare(b.name))
@@ -286,6 +287,7 @@ const ExercisePicker = (function () {
           primaryMuscles: (picked && picked.primaryMuscles) || [],
           secondaryMuscles: (picked && picked.secondaryMuscles) || [],
           bestView: (picked && picked.bestView) || "",
+          muscleWeights: (picked && picked.muscleWeights) || "",
         });
       });
     });
@@ -318,6 +320,7 @@ const ExercisePicker = (function () {
             primaryMuscles: [],
             secondaryMuscles: [],
             bestView: "",
+            muscleWeights: "",
           });
         } catch (err) {
           addBtn.disabled = false;

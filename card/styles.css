@@ -987,3 +987,97 @@ body::before {
   letter-spacing: 0.04em;
   font-size: 14px;
 }
+
+/* ---- Body-figure tooltip (card/muscle-map.js's wireMuscleTooltips_,
+   2026-10-09) — hover/tap a muscle on the Muscles tab's heat figure or the
+   builder's side-panel figure. One shared component, appended straight to
+   <body> (not inside either page's .card) so it's never affected by the
+   card's own scroll/overflow handling, and positioned by JS against the
+   tapped shape's own bounding rect. Matches the page's existing small-card
+   look (e.g. .lib-muscle-card) — plain solid surface, not the glass
+   treatment, since neither page that uses it has moved to glass yet. */
+.muscle-tooltip {
+  position: fixed;
+  z-index: 500;
+  max-width: 240px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.muscle-tooltip__name {
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 15px;
+  color: var(--white);
+}
+
+.muscle-tooltip__value {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--red);
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.muscle-tooltip__split {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--grey);
+  margin-top: 2px;
+}
+
+.muscle-tooltip__label {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 12px;
+  color: var(--dim);
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.muscle-tooltip__list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.muscle-tooltip__list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-family: var(--font-body);
+  font-size: 14px;
+}
+
+.muscle-tooltip__list-name {
+  color: var(--grey);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.muscle-tooltip__list-num {
+  color: var(--white);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.muscle-tooltip__empty {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--dim);
+  margin: 6px 0 0;
+}

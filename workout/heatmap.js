@@ -8,6 +8,14 @@
  * Weighting matches his original spec: a set of an exercise where a
  * muscle is PRIMARY counts 1, SECONDARY counts 0.5 — summed per muscle
  * key over whatever date range is asked for (today, or this week).
+ *
+ * Exercise names are matched to the Exercises catalog through the shared
+ * resolver (buildExerciseIndex_/resolveExerciseMuscles_, card/muscle-map.js)
+ * rather than a plain exact-lowercase lookup — found 2026-10-08 that the
+ * old exact-only matching was silently dropping 65% of all logged sets
+ * ("Bicep Curls" never matched "Barbell Curl", "Pull-ups" never matched
+ * "Pull-Up", etc). A set whose exercise still doesn't resolve is tallied
+ * into unmatchedByName/unmatchedSetsCount instead of just vanishing.
  */
 
 /** Monday of the week containing `ymd` ("2026-10-03" -> "2026-09-29"), Monday-start like Fuel's week. */
@@ -58,16 +66,7 @@ function heatDateSortKey_(raw) {
 async function heatmapMuscleData(memberId, range) {
   const clientSlug = slugify(String(memberId || ""));
   const [{ rows: setRows, col: setCol }, { rows: exRows, col: exCol }] = await Promise.all([fetchLoggedSets(), fetchExercises()]);
-
-  const muscleByExercise = {};
-  exRows.forEach((r) => {
-    const name = String(exCol.name >= 0 ? r[exCol.name] : "").trim().toLowerCase();
-    if (!name) return;
-    muscleByExercise[name] = {
-      primary: exCol.primaryMuscles >= 0 ? parseMuscleKeys(r[exCol.primaryMuscles]) : [],
-      secondary: exCol.secondaryMuscles >= 0 ? parseMuscleKeys(r[exCol.secondaryMuscles]) : [],
-    };
-  });
+  const exerciseIndex = buildExerciseIndex_(exRows, exCol);
 
   const today = heatTodayYmd_();
   const fromYmd = range === "week" ? heatMondayOf(today) : today;
@@ -77,27 +76,58 @@ async function heatmapMuscleData(memberId, range) {
   const weighted = {};
   const primaryCount = {};
   const secondaryCount = {};
+  // Per muscle key, how much each DISTINCT exercise name contributed in
+  // range, summed across however many sets of it were logged — the body
+  // figure's tooltip (Goal 4, 2026-10-09) shows the top 3 per muscle, so
+  // "why is this muscle high this week" has a real answer, not just a
+  // number. Keyed by the exercise's own catalog name (resolved.catalogName),
+  // not whatever raw spelling was logged, so "Pull-ups" and "Pull-Up" merge
+  // into one line instead of splitting credit across two.
+  const contributionsByMuscle = {};
   let setsCounted = 0;
+  // Every exercise name in range that DIDN'T resolve, with how many sets —
+  // shown as "N sets not counted" (workout/library.js) rather than silently
+  // vanishing from the total the way a missing entry used to (2026-10-09).
+  const unmatchedByName = {};
+  let unmatchedSetsCount = 0;
   setRows.forEach((row) => {
     if (String(setCol.client >= 0 ? row[setCol.client] : "").trim().toLowerCase() !== clientSlug) return;
     const key = setCol.date >= 0 ? heatDateSortKey_(row[setCol.date]) : NaN;
     if (!Number.isFinite(key) || key < fromKey || key > toKey) return;
-    const exName = String(setCol.exercise >= 0 ? row[setCol.exercise] : "").trim().toLowerCase();
-    const muscles = muscleByExercise[exName];
-    if (!muscles) return;
+    const exName = String(setCol.exercise >= 0 ? row[setCol.exercise] : "").trim();
+    if (!exName) return;
+    const resolved = resolveExerciseMuscles_(exName, exerciseIndex);
+    if (!resolved.matched) {
+      unmatchedByName[exName] = (unmatchedByName[exName] || 0) + 1;
+      unmatchedSetsCount++;
+      return;
+    }
     setsCounted++;
-    // De-duplicated against the raw key list, not one increment per array
-    // entry — belt and suspenders against the data itself ever listing the
-    // same key twice; harmless either way.
-    new Set(muscles.primary).forEach((k) => {
-      weighted[k] = (weighted[k] || 0) + 1;
+    // Effective-sets model (2026-10-09) — effectiveSetsPerSet_ already
+    // caps any single set's contribution to a muscle GROUP at 1.0, even
+    // when an exercise lists more than one fine head for it (the old
+    // Hanging-Leg-Raise-style double count). The scale hook is a no-op
+    // today (Logged Sets has no RIR/RPE column) but keeps the real set row
+    // in reach for when one gets added.
+    const scale = effortScaleForSet_(row, setCol);
+    const perSet = effectiveSetsPerSet_(resolved);
+    Object.keys(perSet).forEach((k) => {
+      const contribution = perSet[k] * scale;
+      weighted[k] = (weighted[k] || 0) + contribution;
+      const byExercise = (contributionsByMuscle[k] = contributionsByMuscle[k] || {});
+      byExercise[resolved.catalogName] = (byExercise[resolved.catalogName] || 0) + contribution;
+    });
+    // primaryCount/secondaryCount stay a plain, literal tally of the
+    // catalog's primary/secondary ROLE per set — unrelated to the weighted
+    // effective-sets number above, and still what the red/orange segment
+    // counts in the breakdown list show.
+    new Set(resolved.primary).forEach((k) => {
       primaryCount[k] = (primaryCount[k] || 0) + 1;
     });
-    new Set(muscles.secondary).forEach((k) => {
-      weighted[k] = (weighted[k] || 0) + 0.5;
+    new Set(resolved.secondary).forEach((k) => {
       secondaryCount[k] = (secondaryCount[k] || 0) + 1;
     });
   });
 
-  return { weighted, primaryCount, secondaryCount, setsCounted };
+  return { weighted, primaryCount, secondaryCount, contributionsByMuscle, setsCounted, unmatchedByName, unmatchedSetsCount };
 }

@@ -111,10 +111,72 @@ const MUSCLE_FINE_LABELS_ = {
   "hamstrings-semimembranosus": "Semimembranosus",
   "adductor-magnus": "Adductor Magnus",
   "calves-gastroc-lateral": "Gastrocnemius (Lateral)",
+  // Synthetic, display-only (2026-10-09) — the Muscles tab's grouped list
+  // merges abs-upper/abs-mid/abs-lower/abs-infra into this one row, per
+  // Max's own request. The engine itself never produces this key; only
+  // workout/library.js's grouping step does, by summing the 4 real ones.
+  "abs-rectus": "Rectus Abdominis",
 };
 
 function muscleLabel_(key) {
   return MUSCLE_FINE_LABELS_[key] || MUSCLE_KEYS[key] || key;
+}
+
+// ---------------------------------------------------------------------------
+// UI grouping for the Muscles tab's collapsible list (2026-10-09) — maps
+// every real key (fine or the older bare coarse ones a Conditioning-category
+// exercise can still carry straight from the sheet, e.g. "quads") onto one
+// of Max's 6 top-level sections. Display-only: doesn't change anything the
+// effective-sets engine computes, just how workout/library.js buckets the
+// result. A key with no entry here falls into "Other" rather than being
+// silently dropped — same "never silently skip" rule as everywhere else.
+const MUSCLE_UI_GROUPS_ = ["Chest", "Shoulders", "Arms", "Back", "Core", "Legs & Hips", "Other"];
+const MUSCLE_UI_GROUP_OF_ = {
+  // Chest — including serratus anterior (the "boxer's muscle" along the
+  // ribs, a chest-wall/scapular stabiliser most often grouped with chest).
+  "chest-upper": "Chest", "chest-mid": "Chest", "chest-lower": "Chest", chest: "Chest", serratus: "Chest",
+
+  // Shoulders — deltoid heads + rotator cuff/scapular stabilisers. Front,
+  // side and rear delt stay 3 separate rows (Max's own earlier request),
+  // not re-merged here.
+  "delts-front": "Shoulders", "delts-side": "Shoulders", "delts-rear": "Shoulders", delts: "Shoulders",
+  infraspinatus: "Shoulders", "teres-minor": "Shoulders", "teres-major": "Shoulders", rotatorcuff: "Shoulders", teres: "Shoulders",
+
+  // Arms — Biceps/Triceps/Forearms, exactly as Max listed.
+  "biceps-long": "Arms", "biceps-short": "Arms", biceps: "Arms", brachialis: "Arms", brachioradialis: "Arms",
+  "triceps-lateral": "Arms", "triceps-medial": "Arms", "triceps-long": "Arms", triceps: "Arms",
+  "forearm-flexors": "Arms", "forearm-extensors": "Arms", forearms: "Arms", "pronator-teres": "Arms",
+  "flexor-carpi-ulnaris": "Arms", "extensor-carpi-ulnaris": "Arms",
+
+  // Back — lats, all 3 trap regions, rhomboids, spinal erectors. Neck has
+  // no group of its own in Max's 6-section list, so it's folded in here
+  // (flagged for him, not a definite final call).
+  lats: "Back", "traps-upper": "Back", "traps-mid": "Back", "traps-lower": "Back", traps: "Back",
+  rhomboids: "Back", "erector-spinae": "Back", lowerback: "Back",
+  sternocleidomastoid: "Back", neck: "Back",
+
+  // Core — Abs (merged to Rectus Abdominis, see abs-rectus above) + obliques.
+  // No real TVA key exists anywhere in the data yet, so it's left out
+  // rather than fabricated (flagged separately for Max). hip-flexors is
+  // deliberately NOT here — Max asked for it under Legs/Hips instead.
+  "abs-upper": "Core", "abs-mid": "Core", "abs-lower": "Core", "abs-infra": "Core", abs: "Core",
+  "abs-rectus": "Core", // the merged display row itself (workout/library.js) — see abs-rectus's label above
+  "obliques-external": "Core", obliques: "Core",
+
+  // Legs & Hips — quads, hamstrings, glutes, calves, hip flexors/adductors/
+  // shin muscles, and hip-flexors (moved here per Max's own instruction).
+  "hip-flexors": "Legs & Hips", hipflexors: "Legs & Hips",
+  "rectus-femoris": "Legs & Hips", "vastus-medialis": "Legs & Hips", "vastus-lateralis": "Legs & Hips", quads: "Legs & Hips",
+  tfl: "Legs & Hips", sartorius: "Legs & Hips",
+  "adductor-longus": "Legs & Hips", "adductor-magnus": "Legs & Hips", gracilis: "Legs & Hips", adductors: "Legs & Hips",
+  "hamstrings-biceps-femoris": "Legs & Hips", "hamstrings-semitendinosus": "Legs & Hips", "hamstrings-semimembranosus": "Legs & Hips", hamstrings: "Legs & Hips",
+  "glutes-max": "Legs & Hips", "glutes-med": "Legs & Hips", glutes: "Legs & Hips",
+  "calves-soleus": "Legs & Hips", "calves-gastroc-medial": "Legs & Hips", "calves-gastroc-lateral": "Legs & Hips", calves: "Legs & Hips",
+  "tibialis-anterior": "Legs & Hips", peroneus: "Legs & Hips", shins: "Legs & Hips",
+};
+
+function muscleUiGroupOf_(key) {
+  return MUSCLE_UI_GROUP_OF_[key] || "Other";
 }
 
 /** "chest,delts" (as stored in the sheet) -> ["chest", "delts"], blanks dropped. */
@@ -123,6 +185,392 @@ function parseMuscleKeys(raw) {
     .split(",")
     .map((k) => k.trim().toLowerCase())
     .filter(Boolean);
+}
+
+// ---------------------------------------------------------------------------
+// Exercise-name -> muscle-data resolver (2026-10-09). Every page that needs
+// to know an exercise's muscles from its logged/assigned NAME (the Muscle
+// Heatmap, the builder's Muscles Worked panel, the client's live Train-
+// session panel) used to do its own plain `name.toLowerCase()` lookup
+// straight against the Exercises sheet — so "Bicep Curls" never matched
+// "Barbell Curl", "Pull-ups" never matched "Pull-Up", and so on. Found via a
+// full audit of real data (2026-10-08): 65% of all logged sets were
+// resolving to nothing. This is the one shared fix, used everywhere that
+// used to do its own lookup.
+//
+// Matching order, every time: exact name -> normalized name -> an explicit
+// alias from the sheet's own Aliases column. Never a fourth, fuzzier step —
+// an exercise that still doesn't match after these three is reported as
+// UNMATCHED, never silently guessed at (e.g. "Tricep Kickbacks" must never
+// quietly become "Cable Kickback" just because they share a word — that
+// would wrongly credit triceps work to glutes).
+// ---------------------------------------------------------------------------
+
+/**
+ * Deterministic, explicit transforms only — every rule here is fixed and
+ * predictable, never a similarity/fuzzy guess. Lowercases, trims, turns
+ * punctuation/hyphens into spaces (so "Pull-Up" and "Pull-ups" both become
+ * two words before the plural check below, not one hyphenated token),
+ * expands a few common equipment abbreviations (word-boundary only, so
+ * "bb" inside another word is never touched), and strips a single trailing
+ * "s" off the LAST word only — e.g. "Barbell Curls" -> "barbell curl",
+ * "Pull-ups" -> "pull up". A word already ending "ss" ("Press") is never
+ * touched; a word 2 letters or shorter never is either (nothing this short
+ * shows up pluralised in real exercise names). A short, already-singular
+ * word like "Dips" (4 letters, ends "s") does lose its "s" here too — that
+ * never matters in practice, since its own exact name still matches first.
+ */
+function normalizeExerciseName_(name) {
+  let s = String(name || "").toLowerCase().trim();
+  s = s.replace(/[.,/#!$%^&*;:{}=`~()]/g, " ").replace(/-/g, " ");
+  s = s.replace(/\s+/g, " ").trim();
+  if (!s) return "";
+  const words = s.split(" ").map((w) => {
+    if (w === "banded") return "band";
+    if (w === "db") return "dumbbell";
+    if (w === "bb") return "barbell";
+    return w;
+  });
+  const last = words[words.length - 1];
+  if (last.length > 2 && last.endsWith("s") && !last.endsWith("ss")) {
+    words[words.length - 1] = last.slice(0, -1);
+  }
+  return words.join(" ");
+}
+
+/**
+ * Builds the lookup `resolveExerciseMuscles_` needs, once per page, from
+ * `fetchExercises()`'s own `{rows, col}` — exact names, normalized names,
+ * and every alias in the sheet's Aliases column (comma-separated), all
+ * pointing at the same catalog row. A name or alias that would collide with
+ * a DIFFERENT row's exact/normalized form is dropped from that index with a
+ * console warning rather than silently picked one way — an ambiguous match
+ * is exactly what this resolver is meant to never do.
+ */
+function buildExerciseIndex_(rows, col) {
+  const byExact = {};
+  const byNormalized = {};
+  const collidedNormalized = new Set();
+
+  function add(map, key, entry, label) {
+    if (!key) return;
+    if (map === byNormalized && collidedNormalized.has(key)) return;
+    if (Object.prototype.hasOwnProperty.call(map, key) && map[key] !== entry) {
+      if (map === byExact) {
+        console.warn(`muscle-map: "${key}" names two different Exercises rows — ${label} kept pointing at neither.`);
+        delete map[key];
+      } else {
+        console.warn(`muscle-map: "${key}" normalizes the same as another exercise — ${label} dropped from fuzzy matching, exact name still works.`);
+        collidedNormalized.add(key);
+        delete map[key];
+      }
+      return;
+    }
+    map[key] = entry;
+  }
+
+  rows.forEach((r) => {
+    const name = col.name >= 0 ? String(r[col.name] || "").trim() : "";
+    if (!name) return;
+    const entry = {
+      catalogName: name,
+      primary: col.primaryMuscles >= 0 ? parseMuscleKeys(r[col.primaryMuscles]) : [],
+      secondary: col.secondaryMuscles >= 0 ? parseMuscleKeys(r[col.secondaryMuscles]) : [],
+      // Not every caller needs these (the heatmap only ever reads
+      // primary/secondary) — carried anyway so this stays the ONE shared
+      // index/resolver rather than a second parallel lookup just for the
+      // builder's colour dot and category.
+      movement: col.movement >= 0 ? String(r[col.movement] || "").trim() : "",
+      bodyPart: col.bodyPart >= 0 ? String(r[col.bodyPart] || "").trim() : "",
+      bestView: col.bestView >= 0 ? String(r[col.bestView] || "").trim() : "",
+      // Raw "group:weight[head%/head%], ..." string, blank until Max pastes
+      // reviewed values in (see effectiveSetsFor_ below). Carried as-is,
+      // unparsed, so a sheet typo only breaks ONE exercise's effective-sets
+      // line (caught + warned by effectiveSetsFor_) rather than the index.
+      muscleWeights: col.muscleWeights >= 0 ? String(r[col.muscleWeights] || "").trim() : "",
+    };
+    add(byExact, name.toLowerCase(), entry, name);
+    add(byNormalized, normalizeExerciseName_(name), entry, name);
+    const aliasRaw = col.aliases >= 0 ? String(r[col.aliases] || "") : "";
+    aliasRaw.split(",").map((a) => a.trim()).filter(Boolean).forEach((alias) => {
+      add(byExact, alias.toLowerCase(), entry, `${name}'s alias "${alias}"`);
+      add(byNormalized, normalizeExerciseName_(alias), entry, `${name}'s alias "${alias}"`);
+    });
+  });
+
+  return { byExact, byNormalized };
+}
+
+/**
+ * The one lookup every page uses: a logged/assigned exercise NAME -> its
+ * muscles, via `index` (from buildExerciseIndex_). Never throws, never
+ * invents a match — `matched: false` means exactly that, and callers must
+ * show it, not silently skip it (the builder's per-card warning, the
+ * heatmap's "N sets not counted" line).
+ */
+function resolveExerciseMuscles_(name, index) {
+  const empty = { matched: false, matchedVia: null, primary: [], secondary: [], catalogName: "", movement: "", bodyPart: "", bestView: "", muscleWeights: "" };
+  const trimmed = String(name || "").trim();
+  if (!trimmed) return empty;
+  const exact = index.byExact[trimmed.toLowerCase()];
+  if (exact) return Object.assign({}, exact, { matched: true, matchedVia: "exact" });
+  const normalized = index.byNormalized[normalizeExerciseName_(trimmed)];
+  if (normalized) return Object.assign({}, normalized, { matched: true, matchedVia: "normalized" });
+  return empty;
+}
+
+// ---------------------------------------------------------------------------
+// Weighted effective-sets model (2026-10-09). Built because one set could
+// count more than once toward the same muscle group under the old flat
+// primary=1/secondary=0.5 tally — e.g. Hanging Leg Raise lists BOTH
+// abs-lower and abs-infra as primary, so 3 real sets scored as 6 "ab sets".
+// The fix: for ONE set of ONE exercise, no single muscle GROUP may ever
+// contribute more than 1.0 effective set, no matter how many of its
+// fine-grained heads that exercise happens to list.
+//
+// "Group", here, is whichever level Max's own muscleWeights reference
+// examples capped together: front/side/rear delt are each independently
+// capped (his examples use delts-front/delts-rear bare, at full weight, with
+// no shared "delts" budget between them — matching the earlier, deliberate
+// choice to track them separately) and so is every other already-standalone
+// fine key (lats, hip-flexors, the rotator-cuff muscles, forearm
+// stabilisers...). Chest/triceps/biceps/quads/hamstrings/abs/glutes/
+// traps/calves genuinely share a budget across their fine heads, which is
+// what MUSCLE_GROUP_CHILDREN_ below encodes — hand-authored, not inferred
+// from key names, since several fine keys (tfl, sartorius, rhomboids,
+// infraspinatus...) don't share a naming prefix with any coarse group and
+// genuinely don't belong to one for this purpose.
+const MUSCLE_GROUP_CHILDREN_ = {
+  chest: ["chest-upper", "chest-mid", "chest-lower"],
+  triceps: ["triceps-lateral", "triceps-medial", "triceps-long"],
+  biceps: ["biceps-long", "biceps-short"],
+  forearms: ["forearm-flexors", "forearm-extensors"],
+  abs: ["abs-upper", "abs-mid", "abs-lower", "abs-infra"],
+  obliques: ["obliques-external"],
+  lowerback: ["erector-spinae"],
+  glutes: ["glutes-max", "glutes-med"],
+  quads: ["rectus-femoris", "vastus-medialis", "vastus-lateralis"],
+  hamstrings: ["hamstrings-biceps-femoris", "hamstrings-semitendinosus", "hamstrings-semimembranosus"],
+  calves: ["calves-soleus", "calves-gastroc-medial", "calves-gastroc-lateral"],
+  traps: ["traps-upper", "traps-mid", "traps-lower"],
+};
+
+// Reverse lookup, built once: real fine key -> its coarse parent, for
+// whichever fine keys actually have one. A fine key with no entry here
+// (lats, delts-front, hip-flexors, rhomboids...) is its own group — already
+// atomic, same as it's always been.
+const MUSCLE_FINE_KEY_TO_GROUP_ = {};
+Object.keys(MUSCLE_GROUP_CHILDREN_).forEach((group) => {
+  MUSCLE_GROUP_CHILDREN_[group].forEach((key) => {
+    MUSCLE_FINE_KEY_TO_GROUP_[key] = group;
+  });
+});
+
+/**
+ * True if `key` is already a real, terminal muscle key with no further
+ * split available — a fine key (delts-front, hip-flexors, erector-spinae),
+ * or a coarse MUSCLE_KEYS name that has no entry in MUSCLE_GROUP_CHILDREN_
+ * (lats, lowerback). A coarse name that DOES have real children (chest,
+ * quads...) is NOT terminal — it must go through the group-split path below
+ * even though it's also technically "a key in MUSCLE_KEYS".
+ */
+function isRealFineKey_(key) {
+  if (Object.prototype.hasOwnProperty.call(MUSCLE_FINE_LABELS_, key)) return true;
+  return Object.prototype.hasOwnProperty.call(MUSCLE_KEYS, key) && !MUSCLE_GROUP_CHILDREN_[key];
+}
+
+const MUSCLE_WEIGHTS_LINE_RE_ = /^([a-z][a-z0-9-]*):([0-9.]+)(?:\[([^\]]*)\])?$/;
+const MUSCLE_WEIGHTS_HEAD_RE_ = /^([a-z-]+)(\d+)$/;
+
+/**
+ * Parses one exercise's `muscleWeights` string ("group:weight[head%/...], ..."
+ * — see apps-script/Code.gs's ensureExerciseColumns_ for the sheet column,
+ * blank on every row until Max pastes reviewed values in) into a flat
+ * { fineKey: weight } map for ONE set. Never throws on bad input — an
+ * unreadable segment is warned about and skipped, same "don't guess, don't
+ * silently drop the whole exercise" rule as the name resolver above.
+ *
+ * A bare "group:weight" with no [heads] splits that weight evenly across
+ * ALL of the group's real children (Max's own reference examples do this
+ * for small/secondary contributions, e.g. Back Squat's "hamstrings:0.1" —
+ * not worth the author specifying exactly which hamstring head). A group
+ * that's already a real terminal key (delts-front, lats, hip-flexors...) is
+ * used directly; a [heads] bracket is only meaningful on a group that still
+ * has real children to split across.
+ */
+function effectiveSetsFromWeights_(raw, exerciseLabel) {
+  const result = {};
+  String(raw || "").split(",").forEach((segRaw) => {
+    const seg = segRaw.trim();
+    if (!seg) return;
+    const m = MUSCLE_WEIGHTS_LINE_RE_.exec(seg);
+    if (!m) {
+      console.warn(`muscle-map: "${exerciseLabel}" has an unreadable muscleWeights segment "${seg}" — skipped.`);
+      return;
+    }
+    const group = m[1];
+    const weight = parseFloat(m[2]);
+    const headsRaw = m[3];
+
+    if (isRealFineKey_(group)) {
+      if (headsRaw) {
+        console.warn(`muscle-map: "${exerciseLabel}"'s "${group}" is already one muscle — the [${headsRaw}] head split is ignored.`);
+      }
+      result[group] = (result[group] || 0) + weight;
+      return;
+    }
+
+    const children = MUSCLE_GROUP_CHILDREN_[group];
+    if (!children) {
+      console.warn(`muscle-map: "${exerciseLabel}" uses unknown muscleWeights group "${group}" — skipped.`);
+      return;
+    }
+
+    if (!headsRaw) {
+      const share = weight / children.length;
+      children.forEach((k) => {
+        result[k] = (result[k] || 0) + share;
+      });
+      return;
+    }
+
+    const heads = headsRaw.split("/").map((h) => h.trim()).filter(Boolean);
+    let pctTotal = 0;
+    const resolvedHeads = [];
+    heads.forEach((h) => {
+      const hm = MUSCLE_WEIGHTS_HEAD_RE_.exec(h);
+      if (!hm) {
+        console.warn(`muscle-map: "${exerciseLabel}"'s "${group}" has an unreadable head "${h}" — skipped.`);
+        return;
+      }
+      const headName = hm[1];
+      const pct = parseInt(hm[2], 10);
+      const matches = children.filter((c) => c === headName || c.endsWith("-" + headName));
+      if (matches.length !== 1) {
+        console.warn(`muscle-map: "${exerciseLabel}"'s "${group}" head "${headName}" ${matches.length ? "matches more than one muscle" : "doesn't match any muscle"} in that group — skipped.`);
+        return;
+      }
+      pctTotal += pct;
+      resolvedHeads.push({ key: matches[0], pct });
+    });
+    if (pctTotal !== 100) {
+      console.warn(`muscle-map: "${exerciseLabel}"'s "${group}" head percentages add up to ${pctTotal}, not 100 — used as given rather than guessing a fix.`);
+    }
+    resolvedHeads.forEach(({ key, pct }) => {
+      result[key] = (result[key] || 0) + weight * (pct / 100);
+    });
+  });
+  return result;
+}
+
+/**
+ * The fallback used for every exercise that has no muscleWeights yet (every
+ * exercise right now — see effectiveSetsPerSet_ below): each coarse group's
+ * weight is 1.0 if any of its fine children is PRIMARY for this exercise,
+ * else 0.5 if any is SECONDARY, split evenly across however many of that
+ * group's children THIS exercise actually lists (never all of them — an
+ * exercise that only lists chest-mid shouldn't invent a chest-upper
+ * contribution it never claimed). This is the direct fix for the
+ * Hanging-Leg-Raise-style bug: abs-lower + abs-infra both primary used to
+ * score 1.0 each (2.0 total); now the "abs" group scores 1.0 total, split
+ * 0.5/0.5 between the two heads this exercise actually names.
+ */
+function effectiveSetsFromRoles_(primaryKeys, secondaryKeys) {
+  const byGroup = {};
+  function note(key, isPrimary) {
+    const group = MUSCLE_FINE_KEY_TO_GROUP_[key] || key;
+    if (!byGroup[group]) byGroup[group] = { keys: new Set(), primary: false };
+    byGroup[group].keys.add(key);
+    if (isPrimary) byGroup[group].primary = true;
+  }
+  (primaryKeys || []).forEach((k) => note(k, true));
+  (secondaryKeys || []).forEach((k) => note(k, false));
+
+  const result = {};
+  Object.keys(byGroup).forEach((group) => {
+    const { keys, primary } = byGroup[group];
+    const weight = primary ? 1 : 0.5;
+    const share = weight / keys.size;
+    keys.forEach((k) => {
+      result[k] = (result[k] || 0) + share;
+    });
+  });
+  return result;
+}
+
+/**
+ * Safety net applied no matter which path produced `perSetWeights` — sums
+ * contributions back up by coarse group and clamps (with a console warning)
+ * if a bad sheet edit ever pushes one over 1.0 for a single set. Both
+ * generator functions above already keep every real exercise under the cap
+ * by construction; this exists for when muscleWeights gets hand-edited
+ * later and something slips through.
+ */
+function enforceMuscleGroupCap_(perSetWeights, exerciseLabel) {
+  const byGroup = {};
+  Object.keys(perSetWeights).forEach((key) => {
+    const group = MUSCLE_FINE_KEY_TO_GROUP_[key] || key;
+    byGroup[group] = (byGroup[group] || 0) + perSetWeights[key];
+  });
+  const overLimit = Object.keys(byGroup).filter((g) => byGroup[g] > 1 + 1e-9);
+  if (!overLimit.length) return perSetWeights;
+  overLimit.forEach((g) => {
+    console.warn(`muscle-map: "${exerciseLabel}" scores ${byGroup[g].toFixed(2)} effective sets for "${g}" from a single set — clamped to 1.0. Check its muscleWeights line.`);
+  });
+  const scaled = {};
+  Object.keys(perSetWeights).forEach((key) => {
+    const group = MUSCLE_FINE_KEY_TO_GROUP_[key] || key;
+    const factor = overLimit.includes(group) ? 1 / byGroup[group] : 1;
+    scaled[key] = perSetWeights[key] * factor;
+  });
+  return scaled;
+}
+
+/**
+ * The one entry point every caller uses (the heatmap, the builder's side
+ * panel, the live Train-session panel) — the effective-sets contribution of
+ * ONE set of this exercise, keyed by fine muscle key, hard-cap already
+ * applied. Callers multiply by however many sets and accumulate across
+ * exercises themselves, same shape the old flat tally had; this just
+ * replaces what goes into each key's number.
+ *
+ * Builder's planned sets and the heatmap/Train's logged sets intentionally
+ * run through this exact same function — no separate "planned" vs "logged"
+ * weighting logic, per Max's own spec.
+ */
+function effectiveSetsPerSet_(resolved) {
+  const label = resolved.catalogName || "(unnamed exercise)";
+  const raw = resolved.muscleWeights
+    ? effectiveSetsFromWeights_(resolved.muscleWeights, label)
+    : effectiveSetsFromRoles_(resolved.primary, resolved.secondary);
+  return enforceMuscleGroupCap_(raw, label);
+}
+
+/**
+ * Hook for scaling a logged set's effective-sets contribution by how hard
+ * it actually was (RIR/RPE) — e.g. excluding warm-ups or down-weighting a
+ * set logged at RIR 5+. Checked both fetchLoggedSets' own column list and
+ * the live Logged Sets sheet directly (2026-10-09): neither has an RIR/RPE
+ * column today, so this always returns 1. Wire a real scale factor in here
+ * if that data ever gets added, rather than threading it through every
+ * caller individually.
+ */
+function effortScaleForSet_(setRow, setCol) {
+  return 1;
+}
+
+/**
+ * Turns a muscle's { exerciseName: totalContribution } map (built by
+ * workout/heatmap.js and workout/builder.js alongside their own weighted
+ * totals) into the top N, highest first — the figure tooltip's "top 3
+ * contributing exercises" (Goal 4, 2026-10-09). Shared so both pages format
+ * this identically rather than two slightly different sort/slice calls.
+ */
+function muscleTopContributions_(byExercise, limit) {
+  return Object.keys(byExercise || {})
+    .map((name) => ({ name, contribution: byExercise[name] }))
+    .sort((a, b) => b.contribution - a.contribution)
+    .slice(0, limit || 3);
 }
 
 /**
@@ -867,3 +1315,210 @@ function paintMuscleHeat(svgRoot, weighted, cap) {
   const title = svgRoot.querySelector("title");
   if (title) title.textContent = svgRoot.dataset.view === "back" ? "Back view" : "Front view";
 }
+
+// ---------------------------------------------------------------------------
+// Weekly targets (2026-10-09, Goal 3) — colour by status against a target
+// range instead of relative to whatever's trained hardest this week, so a
+// quiet week doesn't paint itself falsely "fully red" and a heavy week
+// doesn't look identical to a moderate one. One shared default per tracked
+// muscle; override individual keys here if a specific muscle ever needs a
+// different range, so a tweak stays a one-line diff.
+const MUSCLE_WEEKLY_TARGET_DEFAULT_ = { min: 10, max: 20 };
+const MUSCLE_WEEKLY_TARGET_OVERRIDES_ = {};
+function muscleWeeklyTarget_(key) {
+  return MUSCLE_WEEKLY_TARGET_OVERRIDES_[key] || MUSCLE_WEEKLY_TARGET_DEFAULT_;
+}
+
+/** "under" (below target.min), "above" (over target.max), else "in-range". */
+function muscleTargetStatus_(value, target) {
+  if (value < target.min) return "under";
+  if (value > target.max) return "above";
+  return "in-range";
+}
+
+// Grey for "under" (same as an untrained muscle — not enough yet, not a
+// failure colour), the brand red for "in-range" (used positively here:
+// on target), and the app's existing amber for "above" — deliberately NOT
+// a louder/alarm red, per Max's own "no shaming, no red failure screens"
+// rule. Text uses --grey (not --dim) for "under" so it still reads at his
+// brightness bar for anything a client reads.
+const MUSCLE_STATUS_COLOR_ = { under: "#3c3c3c", "in-range": "#ff2a1f", above: "#e08a00" };
+
+// The 4 abs sub-region shapes all display as the single merged "Rectus
+// Abdominis" row (workout/library.js's own merge) — shared here so the
+// status figure (below) and the tooltip (further below) redirect to it
+// identically, rather than two copies of the same little lookup table.
+const MUSCLE_ABS_SHAPE_REDIRECT_ = { "abs-upper": "abs-rectus", "abs-mid": "abs-rectus", "abs-lower": "abs-rectus", "abs-infra": "abs-rectus" };
+function muscleAbsDisplayKey_(rawKey) {
+  return MUSCLE_ABS_SHAPE_REDIRECT_[rawKey] || rawKey;
+}
+
+/**
+ * Colours every `[data-muscle]` shape by its weekly TARGET STATUS instead
+ * of paintMuscleHeat's continuous grey-to-red intensity — for the Muscles
+ * tab's This Week view only (Today keeps the old relative scaling; a
+ * single day isn't comparable to a weekly target). `weighted` must already
+ * have the abs sub-regions merged into "abs-rectus" (workout/library.js's
+ * own merge, done once and shared between the list and this figure) —
+ * every real abs-* shape here is redirected to read that merged value, so
+ * the 4 ab regions on the figure always agree with the single merged row
+ * the list shows, rather than quietly reflecting a split the list no
+ * longer displays.
+ */
+function paintMuscleHeatByStatus_(svgRoot, weighted) {
+  if (!svgRoot) return;
+  svgRoot.querySelectorAll("[data-muscle]").forEach((g) => {
+    const key = muscleAbsDisplayKey_(g.getAttribute("data-muscle"));
+    // Unlike paintMuscleHeat's continuous scale, status needs ONE real
+    // number to judge against this muscle's own target — adding the fine
+    // key's value to its bare coarse group's (the old fallback, meant for
+    // legacy coarse-only data lighting up every sub-region) double-counts
+    // whenever something ALSO logs the bare group name on its own, which
+    // every Conditioning-category exercise does (e.g. a real "delts-side"
+    // entry plus an unrelated bare "delts" one from a burpee) — inflating a
+    // muscle's status past what it actually earned. Prefer the shape's own
+    // fine-key value whenever anything has ever touched it; only fall back
+    // to the bare group's value for a shape whose fine key has no data at
+    // all (found 2026-10-09 verifying this against real data — several
+    // under-target muscles were painting as in-range).
+    const groupKey = g.getAttribute("data-group");
+    const value = weighted && Object.prototype.hasOwnProperty.call(weighted, key) ? weighted[key] : (weighted && weighted[groupKey]) || 0;
+    g.setAttribute("fill", MUSCLE_STATUS_COLOR_[muscleTargetStatus_(value, muscleWeeklyTarget_(key))]);
+  });
+  const title = svgRoot.querySelector("title");
+  if (title) title.textContent = svgRoot.dataset.view === "back" ? "Back view" : "Front view";
+}
+
+// ---------------------------------------------------------------------------
+// Figure tooltip (2026-10-09, Goal 4) — hover (desktop) or tap (mobile; tap
+// the same muscle again, or anywhere else, to close) a shape on either
+// page's body figure for its own breakdown: effective sets (vs target where
+// one applies), direct/indirect split, and its top contributing exercises.
+// One shared component so the Muscles tab and the builder's side panel look
+// and behave identically instead of two near-duplicate implementations.
+
+/** Plain-text escape for exercise names (coach-typed, not from a fixed dictionary) interpolated into the tooltip's innerHTML. */
+function muscleTooltipEsc_(text) {
+  const div = document.createElement("div");
+  div.textContent = text == null ? "" : String(text);
+  return div.innerHTML;
+}
+
+let muscleTooltipEl_ = null;
+let muscleTooltipOpenShape_ = null; // the SVG shape element the open tooltip belongs to, or null
+
+function muscleTooltipEnsure_() {
+  if (!muscleTooltipEl_) {
+    const el = document.createElement("div");
+    el.className = "muscle-tooltip";
+    el.hidden = true;
+    document.body.appendChild(el);
+    muscleTooltipEl_ = el;
+  }
+  return muscleTooltipEl_;
+}
+
+function muscleTooltipHide_() {
+  if (muscleTooltipEl_) muscleTooltipEl_.hidden = true;
+  muscleTooltipOpenShape_ = null;
+}
+
+/** Positions the (already-filled, still hidden) tooltip near `shapeEl`, clamped to the viewport. Fixed positioning off the shape's own bounding rect — no SVG-coordinate math, works the same regardless of which page/scroll container it's in. */
+function muscleTooltipPosition_(el, shapeEl) {
+  const rect = shapeEl.getBoundingClientRect();
+  const margin = 10;
+  el.style.left = "0px";
+  el.style.top = "0px";
+  el.hidden = false;
+  const tw = el.offsetWidth;
+  const th = el.offsetHeight;
+  let left = rect.left + rect.width / 2 - tw / 2;
+  let top = rect.top - th - margin;
+  if (top < margin) top = rect.bottom + margin; // not enough room above — show below instead
+  left = Math.max(margin, Math.min(window.innerWidth - tw - margin, left));
+  top = Math.max(margin, Math.min(window.innerHeight - th - margin, top));
+  el.style.left = `${left}px`;
+  el.style.top = `${top}px`;
+}
+
+/**
+ * The tooltip's inner HTML for one muscle. `target` ({min,max}) is optional
+ * — pass it for "x.x / min–max" (the Muscles tab's This Week view); omit it
+ * for a plain "x.x effective sets" (Today, and the builder's single-workout
+ * preview, neither of which compares against a weekly target).
+ * `contributions` is muscleTopContributions_'s own output.
+ */
+function muscleTooltipContentHtml_(key, weightedValue, primaryN, secondaryN, contributions, target) {
+  const value = weightedValue || 0;
+  const valueText = target
+    ? `${value.toFixed(1)} / ${target.min}–${target.max} effective sets`
+    : `${value.toFixed(1)} effective sets`;
+  const p = primaryN || 0;
+  const s = secondaryN || 0;
+  const splitText = p || s ? `${p} direct set${p === 1 ? "" : "s"}, ${s} indirect set${s === 1 ? "" : "s"}` : "No sets yet";
+  const contribHtml = contributions && contributions.length
+    ? `<ul class="muscle-tooltip__list">${contributions
+        .map((c) => `<li><span class="muscle-tooltip__list-name">${muscleTooltipEsc_(c.name)}</span><span class="muscle-tooltip__list-num">${c.contribution.toFixed(1)}</span></li>`)
+        .join("")}</ul>`
+    : `<p class="muscle-tooltip__empty">No exercises yet</p>`;
+  return (
+    `<div class="muscle-tooltip__name">${muscleTooltipEsc_(muscleLabel_(key))}</div>` +
+    `<div class="muscle-tooltip__value">${muscleTooltipEsc_(valueText)}</div>` +
+    `<div class="muscle-tooltip__split">${muscleTooltipEsc_(splitText)}</div>` +
+    `<div class="muscle-tooltip__label">Top exercises</div>` +
+    contribHtml
+  );
+}
+
+/**
+ * Wires hover/tap onto every `[data-muscle]` shape in `svgRoot` — call this
+ * fresh every time a figure is (re)rendered, since muscleFigureSvg builds
+ * new DOM each time. `contentForKey(rawKey)` returns the tooltip's inner
+ * HTML for that shape (already run through muscleAbsDisplayKey_ by the
+ * caller if it needs the abs merge), or a falsy value to skip a shape with
+ * nothing worth showing. `onSelect(displayKey)`, if given, fires when a
+ * shape is tapped/clicked open — library.js uses it to expand/highlight
+ * that muscle's group in the breakdown list; the builder has no such list
+ * and omits it.
+ */
+function wireMuscleTooltips_(svgRoot, contentForKey, onSelect) {
+  if (!svgRoot) return;
+  const canHover = typeof window.matchMedia === "function" && window.matchMedia("(hover: hover)").matches;
+  svgRoot.querySelectorAll("[data-muscle]").forEach((shape) => {
+    const rawKey = shape.getAttribute("data-muscle");
+    // Only wired shapes get the pointer cursor — the static Anatomy Lab
+    // detail figure (showLibDetail, workout/library.js) uses the same
+    // .muscle-figure class without calling this, and isn't tappable.
+    shape.style.cursor = "pointer";
+    function show() {
+      const html = contentForKey(rawKey);
+      if (!html) return;
+      const el = muscleTooltipEnsure_();
+      el.innerHTML = html;
+      muscleTooltipPosition_(el, shape);
+      muscleTooltipOpenShape_ = shape;
+    }
+    if (canHover) {
+      shape.addEventListener("mouseenter", show);
+      shape.addEventListener("mouseleave", muscleTooltipHide_);
+    }
+    shape.addEventListener("click", (e) => {
+      e.stopPropagation(); // keep the document-level listener below from treating this as "tapped outside"
+      if (muscleTooltipOpenShape_ === shape) {
+        muscleTooltipHide_();
+        return;
+      }
+      show();
+      if (muscleTooltipOpenShape_ === shape && typeof onSelect === "function") onSelect(muscleAbsDisplayKey_(rawKey));
+    });
+  });
+}
+
+// Tap/click anywhere outside the tooltip itself closes whatever's open —
+// wired once, globally (there can be up to 4 figures live on the Muscles
+// tab across its two views, but only ever one tooltip).
+document.addEventListener("click", (e) => {
+  if (!muscleTooltipOpenShape_) return;
+  if (muscleTooltipEl_ && muscleTooltipEl_.contains(e.target)) return;
+  muscleTooltipHide_();
+});

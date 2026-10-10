@@ -73,6 +73,13 @@ function currentPin() {
  * the side "Muscles Worked" panel shows the same thing once, aggregated,
  * for the whole workout. The picked primary/secondary keys still travel
  * with the row (on wrap.dataset) so refreshMuscleLoadPanel_ can read them.
+ *
+ * A row with a name but no primary AND no secondary muscles — whether its
+ * name never resolved in the Exercises catalog at all, or it resolved to a
+ * real row that just has no muscle data set yet — shows a small warning
+ * (2026-10-09) rather than silently contributing nothing to the panel with
+ * no explanation. No separate "fix it" control needed: the row is already
+ * a button that reopens the picker on tap, so tapping it is the fix.
  */
 function buildExerciseControl(exercise) {
   const wrap = document.createElement("button");
@@ -89,16 +96,24 @@ function buildExerciseControl(exercise) {
   const label = document.createElement("span");
   label.className = "builder__row-exercise-label";
 
+  const warning = document.createElement("span");
+  warning.className = "builder__row-exercise-warning";
+  warning.textContent = "⚠ No muscle data — won't count. Tap to fix.";
+  warning.hidden = true;
+
   const nameValueInput = document.createElement("input");
   nameValueInput.type = "hidden";
   nameValueInput.className = "builder__row-name-value";
 
-  function setChosen(name, movement, bodyPart, primaryMuscles, secondaryMuscles) {
+  function setChosen(name, movement, bodyPart, primaryMuscles, secondaryMuscles, muscleWeights) {
     nameValueInput.value = name || "";
+    wrap.dataset.exerciseName = name || "";
     wrap.dataset.movement = movement || "";
     wrap.dataset.bodyPart = bodyPart || "";
     wrap.dataset.primaryMuscles = (primaryMuscles || []).join(",");
     wrap.dataset.secondaryMuscles = (secondaryMuscles || []).join(",");
+    wrap.dataset.muscleWeights = muscleWeights || "";
+    warning.hidden = !name || Boolean((primaryMuscles && primaryMuscles.length) || (secondaryMuscles && secondaryMuscles.length) || muscleWeights);
     if (name) {
       label.textContent = name;
       wrap.classList.remove("builder__row-exercise--empty");
@@ -120,13 +135,14 @@ function buildExerciseControl(exercise) {
     exercise && exercise.movement,
     exercise && exercise.bodyPart,
     exercise && exercise.primaryMuscles,
-    exercise && exercise.secondaryMuscles
+    exercise && exercise.secondaryMuscles,
+    exercise && exercise.muscleWeights
   );
 
   wrap.addEventListener("click", () => {
     ExercisePicker.open({
       onChoose: (picked) => {
-        setChosen(picked.name, picked.movement, picked.bodyPart, picked.primaryMuscles, picked.secondaryMuscles);
+        setChosen(picked.name, picked.movement, picked.bodyPart, picked.primaryMuscles, picked.secondaryMuscles, picked.muscleWeights);
         refreshMuscleLoadPanel_();
       },
     });
@@ -135,6 +151,7 @@ function buildExerciseControl(exercise) {
   top.appendChild(dot);
   top.appendChild(label);
   wrap.appendChild(top);
+  wrap.appendChild(warning);
   return { control: wrap, nameValueInput };
 }
 
@@ -202,6 +219,9 @@ function refreshMuscleLoadPanel_() {
   const weighted = {};
   const primaryCount = {};
   const secondaryCount = {};
+  // Per muscle, how much each exercise NAME in this workout contributes —
+  // the figure tooltip's "top 3 contributing exercises" (Goal 4, 2026-10-09).
+  const contributionsByMuscle = {};
 
   Array.from(els.rows.children).forEach((row) => {
     const control = row.querySelector(".builder__row-exercise");
@@ -211,29 +231,51 @@ function refreshMuscleLoadPanel_() {
 
     const primary = (control.dataset.primaryMuscles || "").split(",").filter(Boolean);
     const secondary = (control.dataset.secondaryMuscles || "").split(",").filter(Boolean);
-    // Keyed by whatever the exercise data actually says — a fine key
-    // ("delts-front") if it has one, a broad one ("delts") if it doesn't —
-    // not folded into the broad group. Max wants front/side/rear delt (and
-    // any other fine-grained region the data already tracks) visible as
-    // its own row, not merged into one "Shoulders" line (2026-10-05).
-    // De-duplicated against the raw key list — belt and suspenders against
-    // the same key appearing twice; harmless either way.
+    const muscleWeights = control.dataset.muscleWeights || "";
+    const exerciseName = control.dataset.exerciseName || "";
+    // Effective-sets model (2026-10-09) — same engine the Muscles tab's
+    // weekly heatmap and the live Train panel use, so a planned workout
+    // previews exactly what logging it will actually score. Caps a single
+    // set's contribution to any muscle GROUP at 1.0 even when the exercise
+    // lists more than one fine head for it, then scales by how many sets
+    // this row plans. primaryCount/secondaryCount stay the plain
+    // catalog-role tally the red/orange segments show.
+    const perSet = effectiveSetsPerSet_({ catalogName: exerciseName, primary, secondary, muscleWeights });
+    Object.keys(perSet).forEach((k) => {
+      const contribution = perSet[k] * sets;
+      weighted[k] = (weighted[k] || 0) + contribution;
+      const byExercise = (contributionsByMuscle[k] = contributionsByMuscle[k] || {});
+      byExercise[exerciseName] = (byExercise[exerciseName] || 0) + contribution;
+    });
     new Set(primary).forEach((k) => {
-      weighted[k] = (weighted[k] || 0) + sets;
       primaryCount[k] = (primaryCount[k] || 0) + sets;
     });
     new Set(secondary).forEach((k) => {
-      weighted[k] = (weighted[k] || 0) + sets * 0.5;
       secondaryCount[k] = (secondaryCount[k] || 0) + sets;
     });
   });
+
+  // Any open tooltip is anchored to a shape from the figure we're about to
+  // throw away below (muscleFigureSvg builds fresh DOM every call).
+  muscleTooltipHide_();
 
   const frontSvg = muscleFigureSvg("front", "builderSideFrontTitle");
   const backSvg = muscleFigureSvg("back", "builderSideBackTitle");
   els.sideFigs.innerHTML =
     `<div class="builder__side-fig-col">${frontSvg}<span class="builder__side-fig-caption">Front</span></div>` +
     `<div class="builder__side-fig-col">${backSvg}<span class="builder__side-fig-caption">Back</span></div>`;
-  els.sideFigs.querySelectorAll("svg.muscle-figure").forEach((svg) => paintMuscleHeat(svg, weighted, BUILDER_MUSCLE_LOAD_CAP_));
+  const sideSvgs = els.sideFigs.querySelectorAll("svg.muscle-figure");
+  sideSvgs.forEach((svg) => paintMuscleHeat(svg, weighted, BUILDER_MUSCLE_LOAD_CAP_));
+
+  // Goal 4 (2026-10-09): hover/tap a shape for its own breakdown. No weekly
+  // target here (a single planned workout, not a week) and no group list to
+  // expand (this panel is a flat list), so just the value/split/exercises.
+  sideSvgs.forEach((svg) =>
+    wireMuscleTooltips_(svg, (key) => {
+      if (!weighted[key] || weighted[key] <= 0) return null;
+      return muscleTooltipContentHtml_(key, weighted[key], primaryCount[key], secondaryCount[key], muscleTopContributions_(contributionsByMuscle[key]), null);
+    })
+  );
 
   const entries = Object.keys(weighted).sort((a, b) => weighted[b] - weighted[a]);
   els.sideHeatList.innerHTML = entries.length
@@ -242,10 +284,12 @@ function refreshMuscleLoadPanel_() {
 }
 
 /**
- * One row of the side panel's breakdown list — same red/orange "primary +
- * secondary set count" shape as the Muscles tab's This Week list
- * (heatWeekRowHtml_, workout/library.js), just scoped to this one workout.
- * Each count sits directly under its own segment (2026-10-05, was a
+ * One row of the side panel's breakdown list — the same red/orange
+ * "primary + secondary set count" shape the Muscles tab's weekly list used
+ * before it moved to target-status colouring (heatWeekTargetRowHtml_,
+ * workout/library.js, 2026-10-09) — this panel stays a direct-count view,
+ * scoped to just this one workout, not a weekly target. Each count sits
+ * directly under its own segment (2026-10-05, was a
  * combined "3+5" off to the side) so it's unambiguous which number is
  * which. A zero-count side renders no number — an empty segment already
  * shows zero.
@@ -492,57 +536,39 @@ async function loadClientList() {
   }
 }
 
-// Name -> {movement, bodyPart, primaryMuscles, secondaryMuscles, bestView},
-// built once from fetchExercises() — the Workout Exercises tab only stores
-// an exercise's NAME against a client, not its category or muscles, so
-// re-opening a saved workout needs this lookup to show the same colour dot
-// and muscle data a freshly-picked exercise gets.
+// The Workout Exercises tab only stores an exercise's NAME against a
+// client, not its category or muscles, so re-opening a saved workout needs
+// a name -> {movement, bodyPart, primary, secondary, matched} lookup to
+// show the same colour dot and muscle data a freshly-picked exercise gets.
+// Built via the shared resolver (buildExerciseIndex_/resolveExerciseMuscles_,
+// card/muscle-map.js) — the same one workout/heatmap.js uses — rather than
+// this file's own plain exact-lowercase lookup (2026-10-09 fix; see that
+// file's header comment for why the old exact-only matching mattered).
 //
-// Cached as the in-flight PROMISE, not the (eventually-filled) map itself
-// (2026-10-05 fix) — loadClientWorkouts below calls exerciseCategoryFor_
-// for every exercise in the workout at once, via Promise.all, so all of
-// them run their first synchronous line before any of them finish loading.
-// Caching the plain object meant only the very first caller actually
-// waited for fetchExercises(): every other exercise in the SAME workout
-// saw a cache that already existed but was still empty, and silently got
-// EXERCISE_CATEGORY_FALLBACK_ — no muscles, no colour dot. A workout's
-// first exercise always looked right; everything after it never did.
-// Caching the promise itself means every concurrent caller awaits the
-// exact same fetch and sees the real, fully-populated map.
-let exerciseCategoryByNamePromise_ = null;
-const EXERCISE_CATEGORY_FALLBACK_ = { movement: "", bodyPart: "", primaryMuscles: [], secondaryMuscles: [], bestView: "" };
+// Cached as the in-flight PROMISE, not the (eventually-built) index itself
+// (2026-10-05 fix, still needed — orthogonal to the matching-logic fix
+// above) — loadClientWorkouts below calls exerciseCategoryFor_ for every
+// exercise in the workout at once, via Promise.all, so all of them run
+// their first synchronous line before any of them finish loading. Caching
+// the plain object meant only the very first caller actually waited for
+// fetchExercises(): every other exercise in the SAME workout saw a cache
+// that already existed but was still empty. Caching the promise itself
+// means every concurrent caller awaits the exact same fetch and sees the
+// real, fully-built index.
+let exerciseIndexPromise_ = null;
 
-function loadExerciseCategoryMap_() {
-  if (!exerciseCategoryByNamePromise_) {
-    exerciseCategoryByNamePromise_ = (async () => {
-      const map = {};
-      try {
-        const { rows, col } = await fetchExercises();
-        if (col.name >= 0) {
-          for (const r of rows) {
-            const n = String(r[col.name] || "").trim();
-            if (!n) continue;
-            map[n.toLowerCase()] = {
-              movement: col.movement >= 0 ? String(r[col.movement] || "").trim() : "",
-              bodyPart: col.bodyPart >= 0 ? String(r[col.bodyPart] || "").trim() : "",
-              primaryMuscles: col.primaryMuscles >= 0 ? parseMuscleKeys(r[col.primaryMuscles]) : [],
-              secondaryMuscles: col.secondaryMuscles >= 0 ? parseMuscleKeys(r[col.secondaryMuscles]) : [],
-              bestView: col.bestView >= 0 ? String(r[col.bestView] || "").trim() : "",
-            };
-          }
-        }
-      } catch (err) {
-        // Lookup stays empty — rows just render without a colour dot or muscle data.
-      }
-      return map;
-    })();
+function loadExerciseIndex_() {
+  if (!exerciseIndexPromise_) {
+    exerciseIndexPromise_ = fetchExercises()
+      .then(({ rows, col }) => buildExerciseIndex_(rows, col))
+      .catch(() => ({ byExact: {}, byNormalized: {} })); // rows just render without a colour dot or muscle data
   }
-  return exerciseCategoryByNamePromise_;
+  return exerciseIndexPromise_;
 }
 
 async function exerciseCategoryFor_(name) {
-  const map = await loadExerciseCategoryMap_();
-  return map[name.trim().toLowerCase()] || EXERCISE_CATEGORY_FALLBACK_;
+  const index = await loadExerciseIndex_();
+  return resolveExerciseMuscles_(name, index);
 }
 
 /** Loads every workout name this client already has, grouped into { lowercaseName: { name, exercises } }. */
@@ -557,14 +583,15 @@ async function loadClientWorkouts(clientSlug) {
         .filter((r) => String(r[col.client] || "").trim().toLowerCase() === clientSlug)
         .map(async (r) => {
           const name = (r[col.exercise] || "").trim();
-          const category = name ? await exerciseCategoryFor_(name) : EXERCISE_CATEGORY_FALLBACK_;
+          const category = await exerciseCategoryFor_(name);
           return {
             workoutName: (col.workoutName >= 0 ? r[col.workoutName] : "") || "",
             name,
             movement: category.movement,
             bodyPart: category.bodyPart,
-            primaryMuscles: category.primaryMuscles,
-            secondaryMuscles: category.secondaryMuscles,
+            primaryMuscles: category.primary,
+            secondaryMuscles: category.secondary,
+            muscleWeights: category.muscleWeights,
             sets: parseSessions(r[col.sets], ""),
             reps: (r[col.reps] || "").trim(),
             order: parseSessions(r[col.order], 0),

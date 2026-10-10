@@ -32,7 +32,7 @@ const GROCERY_SHEET_NAME = "Grocery Items";
 // Changes whenever this file does, and is shown when you open the deployed
 // URL in a browser (see doGet) — the quick way to tell whether a redeploy
 // actually took, instead of guessing from behaviour.
-const BACKEND_VERSION = "2026-10-04b";
+const BACKEND_VERSION = "2026-10-09b";
 
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -1614,7 +1614,7 @@ function ensureWorkoutExercisesColumns_(sheet) {
 }
 
 function ensureExerciseColumns_(sheet) {
-  return ensureColumns_(sheet, ["Movement", "Body Part", "Equipment", "Primary Muscles", "Secondary Muscles", "Best View"]);
+  return ensureColumns_(sheet, ["Movement", "Body Part", "Equipment", "Primary Muscles", "Secondary Muscles", "Best View", "Aliases", "Muscle Weights"]);
 }
 
 /** Adds any of `names` that are missing from the sheet's header row (at the end — everything looks columns up by NAME, so position doesn't matter) and returns the up-to-date header. */
@@ -1927,7 +1927,7 @@ const BOOKING_AVAILABILITY_HEADER = ["On", "Day", "Start", "End", "Session Minut
 const BOOKING_TIME_OFF_HEADER = ["From", "To", "Note"];
 const BOOKING_SETTINGS_HEADER = ["Setting", "Value", "What it does"];
 const BOOKING_CLIENTS_HEADER = ["Name", "Slug", "Booking Code", "Text to send", "Email"];
-const BOOKINGS_HEADER = ["Booking ID", "Date", "Start", "End", "Minutes", "Client", "Client Slug", "Status", "Booked At", "Cancelled At"];
+const BOOKINGS_HEADER = ["Booking ID", "Date", "Start", "End", "Minutes", "Client", "Client Slug", "Status", "Booked At", "Cancelled At", "Calendar Event Id"];
 const BOOKING_PRICES_HEADER = ["On", "Name", "Sessions", "Price", "Stripe lookup key", "Pay link"];
 const BOOKING_PAYMENTS_HEADER = ["Stripe Session", "Paid At", "Client", "Slug", "Item", "Sessions", "Amount", "Before", "After", "Status", "Note"];
 
@@ -1968,6 +1968,18 @@ const BOOKING_PRICE_DEFAULTS = [
 // script starts with a fresh copy of this file's globals, so the self-test
 // pointing at its scratch sheet can never redirect a real client's request.
 let bookingSheetOverride_ = null;
+
+// Set only by bookingSelfTest(), same spirit as bookingSheetOverride_ above
+// (2026-10-08) — the self-test's slot-count checks assume a clean slate
+// with nothing else in the way, but Max's actual Google Calendar is real
+// and has whatever's really on it that day, which there's no scratch
+// version of the way there's a scratch spreadsheet. Without this, the
+// self-test can fail not because anything's broken but because Max
+// genuinely has something on at the exact time it tries to book — and it
+// would also leave real, if short-lived, test events on his actual
+// calendar every run. Checked by bookingApplyCalendarBusy_,
+// bookingSyncCalendarCreate_ and bookingSyncCalendarDelete_.
+let bookingSkipCalendarSync_ = false;
 
 /**
  * One-time helper — run it from the Apps Script editor (pick setupBooking in
@@ -2383,6 +2395,7 @@ function bookingRows_(ss) {
       client: String(r[c.client]).trim(),
       slug: String(r[c.slug]).trim().toLowerCase(),
       active: status.toLowerCase() === "booked",
+      calendarEventId: c.calendarEventId >= 0 ? String(r[c.calendarEventId] || "").trim() : "",
     });
   });
   return out;
@@ -2405,6 +2418,12 @@ function bookingColumns_(header) {
   Object.keys(c).forEach(function (k) {
     if (c[k] < 0) throw new Error("The Bookings tab is missing a column (" + k + "). Run setupBooking to repair it.");
   });
+  // Added later (2026-10-08) for the Calendar sync — deliberately NOT in the
+  // required check above, so a sheet that hasn't had setupBooking re-run yet
+  // still works exactly as before; the sync just can't record or find an
+  // event id until it has (bookingSyncCalendarCreate_/_Delete_ already treat
+  // a missing column as "nothing to sync," same as any other gap).
+  c.calendarEventId = findColumn_(header, "Calendar Event Id");
   return c;
 }
 
@@ -2451,6 +2470,140 @@ function bookingCandidates_(windows, timeOff, activeBookings, settings, now) {
 
 function bookingPublicSlot_(c) {
   return { date: c.date, start: bookingFormatMinutes_(c.startMin), end: bookingFormatMinutes_(c.endMin), minutes: c.minutes };
+}
+
+/**
+ * Marks `calendarBusy: true` on any candidate whose time overlaps an event
+ * on Max's own Google Calendar (2026-10-07) — his real day job, appointments,
+ * whatever else is actually on it, the same account Notion Calendar shows
+ * him. Deliberately kept OUTSIDE bookingCandidates_, which stays pure and
+ * testable with fake data — this is the one place in the booking flow that
+ * reaches out to a live Google service the test harness can't fake, so it's
+ * isolated here and both call sites (handleBookingInfo_, handleBookSession_)
+ * filter on the same flag bookingCandidates_'s own tooSoon/taken already use.
+ *
+ * Any event counts as busy, full stop — no "free vs busy" event setting, no
+ * title matching. If Max wants travel time or getting-ready time blocked
+ * too, he just adds an event for it on his own calendar; it's treated
+ * exactly like any other commitment. An all-day event blocks the whole day.
+ *
+ * Fails OPEN on any error (not yet authorised, Calendar having a moment) —
+ * candidates come back unchanged, same as bookingTimeOff_ above when its
+ * sheet can't be read. A broken calendar check must never be able to take
+ * the whole booking page down; Max can watch for this once after deploying
+ * (see CLAUDE.md) rather than this silently paging him on every page view.
+ */
+/**
+ * Diagnostic only — run this one directly from the editor (select it in the
+ * function dropdown, press Run), not called from anywhere else. Unlike
+ * bookingApplyCalendarBusy_ above, this does NOT catch its own errors, so
+ * if Calendar access isn't actually authorised yet, running this is what
+ * triggers that permission prompt — and either way, check View > Logs (or
+ * the "Execution log" panel that opens) afterwards to see what it found.
+ */
+function testCalendarAccess() {
+  const cal = CalendarApp.getDefaultCalendar();
+  Logger.log("Calendar: " + cal.getName() + " <" + cal.getId() + ">");
+  const from = new Date();
+  const to = new Date(from.getTime() + 10 * 86400000);
+  const events = cal.getEvents(from, to);
+  Logger.log("Events in the next 10 days: " + events.length);
+  events.forEach(function (e) {
+    Logger.log(" - " + (e.isAllDayEvent() ? "[all-day] " : "") + e.getTitle() + " | " + e.getStartTime() + " -> " + e.getEndTime());
+  });
+}
+
+function bookingApplyCalendarBusy_(candidates) {
+  if (!candidates.length || bookingSkipCalendarSync_) return candidates;
+  let events;
+  try {
+    const cal = CalendarApp.getDefaultCalendar();
+    const rangeStart = new Date(bookingStartMs_(candidates[0].date, 0));
+    const rangeEnd = new Date(bookingStartMs_(candidates[candidates.length - 1].date, 0) + 86400000);
+    events = cal.getEvents(rangeStart, rangeEnd);
+  } catch (err) {
+    return candidates;
+  }
+
+  const busyByDate = {};
+  function addBusy(dateKey, startMin, endMin) {
+    (busyByDate[dateKey] = busyByDate[dateKey] || []).push({ startMin: startMin, endMin: endMin });
+  }
+  events.forEach(function (ev) {
+    if (ev.isAllDayEvent()) {
+      let d = Utilities.formatDate(ev.getAllDayStartDate(), TIMEZONE, "yyyy-MM-dd");
+      const endKey = Utilities.formatDate(ev.getAllDayEndDate(), TIMEZONE, "yyyy-MM-dd"); // exclusive
+      while (d < endKey) {
+        addBusy(d, 0, 1440);
+        d = bookingAddDays_(d, 1);
+      }
+      return;
+    }
+    const startDate = Utilities.formatDate(ev.getStartTime(), TIMEZONE, "yyyy-MM-dd");
+    const endDate = Utilities.formatDate(ev.getEndTime(), TIMEZONE, "yyyy-MM-dd");
+    if (startDate === endDate) {
+      const startMin = Number(Utilities.formatDate(ev.getStartTime(), TIMEZONE, "H")) * 60 + Number(Utilities.formatDate(ev.getStartTime(), TIMEZONE, "m"));
+      const endMin = Number(Utilities.formatDate(ev.getEndTime(), TIMEZONE, "H")) * 60 + Number(Utilities.formatDate(ev.getEndTime(), TIMEZONE, "m"));
+      addBusy(startDate, startMin, Math.max(endMin, startMin + 1));
+    } else {
+      // Spans midnight (or several days) — block every day it touches in
+      // full, rather than work out partial minutes either end. Simpler, and
+      // errs toward blocking more, not less.
+      let d = startDate;
+      while (d <= endDate) {
+        addBusy(d, 0, 1440);
+        d = bookingAddDays_(d, 1);
+      }
+    }
+  });
+
+  if (!Object.keys(busyByDate).length) return candidates;
+  return candidates.map(function (c) {
+    const busy = busyByDate[c.date];
+    if (!busy) return c;
+    const overlaps = busy.some(function (b) { return b.startMin < c.endMin && c.startMin < b.endMin; });
+    return overlaps ? Object.assign({}, c, { calendarBusy: true }) : c;
+  });
+}
+
+/**
+ * Creates a real event on Max's own Google Calendar for a just-made booking
+ * (2026-10-08) — the reverse direction of bookingApplyCalendarBusy_ above:
+ * that one reads his calendar to block the card, this one writes to it so
+ * a booking shows up there too, alongside everything else he tracks on it.
+ * One-way each direction, not a loop: this never re-reads what it just
+ * wrote, and bookingApplyCalendarBusy_ will see it on the NEXT request same
+ * as any other event, not this one. Returns the new event's id (to store on
+ * the booking row, so bookingSyncCalendarDelete_ can find it again on
+ * cancel), or "" on any failure. Called only after the booking row is
+ * already written and flushed — exactly like the confirmation email right
+ * beside this call site, a calendar-sync failure must never fail a booking
+ * that's already safely saved.
+ */
+function bookingSyncCalendarCreate_(clientName, date, startMin, endMin, meetingPlace) {
+  if (bookingSkipCalendarSync_) return "";
+  try {
+    const cal = CalendarApp.getDefaultCalendar();
+    const start = new Date(bookingStartMs_(date, startMin));
+    const end = new Date(bookingStartMs_(date, endMin));
+    const event = cal.createEvent("PT session — " + clientName, start, end);
+    if (meetingPlace) event.setLocation(meetingPlace);
+    return event.getId();
+  } catch (err) {
+    return "";
+  }
+}
+
+/** Removes the calendar event for a just-cancelled booking, if it has one and it can still be found. Same spirit as the create side: a failure here must never fail the cancellation itself, which is already saved by the time this runs. */
+function bookingSyncCalendarDelete_(eventId) {
+  if (!eventId || bookingSkipCalendarSync_) return;
+  try {
+    const cal = CalendarApp.getDefaultCalendar();
+    const event = cal.getEventById(eventId);
+    if (event) event.deleteEvent();
+  } catch (err) {
+    // Nothing to do — the booking is still correctly cancelled either way.
+  }
 }
 
 /** The client's own upcoming bookings, soonest first, each with whether they can still cancel it. */
@@ -3511,8 +3664,9 @@ function handleBookingInfo_(payload) {
     let slots = [];
     if (eligibility.canBook) {
       const active = rows.filter(function (b) { return b.active && b.date >= ctx.now.dateKey; });
-      slots = bookingCandidates_(bookingWindows_(ctx.ss), bookingTimeOff_(ctx.ss), active, ctx.settings, ctx.now)
-        .filter(function (c) { return !c.tooSoon && !c.taken; })
+      const candidates = bookingCandidates_(bookingWindows_(ctx.ss), bookingTimeOff_(ctx.ss), active, ctx.settings, ctx.now);
+      slots = bookingApplyCalendarBusy_(candidates)
+        .filter(function (c) { return !c.tooSoon && !c.taken && !c.calendarBusy; })
         .map(bookingPublicSlot_);
     }
     return jsonResponse_({
@@ -3562,13 +3716,15 @@ function handleBookSession_(payload) {
     if (!eligibility.canBook) return bookingFail_(eligibility.code, eligibility.message);
 
     const active = rows.filter(function (b) { return b.active && b.date >= ctx.now.dateKey; });
-    const candidate = bookingCandidates_(bookingWindows_(ctx.ss), bookingTimeOff_(ctx.ss), active, ctx.settings, ctx.now)
+    const candidates = bookingCandidates_(bookingWindows_(ctx.ss), bookingTimeOff_(ctx.ss), active, ctx.settings, ctx.now);
+    const candidate = bookingApplyCalendarBusy_(candidates)
       .filter(function (c) { return c.date === date && c.startMin === startMin; })[0];
     if (!candidate) return bookingFail_("unavailable", "That time isn't available any more. Please pick another.");
     if (candidate.tooSoon) {
       return bookingFail_("too-soon", "Bookings need at least " + ctx.settings.minNoticeHours + " hours' notice. Please pick a later time.");
     }
     if (candidate.taken) return bookingFail_("taken", "Someone just took that time. Please pick another.");
+    if (candidate.calendarBusy) return bookingFail_("unavailable", "That time isn't available any more. Please pick another.");
 
     const sheet = ctx.ss.getSheetByName(BOOKING_TABS.bookings);
     const table = bookingTable_(sheet);
@@ -3590,8 +3746,12 @@ function handleBookSession_(payload) {
     target.setValues([row]);
     SpreadsheetApp.flush(); // commit before the lock is released, or the next request could still read the slot as free
 
-    // The booking is saved, so nothing from here on may fail it: emails only report back.
+    // The booking is saved, so nothing from here on may fail it: emails and the calendar sync only report back.
     const emailedTo = bookingConfirmClient_(ctx, payload.email, { id: id, date: date, startMin: startMin, endMin: candidate.endMin, minutes: candidate.minutes });
+    if (c.calendarEventId >= 0) {
+      const eventId = bookingSyncCalendarCreate_(ctx.member.name, date, startMin, candidate.endMin, ctx.settings.meetingPlace);
+      if (eventId) sheet.getRange(target.getRow(), c.calendarEventId + 1).setNumberFormat("@").setValue(eventId);
+    }
 
     const when = bookingLabel_(date, candidate.startMin);
     bookingNotify_(ctx.settings, "New booking: " + ctx.member.name + " — " + when, [
@@ -3645,6 +3805,8 @@ function handleCancelBooking_(payload) {
     sheet.getRange(target.row, c.status + 1).setValue("Cancelled");
     sheet.getRange(target.row, c.cancelledAt + 1).setNumberFormat("@").setValue(ctx.now.stamp);
     SpreadsheetApp.flush();
+
+    bookingSyncCalendarDelete_(target.calendarEventId);
 
     const emailedTo = bookingCancelNoteClient_(ctx, target);
 
@@ -3703,6 +3865,7 @@ function bookingSelfTest() {
       scratch = bookingScratchBook_();
       state.keep = bookingResetScratch_(scratch);
       bookingSheetOverride_ = scratch; // this run only: a real client's request never sees it
+      bookingSkipCalendarSync_ = true; // this run only: the slot-count checks don't get thrown off by whatever's really on Max's calendar today, and it doesn't leave real test events on it either
       return scratch.getUrl();
     });
 
@@ -3875,6 +4038,7 @@ function bookingSelfTest() {
     results.push({ label: "The self-test itself crashed", ok: false, detail: String(err && err.stack ? err.stack : err) });
   } finally {
     bookingSheetOverride_ = null;
+    bookingSkipCalendarSync_ = false;
   }
 
   const failed = results.filter(function (r) { return !r.ok; });

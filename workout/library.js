@@ -30,6 +30,7 @@ const libEls = {
   heatFigures: document.getElementById("heatFigures"),
   heatBreakdown: document.getElementById("heatBreakdown"),
   heatEmpty: document.getElementById("heatEmpty"),
+  heatUnmatched: document.getElementById("heatUnmatched"),
   heatBrowse: document.getElementById("heatBrowse"),
   list: document.getElementById("libList"),
   listBack: document.getElementById("listBack"),
@@ -54,6 +55,29 @@ function libEsc(text) {
 
 let libExercises = []; // [{ name, movement, bodyPart, primaryMuscles, secondaryMuscles, bestView }]
 let libHeatRange = "today";
+
+// Per-group expanded/collapsed state for the heat breakdown's collapsible
+// sections (2026-10-09) — try/catch per Max's own spec wording, since
+// localStorage can throw (private browsing, storage disabled) and a
+// remembered UI preference is never worth crashing the page over. Unset
+// (first visit, or storage unavailable) defaults to OPEN, matching how the
+// old flat list showed everything at once with nothing to expand.
+const LIB_GROUP_STATE_PREFIX_ = "maxfitMuscleGroupOpen:";
+function libGroupIsOpen_(groupName) {
+  try {
+    const v = localStorage.getItem(LIB_GROUP_STATE_PREFIX_ + groupName);
+    return v === null ? true : v === "1";
+  } catch (err) {
+    return true;
+  }
+}
+function libSetGroupOpen_(groupName, open) {
+  try {
+    localStorage.setItem(LIB_GROUP_STATE_PREFIX_ + groupName, open ? "1" : "0");
+  } catch (err) {
+    // Not remembered next time, but the toggle still works for this view.
+  }
+}
 
 function showLibHeat() {
   libEls.heat.hidden = false;
@@ -189,6 +213,113 @@ libEls.heatToggle.forEach((btn) => {
  * Max's framing: this is so a client can see what a workout trains, not a
  * static reference — always real data, never a worked example.
  */
+// The 4 abs sub-regions (plus the bare coarse "abs" a Conditioning exercise
+// can carry straight from the sheet) merge into one "Rectus Abdominis" row
+// in the grouped list — Max's own request, scoped to abs only; every other
+// fine key (front/side/rear delt included) keeps its own row.
+const LIB_ABS_MERGE_KEYS_ = ["abs-upper", "abs-mid", "abs-lower", "abs-infra", "abs"];
+
+/**
+ * The flat per-key maps with the abs sub-regions merged into one
+ * "abs-rectus" entry — shared by the grouped list, the This Week figure's
+ * status colouring, and the tooltip (Goal 4), so the list, the figure and
+ * the tooltip all agree on one combined abs number rather than computing
+ * the merge three times and risking them drifting apart. `contributionsByMuscle`
+ * (optional — heatmapMuscleData's own) merges the same way: each target's
+ * per-exercise contributions are summed in, so tapping any of the 4 ab
+ * shapes shows exercises across all of them, matching the single merged row.
+ */
+function libMergedWeighted_(weighted, primaryCount, secondaryCount, contributionsByMuscle) {
+  const merged = {};
+  function add(key, w, p, s, contrib) {
+    if (!merged[key]) merged[key] = { weighted: 0, primaryCount: 0, secondaryCount: 0, contributions: {} };
+    merged[key].weighted += w || 0;
+    merged[key].primaryCount += p || 0;
+    merged[key].secondaryCount += s || 0;
+    Object.keys(contrib || {}).forEach((name) => {
+      merged[key].contributions[name] = (merged[key].contributions[name] || 0) + contrib[name];
+    });
+  }
+  Object.keys(weighted).forEach((key) => {
+    const target = LIB_ABS_MERGE_KEYS_.includes(key) ? "abs-rectus" : key;
+    add(target, weighted[key], (primaryCount || {})[key], (secondaryCount || {})[key], (contributionsByMuscle || {})[key]);
+  });
+  return merged;
+}
+
+/**
+ * Buckets an already-merged map (libMergedWeighted_) into Max's 6
+ * top-level sections (muscleUiGroupOf_, card/muscle-map.js). Returns
+ * [{ group, rows }] in MUSCLE_UI_GROUPS_ order, each rows list sorted by
+ * weighted desc; a group with nothing trained in range is left out
+ * entirely — same "don't show empty" rule the old flat list already had.
+ */
+function libGroupedHeatEntries_(merged) {
+  const byGroup = {};
+  Object.keys(merged).forEach((key) => {
+    if (merged[key].weighted <= 0) return;
+    const group = muscleUiGroupOf_(key);
+    (byGroup[group] = byGroup[group] || []).push(Object.assign({ key }, merged[key]));
+  });
+
+  return MUSCLE_UI_GROUPS_.filter((g) => byGroup[g] && byGroup[g].length).map((group) => ({
+    group,
+    rows: byGroup[group].sort((a, b) => b.weighted - a.weighted),
+  }));
+}
+
+/**
+ * One collapsible section of the heat breakdown — same visual language as
+ * the exercise list's Movement <details> below (lib-movement family),
+ * reused directly rather than duplicated, since both are "tap a heading to
+ * expand a body-region" on the same page. Open/closed state is read here
+ * and written back by loadHeat's toggle listener. This Week shows each
+ * muscle's weighted total against its weekly target (Goal 3, 2026-10-09);
+ * Today keeps the older plain count — a single day isn't comparable to a
+ * weekly target.
+ */
+function libMuscleGroupHtml_(group, rows, range) {
+  const open = libGroupIsOpen_(group) ? " open" : "";
+  const rowsHtml = rows
+    .map((r) => (range === "week" ? heatWeekTargetRowHtml_(r.key, r.weighted) : heatTodayRowHtml_(r.key, r.weighted)))
+    .join("");
+  return (
+    `<details class="lib-movement"${open} data-group="${libEsc(group)}">` +
+    `<summary class="lib-movement__head"><span>${libEsc(group)}</span><span class="lib-movement__count">${rows.length}</span>${LIB_CHEVRON_SVG_}</summary>` +
+    `<div class="lib-movement__body">${rowsHtml}</div>` +
+    "</details>"
+  );
+}
+
+/**
+ * Tapping a muscle shape on the figure expands/highlights its group in the
+ * breakdown list below (Goal 4, 2026-10-09) — opens it if it was collapsed
+ * (persisted the same way a manual tap on the header would be), scrolls it
+ * into view, and gives it a brief highlight so it's obvious which section
+ * just responded to the tap. A muscle whose group isn't currently rendered
+ * (shouldn't happen — wireMuscleTooltips_ only calls this for a shape that
+ * already has a tooltip, which means it has real data, which means
+ * libGroupedHeatEntries_ included its group) is a harmless no-op.
+ */
+function libExpandGroupFor_(key) {
+  const group = muscleUiGroupOf_(key);
+  const details = libEls.heatBreakdown.querySelector(`details[data-group="${CSS.escape(group)}"]`);
+  if (!details) return;
+  if (!details.open) {
+    details.open = true;
+    libSetGroupOpen_(group, true);
+  }
+  details.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  // The class is added instantly (nothing to transition FROM yet) and
+  // removed on a timer — library.css's transition then animates that
+  // removal (the fade back to transparent), so re-tapping mid-fade just
+  // restarts the clock rather than fighting an in-progress animation.
+  clearTimeout(details.dataset.pulseTimer ? Number(details.dataset.pulseTimer) : undefined);
+  details.classList.add("lib-movement--pulse");
+  const timer = setTimeout(() => details.classList.remove("lib-movement--pulse"), 600);
+  details.dataset.pulseTimer = String(timer);
+}
+
 async function loadHeat(range) {
   libHeatRange = range;
   libEls.heatToggle.forEach((btn) => {
@@ -196,6 +327,11 @@ async function loadHeat(range) {
     btn.classList.toggle("is-active", on);
     btn.setAttribute("aria-selected", on ? "true" : "false");
   });
+
+  // Any open tooltip is anchored to a shape from the FIGURE we're about to
+  // throw away below (muscleFigureSvg builds fresh DOM every call) — close
+  // it first rather than leaving it pointing at a detached element.
+  muscleTooltipHide_();
 
   const frontSvg = muscleFigureSvg("front", "heatFigFrontTitle");
   const backSvg = muscleFigureSvg("back", "heatFigBackTitle");
@@ -207,27 +343,70 @@ async function loadHeat(range) {
   let weighted = {};
   let primaryCount = {};
   let secondaryCount = {};
+  let contributionsByMuscle = {};
   let setsCounted = 0;
+  let unmatchedByName = {};
+  let unmatchedSetsCount = 0;
   try {
     const data = await heatmapMuscleData(libMemberId, range);
     weighted = data.weighted;
     primaryCount = data.primaryCount;
     secondaryCount = data.secondaryCount;
+    contributionsByMuscle = data.contributionsByMuscle || {};
     setsCounted = data.setsCounted;
+    unmatchedByName = data.unmatchedByName || {};
+    unmatchedSetsCount = data.unmatchedSetsCount || 0;
   } catch (err) {
     // A quiet, all-grey figure beats a crash — the breakdown list below
     // staying empty already says nothing was found.
   }
 
-  svgs.forEach((svg) => paintMuscleHeat(svg, weighted));
+  // This Week colours by target status (Goal 3) — a weekly target isn't
+  // comparable to a single day, so Today keeps the older relative scaling.
+  const merged = libMergedWeighted_(weighted, primaryCount, secondaryCount, contributionsByMuscle);
+  // paintMuscleHeatByStatus_ wants a flat { key: number }, same shape as
+  // paintMuscleHeat's own `weighted` — merged's values are the richer
+  // { weighted, primaryCount, secondaryCount, contributions } the grouped
+  // LIST and the tooltip need, so pull just the number back out here rather
+  // than changing that shape.
+  const mergedWeightedOnly = {};
+  Object.keys(merged).forEach((k) => (mergedWeightedOnly[k] = merged[k].weighted));
+  svgs.forEach((svg) => (range === "week" ? paintMuscleHeatByStatus_(svg, mergedWeightedOnly) : paintMuscleHeat(svg, weighted)));
+
+  // Goal 4 (2026-10-09): hover/tap a shape for its own breakdown. Today has
+  // no weekly target to show; This Week does. Tapping a shape also
+  // expands/highlights its group in the list below.
+  svgs.forEach((svg) =>
+    wireMuscleTooltips_(
+      svg,
+      (rawKey) => {
+        const key = muscleAbsDisplayKey_(rawKey);
+        const m = merged[key];
+        if (!m || m.weighted <= 0) return null;
+        const target = range === "week" ? muscleWeeklyTarget_(key) : null;
+        return muscleTooltipContentHtml_(key, m.weighted, m.primaryCount, m.secondaryCount, muscleTopContributions_(m.contributions), target);
+      },
+      (key) => libExpandGroupFor_(key)
+    )
+  );
 
   libEls.heatEmpty.hidden = setsCounted > 0;
-  const entries = Object.keys(weighted)
-    .filter((k) => weighted[k] > 0)
-    .sort((a, b) => weighted[b] - weighted[a]);
-  libEls.heatBreakdown.innerHTML = entries
-    .map((k) => range === "week" ? heatWeekRowHtml_(k, primaryCount[k] || 0, secondaryCount[k] || 0) : heatTodayRowHtml_(k, weighted[k]))
-    .join("");
+  const groups = libGroupedHeatEntries_(merged);
+  libEls.heatBreakdown.innerHTML = groups.map((g) => libMuscleGroupHtml_(g.group, g.rows, range)).join("");
+  libEls.heatBreakdown.querySelectorAll("details[data-group]").forEach((el) => {
+    el.addEventListener("toggle", () => libSetGroupOpen_(el.dataset.group, el.open));
+  });
+
+  // Sets whose exercise name doesn't resolve to the Exercises catalog never
+  // silently vanish from the total any more (2026-10-09) — named here so a
+  // client/coach can see exactly what's missing and why the numbers above
+  // might look lower than expected, instead of a gap with no explanation.
+  const unmatchedNames = Object.keys(unmatchedByName).sort((a, b) => unmatchedByName[b] - unmatchedByName[a]);
+  libEls.heatUnmatched.hidden = !unmatchedSetsCount;
+  if (unmatchedSetsCount) {
+    const list = unmatchedNames.map((n) => `${libEsc(n)} (${unmatchedByName[n]})`).join(", ");
+    libEls.heatUnmatched.textContent = `${unmatchedSetsCount} set${unmatchedSetsCount === 1 ? "" : "s"} not counted — exercise name${unmatchedNames.length === 1 ? "" : "s"} not in the library: ${list}`;
+  }
 }
 
 /** Today: unchanged from before v2 — one red fill, just "how much", no weekly target. */
@@ -240,38 +419,30 @@ function heatTodayRowHtml_(key, n) {
     </div>`;
 }
 
-// Same "how long is the bar" scale the Today row already uses below (10 sets
-// = a full bar) — reused here rather than invented fresh, so switching the
-// Today/This Week toggle doesn't change what a given bar length means.
-const HEAT_BAR_FULL_SETS_ = 10;
-
 /**
- * This Week: a plain stacked bar of literal set counts — red = how many
- * sets hit this muscle as the PRIMARY mover, orange = how many more hit it
- * as a SECONDARY one (e.g. 3 direct sets of curls, plus 4 more where it
- * was along for the ride in pull-ups). No target, no fraction. Each
- * count sits directly under its own segment (2026-10-05, was a combined
- * "3+4" off to the side) rather than in its own column — ties each number
- * straight to its colour. A zero-count side renders no number at all: an
- * empty segment already shows zero, a "0" floating with no colour under it
- * would just look like a glitch.
+ * This Week (Goal 3, 2026-10-09): a single bar coloured by status against
+ * the muscle's weekly target range (muscleTargetStatus_/muscleWeeklyTarget_,
+ * card/muscle-map.js) — grey under target, red in range, amber above —
+ * instead of the old primary/secondary direct-vs-indirect split. "x.x /
+ * min–max" to one decimal, per Max's own spec. The direct/indirect detail
+ * this replaced moves to the per-muscle tooltip instead (Goal 4, not yet
+ * built), not lost, just no longer the headline number.
+ *
+ * The bar's track represents target.max * 1.5, not just target.max, so an
+ * "above" muscle still shows visibly more fill rather than every
+ * over-target muscle instantly pegging at 100% — the number next to it
+ * carries the exact value regardless of how full the bar looks.
  */
-function heatWeekRowHtml_(key, primaryN, secondaryN) {
-  const primaryPct = Math.max(0, Math.min(100, (primaryN / HEAT_BAR_FULL_SETS_) * 100));
-  const secondaryPct = Math.max(0, Math.min(100 - primaryPct, (secondaryN / HEAT_BAR_FULL_SETS_) * 100));
+function heatWeekTargetRowHtml_(key, value) {
+  const target = muscleWeeklyTarget_(key);
+  const status = muscleTargetStatus_(value, target);
+  const ceiling = target.max * 1.5;
+  const pct = Math.max(0, Math.min(100, (value / ceiling) * 100));
   return `
-    <div class="lib-heat-row lib-heat-row--week">
+    <div class="lib-heat-row lib-heat-row--target">
       <span class="lib-heat-row__name">${libEsc(muscleLabel_(key))}</span>
-      <span class="lib-heat-row__bar">
-        <span class="lib-heat-row__track">
-          <span class="lib-heat-row__fill lib-heat-row__fill--primary" style="width:${primaryPct}%"></span>
-          <span class="lib-heat-row__fill lib-heat-row__fill--secondary" style="width:${secondaryPct}%"></span>
-        </span>
-        <span class="lib-heat-row__nums">
-          ${primaryN > 0 ? `<span class="lib-heat-row__segnum lib-heat-row__segnum--primary" style="width:${primaryPct}%">${primaryN}</span>` : ""}
-          ${secondaryN > 0 ? `<span class="lib-heat-row__segnum lib-heat-row__segnum--secondary" style="width:${secondaryPct}%">${secondaryN}</span>` : ""}
-        </span>
-      </span>
+      <span class="lib-heat-row__track"><span class="lib-heat-row__fill lib-heat-row__fill--${status}" style="width:${pct}%"></span></span>
+      <span class="lib-heat-row__target-num lib-heat-row__target-num--${status}">${value.toFixed(1)}<span class="lib-heat-row__target-range"> / ${target.min}–${target.max}</span></span>
     </div>`;
 }
 
