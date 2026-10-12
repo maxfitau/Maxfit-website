@@ -20,6 +20,8 @@
   const PIN_STORAGE = "maxfitCoachPin";
   let pin = "";
   let clients = [];
+  // Every client's logged sets, for strength and training goals (null until loaded).
+  let setsBySlug = null;
   let aiEnabled = true;
   let stripeReady = false;
   let lastStripeSync = "";
@@ -83,6 +85,7 @@
       stripeReady = !!data.stripeReady;
       lastStripeSync = data.lastStripeSync || "";
       render();
+      loadGoalSets();
     } catch (err) {
       if (err.code === "bad_pin") {
         pin = "";
@@ -124,6 +127,7 @@
         <span class="coach-client__meta">${esc(targetsText(c))}</span>
         ${c.hasKey && aiEnabled ? `<span class="coach-client__meta">${esc(planText(c.plan))}</span>` : ""}
         ${c.hasKey ? `<span class="coach-client__meta">${esc(progressText(c))}</span>` : ""}
+        ${goalHtml(c)}
         ${c.link ? `<div class="coach-link">${esc(c.link)}</div>` : ""}
         <div class="coach-actions">
           ${c.link ? '<button class="fuel-btn" type="button" data-a="copy">Copy link</button>' : '<button class="fuel-btn" type="button" data-a="issue">Create Fuel link</button>'}
@@ -183,6 +187,44 @@
               </div>`
             : ""
         }
+      </div>`;
+  }
+
+  /** Strength and training goals are tracked from Logged Sets (the public CRM tab the workout pages read). */
+  async function loadGoalSets() {
+    if (setsBySlug || !clients.some((c) => c.goal && (c.goal.type === "strength" || c.goal.type === "sessions"))) return;
+    try {
+      const { rows, col } = await fetchLoggedSets();
+      const by = {};
+      rows.forEach((r) => {
+        const p = String(r[col.date] || "").slice(0, 10).split("-").map(Number);
+        if (p.length !== 3 || !p[0]) return;
+        const date = `${p[0]}-${String(p[1]).padStart(2, "0")}-${String(p[2]).padStart(2, "0")}`;
+        const slug = String(r[col.client] || "").trim().toLowerCase();
+        (by[slug] = by[slug] || []).push({ date, exercise: String(r[col.exercise] || "").trim(), kg: Number(r[col.weight]) || 0, reps: Number(r[col.reps]) || 0 });
+      });
+      setsBySlug = by;
+      render();
+    } catch (err) {
+      // Goals still show, just without progress for those two kinds.
+    }
+  }
+
+  /** The client's goal as they wrote it, with how it's going (2026-10-13). */
+  function goalHtml(c) {
+    const g = c.goal;
+    if (!g) return "";
+    const fromSets = g.type === "strength" || g.type === "sessions";
+    const p = fromSets && !setsBySlug ? null : MacroCore.goalProgress(
+      g,
+      { sets: (setsBySlug && setsBySlug[c.slug]) || [], weights: c.goalFuel ? c.goalFuel.weights : [], kcal: c.goalFuel ? c.goalFuel.kcal : null, greenWeeks: c.goalFuel ? c.goalFuel.greenWeeks : [] },
+      MacroCore.sydneyDate()
+    );
+    return `
+      <div class="coach-goal">
+        <span class="coach-goal__label">🎯 Goal · ${esc(MacroCore.shortDate(g.start_date))} to ${esc(MacroCore.shortDate(g.end_date))}</span>
+        <p class="coach-goal__text">${esc(MacroCore.goalSentence(g))}</p>
+        <span class="coach-client__meta">${p ? esc(`${p.statusText} · ${p.pct}%`) : "Working out progress…"}</span>
       </div>`;
   }
 

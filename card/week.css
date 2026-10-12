@@ -1,0 +1,582 @@
+/* The card's weekly recap and monthly goal (week.js, 2026-10-13). Big text
+   on purpose: body 16px and up, labels 14px and up, 44px+ tap targets.
+   Green marks goal progress and "on track", the same green Fuel uses for
+   green days; red stays the accent everywhere else. */
+
+.week-tiles {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0 0 12px;
+}
+
+.week-tiles:empty {
+  display: none;
+}
+
+.week-tile {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 16px;
+  border-radius: var(--radius-glass-md);
+  background: var(--glass-bg-strong);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-glass-sm);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.week-tile--quiet {
+  cursor: default;
+}
+
+.week-tile__emoji {
+  font-size: 40px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.week-tile__text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.week-tile__label {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 14px;
+  color: var(--red);
+}
+
+.week-tile--goal .week-tile__label {
+  color: #7ee69a;
+}
+
+.week-tile__big {
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 30px;
+  line-height: 1.05;
+  color: var(--white);
+}
+
+.week-tile__big--goal {
+  font-size: 24px;
+}
+
+.week-tile__sub {
+  font-size: 16px;
+  line-height: 1.35;
+  color: var(--grey);
+}
+
+.week-tile__chev {
+  width: 22px;
+  height: 22px;
+  color: var(--grey);
+  flex-shrink: 0;
+}
+
+.week-bar {
+  display: block;
+  height: 10px;
+  margin: 6px 0 2px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.week-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 5px;
+  background: #30d158;
+}
+
+.week-bar--big {
+  height: 12px;
+  margin-top: 14px;
+}
+
+/* Full-screen sheet */
+body.week-sheet-open {
+  overflow: hidden;
+}
+
+.week-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: var(--bg);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.week-sheet[hidden] {
+  display: none;
+}
+
+.week-sheet__bar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: calc(12px + env(safe-area-inset-top, 0px)) 16px 12px;
+  background: rgba(17, 17, 17, 0.94);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line);
+}
+
+.week-sheet__title {
+  margin: 0;
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 22px;
+  color: var(--white);
+}
+
+.week-sheet__close {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--white);
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.week-sheet__body {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 18px 16px calc(60px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.week-dates {
+  margin: 0;
+  font-size: 17px;
+  color: var(--grey);
+}
+
+.week-card {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-glass-md);
+  padding: 18px;
+}
+
+.week-card--button {
+  display: block;
+  width: 100%;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.week-hero {
+  text-align: center;
+  padding: 26px 18px;
+}
+
+.week-hero__emoji {
+  font-size: 64px;
+  line-height: 1;
+}
+
+.week-hero__num {
+  margin-top: 10px;
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 56px;
+  line-height: 1;
+  color: var(--white);
+}
+
+.week-hero__num small {
+  margin-left: 4px;
+  font-size: 26px;
+}
+
+.week-hero__label {
+  margin-top: 4px;
+  font-size: 18px;
+  color: var(--grey);
+}
+
+.week-hero__fact {
+  margin-top: 14px;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--white);
+}
+
+.week-chip {
+  display: inline-block;
+  margin-top: 12px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(48, 209, 88, 0.14);
+  color: #7ee69a;
+  font-weight: 600;
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.week-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 20px;
+  color: var(--white);
+}
+
+.week-text {
+  margin: 0;
+  font-size: 19px;
+  line-height: 1.45;
+  color: var(--white);
+}
+
+.week-note {
+  margin: 10px 0 0;
+  font-size: 16px;
+  line-height: 1.4;
+  color: var(--grey);
+}
+
+.week-note b {
+  color: var(--white);
+}
+
+.week-row {
+  display: grid;
+  grid-template-columns: 118px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+}
+
+.week-row__name {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--white);
+}
+
+.week-row__track {
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.week-row__track > span {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--red);
+}
+
+.week-row__num {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--white);
+  font-variant-numeric: tabular-nums;
+}
+
+.week-pb {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.week-pb:first-of-type {
+  border-top: 0;
+}
+
+.week-pb__name {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--white);
+}
+
+.week-pb__val {
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 22px;
+  color: var(--white);
+  white-space: nowrap;
+}
+
+.week-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  text-align: center;
+}
+
+.week-stats--two {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.week-stat__num {
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 40px;
+  line-height: 1;
+  color: var(--white);
+}
+
+.week-stat__label {
+  margin-top: 4px;
+  font-size: 15px;
+  color: var(--grey);
+}
+
+/* Goal: progress */
+.week-sentence {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--white);
+}
+
+.week-goal-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-top: 8px;
+  font-size: 17px;
+  color: var(--grey);
+}
+
+.week-goal-row b {
+  font-family: var(--font-head);
+  font-size: 22px;
+  color: var(--white);
+}
+
+.week-list {
+  margin: 0;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 17px;
+  line-height: 1.45;
+  color: var(--white);
+}
+
+/* Goal: setting it */
+.week-steps {
+  display: flex;
+  gap: 6px;
+}
+
+.week-steps span {
+  flex: 1;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.week-steps span.on {
+  background: var(--red);
+}
+
+.week-q {
+  margin: 6px 0 0;
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 30px;
+  line-height: 1.1;
+  color: var(--white);
+}
+
+.week-help {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.4;
+  color: var(--grey);
+}
+
+.week-opt {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 64px;
+  padding: 14px 16px;
+  border-radius: var(--radius-glass-md);
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  color: var(--white);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.week-opt.is-on {
+  border-color: var(--red);
+  background: rgba(224, 0, 0, 0.14);
+}
+
+.week-opt__emoji {
+  font-size: 30px;
+  flex-shrink: 0;
+}
+
+.week-opt__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.week-opt__main {
+  font-size: 19px;
+  font-weight: 600;
+}
+
+.week-opt__sub {
+  font-size: 15px;
+  color: var(--grey);
+}
+
+.week-opt__tag {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #7ee69a;
+}
+
+.week-input {
+  width: 100%;
+  min-height: 56px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--white);
+  font: inherit;
+  font-size: 18px;
+}
+
+.week-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.week-chip-btn {
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--white);
+  font: inherit;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.week-btn {
+  display: block;
+  width: 100%;
+  min-height: 54px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--red);
+  color: #fff;
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 17px;
+  cursor: pointer;
+}
+
+.week-btn:disabled {
+  background: var(--line);
+  color: var(--grey);
+  cursor: default;
+}
+
+.week-btn--ghost {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--white);
+}
+
+.week-link {
+  align-self: center;
+  min-height: 44px;
+  padding: 8px 12px;
+  background: none;
+  border: 0;
+  color: var(--grey);
+  font: inherit;
+  font-size: 17px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.week-error {
+  margin: 0;
+  font-size: 16px;
+  color: #ffb4a8;
+}
+
+/* The coach page's goal line for each client (coach.js). */
+.coach-goal {
+  margin-top: 6px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(48, 209, 88, 0.08);
+  border: 1px solid rgba(48, 209, 88, 0.25);
+}
+
+.coach-goal__label {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 14px;
+  color: #7ee69a;
+}
+
+.coach-goal__text {
+  margin: 4px 0;
+  font-size: 16px;
+  line-height: 1.4;
+  color: var(--white);
+}

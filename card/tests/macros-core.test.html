@@ -235,6 +235,50 @@
   eq("tiers: rank order (old Platinum ranks as Diamond)", ["silver", "gold", "diamond", "platinum"].map(C.tierRank), [0, 1, 2, 2]);
   eq("interval: yearly plan", C.planState({ plan_status: "active", plan_tier: "gold", plan_interval: "year" }, "2026-09-24").interval, "year");
   eq("interval: monthly when blank", C.planState({ plan_status: "active", plan_tier: "gold" }, "2026-09-24").interval, "month");
+  // Monthly goals and the weekly recap (2026-10-13)
+  eq("goal: ends same day next month", C.goalEndDate("2026-10-13"), "2026-11-13");
+  eq("goal: 31 Jan ends 28 Feb", C.goalEndDate("2026-01-31"), "2026-02-28");
+  eq("goal: December rolls the year", C.goalEndDate("2026-12-15"), "2027-01-15");
+  eq("goal: long date", C.longDate("2026-11-13"), "Friday 13 November");
+  eq("goal: weight options at 82.4 kg", C.goalOptions("weight", { weightKg: 82.4 }).map((o) => o.target), [1, 2, 3]);
+  eq("goal: weight options at 60 kg", C.goalOptions("weight", { weightKg: 60 }).map((o) => o.target), [1, 1.5, 2.5]);
+  eq("goal: weight options tags", C.goalOptions("weight", { weightKg: 82.4 }).map((o) => o.tag), ["Easy", "Recommended", "A push"]);
+  eq("goal: no weigh-in, no weight options", C.goalOptions("weight", {}), []);
+  eq("goal: bench 80 x 11 options", C.goalOptions("strength", { lift: { exercise: "Bench", kg: 80, reps: 11 } }).map((o) => o.label), ["82.5 kg × 11", "85 kg × 11", "87.5 kg × 11"]);
+  eq("goal: light lifts go up 1 kg", C.goalOptions("strength", { lift: { exercise: "Lateral Raise", kg: 9, reps: 10 } }).map((o) => o.target), [10, 11, 12]);
+  eq("goal: sessions options from 3.6 a week", C.goalOptions("sessions", { sessionsPerWeek: 3.6 }).map((o) => o.target), [4, 5, 6]);
+  eq("goal: green options never below 1", C.goalOptions("green", { greenPerWeek: 0 }).map((o) => o.target), [1, 2, 3]);
+  const wGoal = { type: "weight", target: 2, start_value: 82.4, start_date: "2026-10-13", end_date: "2026-11-13", how: ["Hit my protein most days", "Walk 20 minutes after dinner"], why: "keep up with my grandkids" };
+  eq("goal: sentence", C.goalSentence(wGoal), "By Friday 13 November I will lose 2 kg. To get there I'll hit my protein most days and walk 20 minutes after dinner, so I can keep up with my grandkids.");
+  eq("goal: sentence without how", C.goalSentence(Object.assign({}, wGoal, { how: [] })), "By Friday 13 November I will lose 2 kg. That way I can keep up with my grandkids.");
+  const wp = C.goalProgress(wGoal, { weights: [{ date: "2026-10-20", kg: 81.6 }] }, "2026-10-27");
+  eq("goal: weight progress", [wp.pct, wp.status, wp.statusText, wp.nowValue], [40, "on track", "On track: 0.8 kg down so far", "81.6 kg"]);
+  eq("goal: weight over target suggests calories", C.goalProgress(wGoal, { weights: [], kcal: { avg: 2250, target: 2000, proteinShortDays: 0, loggedDays: 12 } }, "2026-10-27").quicker[0], "You've averaged 2,250 calories a day against your 2,000 target. Closing that gap gets you there sooner.");
+  eq("goal: behind says keep going", C.goalProgress(wGoal, { weights: [{ date: "2026-11-01", kg: 82.4 }] }, "2026-11-05").status, "behind");
+  const sGoal = { type: "strength", exercise: "Barbell Bench Press", target: 85, target_reps: 8, start_value: 80, start_reps: 11, start_date: "2026-10-13", end_date: "2026-11-13" };
+  const sp = C.goalProgress(sGoal, { sets: [{ date: "2026-10-20", exercise: "barbell bench press", kg: 85, reps: 8 }] }, "2026-10-21");
+  eq("goal: strength reached", [sp.status, sp.pct], ["done", 100]);
+  const nGoal = { type: "sessions", target: 3, start_date: "2026-10-12", end_date: "2026-11-12" };
+  const nSets = ["2026-10-13", "2026-10-15", "2026-10-16", "2026-10-20"].map((d) => ({ date: d, exercise: "Squat", kg: 60, reps: 5 }));
+  const np = C.goalProgress(nGoal, { sets: nSets }, "2026-10-21");
+  eq("goal: sessions progress", [np.statusText, np.nowValue, np.status], ["On track: 1 of 1 week hit", "1 so far", "on track"]);
+  eq("goal: ended month", C.goalProgress(nGoal, { sets: nSets }, "2026-11-20").ended, true);
+  eq("goal: day one says just started", C.goalProgress(sGoal, { sets: [] }, "2026-10-13").statusText, "Just started: no Barbell Bench Press logged yet");
+  eq("recap: same lift whatever the spelling", C.liftKey("Calf Raises"), C.liftKey("calf raise"));
+  eq("recap: elephants", C.weightComparison(31642).text, "about 5 elephants");
+  eq("recap: legs skip the elephant", C.weightComparison(21117, "elephant").text, "about 9 rhinos");
+  eq("recap: too light to compare", C.weightComparison(100), null);
+  const rSets = [
+    { date: "2026-09-30", exercise: "Bench", kg: 80, reps: 10 },
+    { date: "2026-10-06", exercise: "Bench", kg: 80, reps: 11 },
+    { date: "2026-10-06", exercise: "Squat", kg: 60, reps: 10 },
+    { date: "2026-10-08", exercise: "Pull-Up", kg: 0, reps: 8 },
+  ];
+  const rw = C.weekRecap(rSets, "2026-10-05");
+  eq("recap: week totals", [rw.totalKg, rw.prevKg, rw.sets, rw.workouts], [1480, 800, 3, 2]);
+  eq("recap: a new best only beats earlier weeks", rw.bests.map((b) => `${b.exercise} ${b.kg}x${b.reps}`), ["Bench 80x11"]);
+  eq("recap: thousands", C.thousands(31642), "31,642");
+
 
   // --- What to eat next -------------------------------------------------------------------------
   // A slice of the seeded Foods list (per 100 g).

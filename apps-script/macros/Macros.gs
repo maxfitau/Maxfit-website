@@ -60,7 +60,7 @@
  * or change rows carrying their own id.
  */
 
-const MACROS_VERSION = "2026-10-10a";
+const MACROS_VERSION = "2026-10-13a";
 const TIMEZONE = "Australia/Sydney";
 const MAIN_SESSIONS_GID = 1169726169; // "Sessions Remaining" in the CRM sheet
 const CARD_URL = "https://maxfit.now/card/";
@@ -87,6 +87,15 @@ const TABS = {
       "hide_weight", "plan_tier", "comp_tier", "plan_interval",
     ],
     text: ["slug", "key", "trial_started", "plan_until", "comp_until"],
+  },
+  // Monthly goals (2026-10-13): one row per goal, newest last per client.
+  goals: {
+    name: "Goals",
+    headers: [
+      "id", "slug", "type", "exercise", "target", "target_reps", "start_value", "start_reps",
+      "start_date", "end_date", "how", "why", "created_at", "updated_at",
+    ],
+    text: ["id", "slug", "start_date", "end_date"],
   },
   targets: {
     name: "Macro Targets",
@@ -227,6 +236,8 @@ const COACH_ACTIONS = {
 // checkout session by its (unguessable) id and links it to its client.
 const PUBLIC_ACTIONS = {
   stripeReturn: actionStripeReturn_,
+  goal: actionGoal_,
+  saveGoal: actionSaveGoal_,
 };
 
 function doPost(e) {
@@ -1451,6 +1462,16 @@ function actionCoachList_() {
       bySlug[s].greenThisWeek = week.greenDays;
     }
   });
+  // Each client's goal, so Max can see it and help (2026-10-13).
+  const goalRows = readRows_("goals");
+  Object.keys(bySlug).forEach((s) => {
+    const row = latestGoalRow_(s, goalRows);
+    if (!row) return;
+    const goal = goalShape_(row);
+    bySlug[s].goal = goal;
+    const m = members.find((x) => String(x.slug) === s);
+    if (m && MacroCore.FUEL_GOAL_TYPES.indexOf(goal.type) >= 0) bySlug[s].goalFuel = fuelGoalStats_(m, goal.start_date);
+  });
   const clients = Object.keys(bySlug)
     .map((s) => Object.assign({ lastLog: lastLog[s] || "" }, bySlug[s]))
     .sort((a, b) => String(a.name).localeCompare(String(b.name)));
@@ -1460,6 +1481,147 @@ function actionCoachList_() {
     stripeReady: !!(prop_("STRIPE_SECRET_KEY") && prop_("STRIPE_FUEL_LINK")),
     lastStripeSync: prop_("STRIPE_LAST_SYNC_AT") || "",
   };
+}
+
+// ---------------------------------------------------------------------------
+// Monthly goals (2026-10-13, Max): one SMART goal per client, set on their
+// card and running a month from the day it's set (MacroCore.goalEndDate).
+// Strength and training goals work from the name alone, like the card
+// itself (private client links will tighten that); the two built on Fuel's
+// private data (weight, green days) need the client's Fuel key to set or
+// see. No AI anywhere, so goals cost nothing to run.
+// ---------------------------------------------------------------------------
+
+function goalShape_(row) {
+  return {
+    id: String(row.id),
+    type: String(row.type),
+    exercise: String(row.exercise || ""),
+    target: Number(row.target) || 0,
+    target_reps: Number(row.target_reps) || 0,
+    start_value: Number(row.start_value) || 0,
+    start_reps: Number(row.start_reps) || 0,
+    start_date: String(row.start_date),
+    end_date: String(row.end_date),
+    how: String(row.how || "").split("|").map((h) => h.trim()).filter(Boolean),
+    why: String(row.why || ""),
+  };
+}
+
+/** A client's newest goal row (this month's, or the one that just ended), or null. */
+function latestGoalRow_(slug, rows) {
+  const mine = (rows || readRows_("goals")).filter((g) => String(g.slug) === slug);
+  return mine.length ? mine[mine.length - 1] : null;
+}
+
+/** The member if this request carries their valid Fuel key, else null. Never throws. */
+function optionalMember_(payload) {
+  if (!payload.k) return null;
+  try {
+    return authMember_(payload);
+  } catch (err) {
+    return null;
+  }
+}
+
+/**
+ * The Fuel numbers a goal reads, for one member: weigh-ins, the last 14
+ * days' calories against target, and green days for each week from `since`.
+ */
+function fuelGoalStats_(member, since) {
+  const slug = String(member.slug);
+  const today = todaySydney_();
+  const fortnight = MacroCore.addDays(today, -13);
+  const history = historyFor_(slug);
+  const dayTotals = dayTotalsFor_(slug, MacroCore.mondayOf(since < fortnight ? since : fortnight));
+  let kcalSum = 0;
+  let loggedDays = 0;
+  let proteinShortDays = 0;
+  let target = 0;
+  for (let i = 13; i >= 0; i--) {
+    const date = MacroCore.addDays(today, -i);
+    const t = MacroCore.targetOn(history, date);
+    if (t) target = t.kcal;
+    const totals = dayTotals[date];
+    if (!totals || !(totals.kcal > 0)) continue;
+    loggedDays++;
+    kcalSum += totals.kcal;
+    if (t && totals.protein_g < t.protein_g * 0.9) proteinShortDays++;
+  }
+  const greenWeeks = [];
+  for (let m = MacroCore.mondayOf(since); m <= MacroCore.mondayOf(today); m = MacroCore.addDays(m, 7)) {
+    greenWeeks.push({ weekStart: m, greenDays: MacroCore.weekSummary(dayTotals, history, m).greenDays });
+  }
+  return {
+    weights: member.hide_weight === "Y" ? [] : weightsFor_(slug).map((w) => ({ date: w.date, kg: w.kg })),
+    kcal: { avg: loggedDays ? Math.round(kcalSum / loggedDays) : 0, target: target, proteinShortDays: proteinShortDays, loggedDays: loggedDays },
+    greenWeeks: greenWeeks,
+  };
+}
+
+/** The card's goal tile: this client's newest goal, plus their Fuel numbers when the request has their key. */
+function actionGoal_(payload) {
+  const slug = slugify_(payload.id);
+  if (!slug) throw userError_("no_client", "Open your own card link first.");
+  const member = optionalMember_(payload);
+  const row = latestGoalRow_(slug);
+  const goal = row ? goalShape_(row) : null;
+  const today = todaySydney_();
+  const monthAgo = MacroCore.addDays(today, -28);
+  const since = goal && goal.start_date < monthAgo ? goal.start_date : monthAgo;
+  const locked = goal && MacroCore.FUEL_GOAL_TYPES.indexOf(goal.type) >= 0 && !member;
+  return {
+    today: today,
+    fuel: member ? fuelGoalStats_(member, since) : null,
+    goal: locked ? { type: goal.type, locked: true, start_date: goal.start_date, end_date: goal.end_date } : goal,
+  };
+}
+
+/**
+ * Sets this month's goal, or changes it (keeping the month it runs to).
+ * Once a month has ended, saving starts a new month from today.
+ */
+function actionSaveGoal_(payload) {
+  const slug = slugify_(payload.id);
+  if (!slug || !crmClients_().some((c) => c.slug === slug)) {
+    throw userError_("no_client", "We couldn't find your card. Open your own card link and try again.");
+  }
+  const g = payload.goal || {};
+  const type = String(g.type || "");
+  if (MacroCore.GOAL_TYPES.indexOf(type) < 0) throw userError_("bad_goal", "Pick a goal first.");
+  if (MacroCore.FUEL_GOAL_TYPES.indexOf(type) >= 0) authMember_(payload);
+  const clean = (v, n) => String(v || "").replace(/\s+/g, " ").trim().slice(0, n);
+  const int = (v, lo, hi) => Math.max(lo, Math.min(hi, Math.round(Number(v) || 0)));
+  const target = Math.round(Number(g.target) * 10) / 10;
+  if (!(target > 0 && target <= 500)) throw userError_("bad_goal", "That target doesn't look right.");
+  const strength = type === "strength";
+  const row = {
+    slug: slug,
+    type: type,
+    exercise: strength ? clean(g.exercise, 80) : "",
+    target: target,
+    target_reps: strength ? int(g.target_reps, 1, 50) : "",
+    start_value: Number(g.start_value) > 0 ? Math.round(Number(g.start_value) * 10) / 10 : "",
+    start_reps: strength ? int(g.start_reps, 1, 50) : "",
+    how: (Array.isArray(g.how) ? g.how : []).slice(0, 2).map((h) => clean(h, 80).replace(/\|/g, "/")).filter(Boolean).join(" | "),
+    why: clean(g.why, 120),
+    updated_at: nowStamp_(),
+  };
+  if (strength && !row.exercise) throw userError_("bad_goal", "Pick a lift.");
+  if ((strength || type === "weight") && !(row.start_value > 0)) throw userError_("bad_goal", "We need your starting point first.");
+  const today = todaySydney_();
+  let saved;
+  withLock_(() => {
+    const current = latestGoalRow_(slug);
+    if (current && String(current.end_date) >= today) {
+      updateRow_("goals", current._row, row);
+      saved = Object.assign({}, current, row);
+    } else {
+      saved = Object.assign({ id: Utilities.getUuid(), start_date: today, end_date: MacroCore.goalEndDate(today), created_at: nowStamp_() }, row);
+      appendRow_("goals", saved);
+    }
+  });
+  return { goal: goalShape_(saved) };
 }
 
 function actionIssueKey_(payload) {

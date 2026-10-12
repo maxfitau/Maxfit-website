@@ -402,6 +402,8 @@ async function render(data, workoutSummary) {
     els.bookLink.hidden = false;
     els.referLink.href = `refer.html?id=${encodeURIComponent(data.clientSlug)}`;
     els.referLink.hidden = false;
+    // Last week's recap and this month's goal (week.js, 2026-10-13).
+    if (typeof WeekCard !== "undefined") WeekCard.init(data.clientSlug);
   }
 
   // Everything that matters at a glance is on screen now — don't make the
