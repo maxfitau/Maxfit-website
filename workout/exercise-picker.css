@@ -317,6 +317,10 @@
   height: auto;
 }
 
+.exercise-picker__muscle-figs [data-muscle] {
+  cursor: pointer;
+}
+
 .exercise-picker__muscle-legend {
   display: flex;
   align-items: center;

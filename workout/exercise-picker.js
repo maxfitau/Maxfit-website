@@ -306,6 +306,18 @@ const ExercisePicker = (function () {
     }
   }
 
+  const CHOOSER_KEYS_ = new Set(MUSCLE_CHOOSER_.flatMap((s) => s.muscles.map((m) => m[0])));
+  const CHOOSER_KEY_FOR_GROUP_ = { lowerback: "erector-spinae", hipflexors: "hip-flexors" };
+
+  /** The muscle-list key a figure shape belongs to, or null. */
+  function chooserKeyFor_(shape) {
+    const muscle = shape.getAttribute("data-muscle");
+    const group = shape.getAttribute("data-group");
+    if (CHOOSER_KEYS_.has(muscle)) return muscle;
+    if (CHOOSER_KEYS_.has(group)) return group;
+    return CHOOSER_KEY_FOR_GROUP_[group] || null;
+  }
+
   /**
    * "What does it work?" (2026-10-10, Max): tap a muscle once if it's the
    * main one (red), twice if it only helps (pink), a third time to clear.
@@ -330,7 +342,7 @@ const ExercisePicker = (function () {
 
     render(
       "Muscles",
-      `<p class="exercise-picker__muscle-intro"><b>${esc(name)}</b>: tap a muscle once if it's the main one, twice if it just helps.</p>` +
+      `<p class="exercise-picker__muscle-intro"><b>${esc(name)}</b>: tap a muscle on the body or in the list. Once if it's the main one, twice if it just helps.</p>` +
         `<div class="exercise-picker__muscle-figs">${muscleFigureSvg("front", "epMuscleFront")}${muscleFigureSvg("back", "epMuscleBack")}</div>` +
         '<p class="exercise-picker__muscle-legend"><span class="exercise-picker__muscle-key exercise-picker__muscle-key--main"></span>Main<span class="exercise-picker__muscle-key exercise-picker__muscle-key--helps"></span>Helps</p>' +
         sections +
@@ -352,14 +364,22 @@ const ExercisePicker = (function () {
       saveBtn.disabled = !ready;
       saveBtn.textContent = ready ? `Save ${name}` : "Tap at least one main muscle";
     }
-    bodyEl.querySelectorAll("[data-key]").forEach((chip) => {
-      chip.addEventListener("click", () => {
-        const k = chip.dataset.key;
-        state[k] = state[k] === "main" ? "helps" : state[k] === "helps" ? undefined : "main";
-        if (!state[k]) delete state[k];
-        paint();
-      });
-    });
+    function cycle(k) {
+      state[k] = state[k] === "main" ? "helps" : state[k] === "helps" ? undefined : "main";
+      if (!state[k]) delete state[k];
+      paint();
+    }
+    bodyEl.querySelectorAll("[data-key]").forEach((chip) => chip.addEventListener("click", () => cycle(chip.dataset.key)));
+    // The body figure is tappable too (Max tapped it first): a shape stands
+    // for the list muscle it belongs to; neck, rotator cuff and the like
+    // have no list muscle and do nothing.
+    bodyEl.querySelectorAll(".exercise-picker__muscle-figs svg").forEach((svg) =>
+      svg.addEventListener("click", (e) => {
+        const shape = e.target.closest("[data-muscle]");
+        const k = shape && chooserKeyFor_(shape);
+        if (k) cycle(k);
+      })
+    );
     paint();
 
     const different = bodyEl.querySelector("#epPickDifferent");
