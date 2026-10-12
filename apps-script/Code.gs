@@ -32,7 +32,7 @@ const GROCERY_SHEET_NAME = "Grocery Items";
 // Changes whenever this file does, and is shown when you open the deployed
 // URL in a browser (see doGet) — the quick way to tell whether a redeploy
 // actually took, instead of guessing from behaviour.
-const BACKEND_VERSION = "2026-10-09b";
+const BACKEND_VERSION = "2026-10-13a";
 
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -1412,11 +1412,25 @@ function handleAssignWorkout_(payload) {
  * added — the existing categorisation comes back instead, so two people
  * adding "bench press" around the same time can't fork it into two rows
  * that then split its logged-set history between them.
+ *
+ * Optional primaryMuscles / secondaryMuscles ("quads,glutes"), from the
+ * builder's "what does it work?" step (2026-10-10): written on a new row,
+ * and filled in on an existing row only while both its muscle cells are
+ * blank, so nobody (there's no PIN) can overwrite curated muscle data.
+ * musclesSaved in the reply tells the builder whether they went in.
  */
 function handleAddExercise_(payload) {
   const name = String(payload.name || "").trim().slice(0, 120);
   const movement = String(payload.movement || "").trim().slice(0, 60);
   const bodyPart = String(payload.bodyPart || "").trim().slice(0, 60);
+  const muscleList = (raw) =>
+    String(raw || "")
+      .split(",")
+      .map((k) => k.trim().toLowerCase())
+      .filter((k) => /^[a-z][a-z-]{0,40}$/.test(k))
+      .slice(0, 12);
+  const primary = muscleList(payload.primaryMuscles);
+  const secondary = muscleList(payload.secondaryMuscles).filter((k) => primary.indexOf(k) < 0);
   if (!name || !movement || !bodyPart) {
     return jsonResponse_({ status: "error", message: "Missing exercise name, movement or body part." });
   }
@@ -1431,19 +1445,37 @@ function handleAddExercise_(payload) {
     name: findColumn_(header, "Name"),
     movement: findColumn_(header, "Movement"),
     bodyPart: findColumn_(header, "Body Part"),
+    primary: findColumn_(header, "Primary Muscles"),
+    secondary: findColumn_(header, "Secondary Muscles"),
   };
+  const split = (cell) => String(cell || "").split(",").map((k) => k.trim()).filter(Boolean);
 
   const lastRow = sheet.getLastRow();
   if (lastRow >= 2) {
     const existing = sheet.getRange(2, 1, lastRow - 1, header.length).getDisplayValues();
-    for (const row of existing) {
+    for (let i = 0; i < existing.length; i++) {
+      const row = existing[i];
       if (String(row[col.name] || "").trim().toLowerCase() !== name.toLowerCase()) continue;
+      let rowPrimary = split(row[col.primary]);
+      let rowSecondary = split(row[col.secondary]);
+      let musclesSaved = false;
+      if (primary.length && !rowPrimary.length && !rowSecondary.length) {
+        sheet.getRange(i + 2, col.primary + 1).setValue(primary.join(", "));
+        sheet.getRange(i + 2, col.secondary + 1).setValue(secondary.join(", "));
+        rowPrimary = primary;
+        rowSecondary = secondary;
+        musclesSaved = true;
+      }
       return jsonResponse_({
         status: "success",
+        // True when the row now has muscles: just filled in, or already had them.
+        musclesSaved: musclesSaved || rowPrimary.length > 0 || rowSecondary.length > 0,
         exercise: {
           name: row[col.name],
           movement: row[col.movement] || movement,
           bodyPart: row[col.bodyPart] || bodyPart,
+          primaryMuscles: rowPrimary,
+          secondaryMuscles: rowSecondary,
         },
       });
     }
@@ -1453,9 +1485,15 @@ function handleAddExercise_(payload) {
   newRow[col.name] = name;
   newRow[col.movement] = movement;
   newRow[col.bodyPart] = bodyPart;
+  newRow[col.primary] = primary.join(", ");
+  newRow[col.secondary] = secondary.join(", ");
   sheet.getRange(sheet.getLastRow() + 1, 1, 1, header.length).setValues([newRow]);
 
-  return jsonResponse_({ status: "success", exercise: { name, movement, bodyPart } });
+  return jsonResponse_({
+    status: "success",
+    musclesSaved: primary.length > 0,
+    exercise: { name, movement, bodyPart, primaryMuscles: primary, secondaryMuscles: secondary },
+  });
 }
 
 /**

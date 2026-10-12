@@ -78,8 +78,8 @@ function currentPin() {
  * name never resolved in the Exercises catalog at all, or it resolved to a
  * real row that just has no muscle data set yet — shows a small warning
  * (2026-10-09) rather than silently contributing nothing to the panel with
- * no explanation. No separate "fix it" control needed: the row is already
- * a button that reopens the picker on tap, so tapping it is the fix.
+ * no explanation. Tapping that row opens "what does it work?" for its name
+ * (ExercisePicker.chooseMuscles, 2026-10-10) rather than the normal picker.
  */
 function buildExerciseControl(exercise) {
   const wrap = document.createElement("button");
@@ -98,7 +98,7 @@ function buildExerciseControl(exercise) {
 
   const warning = document.createElement("span");
   warning.className = "builder__row-exercise-warning";
-  warning.textContent = "⚠ No muscle data — won't count. Tap to fix.";
+  warning.textContent = "⚠ No muscle data — won't count. Tap to choose its muscles.";
   warning.hidden = true;
 
   const nameValueInput = document.createElement("input");
@@ -139,13 +139,30 @@ function buildExerciseControl(exercise) {
     exercise && exercise.muscleWeights
   );
 
+  const onChoose = (picked) => {
+    setChosen(picked.name, picked.movement, picked.bodyPart, picked.primaryMuscles, picked.secondaryMuscles, picked.muscleWeights);
+    // Muscles just chosen for a name: any other row of it with none gets them too.
+    if (picked.primaryMuscles && picked.primaryMuscles.length) {
+      els.rows.querySelectorAll(".builder__row-exercise").forEach((other) => {
+        const same = other !== wrap && (other.dataset.exerciseName || "").toLowerCase() === picked.name.toLowerCase();
+        if (same && !other.dataset.primaryMuscles && !other.dataset.secondaryMuscles && other.setChosen) {
+          other.setChosen(picked.name, picked.movement, picked.bodyPart, picked.primaryMuscles, picked.secondaryMuscles, "");
+        }
+      });
+      exerciseIndexPromise_ = null; // re-read the library next time, with the new muscles in it
+    }
+    refreshMuscleLoadPanel_();
+  };
+  wrap.setChosen = setChosen;
+
+  // A row with no muscle data opens straight on "what does it work?"
+  // (2026-10-10); any other row opens the normal picker to change it.
   wrap.addEventListener("click", () => {
-    ExercisePicker.open({
-      onChoose: (picked) => {
-        setChosen(picked.name, picked.movement, picked.bodyPart, picked.primaryMuscles, picked.secondaryMuscles, picked.muscleWeights);
-        refreshMuscleLoadPanel_();
-      },
-    });
+    if (!warning.hidden) {
+      ExercisePicker.chooseMuscles({ name: wrap.dataset.exerciseName, movement: wrap.dataset.movement, bodyPart: wrap.dataset.bodyPart, onChoose });
+    } else {
+      ExercisePicker.open({ onChoose });
+    }
   });
 
   top.appendChild(dot);

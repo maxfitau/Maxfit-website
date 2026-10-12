@@ -116,6 +116,10 @@ const ExercisePicker = (function () {
 
   let overlay, titleEl, backBtn, closeBtn, bodyEl;
   let onChoose = null;
+  // Set by chooseMuscles() for a builder row whose name isn't in the
+  // library: Movement and Body Part are picked as usual, then the muscle
+  // step for this name instead of the exercise list.
+  let fixName = null;
   let exercisesCache = null; // { rows, col } from fetchExercises(), fetched once per open()
 
   function ensureOverlay() {
@@ -199,7 +203,9 @@ const ExercisePicker = (function () {
       .join("");
     render(movement, `<div class="exercise-picker__grid exercise-picker__grid--fill">${tiles}</div>`, showMovementStep);
     bodyEl.querySelectorAll("[data-bodypart]").forEach((btn) => {
-      btn.addEventListener("click", () => showExerciseStep(movement, btn.dataset.bodypart));
+      btn.addEventListener("click", () =>
+        fixName ? showMuscleStep(fixName, movement, btn.dataset.bodypart, [], [], () => showBodyPartStep(movement)) : showExerciseStep(movement, btn.dataset.bodypart)
+      );
       const svg = btn.querySelector("svg[data-crop-keys]");
       if (svg && typeof paintMuscleCrop === "function") paintMuscleCrop(svg);
     });
@@ -294,50 +300,140 @@ const ExercisePicker = (function () {
 
     const addBtn = bodyEl.querySelector("#epAddNew");
     if (addBtn) {
-      addBtn.addEventListener("click", async () => {
-        addBtn.disabled = true;
-        addBtn.textContent = "Adding…";
-        const name = query.trim();
-        try {
-          const res = await fetch(APPS_SCRIPT_URL, {
-            method: "POST",
-            headers: { "Content-Type": "text/plain;charset=utf-8" },
-            body: JSON.stringify({ action: "addExercise", name, movement, bodyPart }),
-          });
-          const result = await res.json();
-          if (result.status !== "success") {
-            addBtn.disabled = false;
-            addBtn.textContent = `+ Add "${name}" as a new exercise`;
-            window.alert(result.message || "Couldn't add that exercise — try again.");
-            return;
-          }
-          exercisesCache = null; // next open() re-fetches, so the new one shows up in its list
-          close();
-          onChoose({
-            name: result.exercise.name,
-            movement: result.exercise.movement,
-            bodyPart: result.exercise.bodyPart,
-            primaryMuscles: [],
-            secondaryMuscles: [],
-            bestView: "",
-            muscleWeights: "",
-          });
-        } catch (err) {
-          addBtn.disabled = false;
-          addBtn.textContent = `+ Add "${name}" as a new exercise`;
-          window.alert("Couldn't reach the server — check your connection and try again.");
-        }
-      });
+      addBtn.addEventListener("click", () =>
+        showMuscleStep(query.trim(), movement, bodyPart, [], [], () => renderExerciseList(movement, bodyPart, all, query))
+      );
     }
+  }
+
+  /**
+   * "What does it work?" (2026-10-10, Max): tap a muscle once if it's the
+   * main one (red), twice if it only helps (pink), a third time to clear.
+   * The body figure lights up as you go. Saving adds the exercise to the
+   * Exercises tab with those muscles, or fills them in on an existing row
+   * that has none, so the Muscles tab and the builder both count it.
+   * `opts.pickDifferent` adds a way out to the normal picker (a row being
+   * fixed may simply be the wrong exercise).
+   */
+  function showMuscleStep(name, movement, bodyPart, primary, secondary, backHandler, opts) {
+    const state = {};
+    (primary || []).forEach((k) => (state[k] = "main"));
+    (secondary || []).forEach((k) => (state[k] = state[k] || "helps"));
+
+    const sections = MUSCLE_CHOOSER_.map(
+      (s) =>
+        `<p class="exercise-picker__muscle-section">${esc(s.section)}</p>` +
+        `<div class="exercise-picker__muscle-chips">${s.muscles
+          .map(([key, label]) => `<button class="exercise-picker__muscle-chip" type="button" data-key="${esc(key)}">${esc(label)}</button>`)
+          .join("")}</div>`
+    ).join("");
+
+    render(
+      "Muscles",
+      `<p class="exercise-picker__muscle-intro"><b>${esc(name)}</b>: tap a muscle once if it's the main one, twice if it just helps.</p>` +
+        `<div class="exercise-picker__muscle-figs">${muscleFigureSvg("front", "epMuscleFront")}${muscleFigureSvg("back", "epMuscleBack")}</div>` +
+        '<p class="exercise-picker__muscle-legend"><span class="exercise-picker__muscle-key exercise-picker__muscle-key--main"></span>Main<span class="exercise-picker__muscle-key exercise-picker__muscle-key--helps"></span>Helps</p>' +
+        sections +
+        '<button class="exercise-picker__save" type="button" id="epMuscleSave"></button>' +
+        (opts && opts.pickDifferent ? '<button class="exercise-picker__add" type="button" id="epPickDifferent">Choose a different exercise instead</button>' : ""),
+      backHandler
+    );
+
+    const saveBtn = bodyEl.querySelector("#epMuscleSave");
+    const keysWith = (v) => Object.keys(state).filter((k) => state[k] === v);
+    function paint() {
+      bodyEl.querySelectorAll("[data-key]").forEach((chip) => {
+        const v = state[chip.dataset.key] || "";
+        chip.dataset.state = v;
+        chip.setAttribute("aria-label", `${chip.textContent}${v === "main" ? ", main muscle" : v === "helps" ? ", helps" : ""}`);
+      });
+      bodyEl.querySelectorAll("svg.muscle-figure").forEach((svg) => paintMuscleFigure(svg, keysWith("main"), keysWith("helps")));
+      const ready = keysWith("main").length > 0;
+      saveBtn.disabled = !ready;
+      saveBtn.textContent = ready ? `Save ${name}` : "Tap at least one main muscle";
+    }
+    bodyEl.querySelectorAll("[data-key]").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        const k = chip.dataset.key;
+        state[k] = state[k] === "main" ? "helps" : state[k] === "helps" ? undefined : "main";
+        if (!state[k]) delete state[k];
+        paint();
+      });
+    });
+    paint();
+
+    const different = bodyEl.querySelector("#epPickDifferent");
+    if (different) different.addEventListener("click", () => open({ onChoose }));
+
+    saveBtn.addEventListener("click", async () => {
+      const main = keysWith("main");
+      const helps = keysWith("helps");
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Saving…";
+      try {
+        const res = await fetch(APPS_SCRIPT_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({ action: "addExercise", name, movement, bodyPart, primaryMuscles: main.join(","), secondaryMuscles: helps.join(",") }),
+        });
+        const result = await res.json();
+        if (result.status !== "success") {
+          paint();
+          window.alert(result.message || "Couldn't save that exercise — try again.");
+          return;
+        }
+        const ex = result.exercise;
+        if (!result.musclesSaved) {
+          window.alert("The exercise is saved, but its muscles weren't: the check-in backend needs its new code pasted in first. They'll still show in this workout for now.");
+        }
+        exercisesCache = null; // next open() re-fetches, so it shows up in the list
+        close();
+        // An existing row that already had muscles keeps them (the server
+        // only fills blanks), so trust what comes back over what was tapped.
+        const savedMain = ex.primaryMuscles && ex.primaryMuscles.length ? ex.primaryMuscles : main;
+        onChoose({
+          name: ex.name,
+          movement: ex.movement,
+          bodyPart: ex.bodyPart,
+          primaryMuscles: savedMain,
+          secondaryMuscles: ex.primaryMuscles && ex.primaryMuscles.length ? ex.secondaryMuscles || [] : helps,
+          bestView: "",
+          muscleWeights: "",
+        });
+      } catch (err) {
+        paint();
+        window.alert("Couldn't reach the server — check your connection and try again.");
+      }
+    });
   }
 
   /** opts.onChoose({name, movement, bodyPart}) fires once, when a pick is made (existing or newly added). */
   function open(opts) {
     onChoose = (opts && opts.onChoose) || function () {};
+    fixName = null;
     ensureOverlay();
     overlay.hidden = false;
     showMovementStep();
   }
 
-  return { open, close, colorFor, MOVEMENTS, BODY_PARTS_BY_MOVEMENT };
+  /**
+   * Straight to the muscle step for a row with no muscle data (the
+   * builder's "Tap to choose muscles"). A name already in the library
+   * (known Movement/Body Part) goes there directly; an unknown one picks
+   * Movement and Body Part first. opts.onChoose as for open().
+   */
+  function chooseMuscles(opts) {
+    onChoose = opts.onChoose || function () {};
+    fixName = null;
+    ensureOverlay();
+    overlay.hidden = false;
+    if (opts.movement && opts.bodyPart) {
+      showMuscleStep(opts.name, opts.movement, opts.bodyPart, opts.primary, opts.secondary, null, { pickDifferent: true });
+    } else {
+      fixName = opts.name;
+      showMovementStep();
+    }
+  }
+
+  return { open, chooseMuscles, close, colorFor, MOVEMENTS, BODY_PARTS_BY_MOVEMENT };
 })();

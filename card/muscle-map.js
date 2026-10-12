@@ -210,6 +210,19 @@ const MUSCLE_FAMILIES_ = [
 const MUSCLE_FAMILY_OF_ = {};
 MUSCLE_FAMILIES_.forEach((f) => f.keys.forEach((k) => (MUSCLE_FAMILY_OF_[k] = f)));
 
+// What the builder offers when Max adds his own exercise and picks the
+// muscles it works (2026-10-10). Whole muscles, not heads, except the
+// three delts, which he keeps apart. Each key lights its whole muscle on
+// the figure and counts for it in the effective-sets engine.
+const MUSCLE_CHOOSER_ = [
+  { section: "Chest", muscles: [["chest", "Chest"]] },
+  { section: "Shoulders", muscles: [["delts-front", "Front Delts"], ["delts-side", "Side Delts"], ["delts-rear", "Rear Delts"]] },
+  { section: "Arms", muscles: [["biceps", "Biceps"], ["triceps", "Triceps"], ["forearms", "Forearms"]] },
+  { section: "Back", muscles: [["lats", "Lats"], ["traps", "Traps"], ["erector-spinae", "Lower Back"]] },
+  { section: "Core", muscles: [["abs", "Abs"], ["obliques", "Obliques"]] },
+  { section: "Legs & Hips", muscles: [["quads", "Quads"], ["hamstrings", "Hamstrings"], ["glutes", "Glutes"], ["calves", "Calves"], ["hip-flexors", "Hip Flexors"], ["adductors", "Adductors"]] },
+];
+
 /** "Quads" for "vastus-medialis"; an unlisted key is its own muscle. */
 function muscleFamilyName_(key) {
   return MUSCLE_FAMILY_OF_[key] ? MUSCLE_FAMILY_OF_[key].name : muscleLabel_(key);

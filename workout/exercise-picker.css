@@ -288,3 +288,122 @@
   border-radius: 999px;
   flex-shrink: 0;
 }
+
+/* "What does it work?" (2026-10-10): tap a muscle once for main (red),
+   twice for helps (pink), a third time to clear. The figure above lights
+   up to match. */
+.exercise-picker__muscle-intro {
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.4;
+  color: var(--grey);
+  margin: 0 0 12px;
+}
+
+.exercise-picker__muscle-intro b {
+  color: var(--white);
+}
+
+.exercise-picker__muscle-figs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  max-width: 260px;
+  margin: 0 auto 8px;
+}
+
+.exercise-picker__muscle-figs svg {
+  width: 100%;
+  height: auto;
+}
+
+.exercise-picker__muscle-legend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--grey);
+  margin: 0 0 6px;
+}
+
+.exercise-picker__muscle-key {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  margin-left: 10px;
+}
+
+.exercise-picker__muscle-key--main {
+  background: #ff2a1f;
+}
+
+.exercise-picker__muscle-key--helps {
+  background: #ff9a7a;
+}
+
+.exercise-picker__muscle-section {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 14px;
+  color: var(--grey);
+  margin: 14px 0 8px;
+}
+
+.exercise-picker__muscle-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.exercise-picker__muscle-chip {
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--white);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.exercise-picker__muscle-chip[data-state="main"] {
+  background: #ff2a1f;
+  border-color: #ff2a1f;
+  color: #fff;
+}
+
+.exercise-picker__muscle-chip[data-state="helps"] {
+  background: rgba(255, 154, 122, 0.18);
+  border-color: #ff9a7a;
+  color: #ffd2c4;
+}
+
+.exercise-picker__save {
+  display: block;
+  width: 100%;
+  min-height: 52px;
+  margin: 20px 0 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--red);
+  color: #fff;
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.exercise-picker__save:disabled {
+  background: var(--line);
+  color: var(--grey);
+  cursor: default;
+}
+
