@@ -76,6 +76,7 @@
     favourites: [],
     meals: [], // saved meals: { id, name, items }
     aiToday: null, // { tier, used, limit, left } from the server
+    toBuy: 0, // shopping list items not yet ticked (mealplan.js tells us)
     busy: false,
     confirm: null,
     pendingPhotoMode: null,
@@ -197,6 +198,8 @@
     star: '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l3 6.9 7.5.7-5.7 5 1.7 7.4L12 18l-6.5 4 1.7-7.4-5.7-5 7.5-.7z"/></svg>',
     chat: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
     list: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>',
+    plan: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3v7a2 2 0 0 0 4 0V3M9 10v11M17 3c-1.7 0-3 2-3 5s1.3 4 3 4v9"/></svg>',
+    cart: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2.5 3.5h2.8l2.4 11.2a1.5 1.5 0 0 0 1.5 1.2h8.4a1.5 1.5 0 0 0 1.5-1.1l1.7-6.8H6.4"/></svg>',
     chevron: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>',
   };
 
@@ -593,6 +596,45 @@
   }
 
   /**
+   * Meal plan (Diamond) and shopping list (Gold and Diamond) rows, under Ask
+   * Fuel (2026-10-13). Locked rows show the plan they come with and open
+   * the plans sheet, like Ask Fuel. The screens are card/mealplan.js.
+   */
+  function mealRowsHtml() {
+    if (!state.aiEnabled || typeof MealPlan === "undefined") return "";
+    const t = tier();
+    const planOn = fuelAi() && t === "diamond";
+    const listOn = fuelAi() && MacroCore.tierRank(t) >= MacroCore.tierRank("gold");
+    const row = (act, icon, title, hint, tag) => `
+      <button class="fuel-link-row" type="button" data-act="${act}">
+        <span class="fuel-link-row__icon">${icon}</span>
+        <span class="fuel-link-row__text">
+          <span class="fuel-link-row__title">${title}</span>
+          <span class="fuel-link-row__hint">${esc(hint)}</span>
+        </span>
+        ${tag ? `<span class="fuel-link-row__tag">${tag}</span>` : `<span class="fuel-link-row__chevron">${ICONS.chevron}</span>`}
+      </button>`;
+    return (
+      row("mealplan", ICONS.plan, "Meal plan", planOn ? "Plan my week" : "Unlocks on Diamond", planOn ? "" : "Diamond") +
+      row("shopping", ICONS.cart, "Shopping list", listOn ? (state.toBuy ? `${state.toBuy} to buy` : "Add what you need") : "Unlocks on Gold", listOn ? "" : "Gold")
+    );
+  }
+
+  /** What mealplan.js needs from Fuel: hidden calories, logging, the plans sheet and the list count. */
+  function mealPlanCtx() {
+    return {
+      hideKcal: hideKcal(),
+      logMeal: (items, slot) => addItems(items, slot),
+      upsell: (reason, message) => openUpsell({ reason, message }),
+      onChange: (toBuy) => {
+        state.toBuy = toBuy;
+        render();
+      },
+      onAi: setAiToday,
+    };
+  }
+
+  /**
    * Today's Log full view (step-1 stand-in: the existing bottom sheet, not
    * yet the dedicated full-screen slide-in step 3 will build) — date nav,
    * progress/settings icons (moved off the main screen), the grouped entry
@@ -659,7 +701,8 @@
       <button class="fuel-scan" type="button" data-act="scan">${ICONS.camera} Scan Food</button>
       ${quickTilesHtml()}
       ${logRowHtml()}
-      ${askRowHtml()}`;
+      ${askRowHtml()}
+      ${mealRowsHtml()}`;
   }
 
   els.panelFuel.addEventListener("click", (e) => {
@@ -670,6 +713,13 @@
     else if (act === "today" || act === "today-log") openLogView();
     else if (act === "scan") openScanChooser();
     else if (act === "ask") openChat();
+    else if (act === "mealplan") {
+      if (fuelAi() && tier() === "diamond") MealPlan.open(mealPlanCtx());
+      else openUpsell({ reason: "plan" });
+    } else if (act === "shopping") {
+      if (fuelAi() && MacroCore.tierRank(tier()) >= MacroCore.tierRank("gold")) MealPlan.openList(mealPlanCtx());
+      else openUpsell({ reason: "list" });
+    }
     else if (act === "progress") openProgress();
     else if (act === "more-ideas") {
       state.moreIdeas = !state.moreIdeas;
@@ -1314,6 +1364,10 @@
         ? opts.message || "That's all your AI uses for today."
         : opts.reason === "ask"
         ? "Ask Fuel, your AI nutrition coach, comes with Diamond."
+        : opts.reason === "plan"
+        ? "Weekly meal plans with a shopping list come with Diamond."
+        : opts.reason === "list"
+        ? "Your shopping list comes with Gold and Diamond."
         : p.kind === "trial_over" || p.kind === "lapsed"
         ? planText() + "."
         : "Your AI nutrition coach, in your pocket. Cancel any time.";
@@ -1323,8 +1377,8 @@
       p.portalUrl ? `<a class="fuel-btn fuel-btn--${k}" href="${esc(p.portalUrl)}" target="_blank" rel="noopener" data-upgrade>${esc(label)}</a>` : "";
 
     const DESCRIPTIONS = {
-      gold: `<p><b>${perDay.gold} AI uses a day:</b> snap a meal, scan a label or Describe it.</p>`,
-      diamond: `<p><b>${perDay.diamond} AI uses a day, plus Ask Fuel</b>, your AI nutrition coach: what to eat next, what to order when you're out, and help when you're over.</p>`,
+      gold: `<p><b>${perDay.gold} AI uses a day:</b> snap a meal, scan a label or Describe it. <b>Plus your shopping list.</b></p>`,
+      diamond: `<p><b>${perDay.diamond} AI uses a day, plus Ask Fuel</b>, your AI nutrition coach, <b>and a weekly meal plan</b> that fills your shopping list.</p>`,
     };
 
     function action(k, iv) {

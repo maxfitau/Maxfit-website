@@ -278,6 +278,42 @@
   eq("recap: week totals", [rw.totalKg, rw.prevKg, rw.sets, rw.workouts], [1480, 800, 3, 2]);
   eq("recap: a new best only beats earlier weeks", rw.bests.map((b) => `${b.exercise} ${b.kg}x${b.reps}`), ["Bench 80x11"]);
   eq("recap: thousands", C.thousands(31642), "31,642");
+  // Meal plans and the shopping list (2026-10-13)
+  eq("plan: budget bands for 1", C.budgetBands(1).map((b) => b.label), ["Under $80", "$80 to $120", "$120 to $180", "No limit"]);
+  eq("plan: budget bands for 3", C.budgetBands(3).map((b) => b.label), ["Under $240", "$240 to $360", "$360 to $540", "No limit"]);
+  eq("plan: own share of a single budget is all of it", C.planBudget({ people: 1, sharedDinners: false, budgetMax: 120 }), 120);
+  eq("plan: share for 3 sharing dinners", C.planBudget({ people: 3, sharedDinners: true, budgetMax: 360 }), 200);
+  eq("plan: share for 3, dinners just me", C.planBudget({ people: 3, sharedDinners: false, budgetMax: 360 }), 120);
+  eq("plan: no limit, no budget", C.planBudget({ people: 2, budgetMax: 0 }), null);
+  const it = (name, grams, kcal, p, extra) => Object.assign({ name, grams, kcal, protein_g: p, carbs_g: 0, fat_g: 0, aisle: "Pantry" }, extra || {});
+  const testPlan = {
+    start: "2026-10-19",
+    prefs: { people: 2, sharedDinners: true },
+    meals: {
+      breakfast: [{ name: "Oats", cost_aud: 2, items: [it("Rolled oats", 60, 225, 8), it("Banana", 120, 105, 1, { count: 1, unit: "banana", aisle: "Fruit and veg" })] }],
+      lunch: [{ name: "Wrap", cost_aud: 4, items: [it("Chicken breast", 150, 250, 46, { aisle: "Meat and fish" })] }, { name: "Tuna", cost_aud: 3, items: [it("Tuna", 95, 100, 22, { count: 1, unit: "tin" })] }],
+      snack: [],
+      dinner: [{ name: "Stir-fry", cost_aud: 6, items: [it("Chicken breast", 150, 250, 46, { aisle: "Meat and fish" }), it("Soy sauce", 15, 10, 1, { pantry: true })] }, { name: "Salmon", cost_aud: 8, items: [it("Salmon fillet", 150, 300, 30, { count: 1, unit: "fillet", aisle: "Meat and fish" })] }],
+    },
+    swaps: { breakfast: [], lunch: [], snack: [], dinner: [{ name: "Tacos", cost_aud: 5, items: [it("Turkey mince", 150, 250, 35, { aisle: "Meat and fish" })] }] },
+  };
+  eq("plan: days start on the start date", C.planDays(testPlan).map((d) => d.day).join(" "), "Mon Tue Wed Thu Fri Sat Sun");
+  eq("plan: lunches take turns", C.planDays(testPlan).map((d) => d.meals.lunch).join(""), "0101010");
+  eq("plan: an empty slot is -1", C.planDays(testPlan)[0].meals.snack, -1);
+  eq("plan: which days", [C.mealDays(testPlan, "breakfast", 0), C.mealDays(testPlan, "dinner", 1)], ["Every day", "Tue, Thu, Sat"]);
+  eq("plan: a day's totals", [C.planDayTotals(testPlan)[0].kcal, C.planDayTotals(testPlan)[0].protein_g], [840, 102]);
+  eq("plan: cost counts everyone at dinner", C.planCost(testPlan), 7 * 2 + (4 * 4 + 3 * 3) + (6 * 4 + 8 * 3) * 2);
+  const shop = C.planShopping(testPlan);
+  const find = (n) => shop.find((x) => x.name === n);
+  eq("plan: chicken adds up lunches and shared dinners", find("Chicken breast").amount, `${(150 * 4 + 150 * 4 * 2) / 1000} kg`);
+  eq("plan: counted things stay counted", [find("Banana").amount, find("Salmon fillet").amount, find("Tuna").amount], ["7 bananas", "6 fillets", "3 tins"]);
+  eq("plan: grams round up to 50 g", find("Rolled oats").amount, "450 g");
+  eq("plan: pantry staples are flagged", find("Soy sauce").pantry, true);
+  eq("plan: aisle order", shop.map((x) => x.aisle).filter((a, i, all) => all.indexOf(a) === i), ["Fruit and veg", "Meat and fish", "Pantry"]);
+  const swapped = C.swapMeal(JSON.parse(JSON.stringify(testPlan)), "dinner", 0, 0);
+  eq("plan: a swap trades places", [swapped.meals.dinner[0].name, swapped.swaps.dinner[0].name], ["Tacos", "Stir-fry"]);
+  eq("plan: plural units", [C.shoppingAmount(0, 2, "loaf"), C.shoppingAmount(0, 2, "peach"), C.shoppingAmount(0, 1, "egg")], ["2 loaves", "2 peaches", "1 egg"]);
+
 
 
   // --- What to eat next -------------------------------------------------------------------------

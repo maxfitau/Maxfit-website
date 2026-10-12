@@ -963,6 +963,159 @@ const MacroCore = (function () {
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // Meal plans and the shopping list (2026-10-13, Max). The AI writes the
+  // meals (Macros.gs makeMealPlan); everything after that is plain maths
+  // here: which meal is on which day, swaps, the week's shopping and what it
+  // roughly costs. Meal plans are Diamond only; the list is Gold and Diamond.
+  // ---------------------------------------------------------------------------
+
+  const MEAL_SLOTS = ["breakfast", "lunch", "snack", "dinner"];
+  const AISLES = ["Fruit and veg", "Meat and fish", "Dairy and eggs", "Bakery", "Pantry", "Frozen", "Other"];
+  // How many different meals each slot gets, by the client's "How much variety?".
+  const PLAN_VARIETY = {
+    simple: { breakfast: 1, lunch: 1, snack: 1, dinner: 2 },
+    some: { breakfast: 1, lunch: 2, snack: 1, dinner: 3 },
+    lots: { breakfast: 2, lunch: 3, snack: 2, dinner: 5 },
+  };
+
+  /** The weekly budget choices for a household, about $80 / $120 / $180 a person, to the nearest $10. */
+  function budgetBands(people) {
+    const n = Math.max(1, Math.round(Number(people) || 1));
+    const r = (x) => Math.round((x * n) / 10) * 10;
+    return [
+      { label: `Under $${r(80)}`, min: 0, max: r(80) },
+      { label: `$${r(80)} to $${r(120)}`, min: r(80), max: r(120) },
+      { label: `$${r(120)} to $${r(180)}`, min: r(120), max: r(180) },
+      { label: "No limit", min: 0, max: 0 },
+    ];
+  }
+
+  /**
+   * Roughly what this plan's own shopping should stay under: its share of
+   * the household budget. The plan covers the client's breakfast, lunch and
+   * snack, plus dinner for everyone who shares it; dinner counts 1.5 meals.
+   * Null with no limit.
+   */
+  function planBudget(prefs) {
+    const max = Number(prefs && prefs.budgetMax) || 0;
+    if (!(max > 0)) return null;
+    const people = Math.max(1, Number(prefs.people) || 1);
+    const dinners = prefs.sharedDinners ? people : 1;
+    return Math.round((max * (3 + 1.5 * dinners)) / (4.5 * people));
+  }
+
+  /** Seven days from plan.start: [{ date, day: "Mon", meals: { breakfast: index, ... } }], each slot taking turns. */
+  function planDays(plan) {
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const date = addDays(plan.start, i);
+      const p = date.split("-").map(Number);
+      const meals = {};
+      MEAL_SLOTS.forEach((slot) => {
+        const n = ((plan.meals || {})[slot] || []).length;
+        meals[slot] = n ? i % n : -1;
+      });
+      days.push({ date: date, day: DAY_NAMES_[new Date(Date.UTC(p[0], p[1] - 1, p[2])).getUTCDay()].slice(0, 3), meals: meals });
+    }
+    return days;
+  }
+
+  /** "Every day", or the days a meal is on: "Mon, Wed, Fri". */
+  function mealDays(plan, slot, index) {
+    const on = planDays(plan).filter((d) => d.meals[slot] === index).map((d) => d.day);
+    return on.length === 7 ? "Every day" : on.join(", ");
+  }
+
+  /** One serve of a meal (the client's own portion). */
+  function mealTotals(meal) {
+    return sumTotals((meal && meal.items) || []);
+  }
+
+  /** The client's own calories and protein for each of the 7 days. */
+  function planDayTotals(plan) {
+    return planDays(plan).map((d) => {
+      const meals = MEAL_SLOTS.filter((s) => d.meals[s] >= 0).map((s) => plan.meals[s][d.meals[s]]);
+      return Object.assign({ date: d.date, day: d.day }, sumTotals(meals.map(mealTotals)));
+    });
+  }
+
+  /** How many serves each meal needs a day: dinners feed everyone who shares them. */
+  function slotPeople_(plan, slot) {
+    const prefs = plan.prefs || {};
+    return slot === "dinner" && prefs.sharedDinners ? Math.max(1, Number(prefs.people) || 1) : 1;
+  }
+
+  /** Roughly what the week's shopping for this plan costs (each meal's cost a serve × serves). */
+  function planCost(plan) {
+    let total = 0;
+    planDays(plan).forEach((d) =>
+      MEAL_SLOTS.forEach((slot) => {
+        if (d.meals[slot] < 0) return;
+        total += (Number(plan.meals[slot][d.meals[slot]].cost_aud) || 0) * slotPeople_(plan, slot);
+      })
+    );
+    return Math.round(total);
+  }
+
+  /** "eggs", "bananas", "loaves"... good enough for shopping units. */
+  function plural_(unit) {
+    if (/(s|sh|ch|x)$/.test(unit)) return unit + "es";
+    if (/[^aeiou]y$/.test(unit)) return unit.slice(0, -1) + "ies";
+    if (/f$/.test(unit)) return unit.slice(0, -1) + "ves";
+    return unit + "s";
+  }
+
+  /** A shopping amount: "7 bananas", "1.2 kg", "450 g", rounded up. */
+  function shoppingAmount(totalGrams, count, unit) {
+    if (count > 0 && unit) {
+      const n = Math.ceil(count - 0.001);
+      return `${n} ${n === 1 ? unit : plural_(unit)}`;
+    }
+    // Rounded up, so there's always enough.
+    if (totalGrams >= 1000) return `${Math.ceil(totalGrams / 100 - 0.001) / 10} kg`;
+    return `${Math.max(50, Math.ceil(totalGrams / 50 - 0.001) * 50)} g`;
+  }
+
+  /**
+   * The week's shopping for a plan: every ingredient added up over the days
+   * it's eaten (dinners times everyone sharing them), in aisle order.
+   * [{ name, amount, aisle, pantry }]. Pantry staples (oil, soy sauce...)
+   * come back flagged, for a "probably in your pantry" list.
+   */
+  function planShopping(plan) {
+    const by = {};
+    planDays(plan).forEach((d) =>
+      MEAL_SLOTS.forEach((slot) => {
+        if (d.meals[slot] < 0) return;
+        const serves = slotPeople_(plan, slot);
+        plan.meals[slot][d.meals[slot]].items.forEach((it) => {
+          const key = String(it.name).toLowerCase();
+          const cur = (by[key] = by[key] || { name: it.name, grams: 0, count: 0, unit: it.unit || "", aisle: it.aisle, pantry: !!it.pantry });
+          cur.grams += (Number(it.grams) || 0) * serves;
+          if (Number(it.count) > 0 && it.unit) cur.count += Number(it.count) * serves;
+        });
+      })
+    );
+    return Object.keys(by)
+      .map((k) => {
+        const c = by[k];
+        return { name: c.name, amount: shoppingAmount(c.grams, c.count, c.unit), aisle: AISLES.indexOf(c.aisle) >= 0 ? c.aisle : "Other", pantry: c.pantry };
+      })
+      .sort((a, b) => AISLES.indexOf(a.aisle) - AISLES.indexOf(b.aisle) || a.name.localeCompare(b.name));
+  }
+
+  /** Swap a meal for one of its slot's alternatives; the old meal becomes an alternative, so it can come back. */
+  function swapMeal(plan, slot, index, alt) {
+    const meals = plan.meals[slot];
+    const swaps = plan.swaps[slot];
+    if (!meals || !swaps || !meals[index] || !swaps[alt]) return plan;
+    const old = meals[index];
+    meals[index] = swaps[alt];
+    swaps[alt] = old;
+    return plan;
+  }
+
   return {
     ACTIVITY_FACTORS: ACTIVITY_FACTORS,
     KCAL_FLOOR: KCAL_FLOOR,
@@ -1011,5 +1164,18 @@ const MacroCore = (function () {
     goalProgress: goalProgress,
     weightComparison: weightComparison,
     weekRecap: weekRecap,
+    MEAL_SLOTS: MEAL_SLOTS,
+    AISLES: AISLES,
+    PLAN_VARIETY: PLAN_VARIETY,
+    budgetBands: budgetBands,
+    planBudget: planBudget,
+    planDays: planDays,
+    mealDays: mealDays,
+    mealTotals: mealTotals,
+    planDayTotals: planDayTotals,
+    planCost: planCost,
+    shoppingAmount: shoppingAmount,
+    planShopping: planShopping,
+    swapMeal: swapMeal,
   };
 })();

@@ -8,6 +8,8 @@
  *     progress, "get there quicker", the next goal and Change my goal.
  *   - Goal setup opens by itself the first time a client opens their card,
  *     and again when their month ends. "Not now" waits until tomorrow.
+ *   - "Shopping list" tile while their list (Gold and Diamond) has things
+ *     to buy; it opens mealplan.js's list.
  *
  * The maths is all MacroCore (weekRecap, goalOptions, goalProgress...).
  * Goals are stored by the Fuel backend (goal / saveGoal). Weight and
@@ -96,6 +98,7 @@ const WeekCard = (function () {
   let fuel = null;
   let goal = null;
   let ready = false;
+  let toBuy = 0; // shopping list items not yet ticked (Gold and Diamond only)
 
   const esc = (t) => String(t == null ? "" : t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many || one + "s"}`;
@@ -125,6 +128,7 @@ const WeekCard = (function () {
     const data = await MacroApi.call("goal", { id: slug });
     goal = data.goal || null;
     fuel = data.fuel || null;
+    toBuy = Number(data.shoppingToBuy) || 0;
     if (data.today) today = data.today;
   }
 
@@ -178,6 +182,13 @@ const WeekCard = (function () {
         `<span class="week-tile__text"><span class="week-tile__label">${goal ? "New month" : "Your goal"}</span>` +
         `<span class="week-tile__big week-tile__big--goal">Set this month's goal</span>` +
         `<span class="week-tile__sub">${esc(last ? `Last month: ${last.statusText.replace(/^[^:]+: /, "")}` : "Pick one thing to work on. It takes a minute.")}</span></span>${chevron}</button>`;
+    }
+    if (toBuy > 0 && typeof MealPlan !== "undefined") {
+      html +=
+        `<button class="week-tile" type="button" data-open="shopping"><span class="week-tile__emoji" aria-hidden="true">🛒</span>` +
+        `<span class="week-tile__text"><span class="week-tile__label">Shopping list</span>` +
+        `<span class="week-tile__big week-tile__big--goal">${plural(toBuy, "thing")} to buy</span>` +
+        `<span class="week-tile__sub">Tap to tick things off in the shop</span></span>${chevron}</button>`;
     }
     mount.innerHTML = html;
   }
@@ -572,6 +583,14 @@ const WeekCard = (function () {
         if (!b) return;
         if (b.dataset.open === "recap") openRecap();
         else if (b.dataset.open === "goal") openGoal();
+        else if (b.dataset.open === "shopping") {
+          MealPlan.openList({
+            onChange: (n) => {
+              toBuy = n;
+              paint();
+            },
+          });
+        }
         else openSetup(null);
       });
     }
