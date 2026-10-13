@@ -2629,24 +2629,87 @@ body.vt-lightbox-open { overflow: hidden; }
 
 /* ---------- Card showcase ---------- */
 
-.showcase__frame {
-  position: relative;
-  max-width: 860px;
+/* Three real screens of the current card in phone frames. Side by side on a
+   wide screen (the middle one sits a little lower), a swipeable strip on a phone. */
+.showcase__phones {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(16px, 3.2vw, 44px);
+  max-width: 940px;
   margin: 0 auto;
-  aspect-ratio: 16 / 9;
-  border-radius: var(--radius);
-  overflow: hidden;
-  border: 1px solid var(--line-strong);
-  box-shadow: 0 40px 100px rgba(0, 0, 0, 0.55);
-  background: var(--bg-card);
+  align-items: start;
 }
 
-.showcase__video {
-  position: absolute;
-  inset: 0;
+.showcase__item {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.showcase__item:nth-child(2) {
+  margin-top: 36px;
+}
+
+.showcase__phone {
+  padding: 7px;
+  border-radius: 36px;
+  background: linear-gradient(160deg, #2b2b2b, #0e0e0e);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.55);
+}
+
+.showcase__phone img {
+  display: block;
   width: 100%;
-  height: 100%;
+  height: auto;
+  aspect-ratio: 780 / 1900;
   object-fit: cover;
+  border-radius: 29px;
+  background: #0b0b0b;
+}
+
+.showcase__item figcaption {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: center;
+  padding: 0 6px;
+}
+
+.showcase__item figcaption strong {
+  font-family: var(--font-head);
+  font-size: 1.15rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.showcase__item figcaption span {
+  color: var(--dim);
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 760px) {
+  .showcase__phones {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: min(74%, 290px);
+    gap: 16px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    /* run edge to edge inside the page's 24px gutter */
+    margin: 0 -24px;
+    padding: 4px 24px 24px;
+    scroll-padding-inline: 24px;
+  }
+  .showcase__item {
+    scroll-snap-align: start;
+  }
+  .showcase__item:nth-child(2) {
+    margin-top: 0;
+  }
 }
 
 /* ---------- 04b · The Plan ---------- */
