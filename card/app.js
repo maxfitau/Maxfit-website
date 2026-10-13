@@ -198,6 +198,10 @@ const els = {
   qrModal: document.getElementById("qrModal"),
   qrModalBackdrop: document.getElementById("qrModalBackdrop"),
   qrModalClose: document.getElementById("qrModalClose"),
+  coachToolsTile: document.getElementById("coachToolsTile"),
+  coachToolsModal: document.getElementById("coachToolsModal"),
+  coachToolsBackdrop: document.getElementById("coachToolsBackdrop"),
+  coachToolsClose: document.getElementById("coachToolsClose"),
   loyaltyCount: document.getElementById("loyaltyCount"),
   loyaltyBar: document.getElementById("loyaltyBar"),
   picker: document.getElementById("picker"),
@@ -289,6 +293,30 @@ els.qrModalBackdrop.addEventListener("click", closeQrModal);
 els.qrModalClose.addEventListener("click", closeQrModal);
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !els.qrModal.hidden) closeQrModal();
+});
+
+/**
+ * "Coach Tools" — Max's own quick-links to the tools he reaches for mid-
+ * session (the workout builder, Coach · Fuel, the CRM sheet, the Handbook).
+ * Shown only on his own card (render() checks clientSlug === "maxfrench"),
+ * never anyone else's — the tile itself stays hidden otherwise. Each link
+ * already has its own protection where it matters (builder.html/coach.html
+ * are PIN-gated on load; the CRM sheet is already public-read by design),
+ * so this is just a shortcut to places already reachable, nothing new.
+ */
+function openCoachToolsModal() {
+  els.coachToolsModal.hidden = false;
+}
+
+function closeCoachToolsModal() {
+  els.coachToolsModal.hidden = true;
+}
+
+els.coachToolsTile.addEventListener("click", openCoachToolsModal);
+els.coachToolsBackdrop.addEventListener("click", closeCoachToolsModal);
+els.coachToolsClose.addEventListener("click", closeCoachToolsModal);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !els.coachToolsModal.hidden) closeCoachToolsModal();
 });
 
 function showStatus(message, isError) {
@@ -404,6 +432,8 @@ async function render(data, workoutSummary) {
     els.referLink.hidden = false;
     // Last week's recap and this month's goal (week.js, 2026-10-13).
     if (typeof WeekCard !== "undefined") WeekCard.init(data.clientSlug);
+    // "Coach Tools" (2026-10-13) — Max's own card only, never a client's.
+    if (data.clientSlug === "maxfrench") els.coachToolsTile.hidden = false;
   }
 
   // Everything that matters at a glance is on screen now — don't make the

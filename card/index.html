@@ -38,7 +38,7 @@
 <link rel="preconnect" href="https://docs.google.com" />
 <link rel="preconnect" href="https://script.google.com" />
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="styles.css?v=20261009a" />
+<link rel="stylesheet" href="styles.css?v=20261013a" />
 <link rel="stylesheet" href="macros.css?v=20261013a" />
 <link rel="stylesheet" href="week.css?v=20261013a" />
 <link rel="stylesheet" href="mealplan.css?v=20261013a" />
@@ -120,6 +120,13 @@
       <span class="card__tile-label">Refer a Friend</span>
       <span class="card__tile-value">Get your link</span>
     </a>
+
+    <!-- Shown by app.js only on Max's own card (clientSlug === "maxfrench"), never anyone else's. -->
+    <button class="card__tile" id="coachToolsTile" type="button" hidden>
+      <svg class="card__tile-icon" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.6 4.9L4 16.3V20h3.7l5.1-5.1a4 4 0 0 0 4.9-5.6l-2.8 2.8-2.1-2.1 2.8-2.8z"/></svg>
+      <span class="card__tile-label">Coach Tools</span>
+      <span class="card__tile-value">Your quick links</span>
+    </button>
   </div>
 
   <button class="card__complete" id="completeButton" type="button">
@@ -162,6 +169,35 @@
   </div>
 </div>
 
+<!-- Max's own quick-links, shown only on his own card (app.js, clientSlug === "maxfrench"). -->
+<div class="qr-modal" id="coachToolsModal" hidden>
+  <button class="qr-modal__backdrop" id="coachToolsBackdrop" type="button" aria-label="Close"></button>
+  <div class="qr-modal__panel qr-modal__panel--wide" role="dialog" aria-modal="true" aria-labelledby="coachToolsTitle">
+    <button class="qr-modal__close" id="coachToolsClose" type="button" aria-label="Close">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+    <h2 class="qr-modal__title" id="coachToolsTitle">Coach Tools</h2>
+    <div class="coach-links">
+      <a class="coach-links__row" href="../workout/builder.html" target="_blank" rel="noopener">
+        <span class="coach-links__text"><b>Workout Builder</b><small>Adjust a client's workout on the spot</small></span>
+        <span class="coach-links__chevron" aria-hidden="true">›</span>
+      </a>
+      <a class="coach-links__row" href="coach.html" target="_blank" rel="noopener">
+        <span class="coach-links__text"><b>Coach · Fuel</b><small>Create Fuel links, set targets, check Stripe</small></span>
+        <span class="coach-links__chevron" aria-hidden="true">›</span>
+      </a>
+      <a class="coach-links__row" href="https://docs.google.com/spreadsheets/d/1dGQyIoJ2_XrkbvvPvM2JAY0xdeYQfsCnYHal8WZojUg/edit" target="_blank" rel="noopener">
+        <span class="coach-links__text"><b>CRM Sheet</b><small>Sessions left, attendance, referrals</small></span>
+        <span class="coach-links__chevron" aria-hidden="true">›</span>
+      </a>
+      <a class="coach-links__row" href="https://claude.ai/artifact/6XiPmPjfQfHc926WkkbgnD" target="_blank" rel="noopener">
+        <span class="coach-links__text"><b>Coach Handbook</b><small>Every other link, routine and setting</small></span>
+        <span class="coach-links__chevron" aria-hidden="true">›</span>
+      </a>
+    </div>
+  </div>
+</div>
+
 <div class="celebrate" id="celebrate" hidden>
   <div class="celebrate__confetti" id="confetti"></div>
   <span class="celebrate__text">Nice Work</span>
@@ -182,7 +218,7 @@
 
 <script src="vendor/qrcode.js" defer></script>
 <script src="sheet.js?v=20261009b" defer></script>
-<script src="app.js?v=20261013a" defer></script>
+<script src="app.js?v=20261013d" defer></script>
 <script src="macros-core.js?v=20261013b" defer></script>
 <script src="macros-api.js?v=20260925a" defer></script>
 <script src="week.js?v=20261013d" defer></script>
