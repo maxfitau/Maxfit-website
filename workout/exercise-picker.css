@@ -1,0 +1,413 @@
+/* Shared exercise picker (exercise-picker.js) — Movement, then Body Part,
+   then the exercise itself. Uses the card's own tokens (--bg, --red, the
+   two Barlow families, --radius-sm), already loaded by both host pages. */
+
+.exercise-picker {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+}
+
+.exercise-picker[hidden] {
+  display: none;
+}
+
+.exercise-picker__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: max(18px, env(safe-area-inset-top)) 16px 14px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.exercise-picker__back,
+.exercise-picker__close {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--dim);
+  cursor: pointer;
+  border-radius: 8px;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.exercise-picker__back:active,
+.exercise-picker__close:active {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--white);
+}
+
+.exercise-picker__back[hidden] {
+  display: none;
+}
+
+.exercise-picker__title {
+  flex-grow: 1;
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 18px;
+  color: var(--white);
+}
+
+.exercise-picker__body {
+  flex-grow: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px 16px max(16px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.exercise-picker__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+/* Movement step, and the body-part step after it: fill the available screen
+   height across however many rows that step actually has (3 for the 5
+   movements, 1-2 for a body part list) instead of each tile sizing to a
+   fixed, short aspect-ratio — taller tiles, no dead space below the last
+   row. grid-auto-rows (not a hardcoded row count) is what makes this work
+   for both steps despite their different tile counts. */
+.exercise-picker__grid--fill {
+  flex-grow: 1;
+  grid-auto-rows: 1fr;
+}
+
+/* Conditioning's body-part step has exactly one tile ("Full Body") — let it
+   take the full width instead of sitting alone in the left column. */
+.exercise-picker__grid--fill .exercise-picker__tile--movement:only-child {
+  grid-column: 1 / -1;
+}
+
+.exercise-picker__tile {
+  aspect-ratio: 1.3 / 1;
+  min-width: 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.exercise-picker__tile:active {
+  background: rgba(224, 0, 0, 0.1);
+  border-color: rgba(224, 0, 0, 0.4);
+  transform: scale(0.97);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .exercise-picker__tile:active {
+    transform: none;
+  }
+}
+
+.exercise-picker__tile-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.exercise-picker__tile-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.exercise-picker__tile-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+/* Movement tiles (Push/Pull/Legs/Core/Conditioning) AND the body-part step
+   after them (Chest/Shoulders/…): the muscle-crop icon is the tile, not a
+   small badge tucked in a corner — big, centred, with the tinted background
+   carrying that step's own colour so nothing's lost by dropping the little
+   badge circle. Same class, same look, one level deeper. */
+.exercise-picker__tile--movement {
+  aspect-ratio: auto;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+}
+
+.exercise-picker__tile-icon--big {
+  width: 62%;
+  max-width: 170px;
+  min-width: 0;
+  aspect-ratio: 1;
+}
+
+.exercise-picker__tile-icon--big svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.exercise-picker__tile-label {
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: 16px;
+  color: var(--white);
+}
+
+.exercise-picker__tile-label--big {
+  font-size: 19px;
+}
+
+.exercise-picker__search {
+  font-family: var(--font-body);
+  font-size: 16px;
+  color: var(--white);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 13px 14px;
+  width: 100%;
+}
+
+.exercise-picker__search:focus {
+  outline: none;
+  border-color: var(--red);
+}
+
+.exercise-picker__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.exercise-picker__item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 13px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  font: inherit;
+  color: var(--white);
+  text-align: left;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.exercise-picker__item:active {
+  border-color: rgba(224, 0, 0, 0.4);
+  background: rgba(224, 0, 0, 0.08);
+}
+
+.exercise-picker__item-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.exercise-picker__item-name {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 15px;
+  flex-grow: 1;
+}
+
+.exercise-picker__add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--line);
+  background: transparent;
+  color: var(--grey);
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.exercise-picker__add:active {
+  border-color: var(--red);
+  color: var(--white);
+}
+
+.exercise-picker__add:disabled {
+  opacity: 0.6;
+}
+
+.exercise-picker__empty {
+  font-family: var(--font-body);
+  color: var(--dim);
+  font-size: 14px;
+  text-align: center;
+  padding: 10px 0;
+}
+
+/* A small body-part colour dot, used wherever an already-chosen exercise is
+   shown (the builder's rows, the client's logged workout) so the same
+   colour language carries through after the picker closes. */
+.exercise-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+/* "What does it work?" (2026-10-10): tap a muscle once for main (red),
+   twice for helps (pink), a third time to clear. The figure above lights
+   up to match. */
+.exercise-picker__muscle-intro {
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.4;
+  color: var(--grey);
+  margin: 0 0 12px;
+}
+
+.exercise-picker__muscle-intro b {
+  color: var(--white);
+}
+
+.exercise-picker__muscle-figs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  max-width: 260px;
+  margin: 0 auto 8px;
+}
+
+.exercise-picker__muscle-figs svg {
+  width: 100%;
+  height: auto;
+}
+
+.exercise-picker__muscle-figs [data-muscle] {
+  cursor: pointer;
+}
+
+.exercise-picker__muscle-legend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--grey);
+  margin: 0 0 6px;
+}
+
+.exercise-picker__muscle-key {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  margin-left: 10px;
+}
+
+.exercise-picker__muscle-key--main {
+  background: #ff2a1f;
+}
+
+.exercise-picker__muscle-key--helps {
+  background: #ff9a7a;
+}
+
+.exercise-picker__muscle-section {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 14px;
+  color: var(--grey);
+  margin: 14px 0 8px;
+}
+
+.exercise-picker__muscle-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.exercise-picker__muscle-chip {
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--white);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.exercise-picker__muscle-chip[data-state="main"] {
+  background: #ff2a1f;
+  border-color: #ff2a1f;
+  color: #fff;
+}
+
+.exercise-picker__muscle-chip[data-state="helps"] {
+  background: rgba(255, 154, 122, 0.18);
+  border-color: #ff9a7a;
+  color: #ffd2c4;
+}
+
+.exercise-picker__save {
+  display: block;
+  width: 100%;
+  min-height: 52px;
+  margin: 20px 0 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--red);
+  color: #fff;
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.exercise-picker__save:disabled {
+  background: var(--line);
+  color: var(--grey);
+  cursor: default;
+}
+

@@ -1,0 +1,138 @@
+/* ==========================================================================
+   MAX FIT · refer a friend
+   Loads on top of card/styles.css — same shell, fonts and palette as the
+   card.
+   ========================================================================== */
+
+/* This page can run taller than a phone screen, same reason as book.css. */
+body {
+  align-items: flex-start;
+}
+
+.refer {
+  gap: 20px;
+  padding-bottom: max(40px, calc(env(safe-area-inset-bottom, 0px) + 32px));
+}
+
+.refer [hidden] {
+  display: none !important;
+}
+
+.refer button:focus-visible,
+.refer a:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+}
+
+.refer__back {
+  color: var(--grey);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: -6px 0 -6px -6px;
+  border-radius: 8px;
+}
+
+.refer__back:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* ---- Loading, notices ---- */
+
+.refer__state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.refer__state-text {
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--grey);
+  margin: 0;
+}
+
+.refer__notice-title {
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  font-size: 26px;
+  color: var(--white);
+  margin: 0;
+}
+
+/* ---- Main content ---- */
+
+.refer__content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.refer__intro {
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--grey);
+  margin: 0;
+}
+
+/* ---- Share button ---- */
+
+.refer__btn {
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 16px;
+  color: var(--on-red);
+  background: var(--red);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  width: 100%;
+  cursor: pointer;
+}
+
+.refer__btn:active {
+  background: var(--red-dim);
+}
+
+.refer__copied {
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--white);
+  margin: -8px 0 0;
+  text-align: center;
+}
+
+.refer__copied:empty {
+  display: none;
+}
+
+/* Always-visible fallback so a friend can be sent the link even where
+   neither the share sheet nor clipboard access is available. */
+.refer__link-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.refer__link-label {
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.refer__link-value {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--grey);
+  word-break: break-all;
+  user-select: all;
+}

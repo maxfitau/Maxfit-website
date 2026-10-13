@@ -8,6 +8,11 @@
  *   - set a client's targets in grams (kcal = 4P + 4C + 9F), approving
  *     anything under the 1,500 / 1,200 kcal floor explicitly
  *   - hand targets back to the client's own calculator
+ *   - see each client's plan (Silver / Gold / Diamond: trial, paying or
+ *     free month), give a free month of Gold or Diamond, and ask the
+ *     backend to check Stripe now
+ *   - log a client's weight after a session, set their goal weight and
+ *     pace, and see this week's green days and their nutrition punches
  */
 (function () {
   const body = document.getElementById("coachBody");
@@ -15,8 +20,11 @@
   const PIN_STORAGE = "maxfitCoachPin";
   let pin = "";
   let clients = [];
-  let centsPerScan = 5;
+  // Every client's logged sets, for strength and training goals (null until loaded).
+  let setsBySlug = null;
   let aiEnabled = true;
+  let stripeReady = false;
+  let lastStripeSync = "";
   const open = {}; // slug -> which inline form is showing
 
   try {
@@ -73,9 +81,11 @@
         // ignore
       }
       clients = data.clients;
-      centsPerScan = data.centsPerScan || 5;
       aiEnabled = data.aiEnabled !== false;
+      stripeReady = !!data.stripeReady;
+      lastStripeSync = data.lastStripeSync || "";
       render();
+      loadGoalSets();
     } catch (err) {
       if (err.code === "bad_pin") {
         pin = "";
@@ -115,12 +125,16 @@
           <span class="coach-client__meta">${c.lastLog ? `Last log ${esc(c.lastLog)}` : "Never logged"}</span>
         </div>
         <span class="coach-client__meta">${esc(targetsText(c))}</span>
-        ${c.hasKey ? `<span class="coach-client__meta">Photo scans left: <b style="color:var(--white)">${int(c.credits)}</b></span>` : ""}
+        ${c.hasKey && aiEnabled ? `<span class="coach-client__meta">${esc(planText(c.plan))}</span>` : ""}
+        ${c.hasKey ? `<span class="coach-client__meta">${esc(progressText(c))}</span>` : ""}
+        ${goalHtml(c)}
         ${c.link ? `<div class="coach-link">${esc(c.link)}</div>` : ""}
         <div class="coach-actions">
           ${c.link ? '<button class="fuel-btn" type="button" data-a="copy">Copy link</button>' : '<button class="fuel-btn" type="button" data-a="issue">Create Fuel link</button>'}
           <button class="fuel-btn fuel-btn--ghost" type="button" data-a="targets">Set targets</button>
-          ${c.hasKey ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="topup">Add top-up</button>' : ""}
+          ${c.hasKey && aiEnabled ? ["gold", "diamond"].map((t) => `<button class="fuel-btn fuel-btn--ghost" type="button" data-a="giveMonth" data-tier="${t}">Free month of ${TIER_NAMES[t]}</button>`).join("") : ""}
+          ${c.hasKey ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="weight">Log weight</button>' : ""}
+          ${c.hasKey && c.targets ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="goal">Set goal</button>' : ""}
           ${c.link ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="rotate">New link</button>' : ""}
         </div>
         ${
@@ -142,16 +156,25 @@
             : ""
         }
         ${
-          form === "topup"
-            ? `<div class="coach-form" data-topup-form>
+          form === "weight"
+            ? `<div class="coach-form">
                 <div class="fuel-fields2">
-                  <label class="fuel-field"><span class="card__label">Amount paid ($)</span><input class="fuel-input" name="dollars" type="number" inputmode="decimal" step="0.01" placeholder="10" /></label>
-                  <label class="fuel-field"><span class="card__label">Note (optional)</span><input class="fuel-input" name="note" type="text" maxlength="80" placeholder="Cash, transfer…" /></label>
+                  <label class="fuel-field"><span class="card__label">Weight kg</span><input class="fuel-input" name="kg" type="number" inputmode="decimal" step="0.1" placeholder="${c.lastWeight ? esc(c.lastWeight.kg) : "e.g. 74.2"}" /></label>
+                  <label class="fuel-field"><span class="card__label">Date</span><input class="fuel-input" name="date" type="date" value="${esc(MacroCore.sydneyDate())}" /></label>
                 </div>
-                <span class="coach-client__meta" data-topup-preview>At ${esc(centsPerScan)}c a scan, $10 = ${int(1000 / centsPerScan)} photo scans.</span>
-                <div class="coach-actions">
-                  <button class="fuel-btn" type="button" data-a="saveTopup">Add scans</button>
+                <div class="coach-actions"><button class="fuel-btn" type="button" data-a="saveWeight">Save weight</button></div>
+              </div>`
+            : ""
+        }
+        ${
+          form === "goal"
+            ? `<div class="coach-form">
+                <div class="fuel-fields2">
+                  <label class="fuel-field"><span class="card__label">Goal weight kg</span><input class="fuel-input" name="goal_weight_kg" type="number" inputmode="decimal" step="0.1" value="${c.targets && c.targets.goal_weight_kg ? esc(c.targets.goal_weight_kg) : ""}" /></label>
+                  <label class="fuel-field"><span class="card__label">Pace kg / week</span><input class="fuel-input" name="weekly_rate_kg" type="number" inputmode="decimal" step="0.05" value="${c.targets && c.targets.weekly_rate_kg ? esc(Math.abs(c.targets.weekly_rate_kg)) : ""}" placeholder="0.5" /></label>
                 </div>
+                <span class="coach-client__meta">Up or down follows the goal. Keep it under about 1% of their bodyweight a week.</span>
+                <div class="coach-actions"><button class="fuel-btn" type="button" data-a="saveGoal">Save goal</button></div>
               </div>`
             : ""
         }
@@ -167,12 +190,93 @@
       </div>`;
   }
 
+  /** Strength and training goals are tracked from Logged Sets (the public CRM tab the workout pages read). */
+  async function loadGoalSets() {
+    if (setsBySlug || !clients.some((c) => c.goal && (c.goal.type === "strength" || c.goal.type === "sessions"))) return;
+    try {
+      const { rows, col } = await fetchLoggedSets();
+      const by = {};
+      rows.forEach((r) => {
+        const p = String(r[col.date] || "").slice(0, 10).split("-").map(Number);
+        if (p.length !== 3 || !p[0]) return;
+        const date = `${p[0]}-${String(p[1]).padStart(2, "0")}-${String(p[2]).padStart(2, "0")}`;
+        const slug = String(r[col.client] || "").trim().toLowerCase();
+        (by[slug] = by[slug] || []).push({ date, exercise: String(r[col.exercise] || "").trim(), kg: Number(r[col.weight]) || 0, reps: Number(r[col.reps]) || 0 });
+      });
+      setsBySlug = by;
+      render();
+    } catch (err) {
+      // Goals still show, just without progress for those two kinds.
+    }
+  }
+
+  /** The client's goal as they wrote it, with how it's going (2026-10-13). */
+  function goalHtml(c) {
+    const g = c.goal;
+    if (!g) return "";
+    const fromSets = g.type === "strength" || g.type === "sessions";
+    const p = fromSets && !setsBySlug ? null : MacroCore.goalProgress(
+      g,
+      { sets: (setsBySlug && setsBySlug[c.slug]) || [], weights: c.goalFuel ? c.goalFuel.weights : [], kcal: c.goalFuel ? c.goalFuel.kcal : null, greenWeeks: c.goalFuel ? c.goalFuel.greenWeeks : [] },
+      MacroCore.sydneyDate()
+    );
+    return `
+      <div class="coach-goal">
+        <span class="coach-goal__label">🎯 Goal · ${esc(MacroCore.shortDate(g.start_date))} to ${esc(MacroCore.shortDate(g.end_date))}</span>
+        <p class="coach-goal__text">${esc(MacroCore.goalSentence(g))}</p>
+        <span class="coach-client__meta">${p ? esc(`${p.statusText} · ${p.pct}%`) : "Working out progress…"}</span>
+      </div>`;
+  }
+
+  /** Weight, this week's green days and nutrition punches, in one line. */
+  function progressText(c) {
+    const bits = [];
+    if (c.lastWeight) bits.push(`Weight ${c.lastWeight.kg} kg (${c.lastWeight.date.slice(8)}/${c.lastWeight.date.slice(5, 7)})`);
+    if (c.greenThisWeek != null) bits.push(`${c.greenThisWeek}/7 green days this week`);
+    if (c.punches) bits.push(`${c.punches} nutrition punch${c.punches === 1 ? "" : "es"}`);
+    if (c.freeOwed) bits.push("free session earned");
+    return bits.join(" · ") || "No weigh-ins or green days yet";
+  }
+
+  // "platinum" was retired on 10 Oct 2026; an old one on file is Diamond.
+  const TIER_NAMES = { gold: "Gold", platinum: "Diamond", diamond: "Diamond" };
+
+  /** A client's Fuel AI status in a few words. */
+  function planText(p) {
+    if (!p) return "";
+    const date = (ymd) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(ymd || ""))) return "";
+      const [y, m, d] = ymd.split("-").map(Number);
+      const opts = { day: "numeric", month: "short", timeZone: "UTC" };
+      if (y !== new Date().getFullYear()) opts.year = "numeric"; // yearly plans renew next year
+      return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-AU", opts);
+    };
+    const tier = TIER_NAMES[p.tier] || "Gold";
+    const period = p.interval === "year" ? "paying yearly" : "paying monthly";
+    if (p.kind === "paid") return `${tier}: ${period}${p.until ? ` · renews ${date(p.until)}` : ""}${p.status === "past_due" ? " · card failed, Stripe retrying" : ""}`;
+    if (p.kind === "comp") return `${tier}: free month · until ${date(p.until)}`;
+    if (p.kind === "trial") return `${tier}: free trial · ${p.daysLeft} day${p.daysLeft === 1 ? "" : "s"} left`;
+    if (p.kind === "lapsed") return "Silver: subscription ended";
+    if (p.kind === "trial_over") return "Silver: trial finished, not subscribed";
+    return "Silver: the free week starts when they first open Fuel";
+  }
+
   function render() {
     body.innerHTML = `
       ${
         aiEnabled
           ? ""
-          : '<p class="fuel-error" style="margin-bottom:14px">Photo scanning is off until you add ANTHROPIC_API_KEY in Apps Script, so clients can only scan barcodes for now. You can still record top-ups.</p>'
+          : '<p class="fuel-error" style="margin-bottom:14px">Fuel AI (photo scans and Ask Fuel) is off until you add ANTHROPIC_API_KEY in Apps Script. Clients can scan barcodes and see food ideas for now.</p>'
+      }
+      ${
+        aiEnabled && stripeReady
+          ? `<div class="coach-actions" style="margin-bottom:14px;align-items:center">
+               <button class="fuel-btn fuel-btn--ghost" type="button" data-a="sync">Check Stripe now</button>
+               <span class="coach-client__meta">${lastStripeSync ? `Last checked ${esc(lastStripeSync)}` : "Checks every 15 minutes"}</span>
+             </div>`
+          : aiEnabled
+          ? '<p class="fuel-disclaimer" style="margin-bottom:14px">Stripe isn\'t connected yet, so clients can\'t subscribe. Add STRIPE_SECRET_KEY and STRIPE_FUEL_LINK in Apps Script (see SETUP.md).</p>'
+          : ""
       }
       <p class="fuel-disclaimer" style="margin-bottom:14px">Text each client their Fuel link. They open it once and add it to their home screen again. Only you (with the PIN) and that client can see their food log.</p>
       ${clients.map(clientHtml).join("")}`;
@@ -201,17 +305,6 @@
   }
 
   body.addEventListener("input", (e) => {
-    if (e.target.name === "dollars") {
-      const dollars = Number(e.target.value);
-      const scans = Math.round((dollars * 100) / centsPerScan);
-      e.target.closest("[data-topup-form]").querySelector("[data-topup-preview]").textContent =
-        dollars && scans
-          ? scans > 0
-            ? `= ${int(scans)} photo scans`
-            : `Takes back ${int(-scans)} photo scans (to fix a mistake)`
-          : `At ${centsPerScan}c a scan, $10 = ${int(1000 / centsPerScan)} photo scans.`;
-      return;
-    }
     const card = e.target.closest("[data-slug]");
     if (card && e.target.closest("[data-targets-form]")) paintKcal(card.dataset.slug);
   });
@@ -226,6 +319,20 @@
     }
     const btn = e.target.closest("[data-a]");
     if (!btn) return;
+    if (btn.dataset.a === "sync") {
+      btn.disabled = true;
+      btn.textContent = "Checking…";
+      try {
+        const data = await MacroApi.coach("coachSyncStripe", pin);
+        await load();
+        toast(`Stripe checked: ${data.sync.linked} new, ${data.sync.updated} updated`);
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = "Check Stripe now";
+        toast(err.message);
+      }
+      return;
+    }
     const slug = btn.closest("[data-slug]").dataset.slug;
     const c = clients.find((x) => x.slug === slug);
     const a = btn.dataset.a;
@@ -239,7 +346,7 @@
       }
       return;
     }
-    if (a === "issue" || a === "rotate" || a === "targets" || a === "topup") {
+    if (a === "issue" || a === "rotate" || a === "targets" || a === "weight" || a === "goal") {
       open[slug] = open[slug] === a ? null : a;
       render();
       return;
@@ -256,7 +363,7 @@
         });
         c.link = data.link;
         c.hasKey = true;
-        c.credits = data.credits;
+        c.plan = data.plan;
         c.sex = selectedSex(slug) || c.sex;
         open[slug] = null;
         render();
@@ -275,17 +382,33 @@
         open[slug] = null;
         await load();
         toast(`Saved ${c.name}'s targets`);
-      } else if (a === "saveTopup") {
+      } else if (a === "saveWeight") {
         const el = formFor(slug);
-        const data = await MacroApi.coach("addCredit", pin, {
+        const data = await MacroApi.coach("coachLogWeight", pin, {
           slug: slug,
-          dollars: el.querySelector('[name="dollars"]').value,
-          note: el.querySelector('[name="note"]').value,
+          kg: el.querySelector('[name="kg"]').value,
+          date: el.querySelector('[name="date"]').value,
         });
-        c.credits = data.balance;
+        c.lastWeight = data.lastWeight;
         open[slug] = null;
         render();
-        toast(`${data.scans > 0 ? "Added" : "Took back"} ${int(Math.abs(data.scans))} scans. ${c.name} now has ${int(data.balance)}.`);
+        toast(`Saved ${c.name}'s weight`);
+      } else if (a === "saveGoal") {
+        const el = formFor(slug);
+        const data = await MacroApi.coach("coachSetGoal", pin, {
+          slug: slug,
+          goal_weight_kg: el.querySelector('[name="goal_weight_kg"]').value,
+          weekly_rate_kg: el.querySelector('[name="weekly_rate_kg"]').value,
+        });
+        c.targets = Object.assign({}, c.targets, { goal_weight_kg: data.goal_weight_kg, weekly_rate_kg: data.weekly_rate_kg });
+        open[slug] = null;
+        render();
+        toast(`Saved ${c.name}'s goal`);
+      } else if (a === "giveMonth") {
+        const data = await MacroApi.coach("coachGiveMonth", pin, { slug: slug, tier: btn.dataset.tier });
+        c.plan = data.plan;
+        render();
+        toast(`${c.name} has ${TIER_NAMES[btn.dataset.tier] || "Gold"} free until ${planText(data.plan).split("until ")[1] || "next month"}`);
       } else if (a === "clearTargets") {
         await MacroApi.coach("coachSetTargets", pin, { slug: slug, clear: true });
         open[slug] = null;

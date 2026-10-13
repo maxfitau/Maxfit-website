@@ -13,7 +13,6 @@
 
 const SESSIONS_SHEET_GID = 1169726169; // "Sessions Remaining"
 const ATTENDANCE_SHEET_GID = 902061668; // attendance log
-const REFERRALS_SHEET_GID = 1148655449; // "Refferals"
 const LEADS_SHEET_GID = 846176456; // "Leads"
 const TIMEZONE = "Australia/Sydney";
 
@@ -33,7 +32,7 @@ const GROCERY_SHEET_NAME = "Grocery Items";
 // Changes whenever this file does, and is shown when you open the deployed
 // URL in a browser (see doGet) — the quick way to tell whether a redeploy
 // actually took, instead of guessing from behaviour.
-const BACKEND_VERSION = "2026-09-20a";
+const BACKEND_VERSION = "2026-10-13a";
 
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -91,8 +90,8 @@ function backfillTokens() {
  * it only creates a tab if one by that exact name doesn't already exist yet.
  */
 function setupWorkoutSheets() {
-  getOrCreateSheetByName_(EXERCISES_SHEET_NAME, ["Name", "Default Starting Weight (kg)"]);
-  getOrCreateSheetByName_(WORKOUT_EXERCISES_SHEET_NAME, ["Client", "Workout Name", "Order", "Exercise", "Target Sets", "Target Reps", "Days", "Workout Order", "Exercise Notes", "Workout Notes"]);
+  getOrCreateSheetByName_(EXERCISES_SHEET_NAME, ["Name", "Movement", "Body Part", "Default Starting Weight (kg)"]);
+  getOrCreateSheetByName_(WORKOUT_EXERCISES_SHEET_NAME, ["Client", "Workout Name", "Order", "Exercise", "Target Sets", "Target Reps", "Days", "Workout Order", "Exercise Notes", "Workout Notes", "Superset"]);
   getOrCreateSheetByName_(LOGGED_SETS_SHEET_NAME, ["Client", "Workout Name", "Exercise", "Set Number", "Weight (kg)", "Reps", "Date", "Timestamp", "Notes"]);
   Logger.log("Workout sheets ready.");
 }
@@ -162,6 +161,489 @@ function addNotesColumnToLoggedSets() {
   }
   sheet.getRange(1, lastCol + 1).setValue("Notes");
   Logger.log("Added Notes column.");
+}
+
+/**
+ * One-time helper — run manually from the Apps Script editor. Adds the
+ * "Movement" and "Body Part" columns to an existing Exercises tab that
+ * predates them (the exercise picker's three steps — movement, then body
+ * part, then the exercise itself — read these two columns; a row with
+ * either blank falls back to "Other" in the picker). Safe to re-run.
+ */
+function addCategoryColumnsToExercises() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(EXERCISES_SHEET_NAME);
+  if (!sheet) {
+    Logger.log("No Exercises tab yet — run setupWorkoutSheets first.");
+    return;
+  }
+  ensureExerciseColumns_(sheet);
+  Logger.log("Movement and Body Part columns ready.");
+}
+
+// [name, movement, body part] — a starting library for the exercise picker,
+// covering common gym equipment. Add more any time straight in the sheet,
+// or with "+ Add your own" in the picker itself; this seed never overwrites
+// those.
+const EXERCISE_SEED_ = [
+  ["Barbell Bench Press", "Push", "Chest"],
+  ["Incline Dumbbell Press", "Push", "Chest"],
+  ["Dumbbell Bench Press", "Push", "Chest"],
+  ["Push-Up", "Push", "Chest"],
+  ["Cable Chest Fly", "Push", "Chest"],
+  ["Overhead Press", "Push", "Shoulders"],
+  ["Dumbbell Shoulder Press", "Push", "Shoulders"],
+  ["Arnold Press", "Push", "Shoulders"],
+  ["Lateral Raise", "Push", "Shoulders"],
+  ["Front Raise", "Push", "Shoulders"],
+  ["Tricep Pushdown", "Push", "Triceps"],
+  ["Overhead Tricep Extension", "Push", "Triceps"],
+  ["Close-Grip Bench Press", "Push", "Triceps"],
+  ["Dips", "Push", "Triceps"],
+  ["Lat Pulldown", "Pull", "Back"],
+  ["Barbell Row", "Pull", "Back"],
+  ["Seated Cable Row", "Pull", "Back"],
+  ["Pull-Up", "Pull", "Back"],
+  ["Single-Arm Dumbbell Row", "Pull", "Back"],
+  ["Deadlift", "Pull", "Back"],
+  ["Barbell Curl", "Pull", "Biceps"],
+  ["Dumbbell Curl", "Pull", "Biceps"],
+  ["Hammer Curl", "Pull", "Biceps"],
+  ["Cable Curl", "Pull", "Biceps"],
+  ["Barbell Squat", "Legs", "Quads"],
+  ["Leg Press", "Legs", "Quads"],
+  ["Leg Extension", "Legs", "Quads"],
+  ["Walking Lunge", "Legs", "Quads"],
+  ["Goblet Squat", "Legs", "Quads"],
+  ["Romanian Deadlift", "Legs", "Hamstrings"],
+  ["Leg Curl", "Legs", "Hamstrings"],
+  ["Good Morning", "Legs", "Hamstrings"],
+  ["Hip Thrust", "Legs", "Glutes"],
+  ["Glute Bridge", "Legs", "Glutes"],
+  ["Cable Kickback", "Legs", "Glutes"],
+  ["Standing Calf Raise", "Legs", "Calves"],
+  ["Seated Calf Raise", "Legs", "Calves"],
+  ["Plank", "Core", "Abs"],
+  ["Cable Crunch", "Core", "Abs"],
+  ["Hanging Leg Raise", "Core", "Abs"],
+  ["Sit-Up", "Core", "Abs"],
+  ["Russian Twist", "Core", "Obliques"],
+  ["Side Plank", "Core", "Obliques"],
+  ["Woodchopper", "Core", "Obliques"],
+  ["Back Extension", "Core", "Lower Back"],
+  ["Superman", "Core", "Lower Back"],
+];
+
+/**
+ * One-time helper — run manually from the Apps Script editor, after
+ * addCategoryColumnsToExercises. Fills the Exercises tab with a starting
+ * library (EXERCISE_SEED_ above) so the picker has something in it from day
+ * one. Safe to re-run: skips any name already on the sheet (case-insensitive),
+ * so it only ever fills in what's missing and never touches a row you've
+ * since edited.
+ */
+function seedExercises() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(EXERCISES_SHEET_NAME);
+  if (!sheet) {
+    Logger.log("No Exercises tab yet — run setupWorkoutSheets first.");
+    return;
+  }
+  const header = ensureExerciseColumns_(sheet);
+  const col = {
+    name: findColumn_(header, "Name"),
+    movement: findColumn_(header, "Movement"),
+    bodyPart: findColumn_(header, "Body Part"),
+  };
+
+  const lastRow = sheet.getLastRow();
+  const existingNames = new Set();
+  if (lastRow >= 2) {
+    const existing = sheet.getRange(2, 1, lastRow - 1, header.length).getDisplayValues();
+    for (const row of existing) {
+      const n = String(row[col.name] || "").trim().toLowerCase();
+      if (n) existingNames.add(n);
+    }
+  }
+
+  const newRows = EXERCISE_SEED_
+    .filter(([name]) => !existingNames.has(name.toLowerCase()))
+    .map(([name, movement, bodyPart]) => {
+      const row = new Array(header.length).fill("");
+      row[col.name] = name;
+      row[col.movement] = movement;
+      row[col.bodyPart] = bodyPart;
+      return row;
+    });
+
+  if (newRows.length) {
+    sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, header.length).setValues(newRows);
+  }
+  Logger.log("Added " + newRows.length + " exercise(s); " + (EXERCISE_SEED_.length - newRows.length) + " already there.");
+}
+
+/**
+ * category (from EXERCISE_MUSCLE_DATA_ below) + its primary muscle keys ->
+ * the existing picker buckets (MOVEMENTS/BODY_PARTS_BY_MOVEMENT in
+ * exercise-picker.js, which this mirrors — keep the two in step). Most
+ * categories map straight across; "Shoulders & Traps" and "Hamstrings &
+ * Glutes" each cover two picker body parts, split by whichever muscle is
+ * actually primary for that exercise. Only used for a name that ISN'T
+ * already on the sheet — see seedExerciseMuscleData_ below for why.
+ */
+function exerciseMovementBodyPart_(category, primary) {
+  const first = primary[0] || "";
+  switch (category) {
+    case "Chest": return ["Push", "Chest"];
+    case "Back": return ["Pull", "Back"];
+    case "Shoulders & Traps":
+      return primary.length === 1 && first === "traps" ? ["Push", "Traps"] : ["Push", "Shoulders"];
+    case "Biceps": return ["Pull", "Biceps"];
+    case "Triceps": return ["Push", "Triceps"];
+    case "Forearms & Grip": return ["Pull", "Forearms"];
+    case "Quads": return ["Legs", "Quads"];
+    case "Hamstrings & Glutes": return first === "glutes" ? ["Legs", "Glutes"] : ["Legs", "Hamstrings"];
+    case "Calves": return ["Legs", "Calves"];
+    case "Core":
+      if (first === "obliques") return ["Core", "Obliques"];
+      if (first === "lowerback") return ["Core", "Lower Back"];
+      return ["Core", "Abs"];
+    case "Full Body & Conditioning": return ["Conditioning", "Full Body"];
+    default: return ["", ""];
+  }
+}
+
+// [name, category, equipment, primary muscle keys, secondary muscle keys,
+// best view] — Max's fuller exercise library (2026-10-02). category drives
+// exerciseMovementBodyPart_ above for any of these NOT already on the
+// sheet; see seedExerciseMuscleData_ for how an overlapping name (e.g.
+// "Pull-Up", already in EXERCISE_SEED_) is handled instead.
+//
+// v2 (2026-10-04, "hyperrealistic" per Max — e.g. "incline press does upper
+// chest"): keys are now a MIX of the original 14 broad groups (e.g. "chest")
+// and the ~50 fine-grained v2 figure keys (e.g. "chest-upper",
+// "triceps-lateral" — see maxfit-muscle-keys.json, card/muscle-map.js's
+// header comment). paintMuscleFigure/paintMuscleCrop/paintMuscleHeat match
+// BOTH a shape's data-muscle (fine) and data-group (broad), so either kind
+// of key works and they can mix freely in one exercise's lists. Fine keys
+// are used where the variation genuinely targets a specific head/region
+// (angle, grip, or joint-position driven — exactly Max's incline-press
+// example); genuinely compound, multi-joint lifts (squats, deadlifts, rows,
+// pull-ups, the Conditioning movements) are left at the broad group level,
+// since they don't actually isolate one sub-region — giving them fine keys
+// would be false precision, not more realism. A few keys here (e.g.
+// infraspinatus/teres-minor on Face Pull, hip-flexors) have NO broad-group
+// equivalent at all — real anatomy the old 14-key system couldn't express.
+const EXERCISE_MUSCLE_DATA_ = [
+  ["Barbell Bench Press", "Chest", "Barbell", ["chest-mid"], ["chest-lower", "delts-front", "triceps-lateral", "triceps-long"], "front"],
+  ["Incline Barbell Bench Press", "Chest", "Barbell", ["chest-upper"], ["delts-front", "triceps-lateral", "triceps-long"], "front"],
+  ["Decline Barbell Bench Press", "Chest", "Barbell", ["chest-lower"], ["triceps-lateral", "triceps-long", "delts-front"], "front"],
+  ["Dumbbell Bench Press", "Chest", "Dumbbell", ["chest-mid"], ["chest-lower", "delts-front", "triceps-lateral"], "front"],
+  ["Incline Dumbbell Press", "Chest", "Dumbbell", ["chest-upper"], ["delts-front", "triceps-lateral"], "front"],
+  ["Machine Chest Press", "Chest", "Machine", ["chest-mid"], ["chest-lower", "delts-front", "triceps-lateral"], "front"],
+  ["Smith Machine Bench Press", "Chest", "Smith machine", ["chest-mid"], ["chest-lower", "delts-front", "triceps-lateral"], "front"],
+  ["Dumbbell Fly", "Chest", "Dumbbell", ["chest-mid"], ["delts-front"], "front"],
+  ["Incline Dumbbell Fly", "Chest", "Dumbbell", ["chest-upper"], ["delts-front"], "front"],
+  ["High-to-Low Cable Fly", "Chest", "Cable", ["chest-lower"], ["delts-front"], "front"],
+  ["Low-to-High Cable Fly", "Chest", "Cable", ["chest-upper"], ["delts-front"], "front"],
+  ["Pec Deck", "Chest", "Machine", ["chest-mid"], ["delts-front"], "front"],
+  ["Push-Up", "Chest", "Bodyweight", ["chest-mid", "chest-lower"], ["delts-front", "triceps-lateral", "abs-upper"], "front"],
+  // Push-up incline/decline is the OPPOSITE of bench-press terminology: hands
+  // raised (incline) is the easier variant and shifts emphasis to the lower
+  // chest, same role a decline bench press plays; feet raised (decline) is
+  // harder and shifts emphasis to the upper chest, like an incline press.
+  ["Incline Push-Up", "Chest", "Bodyweight", ["chest-lower"], ["triceps-lateral", "delts-front"], "front"],
+  ["Decline Push-Up", "Chest", "Bodyweight", ["chest-upper"], ["delts-front", "triceps-lateral", "abs-upper"], "front"],
+  ["Chest Dip", "Chest", "Dip bars", ["chest-lower"], ["triceps-lateral", "triceps-long", "delts-front"], "front"],
+
+  ["Conventional Deadlift", "Back", "Barbell", ["glutes-max", "erector-spinae", "hamstrings-biceps-femoris"], ["vastus-lateralis", "vastus-medialis", "traps-upper", "forearm-flexors"], "back"],
+  ["Pull-Up", "Back", "Pull-up bar", ["lats"], ["biceps-long", "biceps-short", "delts-rear", "forearm-flexors"], "back"],
+  ["Chin-Up", "Back", "Pull-up bar", ["lats", "biceps-short"], ["biceps-long", "forearm-flexors"], "front"],
+  ["Assisted Pull-Up", "Back", "Machine", ["lats"], ["biceps-short", "delts-rear"], "back"],
+  ["Wide-Grip Lat Pulldown", "Back", "Cable", ["lats"], ["biceps-long", "delts-rear", "traps-mid", "forearm-flexors"], "back"],
+  ["Close-Grip Lat Pulldown", "Back", "Cable", ["lats"], ["biceps-short", "forearm-flexors"], "back"],
+  ["Straight-Arm Cable Pulldown", "Back", "Cable", ["lats"], ["triceps-long", "abs-upper"], "back"],
+  ["Barbell Bent-Over Row", "Back", "Barbell", ["lats", "traps-mid"], ["biceps-long", "delts-rear", "erector-spinae", "forearm-flexors"], "back"],
+  ["Pendlay Row", "Back", "Barbell", ["lats", "traps-mid"], ["biceps-long", "erector-spinae"], "back"],
+  ["Single-Arm Dumbbell Row", "Back", "Dumbbell", ["lats"], ["biceps-long", "delts-rear", "traps-mid"], "back"],
+  ["Chest-Supported Dumbbell Row", "Back", "Dumbbell", ["lats", "traps-mid"], ["biceps-long", "delts-rear"], "back"],
+  ["T-Bar Row", "Back", "Barbell", ["lats", "traps-mid"], ["biceps-long", "erector-spinae"], "back"],
+  ["Meadows Row", "Back", "Landmine", ["lats"], ["biceps-long", "traps-mid", "forearm-flexors"], "back"],
+  ["Seated Cable Row", "Back", "Cable", ["lats", "traps-mid"], ["biceps-long", "delts-rear"], "back"],
+  ["Machine Row", "Back", "Machine", ["lats", "traps-mid"], ["biceps-short"], "back"],
+  ["Inverted Row", "Back", "Barbell", ["lats", "traps-mid"], ["biceps-long", "abs-upper"], "back"],
+  ["Rack Pull", "Back", "Barbell", ["traps-upper", "erector-spinae", "glutes-max"], ["hamstrings-biceps-femoris", "forearm-flexors"], "back"],
+  ["Back Extension", "Back", "Hyperextension bench", ["erector-spinae"], ["glutes-max", "hamstrings-biceps-femoris"], "back"],
+  ["Good Morning", "Back", "Barbell", ["hamstrings-biceps-femoris", "erector-spinae"], ["glutes-max"], "back"],
+  ["Superman", "Back", "Bodyweight", ["erector-spinae"], ["glutes-max"], "back"],
+
+  ["Barbell Overhead Press", "Shoulders & Traps", "Barbell", ["delts-front"], ["triceps-lateral", "traps-upper", "abs-upper"], "front"],
+  ["Seated Dumbbell Shoulder Press", "Shoulders & Traps", "Dumbbell", ["delts-front"], ["delts-side", "triceps-lateral"], "front"],
+  ["Arnold Press", "Shoulders & Traps", "Dumbbell", ["delts-front", "delts-side"], ["triceps-lateral"], "front"],
+  ["Machine Shoulder Press", "Shoulders & Traps", "Machine", ["delts-front"], ["triceps-lateral"], "front"],
+  ["Push Press", "Shoulders & Traps", "Barbell", ["delts-front"], ["triceps-lateral", "vastus-lateralis", "glutes-max"], "front"],
+  ["Landmine Press", "Shoulders & Traps", "Landmine", ["delts-front", "chest-upper"], ["triceps-lateral", "abs-upper"], "front"],
+  ["Dumbbell Lateral Raise", "Shoulders & Traps", "Dumbbell", ["delts-side"], ["traps-upper"], "front"],
+  ["Cable Lateral Raise", "Shoulders & Traps", "Cable", ["delts-side"], ["traps-upper"], "front"],
+  ["Machine Lateral Raise", "Shoulders & Traps", "Machine", ["delts-side"], ["traps-upper"], "front"],
+  ["Dumbbell Front Raise", "Shoulders & Traps", "Dumbbell", ["delts-front"], ["chest-upper"], "front"],
+  ["Dumbbell Rear Delt Fly", "Shoulders & Traps", "Dumbbell", ["delts-rear"], ["traps-mid"], "front"],
+  ["Reverse Pec Deck", "Shoulders & Traps", "Machine", ["delts-rear"], ["traps-mid"], "front"],
+  // The classic rotator-cuff/rear-delt move — real anatomy with no broad-group equivalent at all in the old 14-key system.
+  ["Face Pull", "Shoulders & Traps", "Cable", ["delts-rear"], ["infraspinatus", "teres-minor", "traps-mid"], "back"],
+  ["Upright Row", "Shoulders & Traps", "Barbell", ["delts-side", "traps-upper"], ["biceps-short"], "back"],
+  ["Barbell Shrug", "Shoulders & Traps", "Barbell", ["traps-upper"], ["forearm-flexors"], "back"],
+  ["Dumbbell Shrug", "Shoulders & Traps", "Dumbbell", ["traps-upper"], ["forearm-flexors"], "back"],
+
+  ["Barbell Curl", "Biceps", "Barbell", ["biceps-long", "biceps-short"], ["brachialis", "brachioradialis"], "front"],
+  ["EZ-Bar Curl", "Biceps", "EZ bar", ["biceps-long", "biceps-short"], ["brachialis"], "front"],
+  ["Dumbbell Curl", "Biceps", "Dumbbell", ["biceps-long", "biceps-short"], ["brachialis"], "front"],
+  ["Hammer Curl", "Biceps", "Dumbbell", ["brachialis", "brachioradialis"], ["biceps-short"], "front"],
+  ["Incline Dumbbell Curl", "Biceps", "Dumbbell", ["biceps-long"], ["brachialis"], "front"],
+  ["Preacher Curl", "Biceps", "Barbell", ["biceps-short"], ["brachialis"], "front"],
+  ["Concentration Curl", "Biceps", "Dumbbell", ["biceps-short"], ["biceps-long"], "front"],
+  ["Cable Curl", "Biceps", "Cable", ["biceps-long", "biceps-short"], ["brachialis"], "front"],
+  ["Bayesian Cable Curl", "Biceps", "Cable", ["biceps-long"], ["biceps-short"], "front"],
+  ["Spider Curl", "Biceps", "Dumbbell", ["biceps-short"], ["brachialis"], "front"],
+  ["Reverse Curl", "Biceps", "Barbell", ["brachioradialis", "forearm-extensors"], ["biceps-short"], "front"],
+
+  ["Close-Grip Bench Press", "Triceps", "Barbell", ["triceps-long", "triceps-lateral"], ["chest-mid", "delts-front"], "front"],
+  ["EZ-Bar Skull Crusher", "Triceps", "EZ bar", ["triceps-long", "triceps-medial"], ["triceps-lateral"], "back"],
+  ["Overhead Dumbbell Extension", "Triceps", "Dumbbell", ["triceps-long"], ["triceps-lateral"], "back"],
+  ["Overhead Cable Extension", "Triceps", "Cable", ["triceps-long"], ["triceps-lateral"], "back"],
+  ["Rope Pushdown", "Triceps", "Cable", ["triceps-lateral", "triceps-medial"], ["triceps-long"], "back"],
+  ["Straight-Bar Pushdown", "Triceps", "Cable", ["triceps-lateral"], ["triceps-long"], "back"],
+  ["Bench Dip", "Triceps", "Bench", ["triceps-lateral"], ["chest-lower", "delts-front"], "back"],
+  ["Parallel Bar Dip (upright)", "Triceps", "Dip bars", ["triceps-lateral", "triceps-long"], ["chest-lower", "delts-front"], "back"],
+  ["Dumbbell Kickback", "Triceps", "Dumbbell", ["triceps-lateral"], ["triceps-medial"], "back"],
+  ["Diamond Push-Up", "Triceps", "Bodyweight", ["triceps-lateral"], ["chest-mid", "delts-front"], "back"],
+  ["JM Press", "Triceps", "Barbell", ["triceps-long", "triceps-lateral"], ["chest-mid"], "back"],
+
+  ["Wrist Curl", "Forearms & Grip", "Dumbbell", ["forearm-flexors"], [], "front"],
+  ["Reverse Wrist Curl", "Forearms & Grip", "Dumbbell", ["forearm-extensors"], [], "front"],
+  ["Farmer's Carry", "Forearms & Grip", "Dumbbell", ["forearm-flexors", "traps-upper"], ["abs-upper", "obliques-external", "vastus-lateralis", "glutes-max"], "back"],
+  ["Dead Hang", "Forearms & Grip", "Pull-up bar", ["forearm-flexors"], ["lats", "delts-side"], "front"],
+
+  ["Back Squat", "Quads", "Barbell", ["vastus-lateralis", "vastus-medialis", "glutes-max"], ["hamstrings-biceps-femoris", "erector-spinae", "abs-upper"], "front"],
+  ["Front Squat", "Quads", "Barbell", ["rectus-femoris", "vastus-medialis"], ["glutes-max", "abs-upper", "erector-spinae"], "front"],
+  ["Goblet Squat", "Quads", "Dumbbell", ["vastus-medialis", "glutes-max"], ["abs-upper"], "front"],
+  ["Box Squat", "Quads", "Barbell", ["vastus-lateralis", "glutes-max"], ["hamstrings-biceps-femoris", "erector-spinae"], "front"],
+  ["Pause Squat", "Quads", "Barbell", ["vastus-lateralis", "vastus-medialis", "glutes-max"], ["erector-spinae", "abs-upper"], "front"],
+  ["Smith Machine Squat", "Quads", "Smith machine", ["vastus-lateralis", "vastus-medialis", "glutes-max"], ["hamstrings-biceps-femoris"], "front"],
+  ["Hack Squat", "Quads", "Machine", ["vastus-lateralis", "vastus-medialis"], ["glutes-max"], "front"],
+  ["Leg Press", "Quads", "Machine", ["vastus-lateralis", "vastus-medialis", "glutes-max"], ["hamstrings-biceps-femoris"], "front"],
+  ["Bulgarian Split Squat", "Quads", "Dumbbell", ["rectus-femoris", "vastus-medialis", "glutes-max"], ["hamstrings-biceps-femoris"], "front"],
+  ["Walking Lunge", "Quads", "Dumbbell", ["vastus-medialis", "glutes-max"], ["hamstrings-biceps-femoris", "calves-gastroc-medial"], "front"],
+  ["Reverse Lunge", "Quads", "Dumbbell", ["glutes-max", "vastus-medialis"], ["hamstrings-biceps-femoris"], "front"],
+  ["Step-Up", "Quads", "Dumbbell", ["vastus-medialis", "glutes-max"], ["hamstrings-biceps-femoris"], "front"],
+  ["Leg Extension", "Quads", "Machine", ["rectus-femoris", "vastus-medialis", "vastus-lateralis"], [], "front"],
+  ["Sissy Squat", "Quads", "Bodyweight", ["rectus-femoris", "vastus-medialis"], [], "front"],
+  ["Pistol Squat", "Quads", "Bodyweight", ["vastus-medialis", "glutes-max"], ["abs-upper"], "front"],
+  ["Wall Sit", "Quads", "Bodyweight", ["vastus-lateralis", "vastus-medialis"], ["glutes-max"], "front"],
+  ["Jump Squat", "Quads", "Bodyweight", ["vastus-lateralis", "glutes-max"], ["calves-gastroc-medial"], "front"],
+  ["Box Jump", "Quads", "Plyo box", ["vastus-lateralis", "glutes-max"], ["calves-gastroc-medial"], "front"],
+
+  ["Romanian Deadlift", "Hamstrings & Glutes", "Barbell", ["hamstrings-biceps-femoris", "hamstrings-semitendinosus", "glutes-max"], ["erector-spinae", "forearm-flexors"], "back"],
+  ["Stiff-Leg Deadlift", "Hamstrings & Glutes", "Barbell", ["hamstrings-biceps-femoris", "hamstrings-semitendinosus"], ["glutes-max", "erector-spinae"], "back"],
+  ["Sumo Deadlift", "Hamstrings & Glutes", "Barbell", ["glutes-max", "vastus-medialis"], ["hamstrings-biceps-femoris", "erector-spinae", "forearm-flexors"], "back"],
+  ["Trap Bar Deadlift", "Hamstrings & Glutes", "Trap bar", ["vastus-lateralis", "glutes-max"], ["hamstrings-biceps-femoris", "erector-spinae", "traps-upper"], "front"],
+  ["Single-Leg Romanian Deadlift", "Hamstrings & Glutes", "Dumbbell", ["hamstrings-biceps-femoris", "glutes-max"], ["erector-spinae"], "back"],
+  ["Lying Leg Curl", "Hamstrings & Glutes", "Machine", ["hamstrings-biceps-femoris", "hamstrings-semitendinosus"], ["calves-gastroc-medial"], "back"],
+  ["Seated Leg Curl", "Hamstrings & Glutes", "Machine", ["hamstrings-biceps-femoris", "hamstrings-semitendinosus"], [], "back"],
+  ["Nordic Hamstring Curl", "Hamstrings & Glutes", "Bodyweight", ["hamstrings-biceps-femoris", "hamstrings-semitendinosus"], ["glutes-max"], "back"],
+  ["Barbell Hip Thrust", "Hamstrings & Glutes", "Barbell", ["glutes-max"], ["hamstrings-biceps-femoris"], "back"],
+  ["Glute Bridge", "Hamstrings & Glutes", "Bodyweight", ["glutes-max"], ["hamstrings-biceps-femoris"], "back"],
+  ["Single-Leg Glute Bridge", "Hamstrings & Glutes", "Bodyweight", ["glutes-max"], ["hamstrings-biceps-femoris", "abs-upper"], "back"],
+  ["Cable Kickback", "Hamstrings & Glutes", "Cable", ["glutes-max"], ["hamstrings-biceps-femoris"], "back"],
+  ["Cable Pull-Through", "Hamstrings & Glutes", "Cable", ["glutes-max", "hamstrings-biceps-femoris"], ["erector-spinae"], "back"],
+  ["Kettlebell Swing", "Hamstrings & Glutes", "Kettlebell", ["glutes-max", "hamstrings-biceps-femoris"], ["erector-spinae", "delts-front", "abs-upper"], "back"],
+  // Glute Medius — the only one of these that targets the SIDE of the hip, not the main glute mass.
+  ["Hip Abduction Machine", "Hamstrings & Glutes", "Machine", ["glutes-med"], [], "back"],
+
+  ["Standing Calf Raise", "Calves", "Machine", ["calves-gastroc-medial", "calves-gastroc-lateral"], [], "front"],
+  ["Seated Calf Raise", "Calves", "Machine", ["calves-soleus"], [], "front"],
+  ["Leg Press Calf Raise", "Calves", "Machine", ["calves-gastroc-medial"], ["calves-soleus"], "front"],
+  ["Single-Leg Calf Raise", "Calves", "Bodyweight", ["calves-gastroc-medial", "calves-gastroc-lateral"], [], "front"],
+  ["Jump Rope", "Calves", "Jump rope", ["calves-gastroc-medial"], ["delts-side", "vastus-lateralis"], "front"],
+
+  ["Plank", "Core", "Bodyweight", ["abs-upper", "abs-mid"], ["obliques-external", "delts-front"], "front"],
+  ["Side Plank", "Core", "Bodyweight", ["obliques-external"], ["abs-mid"], "front"],
+  ["Crunch", "Core", "Bodyweight", ["abs-upper"], [], "front"],
+  ["Cable Crunch", "Core", "Cable", ["abs-upper"], ["obliques-external"], "front"],
+  ["Decline Sit-Up", "Core", "Decline bench", ["abs-upper", "abs-mid"], ["obliques-external", "hip-flexors"], "front"],
+  ["Bicycle Crunch", "Core", "Bodyweight", ["abs-upper", "obliques-external"], [], "front"],
+  // Any leg-raise pattern tilts the pelvis posteriorly, which is what actually loads the LOWER abs, not the upper.
+  ["Hanging Leg Raise", "Core", "Pull-up bar", ["abs-lower", "abs-infra"], ["obliques-external", "hip-flexors", "forearm-flexors"], "front"],
+  ["Hanging Knee Raise", "Core", "Pull-up bar", ["abs-lower"], ["hip-flexors", "forearm-flexors"], "front"],
+  ["Lying Leg Raise", "Core", "Bodyweight", ["abs-lower", "abs-infra"], ["hip-flexors"], "front"],
+  ["V-Up", "Core", "Bodyweight", ["abs-upper", "abs-lower"], ["hip-flexors"], "front"],
+  ["Hollow Body Hold", "Core", "Bodyweight", ["abs-lower", "abs-infra"], ["abs-upper"], "front"],
+  ["Dragon Flag", "Core", "Bodyweight", ["abs-lower", "abs-infra"], ["lats", "erector-spinae"], "front"],
+  ["Ab Wheel Rollout", "Core", "Ab wheel", ["abs-upper", "abs-mid"], ["lats", "delts-front"], "front"],
+  ["Russian Twist", "Core", "Bodyweight", ["obliques-external"], ["abs-mid"], "front"],
+  ["Cable Woodchopper", "Core", "Cable", ["obliques-external"], ["abs-mid", "delts-side"], "front"],
+  ["Pallof Press", "Core", "Cable", ["obliques-external", "abs-mid"], [], "front"],
+  ["Dead Bug", "Core", "Bodyweight", ["abs-lower", "abs-infra"], [], "front"],
+  ["Bird Dog", "Core", "Bodyweight", ["erector-spinae", "abs-mid"], ["glutes-max"], "front"],
+
+  // Conditioning stays at the broad-group level throughout — these move too
+  // many joints at once for any one sub-region to be "the" target.
+  ["Burpee", "Full Body & Conditioning", "Bodyweight", ["quads", "chest"], ["delts", "triceps", "abs"], "front"],
+  ["Thruster", "Full Body & Conditioning", "Barbell", ["quads", "delts"], ["glutes", "triceps", "abs"], "front"],
+  ["Power Clean", "Full Body & Conditioning", "Barbell", ["glutes", "hamstrings", "traps"], ["quads", "delts", "lowerback"], "back"],
+  ["Hang Clean", "Full Body & Conditioning", "Barbell", ["traps", "glutes", "hamstrings"], ["delts", "forearms"], "back"],
+  ["Clean and Press", "Full Body & Conditioning", "Barbell", ["delts", "glutes", "quads"], ["traps", "triceps"], "front"],
+  ["Dumbbell Snatch", "Full Body & Conditioning", "Dumbbell", ["delts", "glutes"], ["hamstrings", "traps"], "back"],
+  ["Man Maker", "Full Body & Conditioning", "Dumbbell", ["delts", "chest", "quads"], ["lats", "triceps", "abs"], "front"],
+  ["Turkish Get-Up", "Full Body & Conditioning", "Kettlebell", ["delts", "abs"], ["glutes", "obliques"], "front"],
+  ["Wall Ball", "Full Body & Conditioning", "Medicine ball", ["quads", "delts"], ["glutes"], "front"],
+  ["Mountain Climber", "Full Body & Conditioning", "Bodyweight", ["abs"], ["delts", "quads"], "front"],
+  ["Bear Crawl", "Full Body & Conditioning", "Bodyweight", ["delts", "abs"], ["quads"], "front"],
+  ["Battle Ropes", "Full Body & Conditioning", "Battle ropes", ["delts"], ["forearms", "abs"], "front"],
+  ["Sled Push", "Full Body & Conditioning", "Sled", ["quads", "glutes"], ["calves"], "front"],
+  ["Rowing Machine", "Full Body & Conditioning", "Rower", ["lats", "quads"], ["hamstrings", "biceps", "glutes"], "front"],
+  ["Assault Bike", "Full Body & Conditioning", "Air bike", ["quads"], ["hamstrings", "delts"], "front"],
+  ["Sprint", "Full Body & Conditioning", "Bodyweight", ["hamstrings", "glutes"], ["quads", "calves"], "back"],
+
+  // Top-up (2026-10-02): exact names from the original ~45-exercise seed
+  // (EXERCISE_SEED_ above) that don't share a name with any of the 150
+  // above, so seedExerciseMuscleData_ would otherwise leave them with no
+  // muscle data even though a client may already have them assigned. Two
+  // of these (Lat Pulldown, Overhead Press) are exactly Max's own example
+  // exercises from his muscle-map brief.
+  ["Lat Pulldown", "Back", "Cable", ["lats"], ["biceps-long", "delts-rear", "traps-mid", "forearm-flexors"], "back"],
+  ["Overhead Press", "Shoulders & Traps", "Barbell", ["delts-front"], ["triceps-lateral", "traps-upper", "abs-upper"], "front"],
+  ["Barbell Row", "Back", "Barbell", ["lats", "traps-mid"], ["biceps-long", "delts-rear", "erector-spinae", "forearm-flexors"], "back"],
+  ["Tricep Pushdown", "Triceps", "Cable", ["triceps-lateral"], ["triceps-long"], "back"],
+  ["Dumbbell Shoulder Press", "Shoulders & Traps", "Dumbbell", ["delts-front"], ["delts-side", "triceps-lateral"], "front"],
+  ["Lateral Raise", "Shoulders & Traps", "Dumbbell", ["delts-side"], ["traps-upper"], "front"],
+  ["Front Raise", "Shoulders & Traps", "Dumbbell", ["delts-front"], ["chest-upper"], "front"],
+  ["Overhead Tricep Extension", "Triceps", "Dumbbell", ["triceps-long"], ["triceps-lateral"], "back"],
+  ["Dips", "Triceps", "Dip bars", ["triceps-lateral"], ["chest-lower", "delts-front"], "back"],
+  ["Deadlift", "Back", "Barbell", ["glutes-max", "erector-spinae", "hamstrings-biceps-femoris"], ["vastus-lateralis", "traps-upper", "lats", "forearm-flexors"], "back"],
+  ["Leg Curl", "Hamstrings & Glutes", "Machine", ["hamstrings-biceps-femoris", "hamstrings-semitendinosus"], ["calves-gastroc-medial"], "back"],
+  ["Hip Thrust", "Hamstrings & Glutes", "Barbell", ["glutes-max"], ["hamstrings-biceps-femoris"], "back"],
+  ["Sit-Up", "Core", "Bodyweight", ["abs-upper", "abs-mid"], ["obliques-external", "hip-flexors"], "front"],
+  ["Woodchopper", "Core", "Cable", ["obliques-external"], ["abs-mid", "delts-side"], "front"],
+];
+
+/**
+ * One-time helper — run manually from the Apps Script editor, after
+ * addCategoryColumnsToExercises. Brings in Max's fuller exercise library
+ * (EXERCISE_MUSCLE_DATA_ above): equipment, and which muscles each one
+ * works (primary and secondary — the muscle diagram on the client card and
+ * the builder reads these, see card/muscle-map.js). Safe to re-run.
+ *
+ * A name already on the sheet (case-insensitive — plenty of these overlap
+ * with the original seedExercises() library, e.g. "Pull-Up") only gets its
+ * BLANK Equipment/Primary/Secondary/Best View cells filled in: its existing
+ * Movement and Body Part are never touched, so nothing already assigned to
+ * a client moves to a different picker bucket underneath them. A genuinely
+ * new name is added as a new row, with Movement/Body Part worked out from
+ * its category (exerciseMovementBodyPart_ above).
+ */
+function seedExerciseMuscleData() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(EXERCISES_SHEET_NAME);
+  if (!sheet) {
+    Logger.log("No Exercises tab yet — run setupWorkoutSheets first.");
+    return;
+  }
+  const header = ensureExerciseColumns_(sheet);
+  const col = {
+    name: findColumn_(header, "Name"),
+    movement: findColumn_(header, "Movement"),
+    bodyPart: findColumn_(header, "Body Part"),
+    equipment: findColumn_(header, "Equipment"),
+    primary: findColumn_(header, "Primary Muscles"),
+    secondary: findColumn_(header, "Secondary Muscles"),
+    bestView: findColumn_(header, "Best View"),
+  };
+
+  const lastRow = sheet.getLastRow();
+  const existingByName = {}; // lowercased name -> { row, values }
+  if (lastRow >= 2) {
+    const existing = sheet.getRange(2, 1, lastRow - 1, header.length).getDisplayValues();
+    existing.forEach((row, i) => {
+      const n = String(row[col.name] || "").trim().toLowerCase();
+      if (n) existingByName[n] = { row: i + 2, values: row };
+    });
+  }
+
+  let filled = 0;
+  let added = 0;
+  const newRows = [];
+  EXERCISE_MUSCLE_DATA_.forEach(([name, category, equipment, primary, secondary, bestView]) => {
+    const found = existingByName[name.toLowerCase()];
+    if (found) {
+      const patches = [];
+      if (col.equipment >= 0 && !String(found.values[col.equipment] || "").trim()) patches.push([col.equipment, equipment]);
+      if (col.primary >= 0 && !String(found.values[col.primary] || "").trim()) patches.push([col.primary, primary.join(",")]);
+      if (col.secondary >= 0 && !String(found.values[col.secondary] || "").trim()) patches.push([col.secondary, secondary.join(",")]);
+      if (col.bestView >= 0 && !String(found.values[col.bestView] || "").trim()) patches.push([col.bestView, bestView]);
+      patches.forEach(([c, v]) => sheet.getRange(found.row, c + 1).setValue(v));
+      if (patches.length) filled++;
+      return;
+    }
+    const [movement, bodyPart] = exerciseMovementBodyPart_(category, primary);
+    const row = new Array(header.length).fill("");
+    row[col.name] = name;
+    row[col.movement] = movement;
+    row[col.bodyPart] = bodyPart;
+    row[col.equipment] = equipment;
+    row[col.primary] = primary.join(",");
+    row[col.secondary] = secondary.join(",");
+    row[col.bestView] = bestView;
+    newRows.push(row);
+    added++;
+  });
+
+  if (newRows.length) {
+    sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, header.length).setValues(newRows);
+  }
+  Logger.log("Added " + added + " exercise(s); filled in muscle data on " + filled + " existing one(s).");
+}
+
+/**
+ * One-time helper — run manually from the Apps Script editor, after pasting
+ * the v2 (hyperrealistic) EXERCISE_MUSCLE_DATA_ above. Unlike
+ * seedExerciseMuscleData() (which only fills BLANK cells), this OVERWRITES
+ * Primary/Secondary Muscles on any existing row whose name matches one in
+ * EXERCISE_MUSCLE_DATA_ — that's the whole point this time, since every one
+ * of those 150 rows already has v1 (broad-key) data in it. Movement/Body
+ * Part/Equipment/Best View are left untouched (nothing changed there), and
+ * a name NOT in EXERCISE_MUSCLE_DATA_ (something Max typed in himself) is
+ * left completely alone. Safe to re-run.
+ */
+function upgradeExerciseMuscleDataV2() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(EXERCISES_SHEET_NAME);
+  if (!sheet) {
+    Logger.log("No Exercises tab yet — run setupWorkoutSheets first.");
+    return;
+  }
+  const header = ensureExerciseColumns_(sheet);
+  const col = {
+    name: findColumn_(header, "Name"),
+    primary: findColumn_(header, "Primary Muscles"),
+    secondary: findColumn_(header, "Secondary Muscles"),
+  };
+
+  const lastRow = sheet.getLastRow();
+  const rowByName = {};
+  if (lastRow >= 2) {
+    const names = sheet.getRange(2, col.name + 1, lastRow - 1, 1).getDisplayValues();
+    names.forEach((r, i) => {
+      const n = String(r[0] || "").trim().toLowerCase();
+      if (n) rowByName[n] = i + 2;
+    });
+  }
+
+  let updated = 0;
+  EXERCISE_MUSCLE_DATA_.forEach(([name, , , primary, secondary]) => {
+    const row = rowByName[name.toLowerCase()];
+    if (!row) return; // not on the sheet yet — seedExerciseMuscleData() handles adding it
+    sheet.getRange(row, col.primary + 1).setValue(primary.join(","));
+    sheet.getRange(row, col.secondary + 1).setValue(secondary.join(","));
+    updated++;
+  });
+  Logger.log("Upgraded Primary/Secondary Muscles on " + updated + " exercise(s) to the v2 fine-grained keys.");
 }
 
 /**
@@ -242,6 +724,9 @@ function doPost(e) {
   if (action === "assignWorkout") {
     return withLock_(() => handleAssignWorkout_(payload));
   }
+  if (action === "addExercise") {
+    return withLock_(() => handleAddExercise_(payload));
+  }
   if (action === "reorderWorkouts") {
     return withLock_(() => handleReorderWorkouts_(payload));
   }
@@ -250,6 +735,18 @@ function doPost(e) {
   }
   if (action === "saveWorkoutSession") {
     return withLock_(() => handleSaveWorkoutSession_(payload));
+  }
+  if (action === "bookingInfo") {
+    return handleBookingInfo_(payload); // read-only, so no lock
+  }
+  if (action === "paymentReturn") {
+    return handlePaymentReturn_(payload); // asks Stripe first, then takes the lock itself for the sheet work
+  }
+  if (action === "bookSession") {
+    return withLock_(() => handleBookSession_(payload));
+  }
+  if (action === "cancelBooking") {
+    return withLock_(() => handleCancelBooking_(payload));
   }
   if (action === "checkGroceryCode") {
     return handleCheckGroceryCode_(payload);
@@ -323,11 +820,7 @@ function handleCheckIn_(payload) {
     checkInToken: findColumn_(header, "Check-in Token"),
     totalAttended: findColumn_(header, "Total Classes Attended"),
     paidSessions: findColumn_(header, "Paid Sessions"),
-    hasPaidOneOnOne: findColumn_(header, "Has Paid 1-on-1"),
-    referredBy: findColumn_(header, "Referred By"),
-    groupSessions: findColumn_(header, "Group Sessions Remaining"),
-    paidInClasses: findColumn_(header, "Paid In Classes"),
-    tokensOwed: findColumn_(header, "Tokens Owed"),
+    freeOwed: findColumn_(header, "Free Session Owed"), // set by a Fuel or referral punch
   };
 
   if (col.checkInToken < 0) {
@@ -389,6 +882,12 @@ function handleCheckIn_(payload) {
     sheet.getRange(rowIndex + 1, col.lastAttended + 1).setValue(today);
   }
 
+  // A bonus punch (FUEL or a referral) completed their card and this is the
+  // free session it earned — it's been used now.
+  if (freeSession && col.freeOwed >= 0 && String(row[col.freeOwed] || "").trim().toUpperCase() === "Y") {
+    sheet.getRange(rowIndex + 1, col.freeOwed + 1).setValue("");
+  }
+
   let totalAttended = null;
   if (col.totalAttended >= 0) {
     const totalRaw = String(row[col.totalAttended] || "").trim();
@@ -418,10 +917,8 @@ function handleCheckIn_(payload) {
   attendanceSheet.appendRow(newRow);
 
   // "Paid Sessions" only counts real, paid attendance — a free bonus
-  // session (freeSession) doesn't move a referred client any closer to
-  // their referrer's payout. The referral payout itself runs right here,
-  // driven entirely off this count and today's session type — no more
-  // manually flipping a Payment Status cell by hand for every client.
+  // session (freeSession) doesn't pay their referrer anything. The referral
+  // payout runs right here, once per paid session, group or 1-on-1.
   let paidSessionsCount = null;
   if (!freeSession && col.paidSessions >= 0) {
     const paidRaw = String(row[col.paidSessions] || "").trim();
@@ -429,18 +926,7 @@ function handleCheckIn_(payload) {
     paidSessionsCount = (paidRaw !== "" && Number.isFinite(paidNum) ? paidNum : 0) + 1;
     sheet.getRange(rowIndex + 1, col.paidSessions + 1).setValue(paidSessionsCount);
 
-    // Gates the starred/free-classes reward below — the very first free
-    // class a starred referrer earns requires their friend to have paid
-    // for a 1-on-1 specifically, not just any session.
-    let hasPaidOneOnOne = col.hasPaidOneOnOne >= 0
-      ? String(row[col.hasPaidOneOnOne] || "").trim().toLowerCase() === "y"
-      : false;
-    if (sessionType === "one-on-one" && col.hasPaidOneOnOne >= 0 && !hasPaidOneOnOne) {
-      sheet.getRange(rowIndex + 1, col.hasPaidOneOnOne + 1).setValue("Y");
-      hasPaidOneOnOne = true;
-    }
-
-    maybeApplyReferralBonus_(sheet, col, rowIndex + 1, paidSessionsCount, sessionType, hasPaidOneOnOne);
+    maybeApplyReferralBonus_(sheet, rowIndex + 1);
     markReferralCounted_(sheet, rowIndex + 1, paidSessionsCount);
   }
 
@@ -506,24 +992,9 @@ function handleSignup_(payload) {
     }
   }
 
-  let referrerName = "";
-  if (referralCode && REFERRALS_SHEET_GID) {
-    const refSheet = getSheetByGid_(REFERRALS_SHEET_GID);
-    const refData = refSheet.getDataRange().getValues();
-    const refHeader = refData[0];
-    const rCol = {
-      friendName: findColumn_(refHeader, "Friend Name"),
-      code: findColumn_(refHeader, "Referral Code"),
-    };
-    if (rCol.code >= 0) {
-      for (let i = 1; i < refData.length; i++) {
-        if (String(refData[i][rCol.code] || "").trim().toLowerCase() === referralCode.toLowerCase()) {
-          referrerName = String(refData[i][rCol.friendName] || "").trim();
-          break;
-        }
-      }
-    }
-  }
+  // ?ref= is a client's card id (the Refer a Friend QR on every client's
+  // card). The Lead gets that client's name in Referred By.
+  const referrerName = referralCode ? findClientNameBySlug_(referralCode) : "";
 
   const today = Utilities.formatDate(new Date(), TIMEZONE, "yyyy-MM-dd");
   const newRow = new Array(leadsHeader.length).fill("");
@@ -582,133 +1053,95 @@ function isEmailAlreadyPresent_(sheet, emailCol, email) {
 }
 
 /**
- * Referral payout — runs as part of check-in itself (handleCheckIn_ calls
- * this after bumping "Paid Sessions" and "Has Paid 1-on-1"), not as a
- * separate manual step. Every qualifying check-in re-evaluates the payout;
- * nothing here needs a one-time "already applied" guard because it keys
- * off paidSessionsCount, which only ever increases by exactly 1 per real
- * check-in, so each threshold below is only ever crossed once.
+ * Pays the referrer for ONE paid session by the client on `row` (Max's rule,
+ * 2026-09-28 — every paid session counts the same, group or 1-on-1): the
+ * client named in this row's "Referred By" cell (capitals, spaces and
+ * punctuation don't matter) gets 1 punch on their loyalty card, +1 in their
+ * "Referral Punches" cell (Max doesn't give clients cash). If that completes
+ * a card of 10, "Free Session Owed" = Y, the same way a Fuel punch does, so
+ * check-in offers the free session next visit. A blank Referred By, or a name
+ * that isn't a client, pays nothing — only clients refer.
  *
- * "Clients Referred" ticks up once, the moment the referred client hits
- * their 3rd paid session — regardless of which reward type below applies.
- *
- * Two reward types, depending on the referrer:
- *
- * - Referrer is a client marked "Paid In Classes" (Y) — paid in free group
- *   classes instead of tokens. The first class requires their friend to
- *   have paid for a 1-on-1 specifically (not just any session type); after
- *   that, every 2 more paid sessions of any type earns 1 more free class
- *   (3 paid -> 2 classes, 5 paid -> 3 classes, ...).
- * - Any other referrer (a client not marked "Paid In Classes", or a friend
- *   who isn't a client at all) — paid in tokens: 20 the moment their
- *   friend hits 3 paid sessions, then +5 for every paid 1-on-1 after that
- *   (group sessions after the milestone don't earn anything further).
- *   Stored on the referrer's own "Tokens Owed" cell if they're a client,
- *   or in the Referrals tab if they're not.
- *
- * Who the referrer is comes from referrerNameFor_ below: whatever's typed in
- * the client's "Referred By" cell (a name, the referrer's Referral Code, or
- * a client's unique check-in code), or — if that's blank — the referrer whose
- * row lists this client's own unique code under "Referred Clients".
+ * Called once per paid session, from a check-in scan and from a hand edit of
+ * Paid Sessions (onEdit); both keep "Referral Sessions Counted" up to date,
+ * so no session is ever paid for twice.
  */
-function maybeApplyReferralBonus_(sheet, col, row, paidSessionsCount, sessionType, hasPaidOneOnOne) {
-  const referredBy = referrerNameFor_(sheet, col, row);
+function maybeApplyReferralBonus_(sheet, row) {
+  const header = ensureColumns_(sheet, [REFERRAL_PUNCHES_COLUMN, "Free Session Owed"]);
+  const col = sessionsReferralColumns_(header);
+  const referredBy = col.referredBy >= 0
+    ? String(sheet.getRange(row, col.referredBy + 1).getValue() || "").trim()
+    : "";
   if (!referredBy) return;
 
-  const lastRow = sheet.getLastRow();
-  const names = col.name >= 0 && lastRow >= 2
-    ? sheet.getRange(2, col.name + 1, lastRow - 1, 1).getValues().flat()
-    : [];
-  const referrerRowOffset = names.findIndex(
-    (n) => String(n || "").trim().toLowerCase() === referredBy.toLowerCase()
-  );
-  const referrerIsClient = referrerRowOffset >= 0;
-  const referrerRow = referrerIsClient ? referrerRowOffset + 2 : -1;
+  const referrerRow = findClientRowBySlug_(sheet, col, referredBy);
+  if (referrerRow > 0 && referrerRow !== row) addReferralPunch_(sheet, col, referrerRow); // nobody earns from their own sessions
+}
 
-  if (paidSessionsCount === 3 && REFERRALS_SHEET_GID) {
-    incrementClientsReferred_(referredBy);
-  }
-
-  const starred = referrerIsClient && col.paidInClasses >= 0
-    ? String(sheet.getRange(referrerRow, col.paidInClasses + 1).getValue() || "").trim().toLowerCase() === "y"
-    : false;
-
-  if (starred) {
-    if (hasPaidOneOnOne && paidSessionsCount % 2 === 1 && col.groupSessions >= 0) {
-      const cell = sheet.getRange(referrerRow, col.groupSessions + 1);
-      cell.setValue((Number(cell.getValue()) || 0) + 1);
-    }
-    return;
-  }
-
-  let tokensEarned = 0;
-  if (paidSessionsCount === 3) tokensEarned = 20;
-  else if (paidSessionsCount > 3 && sessionType === "one-on-one") tokensEarned = 5;
-  if (tokensEarned <= 0) return;
-
-  if (referrerIsClient && col.tokensOwed >= 0) {
-    const cell = sheet.getRange(referrerRow, col.tokensOwed + 1);
-    cell.setValue((Number(cell.getValue()) || 0) + tokensEarned);
-  } else if (!referrerIsClient && REFERRALS_SHEET_GID) {
-    creditReferralTokens_(referredBy, tokensEarned);
+/** +1 Referral Punch for the client on `row`; sets "Free Session Owed" when that fills a card of 10 (class visits + Fuel + referral + manual punches). */
+function addReferralPunch_(sheet, col, row) {
+  const cell = sheet.getRange(row, col.referralPunches + 1);
+  const punches = toSessionCount_(cell.getValue()) + 1;
+  cell.setValue(punches);
+  const count = (c) => (c >= 0 ? toSessionCount_(sheet.getRange(row, c + 1).getValue()) : 0);
+  if ((count(col.totalAttended) + count(col.nutritionPunches) + count(col.manualPunches) + punches) % 10 === 0) {
+    sheet.getRange(row, col.freeOwed + 1).setValue("Y");
   }
 }
 
-/** Finds a friend's row in the Referrals tab. Returns null if the tab, the friend, or a needed column isn't there. */
-function findReferralsRow_(friendName, columnNames) {
-  // A missing or renamed Refferals tab shouldn't stop a client referrer being paid.
-  let refSheet;
-  try {
-    refSheet = getSheetByGid_(REFERRALS_SHEET_GID);
-  } catch (err) {
-    return null;
+/**
+ * +1 Manual Session Punch for the client on `row` themselves — called once
+ * per paid session added by hand-editing their own Paid Sessions, the same
+ * way addReferralPunch_ above is called once per paid session for whoever
+ * referred them. Sets "Free Session Owed" on the same all-sources total
+ * (class visits + Fuel + referral + manual punches) hitting a multiple of 10.
+ */
+function addManualSessionPunch_(sheet, col, row) {
+  if (col.manualPunches < 0 || col.freeOwed < 0) return;
+  const cell = sheet.getRange(row, col.manualPunches + 1);
+  const punches = toSessionCount_(cell.getValue()) + 1;
+  cell.setValue(punches);
+  const count = (c) => (c >= 0 ? toSessionCount_(sheet.getRange(row, c + 1).getValue()) : 0);
+  if ((count(col.totalAttended) + count(col.nutritionPunches) + count(col.referralPunches) + punches) % 10 === 0) {
+    sheet.getRange(row, col.freeOwed + 1).setValue("Y");
   }
-  const refHeader = refSheet.getRange(1, 1, 1, refSheet.getLastColumn()).getValues()[0];
-  const rCol = { friendName: findColumn_(refHeader, "Friend Name") };
-  for (const name of columnNames) rCol[name] = findColumn_(refHeader, name);
-  if (rCol.friendName < 0) return null;
-
-  const lastRow = refSheet.getLastRow();
-  if (lastRow < 2) return null;
-  const names = refSheet.getRange(2, rCol.friendName + 1, lastRow - 1, 1).getValues().flat();
-  const idx = names.findIndex((n) => String(n || "").trim().toLowerCase() === friendName.toLowerCase());
-  if (idx < 0) return null;
-
-  return { sheet: refSheet, col: rCol, row: idx + 2 };
 }
 
 // ---- Referral payout when Paid Sessions is edited BY HAND ------------------
 //
-// The payout above used to run only inside a check-in scan. These let it
-// happen off a hand-typed Paid Sessions number too, so a client who was
-// marked up by hand (or never scanned) still earns their referrer the same
-// tokens. Two helper columns are involved, both created on demand:
-//   "Referral Sessions Counted" (Sessions Remaining) — the highest paid-session
-//     count already run through the payout for that client. It's what stops
-//     any session being paid for twice: correcting 5 -> 4 -> 5 by hand, or a
-//     check-in followed by a manual edit, only ever pays for counts above it.
-//   "Referred Clients" (Refferals tab, and optionally Sessions Remaining) — a
-//     referrer's row can list the unique codes of the clients they referred.
+// The payout above also runs off a hand-typed Paid Sessions number, so a
+// client who was marked up by hand (or never scanned) still earns their
+// referrer the same. "Referral Sessions Counted" (Sessions Remaining, created
+// on demand) holds the highest paid-session count already paid for: it's
+// what stops any session being paid twice — correcting 5 -> 4 -> 5 by hand,
+// or a check-in followed by a manual edit, only ever pays above it.
 
 const REFERRAL_COUNTER_COLUMN = "Referral Sessions Counted";
-const REFERRED_CLIENTS_COLUMN = "Referred Clients";
+const REFERRAL_PUNCHES_COLUMN = "Referral Punches";
+
+// A hand-raised Paid Sessions is itself a loyalty punch for the CLIENT it
+// belongs to, same idea as a referral punch but for themselves instead of
+// whoever referred them — Max's call (2026-10-01): check-in scans probably
+// won't be his most common way of recording a session, so that can't be the
+// only way a client's own card fills up.
+const MANUAL_PUNCHES_COLUMN = "Manual Session Punches";
 
 // A hand edit that raises Paid Sessions by more than this in one go is far
-// more likely a typo (30 for 3) than a real catch-up, and paying 155 tokens
-// for a slip of the finger isn't something to do silently.
+// more likely a typo (30 for 3) than a real catch-up, and paying out for a
+// slip of the finger isn't something to do silently.
 const MAX_MANUAL_CATCH_UP = 10;
 
 function sessionsReferralColumns_(header) {
   return {
     name: findColumn_(header, "Name"),
     paidSessions: findColumn_(header, "Paid Sessions"),
-    hasPaidOneOnOne: findColumn_(header, "Has Paid 1-on-1"),
     referredBy: findColumn_(header, "Referred By"),
-    groupSessions: findColumn_(header, "Group Sessions Remaining"),
-    paidInClasses: findColumn_(header, "Paid In Classes"),
-    tokensOwed: findColumn_(header, "Tokens Owed"),
-    checkInToken: findColumn_(header, "Check-in Token"),
     counter: findColumn_(header, REFERRAL_COUNTER_COLUMN),
+    referralPunches: findColumn_(header, REFERRAL_PUNCHES_COLUMN),
+    manualPunches: findColumn_(header, MANUAL_PUNCHES_COLUMN),
+    totalAttended: findColumn_(header, "Total Classes Attended"),
+    nutritionPunches: findColumn_(header, "Nutrition Punches"),
+    freeOwed: findColumn_(header, "Free Session Owed"),
   };
 }
 
@@ -774,19 +1207,20 @@ function onEdit(e) {
 }
 
 /**
- * Pays the referrer for every paid session above what's already been counted
- * for this client, one session at a time so each threshold (the 3rd = 20
- * tokens, every later one = 5) lands exactly once — the same rules as a
- * check-in. A hand edit can't say whether a session was a group class or a
- * 1-on-1, so each one past the 3rd is treated as earning the 5.
+ * For every paid session above what's already been counted for this client,
+ * one session at a time: pays the referrer who sent them (same rule as a
+ * check-in) AND punches this client's own card once (Manual Session
+ * Punches) — a hand-raised Paid Sessions counts toward their own free-every-
+ * 10th the same way an attended check-in does.
  *
  * The first time a client is seen here their counter is blank; it's taken to
  * be whatever the cell held BEFORE this edit, on the basis that everything up
  * to then was already handled by check-ins. That's what keeps clients who
- * already have paid sessions from being paid for them all over again.
+ * already have paid sessions from being paid (or punched) for them all over
+ * again.
  */
 function applyPaidSessionsEdit_(sheet, row, oldCount, newCount, editedRange) {
-  const header = ensureColumns_(sheet, [REFERRAL_COUNTER_COLUMN]);
+  const header = ensureColumns_(sheet, [REFERRAL_COUNTER_COLUMN, MANUAL_PUNCHES_COLUMN, "Free Session Owed"]);
   const col = sessionsReferralColumns_(header);
   const counterCell = sheet.getRange(row, col.counter + 1);
   const rawValue = counterCell.getValue();
@@ -806,10 +1240,9 @@ function applyPaidSessionsEdit_(sheet, row, oldCount, newCount, editedRange) {
       }
       return;
     }
-    const hasPaidOneOnOne = col.hasPaidOneOnOne >= 0
-      && String(sheet.getRange(row, col.hasPaidOneOnOne + 1).getValue() || "").trim().toLowerCase() === "y";
     for (let k = counted + 1; k <= newCount; k++) {
-      maybeApplyReferralBonus_(sheet, col, row, k, "one-on-one", hasPaidOneOnOne);
+      maybeApplyReferralBonus_(sheet, row); // pays whoever referred THIS client, if anyone
+      addManualSessionPunch_(sheet, col, row); // punches THIS client's own card
     }
   }
 
@@ -827,123 +1260,36 @@ function markReferralCounted_(sheet, row, count) {
   if (!Number.isFinite(current) || count > current) cell.setValue(count);
 }
 
-/**
- * Works out WHO referred the client on `row`, as a name the payout can look
- * up (a client's Name, or a friend's name on the Refferals tab):
- *   1. Whatever's typed in the client's "Referred By" — a name as before, or
- *      the referrer's Referral Code, or a client's own unique check-in code.
- *   2. If that's blank: the referrer whose row lists this client's unique
- *      code under "Referred Clients".
- */
-function referrerNameFor_(sheet, col, row) {
-  const typed = col.referredBy >= 0
-    ? String(sheet.getRange(row, col.referredBy + 1).getValue() || "").trim()
-    : "";
-  if (typed) return resolveReferrerText_(sheet, col, typed);
-
-  const token = col.checkInToken >= 0
-    ? String(sheet.getRange(row, col.checkInToken + 1).getValue() || "").trim()
-    : "";
-  return token ? findReferrerListingCode_(token) : "";
-}
-
-/** Turns what was typed in "Referred By" into a referrer's name. Anything that isn't a recognised code is assumed to be a name already. */
-function resolveReferrerText_(sheet, col, text) {
-  const wanted = text.toLowerCase();
+/** The Sessions Remaining row (1-based) of the client whose name matches `name` once lowercased and stripped of spaces and punctuation, or -1. */
+function findClientRowBySlug_(sheet, col, name) {
+  const wanted = slugify_(name);
   const lastRow = sheet.getLastRow();
-  const names = col.name >= 0 && lastRow >= 2
-    ? sheet.getRange(2, col.name + 1, lastRow - 1, 1).getValues().flat()
-    : [];
-
-  // A client's name — the way it has always worked.
-  if (names.some((n) => String(n || "").trim().toLowerCase() === wanted)) return text;
-
-  // A Referral Code from the Refferals tab.
-  const byCode = findReferrerNameByCode_(text);
-  if (byCode) return byCode;
-
-  // A client's own unique code.
-  if (col.checkInToken >= 0 && lastRow >= 2) {
-    const tokens = sheet.getRange(2, col.checkInToken + 1, lastRow - 1, 1).getValues().flat();
-    const idx = tokens.findIndex((t) => String(t || "").trim().toLowerCase() === wanted);
-    if (idx >= 0 && String(names[idx] || "").trim()) return String(names[idx]).trim();
-  }
-  return text;
+  if (!wanted || col.name < 0 || lastRow < 2) return -1;
+  const names = sheet.getRange(2, col.name + 1, lastRow - 1, 1).getValues().flat();
+  const idx = names.findIndex((n) => slugify_(n) === wanted);
+  return idx < 0 ? -1 : idx + 2;
 }
 
-/** The friend on the Refferals tab whose Referral Code is `code`, or "". */
-function findReferrerNameByCode_(code) {
-  let refSheet;
-  try {
-    refSheet = getSheetByGid_(REFERRALS_SHEET_GID);
-  } catch (err) {
-    return "";
-  }
-  const lastRow = refSheet.getLastRow();
-  const lastCol = refSheet.getLastColumn();
-  if (lastRow < 2 || lastCol < 1) return "";
-  const header = refSheet.getRange(1, 1, 1, lastCol).getValues()[0];
-  const codeCol = findColumn_(header, "Referral Code");
-  const nameCol = findColumn_(header, "Friend Name");
-  if (codeCol < 0 || nameCol < 0) return "";
-
-  const wanted = code.toLowerCase();
-  const values = refSheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
-  for (const r of values) {
-    if (String(r[codeCol] || "").trim().toLowerCase() === wanted) return String(r[nameCol] || "").trim();
-  }
-  return "";
-}
-
-/** The referrer (on the Refferals tab, else Sessions Remaining) whose "Referred Clients" cell contains this unique code, or "". */
-function findReferrerListingCode_(code) {
-  if (code.length < 8) return ""; // a fragment this short could match by accident
-  const wanted = code.toLowerCase();
-  const candidates = [];
-  try {
-    candidates.push([getSheetByGid_(REFERRALS_SHEET_GID), "Friend Name"]);
-  } catch (err) {
-    // No Refferals tab — Sessions Remaining is still checked below.
-  }
-  try {
-    candidates.push([getSheetByGid_(SESSIONS_SHEET_GID), "Name"]);
-  } catch (err) {
-    // Nothing else to check.
-  }
-
-  for (const [sheet, nameHeader] of candidates) {
-    const lastRow = sheet.getLastRow();
-    const lastCol = sheet.getLastColumn();
-    if (lastRow < 2 || lastCol < 1) continue;
-    const header = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-    const listCol = findColumn_(header, REFERRED_CLIENTS_COLUMN);
-    const nameCol = findColumn_(header, nameHeader);
-    if (listCol < 0 || nameCol < 0) continue;
-
-    const values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
-    for (const r of values) {
-      if (String(r[listCol] || "").toLowerCase().indexOf(wanted) >= 0) {
-        const name = String(r[nameCol] || "").trim();
-        if (name) return name;
-      }
-    }
-  }
-  return "";
+/** The name of the client whose card id is `slug` (join.html?ref=<card id>), or "". */
+function findClientNameBySlug_(slug) {
+  const sheet = getSheetByGid_(SESSIONS_SHEET_GID);
+  const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const col = { name: findColumn_(header, "Name") };
+  const row = findClientRowBySlug_(sheet, col, slug);
+  return row > 0 ? String(sheet.getRange(row, col.name + 1).getValue() || "").trim() : "";
 }
 
 /**
- * Optional one-time helper — run manually from the Apps Script editor. Adds
- * the helper columns the manual referral payout uses ("Referral Sessions
- * Counted" on Sessions Remaining; "Referred Clients" on the Refferals tab and
- * on Sessions Remaining) and sets every existing client's counter to their
- * current Paid Sessions, so nothing already handled can ever be paid twice.
- * The payout works without running this — it creates what it needs the first
- * time it fires — but this is the way to get the "Referred Clients" column
- * to exist so you can start pasting codes into it. Safe to re-run.
+ * Optional helper — run manually from the Apps Script editor after pasting
+ * new code. Adds the columns the referral payout uses ("Referral Sessions
+ * Counted" and "Referral Punches" on Sessions Remaining) and sets every
+ * existing client's counter to their current Paid Sessions, so sessions paid
+ * before today are never paid out again. The payout works without running
+ * this (it creates what it needs the first time it fires). Safe to re-run.
  */
 function setupReferralTracking() {
   const sessions = getSheetByGid_(SESSIONS_SHEET_GID);
-  const header = ensureColumns_(sessions, [REFERRAL_COUNTER_COLUMN, REFERRED_CLIENTS_COLUMN]);
+  const header = ensureColumns_(sessions, [REFERRAL_COUNTER_COLUMN, REFERRAL_PUNCHES_COLUMN, "Free Session Owed"]);
   const col = sessionsReferralColumns_(header);
   const lastRow = sessions.getLastRow();
   if (lastRow >= 2 && col.paidSessions >= 0) {
@@ -951,11 +1297,6 @@ function setupReferralTracking() {
     const counters = sessions.getRange(2, col.counter + 1, lastRow - 1, 1).getValues();
     const filled = counters.map((c, i) => (c[0] === "" || c[0] == null ? [toSessionCount_(paid[i][0])] : [c[0]]));
     sessions.getRange(2, col.counter + 1, lastRow - 1, 1).setValues(filled);
-  }
-  try {
-    ensureColumns_(getSheetByGid_(REFERRALS_SHEET_GID), [REFERRED_CLIENTS_COLUMN]);
-  } catch (err) {
-    Logger.log("No Refferals tab found — skipped its Referred Clients column.");
   }
   Logger.log("Referral tracking ready.");
 }
@@ -1003,6 +1344,7 @@ function handleAssignWorkout_(payload) {
     workoutOrder: findColumn_(header, "Workout Order"),
     exerciseNotes: findColumn_(header, "Exercise Notes"),
     workoutNotes: findColumn_(header, "Workout Notes"),
+    superset: findColumn_(header, "Superset"),
   };
 
   // A resave keeps this workout's existing position in the chip/picker
@@ -1045,6 +1387,12 @@ function handleAssignWorkout_(payload) {
     // The workout-level note is repeated on every row, same as Days.
     row[col.exerciseNotes] = cleanNote_(ex && ex.note, 300);
     row[col.workoutNotes] = workoutNote;
+    // "Y" means this exercise and the NEXT one (by Order) are a superset —
+    // done back-to-back with minimal rest before moving on. Chains for a
+    // tri-set etc. by just marking each exercise but the last in the chain.
+    // Lives on the exercise, not a separate group id, so reordering rows in
+    // the builder can't leave a stale/mismatched group label behind.
+    if (col.superset >= 0) row[col.superset] = (ex && ex.superset) ? "Y" : "";
     return row;
   });
   sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, header.length).setValues(newRows);
@@ -1052,6 +1400,100 @@ function handleAssignWorkout_(payload) {
   // notesSupported lets the builder tell a deployment that stored the tips
   // from an older one that would have quietly ignored them.
   return jsonResponse_({ status: "success", notesSupported: true });
+}
+
+/**
+ * Adds a new exercise to the Exercises tab — "add your own" at the end of
+ * the exercise picker's list, for whenever the one a coach or client wants
+ * isn't curated yet. No PIN: a client can hit this from the "+ Add
+ * Exercise" ad-hoc flow on their own workout page, same as the builder.
+ * Case-insensitive duplicate check: if the name's already there (under
+ * whatever Movement/Body Part it was filed under before), nothing new is
+ * added — the existing categorisation comes back instead, so two people
+ * adding "bench press" around the same time can't fork it into two rows
+ * that then split its logged-set history between them.
+ *
+ * Optional primaryMuscles / secondaryMuscles ("quads,glutes"), from the
+ * builder's "what does it work?" step (2026-10-10): written on a new row,
+ * and filled in on an existing row only while both its muscle cells are
+ * blank, so nobody (there's no PIN) can overwrite curated muscle data.
+ * musclesSaved in the reply tells the builder whether they went in.
+ */
+function handleAddExercise_(payload) {
+  const name = String(payload.name || "").trim().slice(0, 120);
+  const movement = String(payload.movement || "").trim().slice(0, 60);
+  const bodyPart = String(payload.bodyPart || "").trim().slice(0, 60);
+  const muscleList = (raw) =>
+    String(raw || "")
+      .split(",")
+      .map((k) => k.trim().toLowerCase())
+      .filter((k) => /^[a-z][a-z-]{0,40}$/.test(k))
+      .slice(0, 12);
+  const primary = muscleList(payload.primaryMuscles);
+  const secondary = muscleList(payload.secondaryMuscles).filter((k) => primary.indexOf(k) < 0);
+  if (!name || !movement || !bodyPart) {
+    return jsonResponse_({ status: "error", message: "Missing exercise name, movement or body part." });
+  }
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(EXERCISES_SHEET_NAME);
+  if (!sheet) {
+    return jsonResponse_({ status: "error", message: "Run setupWorkoutSheets first." });
+  }
+
+  const header = ensureExerciseColumns_(sheet);
+  const col = {
+    name: findColumn_(header, "Name"),
+    movement: findColumn_(header, "Movement"),
+    bodyPart: findColumn_(header, "Body Part"),
+    primary: findColumn_(header, "Primary Muscles"),
+    secondary: findColumn_(header, "Secondary Muscles"),
+  };
+  const split = (cell) => String(cell || "").split(",").map((k) => k.trim()).filter(Boolean);
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow >= 2) {
+    const existing = sheet.getRange(2, 1, lastRow - 1, header.length).getDisplayValues();
+    for (let i = 0; i < existing.length; i++) {
+      const row = existing[i];
+      if (String(row[col.name] || "").trim().toLowerCase() !== name.toLowerCase()) continue;
+      let rowPrimary = split(row[col.primary]);
+      let rowSecondary = split(row[col.secondary]);
+      let musclesSaved = false;
+      if (primary.length && !rowPrimary.length && !rowSecondary.length) {
+        sheet.getRange(i + 2, col.primary + 1).setValue(primary.join(", "));
+        sheet.getRange(i + 2, col.secondary + 1).setValue(secondary.join(", "));
+        rowPrimary = primary;
+        rowSecondary = secondary;
+        musclesSaved = true;
+      }
+      return jsonResponse_({
+        status: "success",
+        // True when the row now has muscles: just filled in, or already had them.
+        musclesSaved: musclesSaved || rowPrimary.length > 0 || rowSecondary.length > 0,
+        exercise: {
+          name: row[col.name],
+          movement: row[col.movement] || movement,
+          bodyPart: row[col.bodyPart] || bodyPart,
+          primaryMuscles: rowPrimary,
+          secondaryMuscles: rowSecondary,
+        },
+      });
+    }
+  }
+
+  const newRow = new Array(header.length).fill("");
+  newRow[col.name] = name;
+  newRow[col.movement] = movement;
+  newRow[col.bodyPart] = bodyPart;
+  newRow[col.primary] = primary.join(", ");
+  newRow[col.secondary] = secondary.join(", ");
+  sheet.getRange(sheet.getLastRow() + 1, 1, 1, header.length).setValues([newRow]);
+
+  return jsonResponse_({
+    status: "success",
+    musclesSaved: primary.length > 0,
+    exercise: { name, movement, bodyPart, primaryMuscles: primary, secondaryMuscles: secondary },
+  });
 }
 
 /**
@@ -1206,7 +1648,11 @@ function ensureLoggedSetsColumns_(sheet) {
  * workout is saved rather than needing a manual migration.
  */
 function ensureWorkoutExercisesColumns_(sheet) {
-  return ensureColumns_(sheet, ["Exercise Notes", "Workout Notes"]);
+  return ensureColumns_(sheet, ["Exercise Notes", "Workout Notes", "Superset"]);
+}
+
+function ensureExerciseColumns_(sheet) {
+  return ensureColumns_(sheet, ["Movement", "Body Part", "Equipment", "Primary Muscles", "Secondary Muscles", "Best View", "Aliases", "Muscle Weights"]);
 }
 
 /** Adds any of `names` that are missing from the sheet's header row (at the end — everything looks columns up by NAME, so position doesn't matter) and returns the up-to-date header. */
@@ -1441,20 +1887,2271 @@ function handleDeleteGroceryItem_(payload) {
   return jsonResponse_({ status: "success" });
 }
 
-function creditReferralTokens_(friendName, amount) {
-  const found = findReferralsRow_(friendName, ["Tokens Owed"]);
-  if (!found || found.col["Tokens Owed"] < 0) return;
+// ===========================================================================
+// 1-ON-1 BOOKING — clients book from their membership card (card/book.html)
+// ===========================================================================
+//
+// The bookings live in a SEPARATE, PRIVATE Google Sheet ("MaxFit Bookings")
+// that setupBooking() creates — not in the CRM. The CRM is shared "Anyone with
+// the link" and the pages read it directly, so a Bookings tab there would show
+// every client's name and session times to anyone holding the sheet id (which
+// is in this public repo). The card never reads the booking sheet: it asks this
+// script, which only ever hands a client their OWN bookings plus anonymous free
+// times.
+//
+// Tabs in that sheet:
+//   Availability  Max's weekly 1-on-1 hours. Edited by hand.
+//   Time Off      Days Max is away. Edited by hand.
+//   Settings      Notice and cancellation rules, who gets emailed, how clients
+//                 message Max, and whether a booking code is required.
+//   Clients       Each client's personal booking code, with a ready-made text
+//                 to send them, and their email. issueBookingCodes() fills it in.
+//   Bookings      One row per booking. This script writes it; Max can change a
+//                 Status to Cancelled to free a slot.
+//   Upcoming      A read-only list of what's coming up (a formula).
+//   Prices        What a client with no sessions left can buy, and its Stripe Pay link.
+//   Payments      A ledger of every Stripe payment credited, written by this script.
+//
+// A time is only offered if it sits on the grid an Availability row generates,
+// isn't inside Time Off, isn't too soon or too far ahead, and doesn't overlap an
+// active booking. Booking re-checks all of that under the script lock, so two
+// people can't take the same time. Booking doesn't use up a session — that still
+// happens at check-in — but a client can't hold more bookings than they have
+// sessions left (Settings can switch that off).
+//
+// WHO IS ASKING. A client's slug and Check-in Token are both readable in the
+// public CRM, so they prove nothing. Instead each client gets a personal
+// booking code that lives only in the private Clients tab; Max texts it to
+// them and they type it once per phone. Five wrong codes for one slug locks
+// that slug out for 15 minutes (CacheService). Settings > "Require booking
+// code" = No goes back to slug + Check-in Token for anyone who wants that.
+//
+// EMAILS. Max is emailed on every booking and cancel. A client with an address
+// in the Clients tab's Email column is emailed too: a confirmation with a
+// calendar file when they book, and a note when they cancel (Settings > "Email
+// clients" switches it off; "Meeting place" goes in the email). The address is
+// copied from the CRM by issueBookingCodes() when it has one, or typed by the
+// client in the Book page's email box the first time, and kept only in the
+// private Clients tab. An email can never fail a booking.
+//
+// PAYING. A client with no sessions left can buy more on Stripe (see "Online
+// payments" below): singles or 6-packs from the Prices tab, credited to
+// "1 on 1 Remaining" automatically once Stripe says they've paid.
 
-  const cell = found.sheet.getRange(found.row, found.col["Tokens Owed"] + 1);
-  const current = Number(String(cell.getValue() || "").replace(/[^0-9.]/g, "")) || 0;
-  cell.setValue(current + amount);
+const BOOKING_SHEET_ID_PROPERTY = "BOOKING_SHEET_ID";
+const BOOKING_SELFTEST_SHEET_ID_PROPERTY = "BOOKING_SELFTEST_SHEET_ID";
+const BOOKING_SHEET_TITLE = "MaxFit Bookings";
+const BOOKING_NOTIFY_DEFAULT = "max.french28@gmail.com";
+const BOOKING_SITE_URL = "https://maxfit.now"; // where the Book page lives, for the link in a client's confirmation email
+const BOOKING_DEFAULT_MINUTES = 45;
+
+// No I, L, O, 0 or 1, so a code is easy to read out and to type.
+const BOOKING_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+const BOOKING_CODE_LENGTH = 6;
+const BOOKING_MAX_WRONG_CODES = 5;
+const BOOKING_LOCKOUT_SECONDS = 900;
+
+const BOOKING_TABS = {
+  availability: "Availability",
+  timeOff: "Time Off",
+  settings: "Settings",
+  clients: "Clients",
+  bookings: "Bookings",
+  upcoming: "Upcoming",
+  prices: "Prices",
+  payments: "Payments",
+};
+const BOOKING_AVAILABILITY_HEADER = ["On", "Day", "Start", "End", "Session Minutes", "Buffer Minutes"];
+const BOOKING_TIME_OFF_HEADER = ["From", "To", "Note"];
+const BOOKING_SETTINGS_HEADER = ["Setting", "Value", "What it does"];
+const BOOKING_CLIENTS_HEADER = ["Name", "Slug", "Booking Code", "Text to send", "Email"];
+const BOOKINGS_HEADER = ["Booking ID", "Date", "Start", "End", "Minutes", "Client", "Client Slug", "Status", "Booked At", "Cancelled At", "Calendar Event Id"];
+const BOOKING_PRICES_HEADER = ["On", "Name", "Sessions", "Price", "Stripe lookup key", "Pay link"];
+const BOOKING_PAYMENTS_HEADER = ["Stripe Session", "Paid At", "Client", "Slug", "Item", "Sessions", "Amount", "Before", "After", "Status", "Note"];
+
+// Online payments (Stripe). The key is a Script Property, never in this file.
+const BOOKING_STRIPE_KEY_PROPERTY = "STRIPE_SECRET_KEY";
+const BOOKING_STRIPE_SYNCED_PROPERTY = "STRIPE_BOOKING_SYNCED_TO";
+const BOOKING_STRIPE_LAST_SYNC_PROPERTY = "STRIPE_BOOKING_LAST_SYNC_AT";
+const BOOKING_PAY_REF_PREFIX = "pt-"; // client_reference_id on our Payment Links is pt-<slug>. FUEL's are fuel-<slug>.
+const BOOKING_PAY_LINK_PREFIX = "https://buy.stripe.com/";
+const BOOKING_SYNC_OVERLAP_SECONDS = 172800; // each sync looks back two days, so a slow or failed run can't lose a payment
+const BOOKING_PAY_CHECKS_PER_MINUTE = 30; // how many "did my payment arrive?" questions to put to Stripe per minute, whoever asks
+const BOOKING_MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+
+// The Settings tab starts with these rows; a re-run of setupBooking() adds any that are missing.
+const BOOKING_SETTING_DEFAULTS = [
+  ["Notify email", BOOKING_NOTIFY_DEFAULT, "Who is emailed for every booking and cancellation. Leave blank for no emails."],
+  ["Min notice hours", 12, "Clients can't book a time closer than this."],
+  ["Book ahead days", 28, "How far ahead clients can book."],
+  ["Cancel notice hours", 24, "Clients can cancel up to this many hours before. After that they have to message you."],
+  ["Require session left", "Yes", "Yes: a client needs a 1-on-1 session left (not already booked) to book. No: anyone can book."],
+  ["Max active bookings", 6, "The most upcoming bookings one client can hold at once."],
+  ["Require booking code", "Yes", "Yes: a client types their personal code (Clients tab) once per phone. No: anyone with a client's card link can book as them."],
+  ["Contact link", "", "How clients message you. Put {message} where the ready-typed message goes. WhatsApp: https://wa.me/61400000000?text={message}   Text: sms:+61400000000?&body={message}. Leave blank to hide the Message Max buttons."],
+  ["Email clients", "Yes", "Yes: a client with an email on the Clients tab gets a confirmation (with a calendar file) when they book, and a note when they cancel. No: only you are emailed."],
+  ["Meeting place", "", "Where you meet clients, e.g. Petersham Park by the rotunda. It goes in the confirmation email and the calendar file. Leave blank to leave it out."],
+  ["Online payments", "No", "Yes: a client with no 1-on-1 sessions left sees Buy buttons (from the Prices tab) instead of \"message Max\". Needs the Stripe key in Script Properties and a Pay link on the Prices tab. No: they're told to message you."],
+];
+
+// The Prices tab starts with these rows. The Price is only what the button says: Stripe charges what the Pay link says.
+const BOOKING_PRICE_DEFAULTS = [
+  ["Yes", "Single session, 30 min", 1, "$39", "pt_single_30", ""],
+  ["Yes", "Single session, 45 min", 1, "$49", "pt_single_45", ""],
+  ["Yes", "6-pack, 30 min sessions", 6, "$199", "pt_pack6_30", ""],
+  ["Yes", "6-pack, 45 min sessions", 6, "$249", "pt_pack6_45", ""],
+];
+
+// Set only by bookingSelfTest(), and only for that one run: every run of the
+// script starts with a fresh copy of this file's globals, so the self-test
+// pointing at its scratch sheet can never redirect a real client's request.
+let bookingSheetOverride_ = null;
+
+// Set only by bookingSelfTest(), same spirit as bookingSheetOverride_ above
+// (2026-10-08) — the self-test's slot-count checks assume a clean slate
+// with nothing else in the way, but Max's actual Google Calendar is real
+// and has whatever's really on it that day, which there's no scratch
+// version of the way there's a scratch spreadsheet. Without this, the
+// self-test can fail not because anything's broken but because Max
+// genuinely has something on at the exact time it tries to book — and it
+// would also leave real, if short-lived, test events on his actual
+// calendar every run. Checked by bookingApplyCalendarBusy_,
+// bookingSyncCalendarCreate_ and bookingSyncCalendarDelete_.
+let bookingSkipCalendarSync_ = false;
+
+/**
+ * One-time helper — run it from the Apps Script editor (pick setupBooking in
+ * the toolbar dropdown, then Run). Creates the private "MaxFit Bookings"
+ * sheet with its tabs and remembers it, and emails Max the link. Safe to
+ * re-run: it only adds what's missing and never touches existing rows.
+ */
+function setupBooking() {
+  let ss = bookingBook_();
+  let created = false;
+  if (!ss) {
+    ss = SpreadsheetApp.create(BOOKING_SHEET_TITLE);
+    PropertiesService.getScriptProperties().setProperty(BOOKING_SHEET_ID_PROPERTY, ss.getId());
+    ss.getSheets()[0].setName(BOOKING_TABS.availability); // a new sheet starts with one empty tab
+    created = true;
+  }
+  ss.setSpreadsheetTimeZone(TIMEZONE);
+
+  const yesNo = SpreadsheetApp.newDataValidation().requireValueInList(["Yes", "No"], true).setAllowInvalid(true).build();
+  const weekdays = SpreadsheetApp.newDataValidation().requireValueInList(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], true).setAllowInvalid(true).build();
+
+  // Every example row starts switched OFF, so nothing is offered to clients
+  // until Max has set his real hours and turned rows on.
+  const availability = bookingEnsureTab_(ss, BOOKING_TABS.availability, BOOKING_AVAILABILITY_HEADER, [
+    ["No", "Mon", "16:00", "19:00", 45, 0],
+    ["No", "Tue", "06:00", "09:00", 45, 0],
+    ["No", "Wed", "16:00", "19:00", 45, 0],
+    ["No", "Thu", "16:00", "19:00", 45, 0],
+    ["No", "Sat", "09:00", "11:00", 45, 0],
+  ], ["Start", "End"]);
+  if (availability.isNew) {
+    availability.sheet.getRange(2, 1, 60, 1).setDataValidation(yesNo);
+    availability.sheet.getRange(2, 2, 60, 1).setDataValidation(weekdays);
+    availability.sheet.setColumnWidth(8, 560);
+    availability.sheet.getRange(1, 8, 6, 1).setValues([
+      ["How this tab works"],
+      ["One row per block of time you take 1-on-1s. Set On to Yes to offer a row to clients (the examples are all No)."],
+      ["Day is Mon, Tue, Wed... Start and End can be typed 06:00 or 6:00 AM. Clients can book any slot inside the block."],
+      ["Session Minutes is how long each session is (45 if you leave it blank). Buffer Minutes is an optional gap after each one."],
+      ["Turn a row off any time by setting On to No. Delete a row to remove it."],
+      ["Days you're away go on the Time Off tab."],
+    ]);
+  }
+
+  const timeOff = bookingEnsureTab_(ss, BOOKING_TABS.timeOff, BOOKING_TIME_OFF_HEADER, [
+    ["2026-12-25", "2026-12-26", "Example: Christmas. Change or delete this row."],
+  ], ["From", "To"]);
+  if (timeOff.isNew) {
+    timeOff.sheet.getRange(1, 1).setNote("Type dates like 2026-12-25. Leave To blank for a single day. Clients can't book these days.");
+    timeOff.sheet.setColumnWidth(3, 320);
+  }
+
+  const settings = bookingEnsureTab_(ss, BOOKING_TABS.settings, BOOKING_SETTINGS_HEADER, BOOKING_SETTING_DEFAULTS, []);
+  if (settings.isNew) {
+    settings.sheet.setColumnWidth(1, 190);
+    settings.sheet.setColumnWidth(2, 220);
+    settings.sheet.setColumnWidth(3, 620);
+  } else {
+    bookingEnsureSettingRows_(settings.sheet); // settings added in a later version
+  }
+
+  const clients = bookingEnsureTab_(ss, BOOKING_TABS.clients, BOOKING_CLIENTS_HEADER, [], ["Slug", "Booking Code", "Email"]);
+  if (clients.isNew) {
+    clients.sheet.getRange(1, 3).setNote("Each client's personal booking code. Text it to them: they type it once on each phone. To give someone a new code, clear their cell and run issueBookingCodes.");
+    clients.sheet.getRange(1, 5).setNote("Where this client's booking confirmations go. Copied from the CRM when it has one, or typed by the client the first time they book. Clear it to stop their emails.");
+    clients.sheet.setColumnWidth(1, 200);
+    clients.sheet.setColumnWidth(2, 170);
+    clients.sheet.setColumnWidth(3, 120);
+    clients.sheet.setColumnWidth(4, 620);
+    clients.sheet.setColumnWidth(5, 240);
+  }
+
+  const bookings = bookingEnsureTab_(ss, BOOKING_TABS.bookings, BOOKINGS_HEADER, [], ["Date", "Start", "End", "Minutes", "Booked At", "Cancelled At"]);
+  if (bookings.isNew) {
+    bookings.sheet.getRange(1, 8).setNote("Booked = holds the slot. To cancel one yourself, change this to Cancelled. To block a slot, add a row with Status Booked. Keep the first ten columns in this order (the Upcoming tab reads them).");
+    bookings.sheet.setColumnWidth(6, 180);
+  }
+
+  const upcoming = bookingEnsureTab_(ss, BOOKING_TABS.upcoming, ["Date", "Start", "End", "Minutes", "Client"], [], []);
+  if (upcoming.isNew) {
+    upcoming.sheet.getRange("A2").setFormula('=IFNA(SORT(FILTER(Bookings!B2:F, Bookings!H2:H="Booked", Bookings!B2:B>=TEXT(TODAY(),"yyyy-mm-dd")), 1, TRUE, 2, TRUE), "Nothing booked yet")');
+    upcoming.sheet.setColumnWidth(5, 180);
+  }
+
+  const prices = bookingEnsureTab_(ss, BOOKING_TABS.prices, BOOKING_PRICES_HEADER, BOOKING_PRICE_DEFAULTS, ["Stripe lookup key", "Pay link"]);
+  if (prices.isNew) {
+    prices.sheet.getRange(1, 3).setNote("How many 1-on-1 sessions this adds to the client's \"1 on 1 Remaining\" when it's bought.");
+    prices.sheet.getRange(1, 4).setNote("Only what the button says. Stripe charges what the Pay link is set to.");
+    prices.sheet.getRange(1, 5).setNote("The lookup key on the Stripe price. It is how a payment is matched to this row, so it has to match exactly.");
+    prices.sheet.getRange(1, 6).setNote("The Stripe Payment Link (https://buy.stripe.com/...). A row with no link isn't shown to clients.");
+    prices.sheet.setColumnWidth(1, 60);
+    prices.sheet.setColumnWidth(2, 220);
+    prices.sheet.setColumnWidth(5, 170);
+    prices.sheet.setColumnWidth(6, 380);
+  }
+
+  const payments = bookingEnsureTab_(ss, BOOKING_TABS.payments, BOOKING_PAYMENTS_HEADER, [], ["Stripe Session", "Paid At", "Slug", "Amount", "Before", "After"]);
+  if (payments.isNew) {
+    payments.sheet.getRange(1, 1).setNote("One row per Stripe payment, written by the script. Please don't edit it: it is how a payment is only ever counted once.");
+    payments.sheet.setColumnWidth(1, 300);
+    payments.sheet.setColumnWidth(5, 220);
+    payments.sheet.setColumnWidth(11, 420);
+  }
+
+  // Every client in the CRM gets a personal booking code (existing ones are left alone).
+  const codes = issueBookingCodes();
+
+  if (created) {
+    try {
+      MailApp.sendEmail({
+        to: BOOKING_NOTIFY_DEFAULT,
+        subject: "Your MaxFit booking sheet is ready",
+        body: [
+          "Your private booking sheet is ready:",
+          ss.getUrl(),
+          "",
+          "1. Availability tab: set your real 1-on-1 hours, then change On to Yes on the rows you want to offer.",
+          "2. Time Off tab: add any days you're away.",
+          "3. Settings tab: check the rules, put your Contact link in so clients can message you from the page, and say where you meet clients (Meeting place) so it goes in their confirmation email.",
+          "4. Clients tab: every client has a personal booking code and a ready-made text. Send each client theirs. They type it once on each phone. Clients with an email get a booking confirmation.",
+          "5. Back in Apps Script, run bookingSelfTest once. It tries the whole booking flow on real Google and emails you the result.",
+          "",
+          "Bookings and the Upcoming list fill in here as clients book from their card.",
+        ].join("\n"),
+      });
+    } catch (err) {
+      // The link is in the log below either way.
+    }
+  }
+  Logger.log((created ? "Created the booking sheet: " : "Booking sheet is already set up: ") + ss.getUrl());
+  Logger.log("Booking codes: " + codes.added + " new, " + codes.filled + " filled in. Client emails copied from the CRM: " + codes.emails + ". Next: run bookingSelfTest.");
 }
 
-function incrementClientsReferred_(friendName) {
-  const found = findReferralsRow_(friendName, ["Clients Referred"]);
-  if (!found || found.col["Clients Referred"] < 0) return;
+/** Adds any setting from BOOKING_SETTING_DEFAULTS that isn't on the Settings tab yet (matched by name), leaving everything Max has edited alone. */
+function bookingEnsureSettingRows_(sheet) {
+  const table = bookingTable_(sheet);
+  const keyCol = findColumn_(table.header, "Setting");
+  if (keyCol < 0) return;
+  const have = {};
+  table.rows.forEach(function (r) { have[String(r[keyCol]).trim().toLowerCase()] = true; });
+  BOOKING_SETTING_DEFAULTS.forEach(function (row) {
+    if (have[row[0].toLowerCase()]) return;
+    sheet.getRange(sheet.getLastRow() + 1, 1, 1, row.length).setValues([row]);
+  });
+}
 
-  const cell = found.sheet.getRange(found.row, found.col["Clients Referred"] + 1);
-  const current = Number(cell.getValue()) || 0;
-  cell.setValue(current + 1);
+/** Gets (or creates) a tab. A NEW tab gets its header, example rows and plain-text columns; an existing one only gets any missing header columns. */
+function bookingEnsureTab_(ss, name, header, seedRows, textColumns) {
+  let sheet = ss.getSheetByName(name);
+  let isNew = false;
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+    isNew = true;
+  } else if (sheet.getLastRow() === 0 && sheet.getLastColumn() === 0) {
+    isNew = true;
+  }
+  if (isNew) {
+    // Plain text first, so "06:00" and "2026-12-25" stay exactly as written
+    // instead of turning into time and date values.
+    textColumns.forEach(function (h) {
+      const i = header.indexOf(h);
+      if (i >= 0) sheet.getRange(2, i + 1, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat("@");
+    });
+    sheet.getRange(1, 1, 1, header.length).setValues([header]);
+    if (seedRows.length) sheet.getRange(2, 1, seedRows.length, header.length).setValues(seedRows);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, header.length).setFontWeight("bold");
+  } else {
+    ensureColumns_(sheet, header);
+  }
+  return { sheet: sheet, isNew: isNew };
+}
+
+/** The private booking spreadsheet, or null if setupBooking() hasn't run (or the sheet was deleted). */
+function bookingBook_() {
+  if (bookingSheetOverride_) return bookingSheetOverride_;
+  const id = PropertiesService.getScriptProperties().getProperty(BOOKING_SHEET_ID_PROPERTY);
+  if (!id) return null;
+  try {
+    return SpreadsheetApp.openById(id);
+  } catch (err) {
+    return null;
+  }
+}
+
+// ---- Small pure helpers (no Sheets calls) ---------------------------------
+
+function slugify_(name) {
+  return String(name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/** "Mon", "monday", "TUES" -> 0-6 (Sunday = 0), or -1. */
+function bookingParseDay_(text) {
+  return ["sun", "mon", "tue", "wed", "thu", "fri", "sat"].indexOf(String(text || "").trim().slice(0, 3).toLowerCase());
+}
+
+/** "06:00", "6:00 AM", "6am", "18:30", "6:00:00 PM" -> minutes after midnight, or -1. */
+function bookingParseTime_(text) {
+  const m = /^(\d{1,2})(?::(\d{2}))?(?::\d{2})?\s*([ap])?\.?m?\.?$/i.exec(String(text == null ? "" : text).trim());
+  if (!m) return -1;
+  let hour = Number(m[1]);
+  const minute = m[2] === undefined ? 0 : Number(m[2]);
+  const meridiem = (m[3] || "").toLowerCase();
+  if (minute > 59) return -1;
+  if (meridiem) {
+    if (hour < 1 || hour > 12) return -1;
+    hour = (hour % 12) + (meridiem === "p" ? 12 : 0);
+  } else if (hour > 23) {
+    return -1;
+  }
+  return hour * 60 + minute;
+}
+
+/** Minutes after midnight -> "06:30" (how times are stored and sent). */
+function bookingFormatMinutes_(minutes) {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m;
+}
+
+/** Minutes after midnight -> "6:30 AM" (for emails). */
+function bookingClock12_(minutes) {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return ((h % 12) || 12) + ":" + (m < 10 ? "0" : "") + m + " " + (h < 12 ? "AM" : "PM");
+}
+
+/** A date typed or displayed in a cell -> "yyyy-MM-dd", or "" if it can't be read. d/M/yyyy is read day-first (Australia). */
+function bookingParseDateKey_(text) {
+  const s = String(text == null ? "" : text).trim();
+  let y;
+  let m;
+  let d;
+  let hit;
+  if ((hit = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T].*)?$/.exec(s))) {
+    y = Number(hit[1]); m = Number(hit[2]); d = Number(hit[3]);
+  } else if ((hit = /^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/.exec(s))) {
+    d = Number(hit[1]); m = Number(hit[2]); y = Number(hit[3]);
+  } else if ((hit = /^(\d{1,2})\s+([A-Za-z]{3,})\.?,?\s+(\d{4})$/.exec(s))) {
+    d = Number(hit[1]); m = BOOKING_MONTHS.indexOf(hit[2].slice(0, 3).toLowerCase()) + 1; y = Number(hit[3]);
+  } else if ((hit = /^([A-Za-z]{3,})\.?\s+(\d{1,2}),?\s+(\d{4})$/.exec(s))) {
+    m = BOOKING_MONTHS.indexOf(hit[1].slice(0, 3).toLowerCase()) + 1; d = Number(hit[2]); y = Number(hit[3]);
+  } else {
+    return "";
+  }
+  if (!(y >= 2000 && y <= 2100 && m >= 1 && m <= 12 && d >= 1 && d <= 31)) return "";
+  if (new Date(Date.UTC(y, m - 1, d)).getUTCMonth() !== m - 1) return ""; // 31 Feb and friends
+  return y + "-" + (m < 10 ? "0" : "") + m + "-" + (d < 10 ? "0" : "") + d;
+}
+
+// Calendar-date arithmetic done in UTC, so daylight saving can never shift a date.
+function bookingKeyToUtc_(key) {
+  const p = key.split("-");
+  return Date.UTC(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+}
+
+function bookingAddDays_(key, days) {
+  const d = new Date(bookingKeyToUtc_(key) + days * 86400000);
+  const m = d.getUTCMonth() + 1;
+  const day = d.getUTCDate();
+  return d.getUTCFullYear() + "-" + (m < 10 ? "0" : "") + m + "-" + (day < 10 ? "0" : "") + day;
+}
+
+function bookingWeekday_(key) {
+  return new Date(bookingKeyToUtc_(key)).getUTCDay();
+}
+
+/** "Tue 30 Sep, 6:30 AM" */
+function bookingLabel_(dateKey, startMinutes) {
+  const d = new Date(bookingKeyToUtc_(dateKey));
+  const dows = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return dows[d.getUTCDay()] + " " + d.getUTCDate() + " " + months[d.getUTCMonth()] + ", " + bookingClock12_(startMinutes);
+}
+
+function bookingNumber_(raw, fallback, min, max) {
+  const text = String(raw == null ? "" : raw).trim();
+  const n = Number(text);
+  if (text === "" || !isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
+function bookingIsNo_(raw) {
+  return /^(no|n|false|off|0)$/i.test(String(raw == null ? "" : raw).trim());
+}
+
+/** Sydney "now": the instant, today's date, and a timestamp for the Bookings tab. */
+function bookingNow_() {
+  const now = new Date();
+  return {
+    ms: now.getTime(),
+    dateKey: Utilities.formatDate(now, TIMEZONE, "yyyy-MM-dd"),
+    stamp: Utilities.formatDate(now, TIMEZONE, "yyyy-MM-dd HH:mm"),
+  };
+}
+
+/** The real instant a Sydney wall-clock date + time falls on. */
+function bookingStartMs_(dateKey, startMinutes) {
+  return Utilities.parseDate(dateKey + " " + bookingFormatMinutes_(startMinutes), TIMEZONE, "yyyy-MM-dd HH:mm").getTime();
+}
+
+// ---- Reading the booking sheet --------------------------------------------
+
+/** A tab as { header, rows } of displayed text, so nothing depends on how Sheets decided to type a cell. */
+function bookingTable_(sheet) {
+  if (!sheet || sheet.getLastRow() < 1 || sheet.getLastColumn() < 1) return { header: [], rows: [] };
+  const values = sheet.getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn()).getDisplayValues();
+  return { header: values[0], rows: values.slice(1) };
+}
+
+function bookingSettings_(ss) {
+  const s = { notifyEmail: BOOKING_NOTIFY_DEFAULT, minNoticeHours: 12, bookAheadDays: 28, cancelNoticeHours: 24, requireSession: true, maxActive: 6, requireCode: true, contactLink: "", emailClients: true, meetingPlace: "", onlinePayments: false };
+  const table = bookingTable_(ss.getSheetByName(BOOKING_TABS.settings));
+  const keyCol = findColumn_(table.header, "Setting");
+  const valueCol = findColumn_(table.header, "Value");
+  if (keyCol < 0 || valueCol < 0) return s;
+  const map = {};
+  table.rows.forEach(function (r) {
+    const key = String(r[keyCol]).trim().toLowerCase();
+    if (key) map[key] = String(r[valueCol]).trim();
+  });
+  if (map["notify email"] !== undefined) s.notifyEmail = map["notify email"]; // blank on purpose = no emails
+  s.minNoticeHours = bookingNumber_(map["min notice hours"], s.minNoticeHours, 0, 1440);
+  s.bookAheadDays = Math.floor(bookingNumber_(map["book ahead days"], s.bookAheadDays, 1, 120));
+  s.cancelNoticeHours = bookingNumber_(map["cancel notice hours"], s.cancelNoticeHours, 0, 1440);
+  if (map["require session left"]) s.requireSession = !bookingIsNo_(map["require session left"]);
+  s.maxActive = Math.floor(bookingNumber_(map["max active bookings"], s.maxActive, 1, 50));
+  if (map["require booking code"]) s.requireCode = !bookingIsNo_(map["require booking code"]);
+  s.contactLink = bookingSafeLink_(map["contact link"]);
+  if (map["email clients"]) s.emailClients = !bookingIsNo_(map["email clients"]);
+  s.meetingPlace = bookingOneLine_(map["meeting place"], 160);
+  s.onlinePayments = Boolean(map["online payments"]) && !bookingIsNo_(map["online payments"]); // off unless it says so
+  return s;
+}
+
+/** Text on a single line, trimmed and capped, for putting in an email or calendar file. */
+function bookingOneLine_(text, maxLen) {
+  return String(text == null ? "" : text).replace(/\s+/g, " ").trim().slice(0, maxLen);
+}
+
+/** A contact link Max typed, or "" if it isn't a web, text, phone or email link (so a typo can never become a script link). */
+function bookingSafeLink_(text) {
+  const link = String(text == null ? "" : text).trim();
+  return link.length <= 400 && /^(https:\/\/|sms:|tel:|mailto:)/i.test(link) ? link : "";
+}
+
+/** Max's weekly hours as { day, start, end, minutes, buffer } blocks. Rows that are off, or that can't be read, are skipped. */
+function bookingWindows_(ss) {
+  const table = bookingTable_(ss.getSheetByName(BOOKING_TABS.availability));
+  const c = {
+    on: findColumn_(table.header, "On"),
+    day: findColumn_(table.header, "Day"),
+    start: findColumn_(table.header, "Start"),
+    end: findColumn_(table.header, "End"),
+    minutes: findColumn_(table.header, "Session Minutes"),
+    buffer: findColumn_(table.header, "Buffer Minutes"),
+  };
+  if (c.day < 0 || c.start < 0 || c.end < 0) return [];
+  const out = [];
+  table.rows.forEach(function (r) {
+    if (c.on >= 0 && bookingIsNo_(r[c.on])) return;
+    const day = bookingParseDay_(r[c.day]);
+    const start = bookingParseTime_(r[c.start]);
+    const end = bookingParseTime_(r[c.end]);
+    const minutesText = c.minutes >= 0 ? String(r[c.minutes]).trim() : "";
+    const minutes = minutesText === "" ? BOOKING_DEFAULT_MINUTES : Number(minutesText);
+    let buffer = c.buffer >= 0 && String(r[c.buffer]).trim() !== "" ? Number(r[c.buffer]) : 0;
+    if (day < 0 || start < 0 || end <= start) return;
+    if (!isFinite(minutes) || minutes < 5 || minutes > 240) return;
+    if (!isFinite(buffer) || buffer < 0 || buffer > 120) buffer = 0;
+    out.push({ day: day, start: start, end: end, minutes: minutes, buffer: buffer });
+  });
+  return out;
+}
+
+function bookingTimeOff_(ss) {
+  const table = bookingTable_(ss.getSheetByName(BOOKING_TABS.timeOff));
+  const fromCol = findColumn_(table.header, "From");
+  const toCol = findColumn_(table.header, "To");
+  if (fromCol < 0) return [];
+  const out = [];
+  table.rows.forEach(function (r) {
+    const from = bookingParseDateKey_(r[fromCol]);
+    if (!from) return;
+    let to = toCol >= 0 ? bookingParseDateKey_(r[toCol]) : "";
+    if (!to || to < from) to = from;
+    out.push({ from: from, to: to });
+  });
+  return out;
+}
+
+/** Every row of the Bookings tab that has a readable date and start time. `active` means Status is "Booked". */
+function bookingRows_(ss) {
+  const sheet = ss.getSheetByName(BOOKING_TABS.bookings);
+  const table = bookingTable_(sheet);
+  const c = bookingColumns_(table.header);
+  const out = [];
+  table.rows.forEach(function (r, i) {
+    const date = bookingParseDateKey_(r[c.date]);
+    const startMin = bookingParseTime_(r[c.start]);
+    if (!date || startMin < 0) return;
+    let endMin = bookingParseTime_(r[c.end]);
+    const minutes = Number(r[c.minutes]);
+    if (endMin <= startMin) endMin = startMin + (isFinite(minutes) && minutes > 0 ? minutes : BOOKING_DEFAULT_MINUTES);
+    const status = String(r[c.status]).trim();
+    out.push({
+      row: i + 2,
+      id: String(r[c.id]).trim(),
+      date: date,
+      startMin: startMin,
+      endMin: endMin,
+      minutes: endMin - startMin,
+      client: String(r[c.client]).trim(),
+      slug: String(r[c.slug]).trim().toLowerCase(),
+      active: status.toLowerCase() === "booked",
+      calendarEventId: c.calendarEventId >= 0 ? String(r[c.calendarEventId] || "").trim() : "",
+    });
+  });
+  return out;
+}
+
+/** Column positions in the Bookings tab, found by header NAME so reordering or adding columns can't make a write land in the wrong cell. */
+function bookingColumns_(header) {
+  const c = {
+    id: findColumn_(header, "Booking ID"),
+    date: findColumn_(header, "Date"),
+    start: findColumn_(header, "Start"),
+    end: findColumn_(header, "End"),
+    minutes: findColumn_(header, "Minutes"),
+    client: findColumn_(header, "Client"),
+    slug: findColumn_(header, "Client Slug"),
+    status: findColumn_(header, "Status"),
+    bookedAt: findColumn_(header, "Booked At"),
+    cancelledAt: findColumn_(header, "Cancelled At"),
+  };
+  Object.keys(c).forEach(function (k) {
+    if (c[k] < 0) throw new Error("The Bookings tab is missing a column (" + k + "). Run setupBooking to repair it.");
+  });
+  // Added later (2026-10-08) for the Calendar sync — deliberately NOT in the
+  // required check above, so a sheet that hasn't had setupBooking re-run yet
+  // still works exactly as before; the sync just can't record or find an
+  // event id until it has (bookingSyncCalendarCreate_/_Delete_ already treat
+  // a missing column as "nothing to sync," same as any other gap).
+  c.calendarEventId = findColumn_(header, "Calendar Event Id");
+  return c;
+}
+
+// ---- Working out which times to offer -------------------------------------
+
+/**
+ * Every slot the Availability blocks would offer from today to the booking
+ * horizon, each flagged tooSoon and/or taken. Pure: everything it needs is
+ * passed in. Sessions run back to back inside a block (plus any buffer), and
+ * only ones that finish before the block ends are made.
+ */
+function bookingCandidates_(windows, timeOff, activeBookings, settings, now) {
+  const out = [];
+  const seen = {};
+  const noticeDays = Math.ceil(settings.minNoticeHours / 24) + 1;
+  for (let i = 0; i <= settings.bookAheadDays; i++) {
+    const date = bookingAddDays_(now.dateKey, i);
+    if (timeOff.some(function (t) { return date >= t.from && date <= t.to; })) continue;
+    const weekday = bookingWeekday_(date);
+    const dayBookings = activeBookings.filter(function (b) { return b.date === date; });
+    windows.forEach(function (w) {
+      if (w.day !== weekday) return;
+      for (let t = w.start; t + w.minutes <= w.end; t += w.minutes + w.buffer) {
+        const key = date + "|" + t;
+        if (seen[key]) continue; // two blocks covering the same start time
+        seen[key] = true;
+        const end = t + w.minutes;
+        out.push({
+          date: date,
+          startMin: t,
+          endMin: end,
+          minutes: w.minutes,
+          tooSoon: i <= noticeDays && bookingStartMs_(date, t) - now.ms < settings.minNoticeHours * 3600000,
+          taken: dayBookings.some(function (b) { return b.startMin < end && t < b.endMin; }),
+        });
+      }
+    });
+  }
+  out.sort(function (a, b) {
+    return a.date < b.date ? -1 : a.date > b.date ? 1 : a.startMin - b.startMin;
+  });
+  return out;
+}
+
+function bookingPublicSlot_(c) {
+  return { date: c.date, start: bookingFormatMinutes_(c.startMin), end: bookingFormatMinutes_(c.endMin), minutes: c.minutes };
+}
+
+/**
+ * Marks `calendarBusy: true` on any candidate whose time overlaps an event
+ * on Max's own Google Calendar (2026-10-07) — his real day job, appointments,
+ * whatever else is actually on it, the same account Notion Calendar shows
+ * him. Deliberately kept OUTSIDE bookingCandidates_, which stays pure and
+ * testable with fake data — this is the one place in the booking flow that
+ * reaches out to a live Google service the test harness can't fake, so it's
+ * isolated here and both call sites (handleBookingInfo_, handleBookSession_)
+ * filter on the same flag bookingCandidates_'s own tooSoon/taken already use.
+ *
+ * Any event counts as busy, full stop — no "free vs busy" event setting, no
+ * title matching. If Max wants travel time or getting-ready time blocked
+ * too, he just adds an event for it on his own calendar; it's treated
+ * exactly like any other commitment. An all-day event blocks the whole day.
+ *
+ * Fails OPEN on any error (not yet authorised, Calendar having a moment) —
+ * candidates come back unchanged, same as bookingTimeOff_ above when its
+ * sheet can't be read. A broken calendar check must never be able to take
+ * the whole booking page down; Max can watch for this once after deploying
+ * (see CLAUDE.md) rather than this silently paging him on every page view.
+ */
+/**
+ * Diagnostic only — run this one directly from the editor (select it in the
+ * function dropdown, press Run), not called from anywhere else. Unlike
+ * bookingApplyCalendarBusy_ above, this does NOT catch its own errors, so
+ * if Calendar access isn't actually authorised yet, running this is what
+ * triggers that permission prompt — and either way, check View > Logs (or
+ * the "Execution log" panel that opens) afterwards to see what it found.
+ */
+function testCalendarAccess() {
+  const cal = CalendarApp.getDefaultCalendar();
+  Logger.log("Calendar: " + cal.getName() + " <" + cal.getId() + ">");
+  const from = new Date();
+  const to = new Date(from.getTime() + 10 * 86400000);
+  const events = cal.getEvents(from, to);
+  Logger.log("Events in the next 10 days: " + events.length);
+  events.forEach(function (e) {
+    Logger.log(" - " + (e.isAllDayEvent() ? "[all-day] " : "") + e.getTitle() + " | " + e.getStartTime() + " -> " + e.getEndTime());
+  });
+}
+
+function bookingApplyCalendarBusy_(candidates) {
+  if (!candidates.length || bookingSkipCalendarSync_) return candidates;
+  let events;
+  try {
+    const cal = CalendarApp.getDefaultCalendar();
+    const rangeStart = new Date(bookingStartMs_(candidates[0].date, 0));
+    const rangeEnd = new Date(bookingStartMs_(candidates[candidates.length - 1].date, 0) + 86400000);
+    events = cal.getEvents(rangeStart, rangeEnd);
+  } catch (err) {
+    return candidates;
+  }
+
+  const busyByDate = {};
+  function addBusy(dateKey, startMin, endMin) {
+    (busyByDate[dateKey] = busyByDate[dateKey] || []).push({ startMin: startMin, endMin: endMin });
+  }
+  events.forEach(function (ev) {
+    if (ev.isAllDayEvent()) {
+      let d = Utilities.formatDate(ev.getAllDayStartDate(), TIMEZONE, "yyyy-MM-dd");
+      const endKey = Utilities.formatDate(ev.getAllDayEndDate(), TIMEZONE, "yyyy-MM-dd"); // exclusive
+      while (d < endKey) {
+        addBusy(d, 0, 1440);
+        d = bookingAddDays_(d, 1);
+      }
+      return;
+    }
+    const startDate = Utilities.formatDate(ev.getStartTime(), TIMEZONE, "yyyy-MM-dd");
+    const endDate = Utilities.formatDate(ev.getEndTime(), TIMEZONE, "yyyy-MM-dd");
+    if (startDate === endDate) {
+      const startMin = Number(Utilities.formatDate(ev.getStartTime(), TIMEZONE, "H")) * 60 + Number(Utilities.formatDate(ev.getStartTime(), TIMEZONE, "m"));
+      const endMin = Number(Utilities.formatDate(ev.getEndTime(), TIMEZONE, "H")) * 60 + Number(Utilities.formatDate(ev.getEndTime(), TIMEZONE, "m"));
+      addBusy(startDate, startMin, Math.max(endMin, startMin + 1));
+    } else {
+      // Spans midnight (or several days) — block every day it touches in
+      // full, rather than work out partial minutes either end. Simpler, and
+      // errs toward blocking more, not less.
+      let d = startDate;
+      while (d <= endDate) {
+        addBusy(d, 0, 1440);
+        d = bookingAddDays_(d, 1);
+      }
+    }
+  });
+
+  if (!Object.keys(busyByDate).length) return candidates;
+  return candidates.map(function (c) {
+    const busy = busyByDate[c.date];
+    if (!busy) return c;
+    const overlaps = busy.some(function (b) { return b.startMin < c.endMin && c.startMin < b.endMin; });
+    return overlaps ? Object.assign({}, c, { calendarBusy: true }) : c;
+  });
+}
+
+/**
+ * Creates a real event on Max's own Google Calendar for a just-made booking
+ * (2026-10-08) — the reverse direction of bookingApplyCalendarBusy_ above:
+ * that one reads his calendar to block the card, this one writes to it so
+ * a booking shows up there too, alongside everything else he tracks on it.
+ * One-way each direction, not a loop: this never re-reads what it just
+ * wrote, and bookingApplyCalendarBusy_ will see it on the NEXT request same
+ * as any other event, not this one. Returns the new event's id (to store on
+ * the booking row, so bookingSyncCalendarDelete_ can find it again on
+ * cancel), or "" on any failure. Called only after the booking row is
+ * already written and flushed — exactly like the confirmation email right
+ * beside this call site, a calendar-sync failure must never fail a booking
+ * that's already safely saved.
+ */
+function bookingSyncCalendarCreate_(clientName, date, startMin, endMin, meetingPlace) {
+  if (bookingSkipCalendarSync_) return "";
+  try {
+    const cal = CalendarApp.getDefaultCalendar();
+    const start = new Date(bookingStartMs_(date, startMin));
+    const end = new Date(bookingStartMs_(date, endMin));
+    const event = cal.createEvent("PT session — " + clientName, start, end);
+    if (meetingPlace) event.setLocation(meetingPlace);
+    return event.getId();
+  } catch (err) {
+    return "";
+  }
+}
+
+/** Removes the calendar event for a just-cancelled booking, if it has one and it can still be found. Same spirit as the create side: a failure here must never fail the cancellation itself, which is already saved by the time this runs. */
+function bookingSyncCalendarDelete_(eventId) {
+  if (!eventId || bookingSkipCalendarSync_) return;
+  try {
+    const cal = CalendarApp.getDefaultCalendar();
+    const event = cal.getEventById(eventId);
+    if (event) event.deleteEvent();
+  } catch (err) {
+    // Nothing to do — the booking is still correctly cancelled either way.
+  }
+}
+
+/** The client's own upcoming bookings, soonest first, each with whether they can still cancel it. */
+function bookingMine_(rows, member, settings, now) {
+  return rows
+    .filter(function (b) { return b.active && b.slug === member.slug && b.date >= now.dateKey; })
+    .map(function (b) { return { b: b, ms: bookingStartMs_(b.date, b.startMin) }; })
+    .filter(function (x) { return x.ms > now.ms; })
+    .sort(function (a, b) { return a.ms - b.ms; })
+    .map(function (x) {
+      return {
+        id: x.b.id,
+        date: x.b.date,
+        start: bookingFormatMinutes_(x.b.startMin),
+        end: bookingFormatMinutes_(x.b.endMin),
+        minutes: x.b.minutes,
+        canCancel: (x.ms - now.ms) / 3600000 >= settings.cancelNoticeHours,
+      };
+    });
+}
+
+/** Whether this client may hold another booking right now, and if not, a friendly reason. */
+function bookingEligibility_(member, settings, upcomingCount) {
+  if (settings.requireSession && !member.unlimited) {
+    if (member.sessionsLeft === null || member.sessionsLeft <= 0) {
+      return { canBook: false, code: "no-sessions", message: "You don't have any 1-on-1 sessions left. Message Max to top up." };
+    }
+    if (upcomingCount >= member.sessionsLeft) {
+      return { canBook: false, code: "all-booked", message: "All of your remaining 1-on-1 sessions are already booked." };
+    }
+  }
+  if (upcomingCount >= settings.maxActive) {
+    return { canBook: false, code: "too-many", message: "You already have " + upcomingCount + " sessions booked. Once one is done you can book another." };
+  }
+  return { canBook: true, code: "", message: "" };
+}
+
+/** A client's row in Sessions Remaining: name, Check-in Token, 1-on-1 sessions left and plan, or null if there's no such client. */
+function bookingCrmMember_(slug) {
+  if (!slug) return null;
+  const data = getSheetByGid_(SESSIONS_SHEET_GID).getDataRange().getValues();
+  const header = data[0];
+  const col = {
+    name: findColumn_(header, "Name"),
+    token: findColumn_(header, "Check-in Token"),
+    package: findColumn_(header, "Package Type"),
+    oneOnOne: findColumn_(header, "1 on 1 Remaining"),
+  };
+  if (col.name < 0) return null;
+  for (let i = 1; i < data.length; i++) {
+    const name = String(data[i][col.name] || "").trim();
+    if (!name || slugify_(name) !== slug) continue;
+    const raw = col.oneOnOne >= 0 ? String(data[i][col.oneOnOne] || "").trim() : "";
+    const n = Number(raw);
+    const packageType = col.package >= 0 ? String(data[i][col.package] || "").toLowerCase() : "";
+    return {
+      name: name,
+      slug: slug,
+      rowToken: col.token >= 0 ? String(data[i][col.token] || "").trim() : "",
+      sessionsLeft: raw !== "" && isFinite(n) ? n : null,
+      unlimited: packageType.indexOf("unlimited") >= 0,
+    };
+  }
+  return null;
+}
+
+// ---- Personal booking codes -----------------------------------------------
+
+/** A code as typed: upper case, letters and digits only ("k7m-4qx " -> "K7M4QX"). */
+function bookingNormalizeCode_(text) {
+  return String(text == null ? "" : text).toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+/** A new random code. Bytes come from Utilities.getUuid(), which is backed by a secure random generator. */
+function bookingNewCode_() {
+  const hex = Utilities.getUuid().replace(/-/g, "");
+  let code = "";
+  for (let i = 0; i < BOOKING_CODE_LENGTH; i++) {
+    code += BOOKING_CODE_ALPHABET.charAt(parseInt(hex.substr(i * 2, 2), 16) % BOOKING_CODE_ALPHABET.length);
+  }
+  return code;
+}
+
+/** Wrong-code attempts against one slug in the last 15 minutes. Kept in the script cache, which expires by itself. */
+function bookingWrongCodes_(slug) {
+  return Number(CacheService.getScriptCache().get("bookfail:" + slug)) || 0;
+}
+
+function bookingNoteWrongCode_(slug) {
+  CacheService.getScriptCache().put("bookfail:" + slug, String(bookingWrongCodes_(slug) + 1), BOOKING_LOCKOUT_SECONDS);
+}
+
+function bookingClearWrongCodes_(slug) {
+  CacheService.getScriptCache().remove("bookfail:" + slug);
+}
+
+/** The client's code from the private Clients tab, normalised, or "" if they have none yet. */
+function bookingStoredCode_(ss, slug) {
+  const table = bookingTable_(ss.getSheetByName(BOOKING_TABS.clients));
+  const slugCol = findColumn_(table.header, "Slug");
+  const codeCol = findColumn_(table.header, "Booking Code");
+  if (slugCol < 0 || codeCol < 0) return "";
+  for (let i = 0; i < table.rows.length; i++) {
+    if (slugify_(table.rows[i][slugCol]) === slug) return bookingNormalizeCode_(table.rows[i][codeCol]);
+  }
+  return "";
+}
+
+/**
+ * Gives every client in the CRM a personal booking code, on the private Clients
+ * tab, next to a ready-made text to send them. Run from the Apps Script editor
+ * whenever a new client joins (setupBooking runs it too). Existing codes are
+ * never changed. To give someone a new code, clear their Booking Code cell and
+ * run this again.
+ */
+function issueBookingCodes() {
+  const ss = bookingBook_();
+  if (!ss) throw new Error("Run setupBooking first.");
+  const sheet = ss.getSheetByName(BOOKING_TABS.clients) || bookingEnsureTab_(ss, BOOKING_TABS.clients, BOOKING_CLIENTS_HEADER, [], ["Slug", "Booking Code", "Email"]).sheet;
+  if (sheet.getLastColumn() > 0) ensureColumns_(sheet, ["Email"]); // a sheet set up before confirmation emails existed
+  const table = bookingTable_(sheet);
+  const c = {
+    name: findColumn_(table.header, "Name"),
+    slug: findColumn_(table.header, "Slug"),
+    code: findColumn_(table.header, "Booking Code"),
+    text: findColumn_(table.header, "Text to send"),
+    email: findColumn_(table.header, "Email"),
+  };
+  if (c.slug < 0 || c.code < 0) throw new Error("The Clients tab is missing its Slug or Booking Code column.");
+
+  const rowBySlug = {};
+  const taken = {};
+  table.rows.forEach(function (r, i) {
+    const slug = slugify_(r[c.slug]);
+    if (slug) rowBySlug[slug] = i + 2;
+    const code = bookingNormalizeCode_(r[c.code]);
+    if (code) taken[code] = true;
+  });
+
+  const crm = getSheetByGid_(SESSIONS_SHEET_GID).getDataRange().getValues();
+  const nameCol = findColumn_(crm[0], "Name");
+  if (nameCol < 0) throw new Error('The Sessions Remaining tab has no "Name" column.');
+  const crmEmailCol = findColumn_(crm[0], "Email"); // where a client already gave one; copied here so confirmations can go to it
+
+  const textFor = function (name, code) {
+    return "Hi " + name.split(" ")[0] + ", you can now book 1-on-1 sessions from your MaxFit card. Tap Book a session and enter this code the first time: " + code + ". It only needs entering once on each phone.";
+  };
+  const newUniqueCode = function () {
+    let code = bookingNewCode_();
+    while (taken[code]) code = bookingNewCode_();
+    taken[code] = true;
+    return code;
+  };
+
+  let added = 0;
+  let filled = 0;
+  let emails = 0;
+  const seen = {};
+  for (let i = 1; i < crm.length; i++) {
+    const name = String(crm[i][nameCol] || "").trim();
+    const slug = slugify_(name);
+    if (!slug || seen[slug]) continue;
+    seen[slug] = true;
+    const crmEmail = crmEmailCol >= 0 ? bookingCleanEmail_(crm[i][crmEmailCol]) : "";
+    const row = rowBySlug[slug];
+    if (!row) {
+      const code = newUniqueCode();
+      const values = table.header.map(function () { return ""; });
+      if (c.name >= 0) values[c.name] = cleanNote_(name, 80);
+      values[c.slug] = slug;
+      values[c.code] = code;
+      if (c.text >= 0) values[c.text] = textFor(name, code);
+      if (c.email >= 0 && crmEmail) {
+        values[c.email] = crmEmail;
+        emails++;
+      }
+      const target = sheet.getRange(sheet.getLastRow() + 1, 1, 1, values.length);
+      target.setNumberFormat("@");
+      target.setValues([values]);
+      added++;
+      continue;
+    }
+    if (!bookingNormalizeCode_(sheet.getRange(row, c.code + 1).getDisplayValue())) {
+      const code = newUniqueCode();
+      sheet.getRange(row, c.code + 1).setNumberFormat("@").setValue(code);
+      if (c.text >= 0) sheet.getRange(row, c.text + 1).setValue(textFor(name, code));
+      filled++;
+    }
+    // A client who has an email in the CRM but none here gets it copied over. One already here is never overwritten.
+    if (c.email >= 0 && crmEmail && !bookingCleanEmail_(table.rows[row - 2][c.email])) {
+      sheet.getRange(row, c.email + 1).setNumberFormat("@").setValue(crmEmail);
+      emails++;
+    }
+  }
+  SpreadsheetApp.flush();
+  return { added: added, filled: filled, emails: emails };
+}
+
+/**
+ * Who is asking, or why not. Returns { member } or { error: { code, message } }.
+ *
+ * Booking code required (the default): the slug must be a real client, and the
+ * code must match the one on the Clients tab. Wrong codes are counted per slug,
+ * and five of them lock that slug out for 15 minutes (the count comes off by
+ * itself; a right code clears it). Otherwise it's the old slug + Check-in
+ * Token check.
+ */
+function bookingAuthenticate_(ss, settings, payload) {
+  const slug = slugify_(payload.clientSlug);
+  if (!slug) return { error: { code: "unknown-member", message: "We couldn't match your membership. Open booking from your card." } };
+
+  if (!settings.requireCode) {
+    const crm = bookingCrmMember_(slug);
+    const token = String(payload.token || "").trim();
+    // A row with no token yet is identified by the slug, which is what the card puts in its QR code then.
+    if (crm && token && (crm.rowToken ? crm.rowToken === token : token === slug)) return { member: crm };
+    return { error: { code: "unknown-member", message: "We couldn't match your membership. Open booking from your card." } };
+  }
+
+  if (bookingWrongCodes_(slug) >= BOOKING_MAX_WRONG_CODES) {
+    return { error: { code: "locked", message: "Too many wrong codes. Please wait 15 minutes and try again, or message Max." } };
+  }
+  const given = bookingNormalizeCode_(payload.code);
+  if (!given) return { error: { code: "code-required", message: "Enter your booking code to continue." } };
+
+  const crm = bookingCrmMember_(slug);
+  if (!crm) {
+    bookingNoteWrongCode_(slug);
+    return { error: { code: "unknown-member", message: "We couldn't match your membership. Open booking from your card." } };
+  }
+  const stored = bookingStoredCode_(ss, slug);
+  if (!stored) return { error: { code: "no-code", message: "You don't have a booking code yet. Message Max and he'll send it." } };
+  if (stored !== given) {
+    bookingNoteWrongCode_(slug);
+    return { error: { code: "bad-code", message: "That code isn't right. Check it and try again." } };
+  }
+  bookingClearWrongCodes_(slug);
+  return { member: crm };
+}
+
+/** Everything a booking request needs, or { error } holding the response to send back. */
+function bookingContext_(payload) {
+  const ss = bookingBook_();
+  if (!ss) {
+    return { error: { status: "error", code: "not-set-up", message: "Booking isn't switched on yet. Please message Max." } };
+  }
+  const settings = bookingSettings_(ss);
+  const auth = bookingAuthenticate_(ss, settings, payload);
+  if (auth.error) {
+    return { error: { status: "error", code: auth.error.code, message: auth.error.message } };
+  }
+  return { ss: ss, member: auth.member, settings: settings, now: bookingNow_() };
+}
+
+function bookingFail_(code, message) {
+  return jsonResponse_({ status: "error", code: code, message: message });
+}
+
+function bookingServerError_(what, err) {
+  Logger.log("Booking " + what + " failed: " + err);
+  return bookingFail_("server", "Something went wrong on our side. Please try again in a moment.");
+}
+
+/** Emails Max. A failure here (quota, bad address) never blocks the booking itself. */
+function bookingNotify_(settings, subject, lines) {
+  if (!settings.notifyEmail) return;
+  try {
+    MailApp.sendEmail({ to: settings.notifyEmail, subject: subject, body: lines.join("\n") });
+  } catch (err) {
+    Logger.log("Booking email failed: " + err);
+  }
+}
+
+// ---- Emails to clients ----------------------------------------------------
+
+/**
+ * A client's email address as typed, or "" if it doesn't look like one. Strict
+ * on purpose, because it goes straight into a To field and into a cell: no
+ * spaces, commas, quotes or angle brackets, and it can't start with a symbol
+ * (which a spreadsheet could read as a formula).
+ */
+function bookingCleanEmail_(text) {
+  const email = String(text == null ? "" : text).trim();
+  return email.length <= 120 && /^[A-Za-z0-9][A-Za-z0-9._%+'-]*@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/.test(email) ? email : "";
+}
+
+/** The email on this client's row of the private Clients tab, or "" if they have none (or the tab has no Email column yet). */
+function bookingClientEmail_(ss, slug) {
+  const table = bookingTable_(ss.getSheetByName(BOOKING_TABS.clients));
+  const slugCol = findColumn_(table.header, "Slug");
+  const emailCol = findColumn_(table.header, "Email");
+  if (slugCol < 0 || emailCol < 0) return "";
+  for (let i = 0; i < table.rows.length; i++) {
+    if (slugify_(table.rows[i][slugCol]) === slug) return bookingCleanEmail_(table.rows[i][emailCol]);
+  }
+  return "";
+}
+
+/** Saves a client's email on their Clients row, adding the Email column first if the sheet was set up before it existed. False if they have no row. */
+function bookingSaveClientEmail_(ss, slug, email) {
+  const sheet = ss.getSheetByName(BOOKING_TABS.clients);
+  if (!sheet || sheet.getLastColumn() < 1) return false;
+  ensureColumns_(sheet, ["Email"]);
+  const table = bookingTable_(sheet);
+  const slugCol = findColumn_(table.header, "Slug");
+  const emailCol = findColumn_(table.header, "Email");
+  if (slugCol < 0 || emailCol < 0) return false;
+  for (let i = 0; i < table.rows.length; i++) {
+    if (slugify_(table.rows[i][slugCol]) === slug) {
+      sheet.getRange(i + 2, emailCol + 1).setNumberFormat("@").setValue(email);
+      return true;
+    }
+  }
+  return false;
+}
+
+function bookingHoursText_(hours) {
+  const n = Math.round(hours * 10) / 10;
+  return n + (n === 1 ? " hour" : " hours");
+}
+
+/** Where a client goes to see, book or cancel their sessions. */
+function bookingPageUrl_(slug) {
+  return BOOKING_SITE_URL + "/card/book.html?id=" + encodeURIComponent(slug);
+}
+
+/** A moment in the form calendar files want: 20261001T063000Z. */
+function bookingIcsStamp_(ms) {
+  return new Date(ms).toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
+}
+
+/** Calendar files break long lines with a CRLF and a space. */
+function bookingIcsFold_(line) {
+  const parts = [];
+  for (let i = 0; i < line.length; i += 73) parts.push(line.slice(i, i + 73));
+  return parts.join("\r\n ");
+}
+
+/** A one-event calendar file for a booking (its times are the real instants, so daylight saving is already handled). */
+function bookingIcs_(booking, settings, nowMs) {
+  const startMs = bookingStartMs_(booking.date, booking.startMin);
+  const endMs = startMs + booking.minutes * 60000;
+  const esc = function (text) {
+    return String(text).replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+  };
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//MaxFit//Booking//EN",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    "BEGIN:VEVENT",
+    "UID:" + booking.id + "@maxfit.now",
+    "DTSTAMP:" + bookingIcsStamp_(nowMs),
+    "DTSTART:" + bookingIcsStamp_(startMs),
+    "DTEND:" + bookingIcsStamp_(endMs),
+    "SUMMARY:MaxFit 1-on-1 session",
+  ];
+  if (settings.meetingPlace) lines.push("LOCATION:" + esc(settings.meetingPlace));
+  lines.push("STATUS:CONFIRMED", "END:VEVENT", "END:VCALENDAR");
+  return lines.map(bookingIcsFold_).join("\r\n") + "\r\n";
+}
+
+/** The confirmation a client gets after booking: { subject, body, attachments }. Plain text, in Max's voice, with the calendar file attached. */
+function bookingConfirmationEmail_(booking, member, settings, nowMs) {
+  const when = bookingLabel_(booking.date, booking.startMin);
+  const first = String(member.name || "").split(" ")[0] || "there";
+  const lines = [
+    "Hi " + first + ",",
+    "",
+    "You're booked in for a " + booking.minutes + "-minute 1-on-1 session.",
+    "",
+    "When: " + when + " to " + bookingClock12_(booking.endMin),
+  ];
+  if (settings.meetingPlace) lines.push("Where: " + settings.meetingPlace);
+  lines.push(
+    "",
+    "Need to change it? You can cancel for free up to " + bookingHoursText_(settings.cancelNoticeHours) + " before, from your card:",
+    bookingPageUrl_(member.slug),
+    "After that, just reply to this email.",
+    "",
+    "The attached calendar file adds it to your calendar.",
+    "",
+    "See you there,",
+    "Max"
+  );
+  return {
+    subject: "You're booked: " + when,
+    body: lines.join("\n"),
+    attachments: [Utilities.newBlob(bookingIcs_(booking, settings, nowMs), "text/calendar", "maxfit-session.ics")],
+  };
+}
+
+/** The note a client gets when they cancel: { subject, body }. */
+function bookingCancellationEmail_(booking, member) {
+  const when = bookingLabel_(booking.date, booking.startMin);
+  const first = String(member.name || "").split(" ")[0] || "there";
+  return {
+    subject: "Cancelled: " + when,
+    body: [
+      "Hi " + first + ",",
+      "",
+      "Your 1-on-1 session on " + when + " to " + bookingClock12_(booking.endMin) + " is cancelled, and that time is open again.",
+      "",
+      "Want another time? You can book one from your card:",
+      bookingPageUrl_(member.slug),
+      "",
+      "Max",
+    ].join("\n"),
+  };
+}
+
+/**
+ * Builds and sends one email to a client. True if it went out. A failure (quota,
+ * a bad address) is logged and never blocks the booking. During the self-test
+ * the subject says so, because the "client" is really a real one being used as
+ * a sample and the email goes to Max.
+ */
+function bookingTryEmail_(to, build) {
+  try {
+    const mail = build();
+    const message = { to: to, subject: (bookingSheetOverride_ ? "[Self-test sample] " : "") + mail.subject, body: mail.body, name: "MaxFit" };
+    if (mail.attachments && mail.attachments.length) message.attachments = mail.attachments;
+    MailApp.sendEmail(message);
+    return true;
+  } catch (err) {
+    Logger.log("Client email failed: " + err);
+    return false;
+  }
+}
+
+/**
+ * Which address a confirmation goes to. `typed` is what the Book page's email
+ * box sent: a good address is used and remembered on the client's row, a blank
+ * box means "not this time", and a missing or unusable one falls back to the
+ * address already on file. Returns "" for no email.
+ */
+function bookingResolveEmail_(ctx, typed) {
+  if (!ctx.settings.emailClients) return "";
+  const stored = bookingClientEmail_(ctx.ss, ctx.member.slug);
+  if (typed === undefined || typed === null) return stored;
+  const text = String(typed).trim();
+  if (text === "") return "";
+  const clean = bookingCleanEmail_(text);
+  if (!clean) return stored;
+  if (clean.toLowerCase() !== stored.toLowerCase()) {
+    try {
+      bookingSaveClientEmail_(ctx.ss, ctx.member.slug, clean);
+    } catch (err) {
+      Logger.log("Couldn't save a client's email: " + err); // they still get this confirmation
+    }
+  }
+  return clean;
+}
+
+/** Sends the client their booking confirmation. Returns the address it went to, or "". Never throws: by now the booking is saved. */
+function bookingConfirmClient_(ctx, typed, booking) {
+  try {
+    const to = bookingResolveEmail_(ctx, typed);
+    if (!to) return "";
+    return bookingTryEmail_(to, function () { return bookingConfirmationEmail_(booking, ctx.member, ctx.settings, ctx.now.ms); }) ? to : "";
+  } catch (err) {
+    Logger.log("Client confirmation failed: " + err);
+    return "";
+  }
+}
+
+/** Tells the client their cancellation went through. Returns the address it went to, or "". Never throws. */
+function bookingCancelNoteClient_(ctx, booking) {
+  try {
+    if (!ctx.settings.emailClients) return "";
+    const to = bookingClientEmail_(ctx.ss, ctx.member.slug);
+    if (!to) return "";
+    return bookingTryEmail_(to, function () { return bookingCancellationEmail_(booking, ctx.member); }) ? to : "";
+  } catch (err) {
+    Logger.log("Client cancellation note failed: " + err);
+    return "";
+  }
+}
+
+/** The line in Max's own notification that says whether the client was emailed. Nothing if client emails are switched off. */
+function bookingEmailedLine_(settings, emailedTo) {
+  if (!settings.emailClients) return [];
+  return [emailedTo ? "Emailed to the client: " + emailedTo : "No email went to the client (none on file)."];
+}
+
+// ---- Online payments (Stripe) ---------------------------------------------
+//
+// A client with no 1-on-1 sessions left can buy some on Stripe instead of
+// messaging Max. The Book page shows a Buy button for each row of the Prices
+// tab that has a Pay link (a Stripe Payment Link) and adds
+// client_reference_id=pt-<slug> to it, which is how a payment finds its client.
+//
+// Stripe is never called by webhook: Apps Script can't read a webhook's
+// headers, so it can't check who sent it. Instead this script asks Stripe,
+// with a READ-ONLY restricted key kept in the STRIPE_SECRET_KEY Script
+// Property (Checkout Sessions: Read is all it needs):
+//   - when the client lands back on the Book page (the Payment Link's "after
+//     payment" address is .../card/book.html?paid={CHECKOUT_SESSION_ID}), the
+//     page sends that id to paymentReturn, and
+//   - every 10 minutes on a trigger (installBookingPaymentSync), which catches
+//     anyone who paid and then closed the tab.
+//
+// A paid session adds what it bought (matched on the price's lookup key, via
+// the Prices tab) to "1 on 1 Remaining" on the CRM: the same number check-in
+// already uses and counts down. "Paid sessions" and the referral payout are
+// deliberately NOT touched, because they happen at check-in, when the session
+// is actually had. Each Stripe session is credited exactly once: the Payments
+// tab is the ledger, and a session's row is written before the balance moves,
+// so a run that dies halfway can be finished later without paying twice.
+
+function bookingStripeKey_() {
+  return String(PropertiesService.getScriptProperties().getProperty(BOOKING_STRIPE_KEY_PROPERTY) || "").trim();
+}
+
+/** Anything that looks like a Stripe key, blanked out, so a key can never end up in a log, an email or a reply. */
+function bookingScrub_(text) {
+  return String(text == null ? "" : text).replace(/\b[rs]k_(test|live)_[A-Za-z0-9]+/g, "[key]");
+}
+
+/** One read-only GET to the Stripe API. Throws (with the key scrubbed out) if Stripe says no. */
+function bookingStripeGet_(path, params) {
+  const key = bookingStripeKey_();
+  if (!key) throw new Error("STRIPE_SECRET_KEY is not set.");
+  const qs = Object.keys(params || {})
+    .map(function (k) { return encodeURIComponent(k) + "=" + encodeURIComponent(params[k]); })
+    .join("&");
+  const res = UrlFetchApp.fetch("https://api.stripe.com/v1/" + path + (qs ? "?" + qs : ""), {
+    headers: { Authorization: "Bearer " + key },
+    muteHttpExceptions: true,
+  });
+  let body = null;
+  try {
+    body = JSON.parse(res.getContentText());
+  } catch (err) {
+    body = null;
+  }
+  if (res.getResponseCode() !== 200 || !body) {
+    const msg = body && body.error && body.error.message ? body.error.message : "HTTP " + res.getResponseCode();
+    throw new Error("Stripe " + path + ": " + bookingScrub_(msg));
+  }
+  return body;
+}
+
+/** Every page of a Stripe list (capped, to stay well inside Apps Script's time limit). */
+function bookingStripeList_(path, params, maxPages) {
+  const out = [];
+  let after = null;
+  for (let page = 0; page < (maxPages || 5); page++) {
+    const p = Object.assign({ limit: 100 }, params || {});
+    if (after) p.starting_after = after;
+    const res = bookingStripeGet_(path, p);
+    (res.data || []).forEach(function (x) { out.push(x); });
+    if (!res.has_more || !res.data || !res.data.length) break;
+    after = res.data[res.data.length - 1].id;
+  }
+  return out;
+}
+
+/** Whether clients may be sent to Stripe: switched on in Settings, and there is a key to check payments with. */
+function bookingPaymentsOn_(settings) {
+  return Boolean(settings.onlinePayments && bookingStripeKey_());
+}
+
+/** A Pay link Max pasted, or "" unless it's a Stripe Payment Link (so a typo can never send a client somewhere else). */
+function bookingSafePayLink_(text) {
+  const link = String(text == null ? "" : text).trim();
+  return link.length <= 300 && link.indexOf(BOOKING_PAY_LINK_PREFIX) === 0 && !/\s/.test(link) ? link : "";
+}
+
+/** The Prices tab as { on, name, sessions, price, lookup, link } rows. A row with no name or lookup key can't be used and is skipped. */
+function bookingPrices_(ss) {
+  const table = bookingTable_(ss.getSheetByName(BOOKING_TABS.prices));
+  const c = {
+    on: findColumn_(table.header, "On"),
+    name: findColumn_(table.header, "Name"),
+    sessions: findColumn_(table.header, "Sessions"),
+    price: findColumn_(table.header, "Price"),
+    lookup: findColumn_(table.header, "Stripe lookup key"),
+    link: findColumn_(table.header, "Pay link"),
+  };
+  if (c.name < 0 || c.sessions < 0 || c.lookup < 0) return [];
+  return table.rows
+    .map(function (r) {
+      return {
+        on: c.on < 0 ? true : !bookingIsNo_(r[c.on]),
+        name: bookingOneLine_(r[c.name], 80),
+        sessions: Math.floor(bookingNumber_(r[c.sessions], 0, 0, 1000)),
+        price: c.price < 0 ? "" : bookingOneLine_(r[c.price], 20),
+        lookup: bookingOneLine_(r[c.lookup], 80),
+        link: c.link < 0 ? "" : String(r[c.link] || "").trim(),
+      };
+    })
+    .filter(function (p) { return p.name && p.lookup; });
+}
+
+/** What a client with no sessions left can buy: [{ name, sessions, price, url }], only rows that are on, add a session and have a Stripe Pay link. */
+function bookingBuyOptions_(ss, member, email) {
+  return bookingPrices_(ss)
+    .filter(function (p) { return p.on && p.sessions >= 1 && bookingSafePayLink_(p.link); })
+    .map(function (p) {
+      const link = bookingSafePayLink_(p.link);
+      const extra = ["client_reference_id=" + encodeURIComponent(BOOKING_PAY_REF_PREFIX + member.slug)];
+      if (email) extra.push("prefilled_email=" + encodeURIComponent(email));
+      return { name: p.name, sessions: p.sessions, price: p.price, url: link + (link.indexOf("?") >= 0 ? "&" : "?") + extra.join("&") };
+    });
+}
+
+/** A paid, finished, one-off Checkout Session carrying one of our client references. */
+function bookingIsOurs_(session) {
+  return Boolean(session && session.mode === "payment" && session.status === "complete" && session.payment_status === "paid"
+    && /^pt-[a-z0-9]+$/.test(String(session.client_reference_id || "")));
+}
+
+/** What a paid session bought: { slug, sessions, item }, or { slug, problem } saying why it can't be credited automatically. */
+function bookingPurchaseOf_(session, lines, prices) {
+  const slug = String(session.client_reference_id || "").slice(BOOKING_PAY_REF_PREFIX.length);
+  let sessions = 0;
+  const names = [];
+  for (let i = 0; i < lines.length; i++) {
+    const lookup = String((lines[i].price && lines[i].price.lookup_key) || "").trim().toLowerCase();
+    const row = lookup ? prices.filter(function (p) { return p.lookup.toLowerCase() === lookup; })[0] : null;
+    if (!row) return { slug: slug, problem: "an item on it isn't on the Prices tab (" + bookingOneLine_(lookup || lines[i].description || "no lookup key", 60) + ")" };
+    if (row.sessions < 1) return { slug: slug, problem: "the Prices tab row \"" + row.name + "\" has no number of sessions" };
+    const qty = Math.max(1, Math.floor(Number(lines[i].quantity) || 1));
+    sessions += row.sessions * qty;
+    names.push((qty > 1 ? qty + " x " : "") + row.name);
+  }
+  if (!sessions) return { slug: slug, problem: "it has no items" };
+  return { slug: slug, sessions: sessions, item: names.join(", ") };
+}
+
+/** A client's row in Sessions Remaining, with what they have left: { sheet, row, col, name, current }, or null if there's no such client. Throws if the balance can't be read. */
+function bookingCrmRow_(slug) {
+  const sheet = getSheetByGid_(SESSIONS_SHEET_GID);
+  const data = sheet.getDataRange().getValues();
+  const header = data[0];
+  const nameCol = findColumn_(header, "Name");
+  const col = findColumn_(header, "1 on 1 Remaining");
+  if (nameCol < 0 || col < 0) throw new Error("The Sessions Remaining tab has no Name or \"1 on 1 Remaining\" column");
+  for (let i = 1; i < data.length; i++) {
+    if (slugify_(data[i][nameCol]) !== slug) continue;
+    const raw = String(data[i][col] == null ? "" : data[i][col]).trim();
+    const n = raw === "" ? 0 : Number(raw);
+    if (!isFinite(n)) throw new Error("the 1 on 1 Remaining cell for " + slug + " isn't a number (it says \"" + bookingOneLine_(raw, 30) + "\")");
+    return { sheet: sheet, row: i + 1, col: col, name: String(data[i][nameCol]).trim(), current: n };
+  }
+  return null;
+}
+
+// -- The Payments ledger ----------------------------------------------------
+
+function bookingLedger_(ss) {
+  const sheet = ss.getSheetByName(BOOKING_TABS.payments)
+    || bookingEnsureTab_(ss, BOOKING_TABS.payments, BOOKING_PAYMENTS_HEADER, [], ["Stripe Session", "Paid At", "Slug", "Amount", "Before", "After"]).sheet;
+  const table = bookingTable_(sheet);
+  const c = {
+    id: findColumn_(table.header, "Stripe Session"),
+    paidAt: findColumn_(table.header, "Paid At"),
+    client: findColumn_(table.header, "Client"),
+    slug: findColumn_(table.header, "Slug"),
+    item: findColumn_(table.header, "Item"),
+    sessions: findColumn_(table.header, "Sessions"),
+    amount: findColumn_(table.header, "Amount"),
+    before: findColumn_(table.header, "Before"),
+    after: findColumn_(table.header, "After"),
+    status: findColumn_(table.header, "Status"),
+    note: findColumn_(table.header, "Note"),
+  };
+  Object.keys(c).forEach(function (k) {
+    if (c[k] < 0) throw new Error("The Payments tab is missing a column (" + k + ")");
+  });
+  return { sheet: sheet, table: table, c: c };
+}
+
+/** The ledger row for a Stripe session, or null. */
+function bookingLedgerFind_(led, id) {
+  for (let i = 0; i < led.table.rows.length; i++) {
+    const r = led.table.rows[i];
+    if (String(r[led.c.id]).trim() !== id) continue;
+    return {
+      row: i + 2,
+      status: String(r[led.c.status]).trim(),
+      slug: String(r[led.c.slug]).trim(),
+      sessions: Number(r[led.c.sessions]) || 0,
+      before: r[led.c.before] === "" ? NaN : Number(r[led.c.before]),
+      after: r[led.c.after] === "" ? NaN : Number(r[led.c.after]),
+      note: String(r[led.c.note]),
+    };
+  }
+  return null;
+}
+
+/** Adds a ledger row (plain text, like the other tabs) and returns its row number. */
+function bookingLedgerAppend_(led, v) {
+  const values = led.table.header.map(function () { return ""; });
+  Object.keys(led.c).forEach(function (k) {
+    if (v[k] !== undefined) values[led.c[k]] = v[k];
+  });
+  const target = led.sheet.getRange(led.sheet.getLastRow() + 1, 1, 1, values.length);
+  target.setNumberFormat("@");
+  target.setValues([values]);
+  return target.getRow();
+}
+
+function bookingLedgerUpdate_(led, row, patch) {
+  Object.keys(patch).forEach(function (k) {
+    led.sheet.getRange(row, led.c[k] + 1).setNumberFormat("@").setValue(patch[k]);
+  });
+}
+
+// -- Crediting a payment ------------------------------------------------------
+
+/**
+ * Runs `fn` under the script lock and says whether it got the lock: { ok, value }.
+ * (withLock_ answers a web request; a background sync needs to know it was too busy and try again later.)
+ */
+function bookingWithLock_(fn) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (err) {
+    return { ok: false };
+  }
+  try {
+    return { ok: true, value: fn() };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Credits one paid Stripe session to its client, exactly once, and records it in the ledger.
+ * Must run under the script lock. `purchase` comes from bookingPurchaseOf_.
+ * Returns { state: "credited" | "already" | "unmatched", slug, sessions, after, note, fresh }; `fresh`
+ * is true only for the call that actually did the work, so the emails go out once.
+ */
+function bookingRecordPayment_(ss, session, purchase) {
+  const led = bookingLedger_(ss);
+  const known = bookingLedgerFind_(led, session.id);
+  if (known && known.status === "Credited") {
+    return { state: "already", slug: known.slug, sessions: known.sessions, after: known.after, fresh: false };
+  }
+  if (known && known.status === "Unmatched") {
+    return { state: "unmatched", slug: known.slug, sessions: 0, note: known.note, fresh: false };
+  }
+
+  const paidAt = Utilities.formatDate(new Date(Number(session.created) * 1000), TIMEZONE, "yyyy-MM-dd HH:mm");
+  const amount = (Number(session.amount_total) / 100).toFixed(2) + " " + String(session.currency || "").toUpperCase();
+
+  let crm = null;
+  let problem = purchase.problem || "";
+  if (!problem) {
+    try {
+      crm = bookingCrmRow_(purchase.slug);
+      if (!crm) problem = "there is no client called " + purchase.slug;
+    } catch (err) {
+      problem = bookingScrub_(err && err.message ? err.message : err);
+    }
+  }
+
+  if (problem) {
+    const cols = { id: session.id, paidAt: paidAt, slug: purchase.slug || "", item: purchase.item || "", amount: amount, status: "Unmatched", note: problem };
+    if (known) bookingLedgerUpdate_(led, known.row, { status: "Unmatched", note: problem });
+    else bookingLedgerAppend_(led, cols);
+    SpreadsheetApp.flush();
+    return { state: "unmatched", slug: purchase.slug || "", sessions: 0, note: problem, fresh: true };
+  }
+
+  let ledgerRow = known ? known.row : 0;
+  if (known && known.status === "Crediting" && crm.current !== known.before) {
+    // An earlier run wrote this row and moved the balance, then stopped before it could say so. Don't pay it twice.
+    bookingLedgerUpdate_(led, known.row, { after: String(crm.current), status: "Credited", note: "finished on a retry" });
+    SpreadsheetApp.flush();
+    return { state: "credited", slug: purchase.slug, sessions: purchase.sessions, after: crm.current, name: crm.name, fresh: true };
+  }
+  if (!known) {
+    // The ledger row goes in first, with the balance as it is right now.
+    ledgerRow = bookingLedgerAppend_(led, {
+      id: session.id, paidAt: paidAt, client: cleanNote_(crm.name, 80), slug: purchase.slug, item: purchase.item,
+      sessions: String(purchase.sessions), amount: amount, before: String(crm.current), status: "Crediting",
+    });
+    SpreadsheetApp.flush();
+  }
+
+  const after = crm.current + purchase.sessions;
+  crm.sheet.getRange(crm.row, crm.col + 1).setValue(after);
+  SpreadsheetApp.flush();
+  bookingLedgerUpdate_(led, ledgerRow, { after: String(after), status: "Credited", note: "" });
+  SpreadsheetApp.flush();
+  return { state: "credited", slug: purchase.slug, sessions: purchase.sessions, after: after, name: crm.name, fresh: true };
+}
+
+/**
+ * Deals with one paid session that carries our client reference. The Stripe call happens
+ * before the lock is taken; only the sheet work is inside it. Throws if it couldn't finish
+ * (Stripe hiccup, script busy), so the caller can try again later.
+ */
+function bookingHandlePaidSession_(ss, session) {
+  const led = bookingLedger_(ss);
+  const known = bookingLedgerFind_(led, session.id);
+  // Already dealt with: costs no Stripe call.
+  if (known && known.status === "Credited") return { state: "already", slug: known.slug, sessions: known.sessions, after: known.after, fresh: false };
+  if (known && known.status === "Unmatched") return { state: "unmatched", slug: known.slug, sessions: 0, note: known.note, fresh: false };
+
+  const lines = bookingStripeList_("checkout/sessions/" + encodeURIComponent(session.id) + "/line_items", {}, 1);
+  const purchase = bookingPurchaseOf_(session, lines, bookingPrices_(ss));
+  const locked = bookingWithLock_(function () { return bookingRecordPayment_(ss, session, purchase); });
+  if (!locked.ok) throw new Error("the script was busy, so this payment will be tried again");
+  const result = locked.value;
+  if (result.fresh) bookingAnnouncePayment_(ss, session, purchase, result);
+  return result;
+}
+
+/** Tells Max (and the client) about a payment that was just credited, or that couldn't be. Never throws: the sheet is already right. */
+function bookingAnnouncePayment_(ss, session, purchase, result) {
+  try {
+    const settings = bookingSettings_(ss);
+    const tag = session.livemode === false ? "[TEST] " : "";
+    const amount = (Number(session.amount_total) / 100).toFixed(2) + " " + String(session.currency || "").toUpperCase();
+    const payerEmail = session.customer_details ? bookingCleanEmail_(session.customer_details.email) : "";
+
+    if (result.state === "unmatched") {
+      const lines = ["A payment came in that wasn't added to anyone's sessions, because " + result.note + ".", "", "Amount: " + amount];
+      if (purchase.item) lines.push("Item: " + purchase.item);
+      if (payerEmail) lines.push("Paid by: " + payerEmail);
+      lines.push(
+        "Stripe session: " + session.id,
+        "",
+        "Please add the sessions by hand on the Sessions Remaining tab if that's what they bought. It's listed on the Payments tab as Unmatched, and won't be tried again."
+      );
+      bookingNotify_(settings, tag + "A Stripe payment I couldn't match to a client", lines);
+      return;
+    }
+
+    bookingNotify_(settings, tag + "Payment: " + result.name + " bought " + result.sessions + " session" + (result.sessions === 1 ? "" : "s"), [
+      result.name + " paid " + amount + " for " + purchase.item + ".",
+      "",
+      result.sessions + " added to their 1 on 1 Remaining. They now have " + result.after + ".",
+      "Stripe session: " + session.id,
+      "",
+      "Nothing else was changed: Paid sessions and referral rewards happen at check-in, as usual.",
+    ]);
+
+    if (!settings.emailClients) return;
+    let to = bookingClientEmail_(ss, purchase.slug);
+    if (!to && payerEmail) {
+      to = payerEmail;
+      try {
+        bookingSaveClientEmail_(ss, purchase.slug, payerEmail); // they gave it to pay, so it can be used for their bookings too
+      } catch (err) {
+        Logger.log("Couldn't save a client's email: " + err);
+      }
+    }
+    if (!to) return;
+    const first = String(result.name || "").split(" ")[0] || "there";
+    bookingTryEmail_(to, function () {
+      return {
+        subject: "Payment received: " + result.sessions + " session" + (result.sessions === 1 ? "" : "s") + " added",
+        body: [
+          "Hi " + first + ",",
+          "",
+          "Thanks, your payment of " + amount + " went through and " + result.sessions + " session" + (result.sessions === 1 ? " was" : "s were") + " added to your account (" + purchase.item + ").",
+          "You now have " + result.after + " 1-on-1 session" + (result.after === 1 ? "" : "s") + " left.",
+          "",
+          "Pick a time here:",
+          bookingPageUrl_(purchase.slug),
+          "",
+          "Max",
+        ].join("\n"),
+      };
+    });
+  } catch (err) {
+    Logger.log("Payment announcement failed: " + bookingScrub_(err));
+  }
+}
+
+/** Puts a ceiling on how many payment checks strangers can make Stripe do. True means "not now". */
+function bookingPayThrottled_() {
+  const cache = CacheService.getScriptCache();
+  const key = "bookpaycheck:" + Math.floor(bookingNow_().ms / 60000);
+  const n = (Number(cache.get(key)) || 0) + 1;
+  cache.put(key, String(n), 120);
+  return n > BOOKING_PAY_CHECKS_PER_MINUTE;
+}
+
+/**
+ * The client has come back from Stripe. The Book page sends the Checkout Session id from the address; it is
+ * fetched from Stripe here (so it can't be faked), and if it's a paid booking payment the sessions are
+ * added straight away. No booking code is needed: the id is the proof, and all it can do is credit
+ * a payment that really happened, once.
+ */
+function handlePaymentReturn_(payload) {
+  try {
+    const id = String(payload.sessionId || "").trim();
+    if (!/^cs_(test|live)_[A-Za-z0-9]{8,200}$/.test(id)) return bookingFail_("bad-request", "That payment link didn't come back properly.");
+    const ss = bookingBook_();
+    if (!ss) return bookingFail_("not-set-up", "Booking isn't switched on yet. Please message Max.");
+    if (!bookingPaymentsOn_(bookingSettings_(ss))) return bookingFail_("payments-off", "Online payments aren't switched on yet. Please message Max.");
+    if (bookingPayThrottled_()) return jsonResponse_({ status: "success", state: "waiting" });
+
+    let session;
+    try {
+      session = bookingStripeGet_("checkout/sessions/" + id, {});
+    } catch (err) {
+      Logger.log("Payment return: " + bookingScrub_(err));
+      return bookingFail_("stripe", "We couldn't check your payment just now. Please try again in a minute.");
+    }
+    const ref = /^pt-([a-z0-9]+)$/.exec(String(session.client_reference_id || ""));
+    if (!ref || session.mode !== "payment") return bookingFail_("not-ours", "That payment isn't for a 1-on-1 booking. Please message Max.");
+    if (session.status !== "complete" || session.payment_status !== "paid") return jsonResponse_({ status: "success", state: "waiting", slug: ref[1] });
+
+    const result = bookingHandlePaidSession_(ss, session);
+    return jsonResponse_({ status: "success", state: result.state, slug: result.slug || ref[1], sessions: result.sessions });
+  } catch (err) {
+    return bookingServerError_("payment return", err);
+  }
+}
+
+// -- Checking Stripe in the background --------------------------------------
+
+/** Looks at Stripe for paid booking payments that haven't been credited yet. Returns { checked, credited, unmatched, errors } or { skipped }. */
+function syncBookingPayments_() {
+  const ss = bookingBook_();
+  if (!ss) return { skipped: "booking isn't set up" };
+  if (!bookingPaymentsOn_(bookingSettings_(ss))) return { skipped: "online payments are off, or there is no Stripe key" };
+
+  const props = PropertiesService.getScriptProperties();
+  const startedAt = Math.floor(bookingNow_().ms / 1000);
+  const since = Number(props.getProperty(BOOKING_STRIPE_SYNCED_PROPERTY)) || startedAt;
+  const sessions = bookingStripeList_("checkout/sessions", { status: "complete", "created[gte]": Math.max(0, since - BOOKING_SYNC_OVERLAP_SECONDS) }, 5);
+
+  const out = { checked: 0, credited: 0, unmatched: 0, errors: 0 };
+  sessions.forEach(function (session) {
+    if (!bookingIsOurs_(session)) return;
+    out.checked++;
+    try {
+      const r = bookingHandlePaidSession_(ss, session);
+      if (r.fresh && r.state === "credited") out.credited++;
+      if (r.fresh && r.state === "unmatched") out.unmatched++;
+    } catch (err) {
+      out.errors++;
+      Logger.log("Payment sync: " + bookingScrub_(err));
+    }
+  });
+  if (!out.errors) {
+    // Only move the marker on when every payment was dealt with; otherwise the next run looks at the same stretch again.
+    props.setProperty(BOOKING_STRIPE_SYNCED_PROPERTY, String(startedAt));
+    props.setProperty(BOOKING_STRIPE_LAST_SYNC_PROPERTY, bookingNow_().stamp);
+  }
+  return out;
+}
+
+/** What the 10-minute trigger runs (and safe to run by hand from the editor). */
+function syncBookingPayments() {
+  try {
+    return JSON.stringify(syncBookingPayments_());
+  } catch (err) {
+    Logger.log("Payment sync failed: " + bookingScrub_(err));
+    return "failed: " + bookingScrub_(err);
+  }
+}
+
+/** Run ONCE from the Apps Script editor: checks Stripe for booking payments every 10 minutes from now on. */
+function installBookingPaymentSync() {
+  ScriptApp.getProjectTriggers()
+    .filter(function (t) { return t.getHandlerFunction() === "syncBookingPayments"; })
+    .forEach(function (t) { ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger("syncBookingPayments").timeBased().everyMinutes(10).create();
+  Logger.log("Booking payments will be checked every 10 minutes.");
+  return "Booking payments will be checked every 10 minutes.";
+}
+
+/**
+ * Run from the editor any time: checks the payments set-up (Settings, the Stripe key, the Prices tab, the trigger,
+ * the last check and the ledger), logs it and emails it to Max. Reads only; changes nothing.
+ */
+function checkBookingPayments() {
+  const ss = bookingBook_();
+  if (!ss) throw new Error("Run setupBooking first.");
+  const settings = bookingSettings_(ss);
+  const lines = [];
+  let allGood = true;
+  const flag = function (ok, text) {
+    if (!ok) allGood = false;
+    lines.push((ok ? "OK      " : "TO DO   ") + text);
+  };
+
+  flag(settings.onlinePayments, 'Settings > "Online payments" is ' + (settings.onlinePayments ? "Yes" : "No (clients aren't sent to Stripe until it's Yes)"));
+
+  const key = bookingStripeKey_();
+  const mode = /^[rs]k_live_/.test(key) ? "LIVE" : /^[rs]k_test_/.test(key) ? "TEST" : "unknown";
+  if (!key) {
+    flag(false, "STRIPE_SECRET_KEY isn't set. Add it in Project Settings > Script Properties (a read-only restricted key).");
+  } else {
+    try {
+      bookingStripeGet_("checkout/sessions", { limit: 1 });
+      flag(true, "The Stripe key works (" + mode + " mode).");
+    } catch (err) {
+      flag(false, "Stripe refused the key (" + mode + " mode): " + bookingScrub_(err && err.message ? err.message : err));
+    }
+    if (/^sk_/.test(key)) flag(false, "That's a full secret key. A restricted key (rk_...) that can only READ Checkout Sessions is safer.");
+  }
+
+  const prices = bookingPrices_(ss);
+  const live = prices.filter(function (p) { return p.on; });
+  flag(live.length > 0, live.length + " row" + (live.length === 1 ? "" : "s") + " switched on in the Prices tab.");
+  live.forEach(function (p) {
+    const link = bookingSafePayLink_(p.link);
+    flag(Boolean(link) && p.sessions >= 1, p.name + " (" + p.lookup + ", " + p.sessions + " session" + (p.sessions === 1 ? "" : "s") + "): " + (link ? "has a Pay link" : "NO Pay link yet (it needs to start with " + BOOKING_PAY_LINK_PREFIX + "), so clients aren't offered it"));
+    // A test-mode link only ever shows up to a test-mode key, and a live link to a live one. Mixing them means payments are never found.
+    const linkIsTest = /^https:\/\/buy\.stripe\.com\/test_/.test(link);
+    if (link && mode !== "unknown") flag((mode === "TEST") === linkIsTest, p.name + ": " + ((mode === "TEST") === linkIsTest ? "the link and the key are both " + mode : "its Pay link is a " + (linkIsTest ? "TEST" : "LIVE") + " link but the key is a " + mode + " key, so its payments would never be found"));
+  });
+
+  const hasTrigger = ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === "syncBookingPayments"; });
+  flag(hasTrigger, hasTrigger ? "The 10-minute Stripe check is installed." : "The 10-minute Stripe check isn't installed. Run installBookingPaymentSync once.");
+  const last = PropertiesService.getScriptProperties().getProperty(BOOKING_STRIPE_LAST_SYNC_PROPERTY);
+  lines.push("        Last Stripe check: " + (last || "never"));
+
+  try {
+    const led = bookingLedger_(ss);
+    const count = function (status) { return led.table.rows.filter(function (r) { return String(r[led.c.status]).trim() === status; }).length; };
+    lines.push("        Payments so far: " + count("Credited") + " credited, " + count("Unmatched") + " unmatched, " + count("Crediting") + " half-finished.");
+    flag(count("Unmatched") === 0 && count("Crediting") === 0, "No payments are waiting for you to look at.");
+  } catch (err) {
+    flag(false, "The Payments tab: " + err);
+  }
+
+  const summary = allGood ? "ALL GOOD" : "NEEDS ATTENTION";
+  Logger.log("Booking payments check: " + summary);
+  lines.forEach(function (l) { Logger.log(l); });
+  try {
+    MailApp.sendEmail({ to: BOOKING_NOTIFY_DEFAULT, subject: "MaxFit booking payments: " + summary, body: lines.join("\n") });
+  } catch (err) {
+    Logger.log("Couldn't email the result: " + err);
+  }
+  return summary;
+}
+
+// ---- The three actions ----------------------------------------------------
+
+/** What the Book page needs in one go: the client's own bookings, whether they can book, and the times on offer. Read-only. */
+function handleBookingInfo_(payload) {
+  try {
+    const ctx = bookingContext_(payload);
+    if (ctx.error) return jsonResponse_(ctx.error);
+    const rows = bookingRows_(ctx.ss);
+    const mine = bookingMine_(rows, ctx.member, ctx.settings, ctx.now);
+    const eligibility = bookingEligibility_(ctx.member, ctx.settings, mine.length);
+
+    // A client with nothing left can buy more on Stripe, if Max has switched that on and given at least one row a Pay link.
+    let buy = [];
+    if (!eligibility.canBook && eligibility.code === "no-sessions" && bookingPaymentsOn_(ctx.settings)) {
+      buy = bookingBuyOptions_(ctx.ss, ctx.member, bookingClientEmail_(ctx.ss, ctx.member.slug));
+    }
+
+    let slots = [];
+    if (eligibility.canBook) {
+      const active = rows.filter(function (b) { return b.active && b.date >= ctx.now.dateKey; });
+      const candidates = bookingCandidates_(bookingWindows_(ctx.ss), bookingTimeOff_(ctx.ss), active, ctx.settings, ctx.now);
+      slots = bookingApplyCalendarBusy_(candidates)
+        .filter(function (c) { return !c.tooSoon && !c.taken && !c.calendarBusy; })
+        .map(bookingPublicSlot_);
+    }
+    return jsonResponse_({
+      status: "success",
+      client: {
+        name: ctx.member.name,
+        sessionsLeft: ctx.member.unlimited ? null : ctx.member.sessionsLeft,
+        unlimited: ctx.member.unlimited,
+        canBook: eligibility.canBook,
+        reason: eligibility.code,
+        message: eligibility.message,
+        // Their own address, so the page can fill in the email box. Only given to someone who has proved who they are.
+        email: ctx.settings.emailClients ? bookingClientEmail_(ctx.ss, ctx.member.slug) : "",
+      },
+      policy: { cancelHours: ctx.settings.cancelNoticeHours, minNoticeHours: ctx.settings.minNoticeHours, bookAheadDays: ctx.settings.bookAheadDays, emailClients: ctx.settings.emailClients },
+      today: ctx.now.dateKey,
+      // Only handed to someone who has proved who they are, so Max's number isn't given to anyone who asks.
+      contact: ctx.settings.contactLink,
+      buy: buy,
+      bookings: mine,
+      slots: slots,
+    });
+  } catch (err) {
+    return bookingServerError_("info", err);
+  }
+}
+
+/** Books one slot. Runs under the script lock, and re-checks everything, because the page's list may be a few seconds old. */
+function handleBookSession_(payload) {
+  try {
+    const ctx = bookingContext_(payload);
+    if (ctx.error) return jsonResponse_(ctx.error);
+    const date = bookingParseDateKey_(payload.date);
+    const startMin = bookingParseTime_(payload.start);
+    if (!date || startMin < 0) return bookingFail_("bad-request", "That time isn't valid. Please pick another.");
+
+    const rows = bookingRows_(ctx.ss);
+    const mine = bookingMine_(rows, ctx.member, ctx.settings, ctx.now);
+
+    // The same booking asked for twice (a double tap, or a retry after the
+    // connection dropped) is one booking, not an error.
+    const startText = bookingFormatMinutes_(startMin);
+    const existing = mine.filter(function (b) { return b.date === date && b.start === startText; })[0];
+    if (existing) return jsonResponse_({ status: "success", booking: existing, already: true });
+
+    const eligibility = bookingEligibility_(ctx.member, ctx.settings, mine.length);
+    if (!eligibility.canBook) return bookingFail_(eligibility.code, eligibility.message);
+
+    const active = rows.filter(function (b) { return b.active && b.date >= ctx.now.dateKey; });
+    const candidates = bookingCandidates_(bookingWindows_(ctx.ss), bookingTimeOff_(ctx.ss), active, ctx.settings, ctx.now);
+    const candidate = bookingApplyCalendarBusy_(candidates)
+      .filter(function (c) { return c.date === date && c.startMin === startMin; })[0];
+    if (!candidate) return bookingFail_("unavailable", "That time isn't available any more. Please pick another.");
+    if (candidate.tooSoon) {
+      return bookingFail_("too-soon", "Bookings need at least " + ctx.settings.minNoticeHours + " hours' notice. Please pick a later time.");
+    }
+    if (candidate.taken) return bookingFail_("taken", "Someone just took that time. Please pick another.");
+    if (candidate.calendarBusy) return bookingFail_("unavailable", "That time isn't available any more. Please pick another.");
+
+    const sheet = ctx.ss.getSheetByName(BOOKING_TABS.bookings);
+    const table = bookingTable_(sheet);
+    const c = bookingColumns_(table.header);
+    const id = "B" + Utilities.getUuid().replace(/-/g, "").slice(0, 8).toUpperCase();
+    const endText = bookingFormatMinutes_(candidate.endMin);
+    const row = table.header.map(function () { return ""; });
+    row[c.id] = id;
+    row[c.date] = date;
+    row[c.start] = startText;
+    row[c.end] = endText;
+    row[c.minutes] = String(candidate.minutes);
+    row[c.client] = cleanNote_(ctx.member.name, 80);
+    row[c.slug] = ctx.member.slug;
+    row[c.status] = "Booked";
+    row[c.bookedAt] = ctx.now.stamp;
+    const target = sheet.getRange(sheet.getLastRow() + 1, 1, 1, row.length);
+    target.setNumberFormat("@");
+    target.setValues([row]);
+    SpreadsheetApp.flush(); // commit before the lock is released, or the next request could still read the slot as free
+
+    // The booking is saved, so nothing from here on may fail it: emails and the calendar sync only report back.
+    const emailedTo = bookingConfirmClient_(ctx, payload.email, { id: id, date: date, startMin: startMin, endMin: candidate.endMin, minutes: candidate.minutes });
+    if (c.calendarEventId >= 0) {
+      const eventId = bookingSyncCalendarCreate_(ctx.member.name, date, startMin, candidate.endMin, ctx.settings.meetingPlace);
+      if (eventId) sheet.getRange(target.getRow(), c.calendarEventId + 1).setNumberFormat("@").setValue(eventId);
+    }
+
+    const when = bookingLabel_(date, candidate.startMin);
+    bookingNotify_(ctx.settings, "New booking: " + ctx.member.name + " — " + when, [
+      ctx.member.name + " booked a 1-on-1 session.",
+      "",
+      "When: " + when + " to " + bookingClock12_(candidate.endMin) + " (" + candidate.minutes + " min)",
+      ctx.member.unlimited ? "Plan: unlimited" : "1-on-1 sessions left: " + (ctx.member.sessionsLeft === null ? "not set" : ctx.member.sessionsLeft),
+    ].concat(bookingEmailedLine_(ctx.settings, emailedTo), [
+      "",
+      "To cancel it yourself, change its Status to Cancelled in the Bookings tab:",
+      ctx.ss.getUrl(),
+    ]));
+
+    return jsonResponse_({
+      status: "success",
+      booking: {
+        id: id,
+        date: date,
+        start: startText,
+        end: endText,
+        minutes: candidate.minutes,
+        canCancel: (bookingStartMs_(date, startMin) - ctx.now.ms) / 3600000 >= ctx.settings.cancelNoticeHours,
+      },
+      emailedTo: emailedTo,
+    });
+  } catch (err) {
+    return bookingServerError_("book", err);
+  }
+}
+
+/** Cancels the client's own booking, if it's far enough away. */
+function handleCancelBooking_(payload) {
+  try {
+    const ctx = bookingContext_(payload);
+    if (ctx.error) return jsonResponse_(ctx.error);
+    const id = String(payload.id || "").trim();
+    if (!id) return bookingFail_("bad-request", "Which booking? Please try again.");
+
+    const rows = bookingRows_(ctx.ss);
+    const target = rows.filter(function (b) { return b.id === id && b.slug === ctx.member.slug; })[0];
+    if (!target) return bookingFail_("not-found", "We couldn't find that booking. It may already be cancelled.");
+    if (!target.active) return jsonResponse_({ status: "success", already: true });
+
+    const hoursAway = (bookingStartMs_(target.date, target.startMin) - ctx.now.ms) / 3600000;
+    if (hoursAway < ctx.settings.cancelNoticeHours) {
+      return bookingFail_("too-late", "That session is less than " + ctx.settings.cancelNoticeHours + " hours away, so it can't be cancelled here. Please message Max.");
+    }
+
+    const sheet = ctx.ss.getSheetByName(BOOKING_TABS.bookings);
+    const c = bookingColumns_(bookingTable_(sheet).header);
+    sheet.getRange(target.row, c.status + 1).setValue("Cancelled");
+    sheet.getRange(target.row, c.cancelledAt + 1).setNumberFormat("@").setValue(ctx.now.stamp);
+    SpreadsheetApp.flush();
+
+    bookingSyncCalendarDelete_(target.calendarEventId);
+
+    const emailedTo = bookingCancelNoteClient_(ctx, target);
+
+    const when = bookingLabel_(target.date, target.startMin);
+    bookingNotify_(ctx.settings, "Cancelled: " + ctx.member.name + " — " + when, [
+      ctx.member.name + " cancelled their 1-on-1 session.",
+      "",
+      "Was: " + when + " to " + bookingClock12_(target.endMin) + " (" + target.minutes + " min)",
+      "That time is open again.",
+    ].concat(bookingEmailedLine_(ctx.settings, emailedTo), [
+      "",
+      ctx.ss.getUrl(),
+    ]));
+    return jsonResponse_({ status: "success", emailedTo: emailedTo });
+  } catch (err) {
+    return bookingServerError_("cancel", err);
+  }
+}
+
+// ---- Self-test ------------------------------------------------------------
+
+/**
+ * Run this once from the Apps Script editor after setupBooking (pick
+ * bookingSelfTest in the toolbar dropdown, then Run). It tries the whole
+ * booking flow on REAL Google — building the tabs, typing hours into them,
+ * booking, cancelling, wrong codes, the Upcoming formula — in a scratch
+ * spreadsheet of its own. Nothing in your real booking sheet, your CRM or a
+ * client's card is changed: a real client's row is only READ. Then it emails
+ * you PASSED or FAILED with the details. If anything fails, send that email
+ * back.
+ *
+ * The scratch spreadsheet is called "MaxFit booking self-test (safe to delete)".
+ * It's reused on later runs, so there is only ever one.
+ */
+function bookingSelfTest() {
+  const results = [];
+  const step = function (label, fn) {
+    try {
+      const detail = fn();
+      results.push({ label: label, ok: true, detail: detail ? String(detail) : "" });
+    } catch (err) {
+      results.push({ label: label, ok: false, detail: String(err && err.message ? err.message : err) });
+    }
+  };
+  const call = function (payload) {
+    return JSON.parse(doPost({ postData: { contents: JSON.stringify(payload) } }).getContent());
+  };
+  const expect = function (cond, message) {
+    if (!cond) throw new Error(message);
+  };
+
+  const state = {};
+  let scratch = null;
+  try {
+    step("Open or create the scratch spreadsheet", function () {
+      scratch = bookingScratchBook_();
+      state.keep = bookingResetScratch_(scratch);
+      bookingSheetOverride_ = scratch; // this run only: a real client's request never sees it
+      bookingSkipCalendarSync_ = true; // this run only: the slot-count checks don't get thrown off by whatever's really on Max's calendar today, and it doesn't leave real test events on it either
+      return scratch.getUrl();
+    });
+
+    if (scratch) {
+      step("setupBooking builds every tab", function () {
+        setupBooking();
+        scratch.deleteSheet(state.keep);
+        const have = scratch.getSheets().map(function (s) { return s.getName(); });
+        [BOOKING_TABS.availability, BOOKING_TABS.timeOff, BOOKING_TABS.settings, BOOKING_TABS.clients, BOOKING_TABS.bookings, BOOKING_TABS.upcoming, BOOKING_TABS.prices, BOOKING_TABS.payments].forEach(function (n) {
+          expect(have.indexOf(n) >= 0, "the " + n + " tab is missing");
+        });
+        const start = scratch.getSheetByName(BOOKING_TABS.availability).getRange(2, 3);
+        expect(typeof start.getValue() === "string" && start.getDisplayValue() === "16:00", 'the example Start "16:00" came back as ' + typeof start.getValue() + " " + start.getDisplayValue() + " instead of plain text");
+        const formula = scratch.getSheetByName(BOOKING_TABS.upcoming).getRange("A2").getFormula();
+        expect(/IFNA\(SORT\(FILTER/.test(formula), "the Upcoming formula wasn't saved");
+        return have.join(", ");
+      });
+
+      step("Every client gets a code, and a second run changes nothing", function () {
+        const table = bookingTable_(scratch.getSheetByName(BOOKING_TABS.clients));
+        expect(table.rows.length > 0, "no client got a code (is Sessions Remaining empty?)");
+        const c = { name: findColumn_(table.header, "Name"), slug: findColumn_(table.header, "Slug"), code: findColumn_(table.header, "Booking Code") };
+        const shape = new RegExp("^[" + BOOKING_CODE_ALPHABET + "]{" + BOOKING_CODE_LENGTH + "}$");
+        table.rows.forEach(function (r) { expect(shape.test(r[c.code]), "a code looks wrong: " + r[c.code]); });
+        state.member = { name: table.rows[0][c.name], slug: table.rows[0][c.slug], code: table.rows[0][c.code] };
+        const again = issueBookingCodes();
+        expect(again.added === 0 && again.filled === 0 && again.emails === 0, "running it again changed " + (again.added + again.filled + again.emails) + " rows");
+        return table.rows.length + " clients have codes";
+      });
+
+      step("Hours, days off and settings typed into real cells are read correctly", function () {
+        const now = bookingNow_();
+        const timeOff = bookingTimeOff_(scratch);
+        let offset = 3;
+        while (offset < 12 && timeOff.some(function (t) { const d = bookingAddDays_(now.dateKey, offset); return d >= t.from && d <= t.to; })) offset++;
+        state.date = bookingAddDays_(now.dateKey, offset);
+        const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+        scratch.getSheetByName(BOOKING_TABS.availability).getRange(2, 1, 1, 6).setValues([["Yes", dayNames[bookingWeekday_(state.date)], "06:00", "09:00", 45, 0]]);
+        bookingSetSetting_(scratch, "Notify email", "");
+        bookingSetSetting_(scratch, "Require session left", "No");
+        const windows = bookingWindows_(scratch);
+        expect(windows.length === 1 && windows[0].start === 360 && windows[0].end === 540 && windows[0].minutes === 45, "the availability row was read as " + JSON.stringify(windows));
+        expect(timeOff.length >= 1 && timeOff[0].from === "2026-12-25", "the example Time Off row was read as " + JSON.stringify(timeOff));
+        expect(bookingSettings_(scratch).requireSession === false && bookingSettings_(scratch).notifyEmail === "", "the Settings changes weren't read back");
+        return state.date + " (" + dayNames[bookingWeekday_(state.date)] + ") 06:00-09:00";
+      });
+
+      step("A wrong code is refused, and doesn't count against a real client", function () {
+        const r = call({ action: "bookingInfo", clientSlug: state.member.slug, code: "000000" });
+        bookingClearWrongCodes_(state.member.slug);
+        expect(r.status === "error" && r.code === "bad-code", "expected bad-code, got " + r.status + "/" + r.code);
+        const none = call({ action: "bookingInfo", clientSlug: state.member.slug });
+        expect(none.code === "code-required", "expected code-required with no code, got " + none.code);
+      });
+
+      step("Five wrong codes lock a slug out", function () {
+        const slug = "selftestlockout"; // made up, so no real client is ever locked
+        try {
+          for (let i = 0; i < BOOKING_MAX_WRONG_CODES; i++) call({ action: "bookingInfo", clientSlug: slug, code: "000000" });
+          const r = call({ action: "bookingInfo", clientSlug: slug, code: "000000" });
+          expect(r.code === "locked", "expected locked on the next try, got " + r.code);
+        } finally {
+          bookingClearWrongCodes_(slug);
+        }
+      });
+
+      step("The right code shows the times", function () {
+        const r = call({ action: "bookingInfo", clientSlug: state.member.slug, code: state.member.code });
+        expect(r.status === "success", "expected success, got " + r.status + "/" + r.code + " " + (r.message || ""));
+        const onDay = r.slots.filter(function (s) { return s.date === state.date; });
+        expect(onDay.length === 4 && onDay[0].start === "06:00", "expected 4 slots on " + state.date + " from 06:00, got " + JSON.stringify(onDay));
+        state.first = onDay[0];
+        return r.slots.length + " times on offer";
+      });
+
+      step("Booking a time works and writes plain text", function () {
+        // The email box holds Max's own address here, so the confirmation is a real sample he can look at.
+        const r = call({ action: "bookSession", clientSlug: state.member.slug, code: state.member.code, date: state.date, start: state.first.start, email: BOOKING_NOTIFY_DEFAULT });
+        expect(r.status === "success", "expected success, got " + r.status + "/" + r.code + " " + (r.message || ""));
+        expect(r.emailedTo === BOOKING_NOTIFY_DEFAULT, "the confirmation email wasn't sent (emailedTo is '" + r.emailedTo + "'). Check the log for 'Client email failed'.");
+        state.bookingId = r.booking.id;
+        const sheet = scratch.getSheetByName(BOOKING_TABS.bookings);
+        expect(typeof sheet.getRange(2, 2).getValue() === "string" && sheet.getRange(2, 2).getDisplayValue() === state.date, "the Date cell came back as " + typeof sheet.getRange(2, 2).getValue());
+        const rows = bookingRows_(scratch).filter(function (b) { return b.active; });
+        expect(rows.length === 1 && rows[0].date === state.date && rows[0].startMin === 360, "the Bookings tab holds " + JSON.stringify(rows));
+      });
+
+      step("The booked time is no longer offered", function () {
+        const r = call({ action: "bookingInfo", clientSlug: state.member.slug, code: state.member.code });
+        expect(r.bookings.length === 1, "expected 1 booking, got " + r.bookings.length);
+        expect(!r.slots.some(function (s) { return s.date === state.date && s.start === state.first.start; }), "the booked time is still on offer");
+      });
+
+      step("The client's email is remembered on their Clients row", function () {
+        const r = call({ action: "bookingInfo", clientSlug: state.member.slug, code: state.member.code });
+        expect(r.client.email === BOOKING_NOTIFY_DEFAULT, "bookingInfo gave the email as '" + r.client.email + "'");
+        expect(bookingClientEmail_(scratch, state.member.slug) === BOOKING_NOTIFY_DEFAULT, "the Clients tab doesn't hold the email");
+        return "the Clients tab has an Email column";
+      });
+
+      step("The Upcoming tab shows the booking", function () {
+        const row = bookingUpcomingRow_(scratch, function (r) { return r[0] === state.date; });
+        expect(row[0] === state.date && row[1] === "06:00" && String(row[4]).replace(/^'/, "") === state.member.name, "Upcoming shows " + JSON.stringify(row));
+        return row.join(" | ");
+      });
+
+      step("Cancelling works and the time comes back", function () {
+        const r = call({ action: "cancelBooking", clientSlug: state.member.slug, code: state.member.code, id: state.bookingId });
+        expect(r.status === "success", "expected success, got " + r.status + "/" + r.code + " " + (r.message || ""));
+        expect(r.emailedTo === BOOKING_NOTIFY_DEFAULT, "the cancellation email wasn't sent (emailedTo is '" + r.emailedTo + "')");
+        expect(bookingRows_(scratch).filter(function (b) { return b.active; }).length === 0, "the booking is still active");
+        const info = call({ action: "bookingInfo", clientSlug: state.member.slug, code: state.member.code });
+        expect(info.slots.some(function (s) { return s.date === state.date && s.start === state.first.start; }), "the time didn't come back");
+      });
+
+      step("The Upcoming tab empties again", function () {
+        const row = bookingUpcomingRow_(scratch, function (r) { return r[0] === "Nothing booked yet"; });
+        expect(row[0] === "Nothing booked yet", "Upcoming shows " + JSON.stringify(row));
+      });
+
+      step("The Message Max link is passed on, and only if it's safe", function () {
+        bookingSetSetting_(scratch, "Contact link", "https://wa.me/61400000000?text={message}");
+        const ok = call({ action: "bookingInfo", clientSlug: state.member.slug, code: state.member.code });
+        expect(ok.contact === "https://wa.me/61400000000?text={message}", "the link came back as " + ok.contact);
+        bookingSetSetting_(scratch, "Contact link", "javascript:alert(1)");
+        const bad = call({ action: "bookingInfo", clientSlug: state.member.slug, code: state.member.code });
+        expect(bad.contact === "", "an unsafe link was passed on: " + bad.contact);
+        bookingSetSetting_(scratch, "Contact link", "");
+      });
+
+      step("The Prices and Payments tabs are there, with four prices", function () {
+        const prices = bookingPrices_(scratch);
+        expect(prices.length === 4 && prices[0].sessions === 1 && prices[2].sessions === 6, "the Prices tab was read as " + JSON.stringify(prices));
+        const led = bookingLedger_(scratch);
+        expect(led.c.id === 0 && led.c.status === 9, "the Payments tab has its columns in an unexpected order");
+        return prices.length + " prices";
+      });
+
+      step("A Pay link becomes a Buy option for the right client, and only if it's a Stripe link", function () {
+        const sheet = scratch.getSheetByName(BOOKING_TABS.prices);
+        sheet.getRange(2, 6).setValue("https://buy.stripe.com/test_selftest");
+        sheet.getRange(3, 6).setValue("http://not-stripe.example/pay");
+        const options = bookingBuyOptions_(scratch, { slug: state.member.slug }, "");
+        sheet.getRange(2, 6).setValue("");
+        sheet.getRange(3, 6).setValue("");
+        expect(options.length === 1 && options[0].url === "https://buy.stripe.com/test_selftest?client_reference_id=pt-" + state.member.slug, "the Buy options were " + JSON.stringify(options));
+      });
+
+      step("The Payments ledger keeps a row as plain text and can update it", function () {
+        const led = bookingLedger_(scratch);
+        const row = bookingLedgerAppend_(led, { id: "cs_test_selftest0001", paidAt: "2026-01-01 09:00", slug: "selftest", sessions: "1", before: "0", status: "Crediting" });
+        const found = bookingLedgerFind_(bookingLedger_(scratch), "cs_test_selftest0001");
+        expect(found && found.status === "Crediting" && found.before === 0 && found.row === row, "the row came back as " + JSON.stringify(found));
+        bookingLedgerUpdate_(led, row, { after: "1", status: "Credited" });
+        const done = bookingLedgerFind_(bookingLedger_(scratch), "cs_test_selftest0001");
+        expect(done && done.status === "Credited" && done.after === 1, "the update came back as " + JSON.stringify(done));
+        const sheet = scratch.getSheetByName(BOOKING_TABS.payments);
+        expect(typeof sheet.getRange(row, 1).getValue() === "string", "the session id cell isn't plain text");
+        sheet.getRange(row, 1, 1, led.table.header.length).setValues([led.table.header.map(function () { return ""; })]); // tidy up: it's only a test row
+      });
+
+      step("The Stripe key, if you've added one, can read your payments", function () {
+        const key = bookingStripeKey_();
+        if (!key) return "no key yet (fine until you switch on online payments)";
+        bookingStripeGet_("checkout/sessions", { limit: 1 });
+        return (/^[rs]k_live_/.test(key) ? "LIVE" : "TEST") + " mode key works";
+      });
+    }
+  } catch (err) {
+    results.push({ label: "The self-test itself crashed", ok: false, detail: String(err && err.stack ? err.stack : err) });
+  } finally {
+    bookingSheetOverride_ = null;
+    bookingSkipCalendarSync_ = false;
+  }
+
+  const failed = results.filter(function (r) { return !r.ok; });
+  const summary = failed.length ? "FAILED (" + failed.length + " of " + results.length + " checks)" : "PASSED (all " + results.length + " checks)";
+  const lines = results.map(function (r) { return (r.ok ? "PASS  " : "FAIL  ") + r.label + (r.detail ? "  -  " + r.detail : ""); });
+  Logger.log("Booking self-test " + summary);
+  lines.forEach(function (l) { Logger.log(l); });
+  try {
+    MailApp.sendEmail({
+      to: BOOKING_NOTIFY_DEFAULT,
+      subject: "MaxFit booking self-test: " + summary,
+      body: [
+        "Booking self-test " + summary,
+        "",
+        lines.join("\n"),
+        "",
+        failed.length ? "Send this email back and it can be fixed." : "Booking works on real Google. Nothing in your real booking sheet or CRM was changed.",
+        failed.length ? "" : "Two emails marked [Self-test sample] came just before this one: the booking confirmation and the cancellation note a client gets. Have a look at them (the confirmation has the calendar file attached).",
+        scratch ? "The scratch spreadsheet it used (safe to delete): " + scratch.getUrl() : "",
+      ].join("\n"),
+    });
+  } catch (err) {
+    Logger.log("Couldn't email the result: " + err);
+  }
+  return summary;
+}
+
+/** The one scratch spreadsheet the self-test uses, created the first time and reused after. */
+function bookingScratchBook_() {
+  const props = PropertiesService.getScriptProperties();
+  const id = props.getProperty(BOOKING_SELFTEST_SHEET_ID_PROPERTY);
+  if (id) {
+    try {
+      return SpreadsheetApp.openById(id);
+    } catch (err) {
+      // It was deleted from Drive; make a new one below.
+    }
+  }
+  const ss = SpreadsheetApp.create("MaxFit booking self-test (safe to delete)");
+  props.setProperty(BOOKING_SELFTEST_SHEET_ID_PROPERTY, ss.getId());
+  return ss;
+}
+
+/** Empties the scratch spreadsheet down to one blank tab (a spreadsheet must keep one) and returns that tab. */
+function bookingResetScratch_(ss) {
+  const keep = ss.insertSheet("reset-" + new Date().getTime());
+  ss.getSheets().forEach(function (s) {
+    if (s.getSheetId() !== keep.getSheetId()) ss.deleteSheet(s);
+  });
+  return keep;
+}
+
+function bookingSetSetting_(ss, key, value) {
+  const sheet = ss.getSheetByName(BOOKING_TABS.settings);
+  const table = bookingTable_(sheet);
+  const keyCol = findColumn_(table.header, "Setting");
+  const valueCol = findColumn_(table.header, "Value");
+  for (let i = 0; i < table.rows.length; i++) {
+    if (String(table.rows[i][keyCol]).trim().toLowerCase() === key.toLowerCase()) {
+      sheet.getRange(i + 2, valueCol + 1).setValue(value);
+      return;
+    }
+  }
+  throw new Error("no setting called " + key);
+}
+
+/** The first row on the Upcoming tab, re-read for a few seconds because a formula can take a moment to catch up with an edit. */
+function bookingUpcomingRow_(ss, isWanted) {
+  const sheet = ss.getSheetByName(BOOKING_TABS.upcoming);
+  let row = [];
+  for (let i = 0; i < 6; i++) {
+    SpreadsheetApp.flush();
+    row = sheet.getRange("A2:E2").getDisplayValues()[0];
+    if (isWanted(row)) break;
+    Utilities.sleep(800);
+  }
+  return row;
 }

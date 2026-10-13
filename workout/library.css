@@ -1,0 +1,470 @@
+/* Exercise Library + Anatomy Lab (workout/library.html). Reuses card/
+   styles.css's shared tokens/.card/.card__top/.card__tag — only what's
+   specific to this page lives here. Text sizes follow Max's rule: body
+   >=16px, labels >=14px, bright (not --dim) for anything a client reads. */
+
+.lib-hint {
+  font-family: var(--font-body);
+  font-size: 15px;
+  color: var(--grey);
+  margin: 0;
+}
+
+/* ---- heat (the Muscles tab's home) ---- */
+
+.lib-heat-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px;
+  gap: 4px;
+}
+
+.lib-heat-toggle__btn {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  min-height: 40px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 14px;
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.lib-heat-toggle__btn.is-active {
+  background: var(--bg-card);
+  color: var(--white);
+}
+
+.lib-heat-row {
+  display: grid;
+  grid-template-columns: 84px 1fr 32px;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+}
+
+.lib-heat-row + .lib-heat-row {
+  margin-top: 8px;
+}
+
+/* A muscle (Quads, Hamstrings...) that opens to its heads (2026-10-10).
+   Its summary is a normal heat row plus a chevron; the heads sit indented
+   underneath, a step quieter. */
+.lib-heat-row + .lib-family,
+.lib-family + .lib-family,
+.lib-family + .lib-heat-row {
+  margin-top: 8px;
+}
+
+.lib-family__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.lib-family__head::-webkit-details-marker {
+  display: none;
+}
+
+.lib-family__head .lib-heat-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.lib-family__chevron {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: var(--grey);
+  transition: transform 0.2s ease;
+}
+
+.lib-family[open] > .lib-family__head .lib-family__chevron {
+  transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lib-family__chevron {
+    transition: none;
+  }
+}
+
+.lib-family__body {
+  margin: 4px 26px 10px 2px;
+  padding-left: 12px;
+  border-left: 2px solid var(--line);
+}
+
+/* Head names are long ("Gastrocnemius (Medial)"), so they get a wider
+   column and wrap rather than being cut off. */
+.lib-family__body .lib-heat-row {
+  grid-template-columns: 128px 1fr 32px;
+}
+
+.lib-family__body .lib-heat-row__name {
+  color: var(--grey);
+  font-weight: 500;
+  white-space: normal;
+  line-height: 1.25;
+}
+
+.lib-heat-row__name {
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--white);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lib-heat-row__track {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.lib-heat-row__fill {
+  display: block;
+  height: 100%;
+}
+
+/* One red fill: "how much" (Today and This Week). */
+.lib-heat-row__fill--primary {
+  background: var(--red);
+}
+
+.lib-heat-row__fill--secondary {
+  background: #e08a00;
+}
+
+.lib-heat-row__num {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--grey);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+
+.lib-browse {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  min-height: 52px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--white);
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.lib-browse:active {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+/* ---- list ---- */
+/* Movement is a native <details> so the whole list doesn't run off the
+   screen — closed by default, no JS needed for the toggle itself. Body
+   part stays a plain sub-heading once a movement is open (not separately
+   collapsible — one more tap per exercise wasn't worth it). */
+
+.lib-movement {
+  border-bottom: 1px solid var(--line);
+}
+
+.lib-movement:first-of-type {
+  border-top: 1px solid var(--line);
+}
+
+.lib-movement__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 14px 2px;
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 20px;
+  color: var(--white);
+  cursor: pointer;
+  list-style: none;
+}
+
+.lib-movement__head::-webkit-details-marker {
+  display: none;
+}
+
+.lib-movement__count {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--grey);
+}
+
+.lib-movement__chevron {
+  width: 18px;
+  height: 18px;
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--grey);
+  transition: transform 0.2s ease;
+}
+
+.lib-movement[open] .lib-movement__chevron {
+  transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lib-movement__chevron {
+    transition: none;
+  }
+}
+
+.lib-movement__body {
+  padding-bottom: 16px;
+}
+
+/* Tapping a muscle on the figure briefly highlights its group here (Goal 4,
+   2026-10-09, libExpandGroupFor_) — a soft red background flash, not a
+   layout shift, so it draws the eye without jumping the page around. JS
+   adds the class instantly, then removes it on a timer; the transition
+   below only animates the REMOVAL (background fading back out), so there's
+   nothing to get stuck mid-animation. Reduced motion just drops the fade,
+   leaving a plain brief on/off flash instead of a smooth one. */
+.lib-movement--pulse {
+  background: rgba(224, 0, 0, 0.16);
+  transition: background 0.8s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lib-movement--pulse {
+    transition: none;
+  }
+}
+
+.lib-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 18px;
+}
+
+.lib-group__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 14px;
+  color: var(--grey);
+  padding: 6px 2px;
+}
+
+.lib-group__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.lib-row {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  min-height: 48px;
+  text-align: left;
+  font-family: var(--font-body);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--white);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  margin-top: 6px;
+  cursor: pointer;
+}
+
+.lib-row:active {
+  border-color: var(--red);
+}
+
+/* ---- detail ("Anatomy Lab") ---- */
+
+.lib-back {
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: none;
+  color: var(--white);
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: -10px;
+  cursor: pointer;
+}
+
+.lib-detail__name {
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--white);
+  font-size: clamp(26px, 8vw, 34px);
+  line-height: 1.05;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.lib-chips {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  margin: 0 -4px;
+  padding-left: 4px;
+  padding-right: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.lib-chip {
+  appearance: none;
+  -webkit-appearance: none;
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--grey);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  min-height: 44px;
+  padding: 0 16px;
+  cursor: pointer;
+}
+
+.lib-chip.is-active {
+  color: var(--white);
+  background: var(--red);
+  border-color: var(--red);
+}
+
+.lib-figures {
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px 14px;
+}
+
+.lib-fig-wrap {
+  width: 100%;
+}
+
+.lib-muscle-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.lib-muscle-card {
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.lib-muscle-card__label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 14px;
+  color: var(--grey);
+}
+
+.lib-muscle-card__dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.lib-muscle-card__dot--primary {
+  background: #ff2a1f;
+}
+
+.lib-muscle-card__dot--secondary {
+  background: #ff9a7a;
+}
+
+.lib-muscle-card__names {
+  font-family: var(--font-body);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--white);
+  margin: 0;
+  line-height: 1.35;
+}
+
+.lib-add {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  min-height: 56px;
+  border-radius: 999px;
+  border: none;
+  background: var(--red);
+  color: var(--on-red);
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.lib-add:active {
+  background: var(--red-dim);
+}
+
+.lib-add__note {
+  text-align: center;
+  font-family: var(--font-body);
+  font-size: 15px;
+  color: var(--grey);
+  margin: -8px 0 0;
+}

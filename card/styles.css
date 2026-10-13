@@ -17,12 +17,63 @@
   --radius-sm: 10px;
   --font-head: "Barlow Condensed", "Arial Narrow", sans-serif;
   --font-body: "Barlow", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+
+  /* Liquid-glass tokens (2026-10-03) — every glass surface reads off these,
+     so the whole look can be re-tuned from one place. */
+  --glass-bg: rgba(255, 255, 255, 0.06);
+  --glass-bg-strong: rgba(255, 255, 255, 0.09);
+  --glass-border: rgba(255, 255, 255, 0.12);
+  --glass-highlight: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0) 50%);
+  --glass-blur: 20px;
+  --glass-saturate: 190%;
+  --glass-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  --radius-glass-lg: 24px;
+  --radius-glass-md: 16px;
+  --radius-glass-sm: 12px;
+  --shadow-glass-sm: 0 2px 10px rgba(0, 0, 0, 0.3);
+  --shadow-glass-md: 0 8px 28px rgba(0, 0, 0, 0.38);
+  --shadow-glass-lg: 0 16px 48px rgba(0, 0, 0, 0.45);
+  /* Ambient background only — never used on text, icons or controls, so red
+     stays the only real UI accent. */
+  --ambient-red: rgba(224, 0, 0, 0.34);
+  --ambient-blue: rgba(56, 112, 172, 0.42);
+}
+
+/* A surface with no real blur support (or the user asked for less
+   transparency) falls back to this instead — solid, slightly lighter than
+   --bg-card so it still reads as "raised", never blurry. Shared by every
+   glass surface's own @supports/@media block below. */
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --glass-bg: #242424;
+    --glass-bg-strong: #262626;
+    --glass-filter: none;
+  }
+}
+
+/* Same fallback when the browser can't actually blur anything behind the
+   element — every glass surface below just reads var(--glass-filter)/
+   var(--glass-bg), so this one block covers all of them. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root {
+    --glass-bg: #242424;
+    --glass-bg-strong: #262626;
+    --glass-filter: none;
+  }
 }
 
 * { box-sizing: border-box; }
 
+/* Centre the card when it fits the screen, scroll from the top when it
+   doesn't — e.g. the Muscles tab's exercise list, or a long workout. A
+   fixed-height, align-items:center body clips anything taller than the
+   viewport (symmetrically, top and bottom, with no way to scroll to the
+   clipped part) instead of growing or scrolling; auto margins on .card
+   can't do that clipping, only real centring. (2026-10-02 — first fixed
+   for Fuel in macros.css, moved here so every page using this shared base
+   gets it, not just the ones that happened to hit the bug.) */
 html, body {
-  height: 100%;
+  height: auto;
 }
 
 body {
@@ -32,23 +83,72 @@ body {
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   padding: max(24px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
   min-height: 100vh;
   min-height: 100dvh;
+  position: relative;
+  isolation: isolate; /* keeps ::before's negative z-index pinned below body's own children, nothing else */
+  overflow-x: hidden; /* the oversized ambient layer below must never force a horizontal scrollbar */
+}
+
+/* A slow, soft colour wash behind the whole app so the glass surfaces have
+   something to refract — deep red and a cool blue, atmosphere only, never
+   used on text/icons/controls (red stays the one real accent everywhere
+   that matters). transform-only animation, no filter/background-position,
+   so it stays cheap on a phone. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: -10%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(58% 44% at 15% 10%, var(--ambient-red), transparent 75%),
+    radial-gradient(54% 42% at 90% 22%, var(--ambient-blue), transparent 75%),
+    radial-gradient(50% 40% at 50% 98%, rgba(255, 255, 255, 0.08), transparent 75%);
+  animation: ambient-drift 26s ease-in-out infinite alternate;
+}
+
+@keyframes ambient-drift {
+  0% { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(-3%, 2%) scale(1.06); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body::before {
+    animation: none;
+  }
 }
 
 .card {
   width: 100%;
   max-width: 400px;
-  background: var(--bg-card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  margin-top: auto;
+  margin-bottom: auto;
+  position: relative;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-glass-lg);
+  box-shadow: var(--shadow-glass-lg), inset 0 1px 0 rgba(255, 255, 255, 0.14);
   padding: 22px 22px 26px;
   display: flex;
   flex-direction: column;
   gap: 22px;
+}
+
+.card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--glass-highlight);
+  opacity: 0.6;
+  pointer-events: none;
 }
 
 .card__top {
@@ -69,7 +169,7 @@ body {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.14em;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--dim);
 }
 
@@ -78,7 +178,7 @@ body {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.12em;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--grey);
 }
 
@@ -134,7 +234,7 @@ body {
 .card__meta-value {
   font-family: var(--font-body);
   font-weight: 600;
-  font-size: 15px;
+  font-size: 17px;
   color: var(--white);
 }
 
@@ -174,6 +274,221 @@ body {
   flex-shrink: 0;
 }
 
+/* ---- Action grid: Check in / today's workout / book / refer ---- */
+
+.card__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.card__tile {
+  aspect-ratio: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  text-align: center;
+  text-decoration: none;
+  font: inherit;
+  color: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.card__tile[hidden] {
+  display: none;
+}
+
+.card__tile:active {
+  background: rgba(224, 0, 0, 0.1);
+  border-color: rgba(224, 0, 0, 0.4);
+  transform: scale(0.97);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card__tile:active {
+    transform: none;
+  }
+}
+
+.card__tile-icon {
+  color: var(--red);
+}
+
+.card__tile-label {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.card__tile-value {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 15.5px;
+  line-height: 1.28;
+  color: var(--white);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ---- Check-in QR, shown in a modal from the Check In tile ---- */
+
+.qr-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.qr-modal[hidden] {
+  display: none;
+}
+
+.qr-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.qr-modal__panel {
+  position: relative;
+  width: 100%;
+  max-width: 320px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 28px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  animation: qr-in 0.18s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qr-modal__panel {
+    animation: none;
+  }
+}
+
+@keyframes qr-in {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* A row list (Coach Tools) reads cramped at the QR code's narrow width. */
+.qr-modal__panel--wide {
+  max-width: 380px;
+  align-items: stretch;
+}
+
+.qr-modal__close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--dim);
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.qr-modal__close:active {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--white);
+}
+
+.qr-modal__title {
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 22px;
+  color: var(--white);
+  margin: 0;
+}
+
+/* Max's own "Coach Tools" quick-links list (#coachToolsModal) — reuses the
+   .qr-modal shell above for the backdrop/panel/close button, just with a
+   row list instead of a QR code as the body. */
+.coach-links {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.coach-links__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 56px;
+  padding: 10px 14px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  color: var(--white);
+}
+
+.coach-links__row:active {
+  border-color: var(--red);
+}
+
+.coach-links__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.coach-links__text b {
+  font-family: var(--font-body);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--white);
+}
+
+.coach-links__text small {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--grey);
+  line-height: 1.3;
+}
+
+.coach-links__chevron {
+  flex-shrink: 0;
+  font-size: 22px;
+  color: var(--dim);
+}
+
 .card__scan {
   background: var(--white);
   border-radius: var(--radius-sm);
@@ -204,8 +519,106 @@ body {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.12em;
-  font-size: 10px;
+  font-size: 11px;
   color: #666666;
+}
+
+/* ---- Loading gate: covers the card until the first fetch resolves ---- */
+
+.card-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: var(--bg);
+}
+
+.card-loading[hidden] {
+  display: none;
+}
+
+.card-loading__icon {
+  width: 56px;
+  height: 56px;
+  color: var(--red);
+  fill: currentColor;
+  overflow: visible;
+}
+
+.card-loading__text {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 14px;
+  color: var(--grey);
+}
+
+/* The dumbbell builds itself: the bar stays put, and the collars then the
+   outer plates slide on and stack up, hold complete for a beat, then clear
+   and build again — reads as "loading" rather than a static icon. */
+
+.dumbbell__collar,
+.dumbbell__plate {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.dumbbell__collar--l { animation: dumbbell-collar-left 2.4s ease-in-out infinite; }
+.dumbbell__collar--r { animation: dumbbell-collar-right 2.4s ease-in-out infinite; }
+.dumbbell__plate--l { animation: dumbbell-plate-left 2.4s ease-in-out infinite; }
+.dumbbell__plate--r { animation: dumbbell-plate-right 2.4s ease-in-out infinite; }
+
+@keyframes dumbbell-collar-left {
+  0%, 8% { opacity: 0; transform: translateX(-6px) scale(0.6); }
+  20% { opacity: 1; transform: translateX(0.5px) scale(1.08); }
+  25% { transform: translateX(0) scale(1); }
+  82% { opacity: 1; transform: translateX(0) scale(1); }
+  92%, 100% { opacity: 0; transform: translateX(-6px) scale(0.6); }
+}
+
+@keyframes dumbbell-collar-right {
+  0%, 8% { opacity: 0; transform: translateX(6px) scale(0.6); }
+  20% { opacity: 1; transform: translateX(-0.5px) scale(1.08); }
+  25% { transform: translateX(0) scale(1); }
+  82% { opacity: 1; transform: translateX(0) scale(1); }
+  92%, 100% { opacity: 0; transform: translateX(6px) scale(0.6); }
+}
+
+@keyframes dumbbell-plate-left {
+  0%, 26% { opacity: 0; transform: translateX(-9px) scale(0.6); }
+  40% { opacity: 1; transform: translateX(0.6px) scale(1.1); }
+  45% { transform: translateX(0) scale(1); }
+  82% { opacity: 1; transform: translateX(0) scale(1); }
+  90%, 100% { opacity: 0; transform: translateX(-9px) scale(0.6); }
+}
+
+@keyframes dumbbell-plate-right {
+  0%, 26% { opacity: 0; transform: translateX(9px) scale(0.6); }
+  40% { opacity: 1; transform: translateX(-0.6px) scale(1.1); }
+  45% { transform: translateX(0) scale(1); }
+  82% { opacity: 1; transform: translateX(0) scale(1); }
+  90%, 100% { opacity: 0; transform: translateX(9px) scale(0.6); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dumbbell__collar--l,
+  .dumbbell__collar--r,
+  .dumbbell__plate--l,
+  .dumbbell__plate--r {
+    animation: card-loading-pulse 1.6s ease-in-out infinite;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes card-loading-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
 }
 
 .status {
@@ -214,7 +627,7 @@ body {
   left: 50%;
   transform: translateX(-50%);
   font-family: var(--font-body);
-  font-size: 13px;
+  font-size: 14px;
   color: var(--dim);
   text-align: center;
   padding: 0 20px;
@@ -259,7 +672,7 @@ body {
 
 .picker__hint {
   font-family: var(--font-body);
-  font-size: 14px;
+  font-size: 15px;
   color: var(--dim);
   margin: 0 0 20px;
 }
@@ -307,7 +720,7 @@ body {
 
 .picker__error {
   font-family: var(--font-body);
-  font-size: 14px;
+  font-size: 15px;
   color: var(--red);
   margin: 0;
 }
@@ -327,7 +740,7 @@ body {
 .card__loyalty-count {
   font-family: var(--font-head);
   font-weight: 700;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--grey);
   letter-spacing: 0.02em;
 }
@@ -364,7 +777,7 @@ body {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  font-size: 14px;
+  font-size: 15px;
   color: var(--white);
   background: transparent;
   border: 1px solid var(--line-strong, var(--line));
@@ -460,4 +873,279 @@ body {
   .card__sessions-num--split {
     font-size: 40px;
   }
+}
+
+/* Which muscles an exercise works — the coach builder and a client's own
+   workout page both show this (renderMuscleHighlight, card/muscle-map.js).
+   Shared here since both load this file already. Filled: primary muscles.
+   Outlined: secondary. A real body diagram will join these chips later. */
+.muscle-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--grey);
+  white-space: nowrap;
+}
+
+.muscle-chip--primary {
+  color: var(--white);
+}
+
+.muscle-chip__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.muscle-chip--secondary .muscle-chip__dot {
+  opacity: 0.75;
+}
+
+/* The real figure (muscleFigureSvg/paintMuscleFigure, card/muscle-map.js):
+   Max's own artwork, front or back, filled by paintMuscleFigure. Its gap
+   stroke between adjoining muscles is baked into the markup itself (not
+   here) since it has to sit on one specific inner <g>, not the whole figure.
+   Colour transitions (switching exercises, or front/back) are the only
+   motion here, so reduced-motion just removes that. */
+.muscle-figure {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.muscle-figure [data-muscle] {
+  transition: fill 0.2s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .muscle-figure [data-muscle] {
+    transition: none;
+  }
+}
+
+.muscle-figure-pair {
+  display: flex;
+  gap: 16px;
+}
+
+.muscle-figure-pair > div {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.muscle-figure-pair .muscle-figure {
+  max-width: 160px;
+}
+
+.muscle-figure-caption {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 14px;
+  color: var(--grey);
+}
+
+/* Bottom nav (card/bottom-nav.js, self-mounting) — Train/Muscles/Macros/
+   Profile. `body` centres `.card` with flexbox, so this is positioned to
+   match the card's own width/centring rather than spanning the full
+   viewport on desktop. bottom-nav.js adds its own spacer inside `.card`
+   (not body padding — body's height is fixed, not just a minimum, so
+   content taller than the viewport overflows it instead of growing it;
+   see the comment there) so the fixed bar never covers the last bit of
+   page content. */
+
+.bottom-nav {
+  position: fixed;
+  left: 50%;
+  bottom: max(14px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  width: calc(100% - 32px);
+  max-width: 400px;
+  display: flex;
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  box-shadow: var(--shadow-glass-md), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  padding: 6px;
+  z-index: 20;
+}
+
+/* The glass "lens" behind the active tab — one real element bottom-nav.js
+   positions via --lens-index (0-3), not four separately-styled items, so a
+   cross-document View Transition can morph it between pages later just by
+   sharing its view-transition-name. Sits behind the items (z-index 0 vs 1). */
+.bottom-nav__lens {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 6px;
+  width: calc((100% - 12px) / 4);
+  border-radius: 999px;
+  /* Flat red-tinted pill (2026-10-13, the Fuel rings redesign). */
+  background: rgba(215, 49, 31, 0.16);
+  transform: translateX(calc(var(--lens-index, 0) * 100%));
+  transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+  z-index: 0;
+  pointer-events: none;
+  view-transition-name: nav-lens;
+}
+
+.bottom-nav__lens[hidden] {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bottom-nav__lens {
+    transition: none;
+  }
+}
+
+.bottom-nav__item {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 52px;
+  padding: 8px 4px;
+  border-radius: 999px;
+  color: var(--grey);
+  text-decoration: none;
+}
+
+/* Coral, not --red: the brand red is too dark to read as a small label. */
+.bottom-nav__item.is-active {
+  color: #ff6b57;
+}
+
+.bottom-nav__item:focus-visible {
+  outline: 2px solid var(--white);
+  outline-offset: 2px;
+}
+
+.bottom-nav__icon {
+  width: 22px;
+  height: 22px;
+  display: flex;
+}
+
+.bottom-nav__icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.bottom-nav__label {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 14px;
+}
+
+/* ---- Body-figure tooltip (card/muscle-map.js's wireMuscleTooltips_,
+   2026-10-09) — hover/tap a muscle on the Muscles tab's heat figure or the
+   builder's side-panel figure. One shared component, appended straight to
+   <body> (not inside either page's .card) so it's never affected by the
+   card's own scroll/overflow handling, and positioned by JS against the
+   tapped shape's own bounding rect. Matches the page's existing small-card
+   look (e.g. .lib-muscle-card) — plain solid surface, not the glass
+   treatment, since neither page that uses it has moved to glass yet. */
+.muscle-tooltip {
+  position: fixed;
+  z-index: 500;
+  max-width: 240px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.muscle-tooltip__name {
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 15px;
+  color: var(--white);
+}
+
+.muscle-tooltip__value {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--red);
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.muscle-tooltip__split {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--grey);
+  margin-top: 2px;
+}
+
+.muscle-tooltip__label {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 12px;
+  color: var(--dim);
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.muscle-tooltip__list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.muscle-tooltip__list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-family: var(--font-body);
+  font-size: 14px;
+}
+
+.muscle-tooltip__list-name {
+  color: var(--grey);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.muscle-tooltip__list-num {
+  color: var(--white);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.muscle-tooltip__empty {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--dim);
+  margin: 6px 0 0;
 }

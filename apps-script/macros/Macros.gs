@@ -16,17 +16,43 @@
  *   STAFF_PIN          — same PIN as the check-in script (coach view)
  *   MACRO_SHEET_ID     — id of the private "MaxFit Macros" sheet
  *   MAIN_SHEET_ID      — the CRM sheet (read-only here, for client names)
- *   DAILY_AI_LIMIT     — optional, AI scans per member per day (default 25)
- *   CENTS_PER_SCAN     — optional, what a client pays per photo scan in
- *                        Australian cents (default 5, so $10 = 200 scans)
- *   FREE_SCANS         — optional, free photo scans for each new client
- *                        (default 10)
+ *   GOLD_DAILY_AI      — optional, AI uses per day on Gold (default 5)
+ *   DIAMOND_DAILY_AI   — optional, AI uses per day on Diamond (default 20)
+ *   STRIPE_SECRET_KEY  — Stripe RESTRICTED key, read-only on Checkout
+ *                        Sessions and Subscriptions
+ *   Stripe Payment Links, one per plan and billing period:
+ *     STRIPE_FUEL_LINK / STRIPE_GOLD_YEAR_LINK         Gold $5.99 / $53.99
+ *     STRIPE_DIAMOND_LINK / STRIPE_DIAMOND_YEAR_LINK   Diamond $9.99 / $89.99
+ *   STRIPE_PORTAL_LINK — Stripe customer-portal login link (manage, switch
+ *                        plan or monthly ↔ yearly, cancel)
  *
- * Photo scans are prepaid by clients: Max records a payment on the coach
- * page, it becomes scans at CENTS_PER_SCAN, and each successful photo or
- * label scan uses one. The "Scan Credits" tab is the ledger; a client's
- * balance is the sum of their "change" column, so a wrong top-up can be
- * fixed by deleting its row.
+ * Plans: Silver is free (barcodes, search, saved meals, typed-in numbers,
+ * targets, totals, suggestions, progress). Gold and Diamond add Fuel AI:
+ * photo and label scans and Describe it, from one daily pool of AI uses
+ * (Gold 5, Diamond 20). Ask Fuel (the chat) is Diamond only, and its
+ * messages come out of the same pool. New clients get 7 days of Diamond
+ * from the first time they open FUEL; after that it's a Stripe subscription
+ * (monthly, or yearly at 3 months free) or a free month from Max. A
+ * subscription's tier comes from its price's lookup key: "diamond" or
+ * "platinum" in it is Diamond, anything else Gold; the period comes from
+ * the price. (Platinum was retired on 10 Oct 2026: its Stripe product was
+ * renamed Fuel Diamond and kept its fuel_platinum lookup keys.)
+ *
+ * Stripe is never called by webhook (Apps Script can't read webhook
+ * headers to verify them). Instead syncStripe() asks Stripe's API: every
+ * 15 minutes on a trigger (installStripeSync), when a client lands back
+ * from checkout, and from the coach page. The Upgrade button passes
+ * client_reference_id=fuel-<slug>, which is how a payment finds its client.
+ *
+ * Progress (free for everyone): weights (logged by the client or Max),
+ * target history, green days (protein ≥ 90% and kcal within ±10%), and
+ * NUTRITION PUNCHES — 5 green days in a Monday–Sunday week adds 1 to
+ * "Nutrition Punches" on the CRM's Sessions Remaining tab (awardPunches,
+ * daily trigger from installPunchTrigger). The card and check-in page add
+ * those to Total Classes Attended (plus any "Referral Punches", which the
+ * check-in script adds); when a nutrition punch completes a card of 10,
+ * "Free Session Owed" = Y and the check-in page offers the free session
+ * (Code.gs clears it when it's used).
  *
  * Who can do what: every member action needs the member's id AND their
  * secret key (the &k= part of their card link), checked against the
@@ -34,13 +60,13 @@
  * or change rows carrying their own id.
  */
 
-const MACROS_VERSION = "2026-09-23c";
+const MACROS_VERSION = "2026-10-13c";
 const TIMEZONE = "Australia/Sydney";
 const MAIN_SESSIONS_GID = 1169726169; // "Sessions Remaining" in the CRM sheet
 const CARD_URL = "https://maxfit.now/card/";
 
 // Claude models (checked against the Claude API model list, Sept 2026).
-// Sonnet reads photos; Haiku is kept for cheap text-only wording later.
+// Sonnet reads photos; Haiku runs the Ask Fuel chat.
 const VISION_MODEL = "claude-sonnet-5";
 const TEXT_MODEL = "claude-haiku-4-5";
 // USD per million tokens, for the AI Usage log. Cache writes are 1.25x
@@ -51,10 +77,44 @@ const PRICING = {
 };
 
 const TABS = {
-  members: { name: "Members", headers: ["slug", "name", "sex", "key", "hide_kcal", "created_at"], text: ["slug", "key"] },
+  // New columns go at the END of a header list: existing sheets get them
+  // appended by addMissingColumns_, and must end up in the same order.
+  members: {
+    name: "Members",
+    headers: [
+      "slug", "name", "sex", "key", "hide_kcal", "created_at",
+      "trial_started", "stripe_customer", "stripe_subscription", "plan_status", "plan_until", "comp_until",
+      "hide_weight", "plan_tier", "comp_tier", "plan_interval",
+    ],
+    text: ["slug", "key", "trial_started", "plan_until", "comp_until"],
+  },
+  // Meal plans (2026-10-13, Diamond): one row per plan, newest last; plan is JSON.
+  mealPlans: {
+    name: "Meal Plans",
+    headers: ["id", "slug", "start", "prefs", "plan", "created_at", "updated_at"],
+    text: ["id", "slug", "start"],
+  },
+  // Each client's shopping list (Gold and Diamond). source: plan | snack | own.
+  shopping: {
+    name: "Shopping List",
+    headers: ["id", "slug", "name", "amount", "aisle", "done", "source", "created_at"],
+    text: ["id", "slug"],
+  },
+  // Monthly goals (2026-10-13): one row per goal, newest last per client.
+  goals: {
+    name: "Goals",
+    headers: [
+      "id", "slug", "type", "exercise", "target", "target_reps", "start_value", "start_reps",
+      "start_date", "end_date", "how", "why", "created_at", "updated_at",
+    ],
+    text: ["id", "slug", "start_date", "end_date"],
+  },
   targets: {
     name: "Macro Targets",
-    headers: ["slug", "kcal", "protein_g", "carbs_g", "fat_g", "set_by", "calc_inputs", "coach_approved", "updated_at"],
+    headers: [
+      "slug", "kcal", "protein_g", "carbs_g", "fat_g", "set_by", "calc_inputs", "coach_approved", "updated_at",
+      "goal_weight_kg", "weekly_rate_kg",
+    ],
     text: ["slug"],
   },
   logs: {
@@ -86,17 +146,36 @@ const TABS = {
     ],
     text: ["log_date", "slug"],
   },
-  credits: {
-    name: "Scan Credits",
-    headers: ["timestamp", "slug", "change", "amount_aud", "note", "by"],
-    text: ["slug"],
+  weights: {
+    name: "Weights",
+    headers: ["id", "slug", "date", "kg", "by", "created_at"],
+    text: ["id", "slug", "date"],
+  },
+  targetHistory: {
+    name: "Target History",
+    headers: ["slug", "effective_date", "kcal", "protein_g", "carbs_g", "fat_g", "set_by", "created_at"],
+    text: ["slug", "effective_date"],
+  },
+  punches: {
+    name: "Punch Awards",
+    headers: ["slug", "week_start", "green_days", "awarded_at"],
+    text: ["slug", "week_start"],
+  },
+  meals: {
+    name: "Saved Meals",
+    headers: ["id", "slug", "name", "items", "created_at"],
+    text: ["id", "slug", "items"],
+  },
+  foods: {
+    name: "Foods",
+    headers: ["name", "category", "serve_g", "serve_label", "kcal_100g", "protein_100g", "carbs_100g", "fat_100g"],
+    text: [],
   },
 };
 
-const DEFAULT_CENTS_PER_SCAN = 5;
-const DEFAULT_FREE_SCANS = 10;
-
-const SOURCES = ["photo", "barcode", "label", "manual", "fridge", "suggestion"];
+// "quick" = typed-in numbers for one serve: grams 100 means 1 serve, and
+// per100 holds the per-serve values (so they can go past 100 g of macros).
+const SOURCES = ["photo", "barcode", "label", "manual", "fridge", "suggestion", "quick", "describe", "plan"];
 const CONFIDENCES = ["high", "medium", "low", ""];
 
 // ---------------------------------------------------------------------------
@@ -146,13 +225,39 @@ const MEMBER_ACTIONS = {
   addFavourite: actionAddFavourite_,
   removeFavourite: actionRemoveFavourite_,
   setPrefs: actionSetPrefs_,
+  chat: actionChat_,
+  describe: actionDescribe_,
+  saveMeal: actionSaveMeal_,
+  deleteMeal: actionDeleteMeal_,
+  progress: actionProgress_,
+  logWeight: actionLogWeight_,
+  mealPlan: actionMealPlan_,
+  makeMealPlan: actionMakeMealPlan_,
+  swapMeal: actionSwapMeal_,
+  shoppingList: actionShoppingList_,
+  shoppingAdd: actionShoppingAdd_,
+  shoppingToggle: actionShoppingToggle_,
+  shoppingClear: actionShoppingClear_,
+  shoppingFromPlan: actionShoppingFromPlan_,
+  deleteWeight: actionDeleteWeight_,
 };
 
 const COACH_ACTIONS = {
   coachList: actionCoachList_,
-  addCredit: actionAddCredit_,
   coachSetTargets: actionCoachSetTargets_,
   issueKey: actionIssueKey_,
+  coachGiveMonth: actionCoachGiveMonth_,
+  coachSyncStripe: actionCoachSyncStripe_,
+  coachLogWeight: actionCoachLogWeight_,
+  coachSetGoal: actionCoachSetGoal_,
+};
+
+// No key or PIN: only safe, idempotent things. stripeReturn looks up a
+// checkout session by its (unguessable) id and links it to its client.
+const PUBLIC_ACTIONS = {
+  stripeReturn: actionStripeReturn_,
+  goal: actionGoal_,
+  saveGoal: actionSaveGoal_,
 };
 
 function doPost(e) {
@@ -171,6 +276,9 @@ function doPost(e) {
     if (COACH_ACTIONS[action]) {
       checkCoachPin_(payload.pin);
       return json_(Object.assign({ ok: true, version: MACROS_VERSION }, COACH_ACTIONS[action](payload)));
+    }
+    if (PUBLIC_ACTIONS[action]) {
+      return json_(Object.assign({ ok: true, version: MACROS_VERSION }, PUBLIC_ACTIONS[action](payload)));
     }
     return json_({ ok: false, error: "unknown_action", message: "Unknown action." });
   } catch (err) {
@@ -210,12 +318,35 @@ function macroSheet_() {
   return macroSheetCache_;
 }
 
+const tabCache_ = {};
+
+/**
+ * The sheet for a TABS key. Tabs and header columns added in later versions
+ * create themselves on first use, so an update never needs
+ * setupMacroSheets() run again.
+ */
 function tab_(key) {
+  if (tabCache_[key]) return tabCache_[key];
   const spec = TABS[key];
   const ss = macroSheet_();
-  // Tabs added in later versions (e.g. Scan Credits) create themselves on
-  // first use, so an update never needs setupMacroSheets() run again.
-  return ss.getSheetByName(spec.name) || createTab_(ss, spec);
+  let sheet = ss.getSheetByName(spec.name);
+  if (sheet) addMissingColumns_(sheet, spec);
+  else sheet = createTab_(ss, spec);
+  tabCache_[key] = sheet;
+  return sheet;
+}
+
+function addMissingColumns_(sheet, spec) {
+  const width = Math.max(1, sheet.getLastColumn());
+  const header = sheet.getRange(1, 1, 1, width).getValues()[0].map((h) => String(h).trim());
+  while (header.length && header[header.length - 1] === "") header.pop();
+  spec.headers.forEach((h) => {
+    if (header.indexOf(h) >= 0) return;
+    header.push(h);
+    const col = header.length;
+    if (spec.text.indexOf(h) >= 0) sheet.getRange(1, col, sheet.getMaxRows(), 1).setNumberFormat("@");
+    sheet.getRange(1, col).setValue(h).setFontWeight("bold");
+  });
 }
 
 function createTab_(ss, spec) {
@@ -367,6 +498,8 @@ function targetsFor_(slug) {
     set_by: row.set_by,
     calc_inputs: inputs,
     updated_at: row.updated_at,
+    goal_weight_kg: Number(row.goal_weight_kg) || null,
+    weekly_rate_kg: Number(row.weekly_rate_kg) || null,
   };
 }
 
@@ -434,67 +567,137 @@ function favouritesFor_(slug) {
     }));
 }
 
-function aiLimit_() {
-  const n = Number(prop_("DAILY_AI_LIMIT"));
-  return n > 0 ? n : 25;
+// Daily AI uses per tier: one pool for photo and label scans, Describe it
+// and (Diamond) Ask Fuel messages. Override with GOLD_DAILY_AI /
+// DIAMOND_DAILY_AI.
+const DEFAULT_DAILY_AI = { gold: 5, diamond: 20 };
+const DAILY_AI_PROPS = { gold: "GOLD_DAILY_AI", diamond: "DIAMOND_DAILY_AI" };
+
+function dailyAiFor_(tier) {
+  if (!DEFAULT_DAILY_AI[tier]) return 0; // silver
+  const n = Number(prop_(DAILY_AI_PROPS[tier]));
+  return n > 0 ? Math.round(n) : DEFAULT_DAILY_AI[tier];
 }
 
-function centsPerScan_() {
-  const n = Number(prop_("CENTS_PER_SCAN"));
-  return n > 0 ? n : DEFAULT_CENTS_PER_SCAN;
-}
-
-function freeScans_() {
-  const raw = prop_("FREE_SCANS");
-  const n = Number(raw);
-  return raw !== null && raw !== "" && n >= 0 ? Math.round(n) : DEFAULT_FREE_SCANS;
-}
-
-/** Every member's prepaid photo-scan balance: the sum of their rows in Scan Credits. */
-function creditBalances_() {
-  const out = {};
-  readRows_("credits").forEach((r) => {
-    const s = String(r.slug);
-    out[s] = (out[s] || 0) + (Number(r.change) || 0);
-  });
-  return out;
-}
-
-function creditBalance_(slug) {
-  return creditBalances_()[slug] || 0;
-}
-
-function addCreditRow_(slug, change, amountAud, note, by) {
-  return appendRow_("credits", {
-    timestamp: nowStamp_(),
-    slug: slug,
-    change: change,
-    amount_aud: amountAud,
-    note: note,
-    by: by,
-  });
-}
-
-function scansUsedToday_(slug) {
+/** Today's AI uses, leaving out calls that failed before Claude billed anything. */
+function aiUsedToday_(slug) {
   const today = todaySydney_();
-  return readRows_("usage").filter((u) => String(u.slug) === slug && String(u.log_date) === today).length;
+  return readRows_("usage").filter((u) => {
+    const ok = String(u.ok);
+    return String(u.slug) === slug && String(u.log_date) === today && ok !== "error" && ok.indexOf("http_") !== 0;
+  }).length;
+}
+
+/** { tier, used, limit, left } for the meter on the card. */
+function aiToday_(member) {
+  const plan = planFor_(member);
+  const limit = plan.access ? dailyAiFor_(plan.tier) : 0;
+  const used = aiUsedToday_(String(member.slug));
+  return { tier: plan.tier, used: used, limit: limit, left: Math.max(0, limit - used) };
+}
+
+/** Photo scanning and Ask Fuel need a Claude API key on the server. */
+function aiOn_() {
+  return !!prop_("ANTHROPIC_API_KEY");
+}
+
+function planFor_(member) {
+  return MacroCore.planState(
+    {
+      trial_started: member.trial_started,
+      plan_status: member.plan_status,
+      plan_until: member.plan_until,
+      comp_until: member.comp_until,
+      plan_tier: member.plan_tier,
+      comp_tier: member.comp_tier,
+      plan_interval: member.plan_interval,
+    },
+    todaySydney_()
+  );
+}
+
+/** Stops a Fuel AI action (photo/label scan, Describe it) unless this member has the plan. */
+function requireFuelAi_(member) {
+  if (!aiOn_()) throw userError_("ai_off", "Fuel AI isn't switched on yet. Barcodes still work.");
+  if (!planFor_(member).access) {
+    throw userError_("no_plan", "That's part of Fuel Gold. Barcodes, search and saved meals stay free.");
+  }
+}
+
+/** Ask Fuel is Diamond only (paying, a free month from Max, or the free week). */
+function requireAskFuel_(member) {
+  requireFuelAi_(member);
+  if (MacroCore.tierRank(planFor_(member).tier) < MacroCore.tierRank("diamond")) {
+    throw userError_("diamond", "Ask Fuel comes with Fuel Diamond. Photo scans, labels and Describe it stay on Gold.");
+  }
+}
+
+/** A Payment Link that tells Stripe which client is paying. */
+function upgradeUrl_(slug, property) {
+  const link = prop_(property || "STRIPE_FUEL_LINK");
+  if (!link) return "";
+  return link + (link.indexOf("?") >= 0 ? "&" : "?") + "client_reference_id=fuel-" + slug;
+}
+
+// Each plan's Payment Link, per billing period.
+const PLAN_LINK_PROPS = {
+  gold: { month: "STRIPE_FUEL_LINK", year: "STRIPE_GOLD_YEAR_LINK" },
+  diamond: { month: "STRIPE_DIAMOND_LINK", year: "STRIPE_DIAMOND_YEAR_LINK" },
+};
+
+function planPayload_(member) {
+  const slug = String(member.slug);
+  const links = {};
+  const aiPerDay = {};
+  Object.keys(PLAN_LINK_PROPS).forEach((tier) => {
+    links[tier] = {
+      month: upgradeUrl_(slug, PLAN_LINK_PROPS[tier].month),
+      year: upgradeUrl_(slug, PLAN_LINK_PROPS[tier].year),
+    };
+    aiPerDay[tier] = dailyAiFor_(tier);
+  });
+  return Object.assign({}, planFor_(member), {
+    links: links,
+    portalUrl: prop_("STRIPE_PORTAL_LINK") || "",
+    aiPerDay: aiPerDay,
+  });
 }
 
 function actionMe_(payload, member) {
   const slug = String(member.slug);
+  // The free week starts the first time they open FUEL while Fuel AI is on.
+  if (aiOn_() && !member.trial_started) {
+    updateRow_("members", member._row, { trial_started: todaySydney_() });
+    member.trial_started = todaySydney_();
+  }
+  // Back from Stripe checkout, or "Already paid? Refresh": check Stripe now
+  // (at most once a minute per member).
+  if (payload.sync && prop_("STRIPE_SECRET_KEY")) {
+    const cache = CacheService.getScriptCache();
+    if (!cache.get("sync_" + slug)) {
+      cache.put("sync_" + slug, "1", 60);
+      try {
+        syncStripe_();
+      } catch (err) {
+        console.error("Stripe sync failed", err && err.message);
+      }
+      member = readRows_("members").find((m) => String(m.slug) === slug) || member;
+    }
+  }
   const logRows = readRows_("logs");
   return {
-    member: { slug: slug, name: member.name, sex: member.sex, hide_kcal: member.hide_kcal === "Y" },
+    member: memberPayload_(member),
     targets: targetsFor_(slug),
     day: dayFor_(slug, validDate_(payload.date), logRows),
+    weightTrend: member.hide_weight === "Y" ? null : weightTrend_(slug),
     recent: recentFor_(slug, logRows),
     favourites: favouritesFor_(slug),
-    scansLeft: Math.max(0, aiLimit_() - scansUsedToday_(slug)),
-    scanLimit: aiLimit_(),
-    scanCredits: creditBalance_(slug),
-    scanPriceCents: centsPerScan_(),
-    // No API key yet = photo/label scanning is off; the card hides those buttons.
-    aiEnabled: !!prop_("ANTHROPIC_API_KEY"),
+    meals: mealsFor_(slug),
+    foods: foodsList_(),
+    aiToday: aiToday_(member),
+    // No API key yet = Fuel AI is off; the card hides photo scans and Ask Fuel.
+    aiEnabled: aiOn_(),
+    plan: planPayload_(member),
   };
 }
 
@@ -509,14 +712,18 @@ function cleanItem_(raw) {
   const grams = Math.round(n_(raw.grams, 0, 5000) * 10) / 10;
   if (!(grams > 0)) throw userError_("bad_item", '"' + name + '" needs a weight above 0 g.');
   const p = raw.per100 || {};
+  const quick = raw.source === "quick";
   const per100 = {
-    kcal: n_(p.kcal, 0, 950),
-    protein_g: n_(p.protein_g, 0, 100),
-    carbs_g: n_(p.carbs_g, 0, 100),
-    fat_g: n_(p.fat_g, 0, 100),
+    kcal: n_(p.kcal, 0, quick ? 5000 : 950),
+    protein_g: n_(p.protein_g, 0, quick ? 500 : 100),
+    carbs_g: n_(p.carbs_g, 0, quick ? 500 : 100),
+    fat_g: n_(p.fat_g, 0, quick ? 500 : 100),
   };
+  if (quick && !(per100.kcal > 0 || per100.protein_g + per100.carbs_g + per100.fat_g > 0)) {
+    throw userError_("bad_item", 'Add the calories or macros for "' + name + '".');
+  }
   // 100 g of food can't hold more than 100 g of macros (a little slack for label rounding).
-  if (per100.protein_g + per100.carbs_g + per100.fat_g > 105) {
+  if (!quick && per100.protein_g + per100.carbs_g + per100.fat_g > 105) {
     throw userError_("bad_item", 'The numbers for "' + name + '" don\'t add up. Check them against the label.');
   }
   const macros = MacroCore.scale(per100, grams);
@@ -650,10 +857,15 @@ function actionSaveTargets_(payload, member) {
       }),
       coach_approved: "",
       updated_at: nowStamp_(),
+      // Pace for the Progress weight chart (negative = losing), and an
+      // optional goal weight the pace line stops at.
+      weekly_rate_kg: result.weeklyChangeKg,
+      goal_weight_kg: cleanGoalKg_(inputs.goalWeightKg),
     };
     const existing = readRows_("targets").find((t) => String(t.slug) === slug);
     if (existing) updateRow_("targets", existing._row, row);
     else appendRow_("targets", row);
+    recordTargetHistory_(slug, row, "calculator");
     if (member.sex !== inputs.sex) updateRow_("members", member._row, { sex: inputs.sex });
   });
   return { targets: targetsFor_(slug), calc: result };
@@ -691,10 +903,72 @@ function actionRemoveFavourite_(payload, member) {
   return { favourites: favouritesFor_(slug) };
 }
 
+// ---------------------------------------------------------------------------
+// Saved meals: a named set of items ("Protein smoothie") logged in one go
+// ---------------------------------------------------------------------------
+
+const MAX_SAVED_MEALS = 30;
+
+function mealsFor_(slug) {
+  return readRows_("meals")
+    .filter((r) => String(r.slug) === slug)
+    .map((r) => {
+      let items = [];
+      try {
+        items = JSON.parse(String(r.items || "[]"));
+      } catch (err) {
+        items = [];
+      }
+      return { id: String(r.id), name: String(r.name), items: Array.isArray(items) ? items : [] };
+    })
+    .filter((m) => m.items.length);
+}
+
+function actionSaveMeal_(payload, member) {
+  const slug = String(member.slug);
+  const name = cleanText_(payload.name, 60);
+  if (!name) throw userError_("bad_meal", "Give the meal a name.");
+  const raw = Array.isArray(payload.items) ? payload.items : [];
+  if (!raw.length) throw userError_("bad_meal", "Add at least one food first.");
+  if (raw.length > 20) throw userError_("bad_meal", "A saved meal can hold up to 20 foods.");
+  const items = raw.map(cleanItem_).map((it) => ({ name: it.name, grams: it.grams, per100: it.per100, source: it.source }));
+  withLock_(() => {
+    const mine = readRows_("meals").filter((r) => String(r.slug) === slug);
+    const dup = mine.find((r) => String(r.name).toLowerCase() === name.toLowerCase());
+    const row = { slug: slug, name: name, items: JSON.stringify(items) };
+    if (dup) updateRow_("meals", dup._row, row);
+    else if (mine.length >= MAX_SAVED_MEALS) throw userError_("too_many", "That's " + MAX_SAVED_MEALS + " saved meals. Delete one first.");
+    else appendRow_("meals", Object.assign({ id: Utilities.getUuid(), created_at: nowStamp_() }, row));
+  });
+  return { meals: mealsFor_(slug) };
+}
+
+function actionDeleteMeal_(payload, member) {
+  const slug = String(member.slug);
+  withLock_(() => {
+    const row = readRows_("meals").find((r) => String(r.slug) === slug && String(r.id) === String(payload.mealId));
+    if (row) tab_("meals").deleteRow(row._row);
+  });
+  return { meals: mealsFor_(slug) };
+}
+
 function actionSetPrefs_(payload, member) {
-  const hide = payload.hide_kcal ? "Y" : "N";
-  updateRow_("members", member._row, { hide_kcal: hide });
-  return { member: { slug: String(member.slug), name: member.name, sex: member.sex, hide_kcal: hide === "Y" } };
+  const changes = {};
+  if (payload.hide_kcal !== undefined) changes.hide_kcal = payload.hide_kcal ? "Y" : "N";
+  if (payload.hide_weight !== undefined) changes.hide_weight = payload.hide_weight ? "Y" : "N";
+  if (Object.keys(changes).length) updateRow_("members", member._row, changes);
+  Object.assign(member, changes);
+  return { member: memberPayload_(member) };
+}
+
+function memberPayload_(member) {
+  return {
+    slug: String(member.slug),
+    name: member.name,
+    sex: member.sex,
+    hide_kcal: member.hide_kcal === "Y",
+    hide_weight: member.hide_weight === "Y",
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -813,6 +1087,11 @@ const FOOD_SYSTEM_PROMPT = [
   "- \"medium\": the food is clear but the amount is an estimate — the usual case for plated meals.",
   "- \"low\": the food is unclear, mostly hidden, mixed into something else, or the amount could easily be off by half or more. Say why in notes.",
   "",
+  "Written descriptions",
+  "- Sometimes the client types what they ate instead of sending a photo (\"chicken wrap from Subway and a flat white\"). Return the same items format as for a meal photo.",
+  "- Trust any amounts they give. Where they don't give one, use a typical Australian portion for that food or venue and set confidence to \"medium\" (or \"low\" if it could easily be off by half).",
+  "- Add cooking oil, spreads, dressings or milk in coffee as separate items only when they're mentioned or almost certainly there, and say so in notes.",
+  "",
   "Nutrition labels",
   "- Australian labels have a Nutrition Information Panel with 'Avg Quantity per Serving' and 'per 100 g' (or 'per 100 mL') columns.",
   "- Always return the per-100 g (or per-100 mL) column as per100. If only the per-serve column is readable, divide by the serving size to get per-100 values and say so in notes.",
@@ -883,22 +1162,22 @@ const MODE_PROMPTS = {
 };
 
 /**
- * Takes one prepaid scan and one of today's scans under a lock, so two
- * quick taps can't both slip past the balance or the daily limit. Returns
- * the row numbers so a failed scan can be handed back (refundScan_).
+ * Reserves one of today's AI calls under a lock, so two quick taps can't
+ * both slip past the daily limit. kind is "meal" / "label" (photo scans)
+ * or "chat". Returns the AI Usage row number, filled in by recordUsage_.
  */
-function reserveScan_(slug, kind, model) {
+function reserveAi_(member, kind, model) {
+  const slug = String(member.slug);
   return withLock_(() => {
-    if (creditBalance_(slug) < 1) {
-      throw userError_("no_credits", "You're out of photo scans. Top up with Max. Barcodes are always free.");
-    }
-    if (scansUsedToday_(slug) >= aiLimit_()) {
+    const today = aiToday_(member);
+    if (today.left <= 0) {
+      const next = today.tier === "gold" ? "Diamond gives you " + dailyAiFor_("diamond") + " a day, plus Ask Fuel." : "";
       throw userError_(
         "limit",
-        "You've used all " + aiLimit_() + " photo scans for today. Barcodes still work, and scans reset at midnight."
+        ("That's all " + today.limit + " AI uses for today. They reset at midnight, and barcodes, search and saved meals still work. " + next).trim()
       );
     }
-    const usageRow = appendRow_("usage", {
+    return appendRow_("usage", {
       timestamp: nowStamp_(),
       log_date: todaySydney_(),
       slug: slug,
@@ -906,19 +1185,12 @@ function reserveScan_(slug, kind, model) {
       model: model,
       ok: "pending",
     });
-    const creditRow = addCreditRow_(slug, -1, "", kind === "label" ? "Label scan" : "Photo scan", "scan");
-    return { usageRow: usageRow, creditRow: creditRow };
   });
 }
 
-/** A scan that failed doesn't cost the client: zero out the scan's credit row (it stays as a record). */
-function refundScan_(reservation) {
-  updateRow_("credits", reservation.creditRow, { change: 0, note: "Scan failed, not charged" });
-}
-
-function recordUsage_(rowNumber, usage, ok) {
+function recordUsage_(rowNumber, usage, ok, model) {
   const u = usage || {};
-  const price = PRICING[VISION_MODEL];
+  const price = PRICING[model || VISION_MODEL] || PRICING[VISION_MODEL];
   const input = Number(u.input_tokens) || 0;
   const output = Number(u.output_tokens) || 0;
   const cacheWrite = Number(u.cache_creation_input_tokens) || 0;
@@ -936,7 +1208,19 @@ function recordUsage_(rowNumber, usage, ok) {
   });
 }
 
-function callClaude_(image, mode) {
+/** The meal prompt, plus the client's own note about what's in the photo (if any). */
+function mealPrompt_(note) {
+  const clean = cleanText_(note, 300);
+  if (!clean) return MODE_PROMPTS.meal;
+  return (
+    MODE_PROMPTS.meal +
+    '\n\nThe person who ate this added a note describing it: "' +
+    clean.replace(/"/g, "'") +
+    '"\nTrust the note for what the foods are and any amounts it gives. Use the photo for everything else, and still list anything visible that the note leaves out.'
+  );
+}
+
+function callClaude_(image, mode, note) {
   const apiKey = prop_("ANTHROPIC_API_KEY");
   if (!apiKey) throw userError_("ai_off", "Photo scanning isn't switched on yet. Barcodes still work.");
   const body = {
@@ -952,7 +1236,7 @@ function callClaude_(image, mode) {
         role: "user",
         content: [
           { type: "image", source: { type: "base64", media_type: "image/jpeg", data: image } },
-          { type: "text", text: MODE_PROMPTS[mode] },
+          { type: "text", text: mode === "meal" ? mealPrompt_(note) : MODE_PROMPTS[mode] },
         ],
       },
     ],
@@ -980,17 +1264,16 @@ function actionAnalyseImage_(payload, member) {
   if (!image) throw userError_("no_image", "No photo came through. Try again.");
   // A 1024px JPEG at 0.8 is ~100–300 KB; 2 MB of base64 means resizing was skipped.
   if (image.length > 2000000) throw userError_("too_big", "That photo is too large. Try again.");
-  if (!prop_("ANTHROPIC_API_KEY")) throw userError_("ai_off", "Photo scanning isn't switched on yet. Barcodes still work.");
+  requireFuelAi_(member);
 
-  const reservation = reserveScan_(slug, mode, VISION_MODEL);
+  const usageRow = reserveAi_(member, mode, VISION_MODEL);
   const fail = (usage, ok, message) => {
-    recordUsage_(reservation.usageRow, usage, ok);
-    refundScan_(reservation);
+    recordUsage_(usageRow, usage, ok);
     return userError_("ai_failed", message);
   };
   let result;
   try {
-    result = callClaude_(image, mode);
+    result = callClaude_(image, mode, payload.note);
   } catch (err) {
     throw fail(null, "error", "Couldn't read that photo just now. Try again in a moment.");
   }
@@ -1009,14 +1292,69 @@ function actionAnalyseImage_(payload, member) {
   } catch (err) {
     throw fail(data.usage, "bad_json", "Couldn't make sense of that photo. Try again.");
   }
-  recordUsage_(reservation.usageRow, data.usage, "Y");
+  recordUsage_(usageRow, data.usage, "Y");
 
-  const counts = {
-    scansLeft: Math.max(0, aiLimit_() - scansUsedToday_(slug)),
-    scanCredits: creditBalance_(slug),
-  };
+  const counts = { aiToday: aiToday_(member) };
   if (mode === "label") return Object.assign({ mode: mode, label: cleanLabel_(parsed), ai: parsed }, counts);
   return Object.assign({ mode: mode, meal: cleanAiMeal_(parsed), ai: parsed }, counts);
+}
+
+/** "Describe it": the client types what they ate and Claude (the cheaper text model) estimates it. */
+function actionDescribe_(payload, member) {
+  const text = cleanText_(payload.text, 300);
+  if (!text) throw userError_("no_text", "Type what you ate first.");
+  requireFuelAi_(member);
+  const usageRow = reserveAi_(member, "describe", TEXT_MODEL);
+  const failMessage = "Couldn't work that out just now. Try again in a moment, or search for it instead.";
+  let res;
+  try {
+    res = UrlFetchApp.fetch("https://api.anthropic.com/v1/messages", {
+      method: "post",
+      contentType: "application/json",
+      headers: { "x-api-key": prop_("ANTHROPIC_API_KEY"), "anthropic-version": "2023-06-01" },
+      payload: JSON.stringify({
+        model: TEXT_MODEL,
+        max_tokens: 2000,
+        system: [{ type: "text", text: FOOD_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+        output_config: { format: { type: "json_schema", schema: MEAL_SCHEMA } },
+        messages: [
+          {
+            role: "user",
+            content:
+              'Estimate every food in this written description of what someone ate (no photo): "' +
+              text.replace(/"/g, "'") +
+              '"',
+          },
+        ],
+      }),
+      muteHttpExceptions: true,
+    });
+  } catch (err) {
+    recordUsage_(usageRow, null, "error", TEXT_MODEL);
+    throw userError_("ai_failed", failMessage);
+  }
+  let data = {};
+  try {
+    data = JSON.parse(res.getContentText());
+  } catch (err) {
+    data = {};
+  }
+  if (res.getResponseCode() !== 200 || data.stop_reason === "refusal" || data.stop_reason === "max_tokens") {
+    recordUsage_(usageRow, data.usage, res.getResponseCode() !== 200 ? "http_" + res.getResponseCode() : data.stop_reason, TEXT_MODEL);
+    console.error("Describe error", res.getResponseCode(), JSON.stringify(data).slice(0, 500));
+    throw userError_("ai_failed", failMessage);
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse((data.content || []).find((b) => b.type === "text").text);
+  } catch (err) {
+    recordUsage_(usageRow, data.usage, "bad_json", TEXT_MODEL);
+    throw userError_("ai_failed", failMessage);
+  }
+  recordUsage_(usageRow, data.usage, "Y", TEXT_MODEL);
+  const meal = cleanAiMeal_(parsed);
+  meal.items.forEach((it) => (it.source = "describe"));
+  return { meal: meal, aiToday: aiToday_(member) };
 }
 
 /** AI meal → items the confirm sheet can edit: grams, per-100g values, and kcal that agree with 4/4/9. */
@@ -1111,6 +1449,7 @@ function actionCoachList_() {
       hasKey: !!m.key,
       sex: m.sex,
       link: m.key ? CARD_URL + "?id=" + encodeURIComponent(s) + "&k=" + encodeURIComponent(m.key) : "",
+      plan: planFor_(m),
     });
   });
   targets.forEach((t) => {
@@ -1123,36 +1462,562 @@ function actionCoachList_() {
       fat_g: Number(t.fat_g),
       set_by: t.set_by,
       coach_approved: t.coach_approved === "Y",
+      goal_weight_kg: Number(t.goal_weight_kg) || null,
+      weekly_rate_kg: Number(t.weekly_rate_kg) || null,
     };
   });
-  const balances = creditBalances_();
+  const weightRows = readRows_("weights");
+  const crm = crmIndex_();
+  const history = readRows_("targetHistory");
+  const thisMonday = MacroCore.mondayOf(todaySydney_());
+  Object.keys(bySlug).forEach((s) => {
+    const mine = weightRows.filter((w) => String(w.slug) === s).sort((a, b) => (String(a.date) < String(b.date) ? -1 : 1));
+    const last = mine[mine.length - 1];
+    bySlug[s].lastWeight = last ? { date: String(last.date), kg: Number(last.kg) } : null;
+    const c = crm.bySlug[s];
+    bySlug[s].punches = c ? c.punches : 0;
+    bySlug[s].freeOwed = c ? c.owed : false;
+    if (bySlug[s].hasKey) {
+      const week = MacroCore.weekSummary(dayTotalsFor_(s, thisMonday, logs), historyFor_(s, history), thisMonday);
+      bySlug[s].greenThisWeek = week.greenDays;
+    }
+  });
+  // Each client's goal, so Max can see it and help (2026-10-13).
+  const goalRows = readRows_("goals");
+  Object.keys(bySlug).forEach((s) => {
+    const row = latestGoalRow_(s, goalRows);
+    if (!row) return;
+    const goal = goalShape_(row);
+    bySlug[s].goal = goal;
+    const m = members.find((x) => String(x.slug) === s);
+    if (m && MacroCore.FUEL_GOAL_TYPES.indexOf(goal.type) >= 0) bySlug[s].goalFuel = fuelGoalStats_(m, goal.start_date);
+  });
   const clients = Object.keys(bySlug)
-    .map((s) => Object.assign({ lastLog: lastLog[s] || "", credits: balances[s] || 0 }, bySlug[s]))
+    .map((s) => Object.assign({ lastLog: lastLog[s] || "" }, bySlug[s]))
     .sort((a, b) => String(a.name).localeCompare(String(b.name)));
-  return { clients: clients, centsPerScan: centsPerScan_(), aiEnabled: !!prop_("ANTHROPIC_API_KEY") };
+  return {
+    clients: clients,
+    aiEnabled: aiOn_(),
+    stripeReady: !!(prop_("STRIPE_SECRET_KEY") && prop_("STRIPE_FUEL_LINK")),
+    lastStripeSync: prop_("STRIPE_LAST_SYNC_AT") || "",
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Meal plans and the shopping list (2026-10-13, Max). Plan my week is
+// Diamond only and counts as 3 AI uses (one Claude call, the cheap text
+// model). It writes a few meals per slot plus two alternatives each, so
+// swaps are free. Which meal is on which day, the shopping amounts and the
+// rough cost are MacroCore maths. The shopping list is Gold and Diamond:
+// plan items, snack ideas and the client's own. Max's family grocery list
+// (Code.gs) is separate and untouched.
+// ---------------------------------------------------------------------------
+
+const MEAL_PLAN_AI_USES = 3;
+
+/** Shopping list: Gold and up (paying, a free month or the free week). */
+function hasShopping_(member) {
+  const plan = planFor_(member);
+  return !!plan.access && MacroCore.tierRank(plan.tier) >= MacroCore.tierRank("gold");
+}
+
+function requireShopping_(member) {
+  if (!hasShopping_(member)) throw userError_("gold", "Your shopping list comes with Fuel Gold and Diamond.");
+}
+
+/** Meal plans: Diamond only, and the AI key must be set. */
+function requireMealPlan_(member) {
+  requireFuelAi_(member);
+  if (MacroCore.tierRank(planFor_(member).tier) < MacroCore.tierRank("diamond")) {
+    throw userError_("diamond", "Weekly meal plans come with Fuel Diamond.");
+  }
+}
+
+function latestPlanRow_(slug) {
+  const mine = readRows_("mealPlans").filter((r) => String(r.slug) === slug);
+  return mine.length ? mine[mine.length - 1] : null;
+}
+
+function planFromRow_(row) {
+  if (!row) return null;
+  try {
+    return Object.assign(JSON.parse(String(row.plan)), { id: String(row.id) });
+  } catch (err) {
+    return null;
+  }
+}
+
+function actionMealPlan_(payload, member) {
+  requireMealPlan_(member);
+  return { plan: planFromRow_(latestPlanRow_(String(member.slug))), aiToday: aiToday_(member) };
+}
+
+const MEAL_PLAN_ITEM_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["name", "amount_text", "grams", "count", "unit", "kcal", "protein_g", "carbs_g", "fat_g", "aisle", "pantry"],
+  properties: {
+    name: { type: "string" },
+    amount_text: { type: "string" },
+    grams: { type: "number" },
+    count: { type: "number" },
+    unit: { type: "string" },
+    kcal: { type: "number" },
+    protein_g: { type: "number" },
+    carbs_g: { type: "number" },
+    fat_g: { type: "number" },
+    aisle: { type: "string", enum: MacroCore.AISLES },
+    pantry: { type: "boolean" },
+  },
+};
+const MEAL_PLAN_MEAL_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["name", "emoji", "how_to", "cost_aud", "items"],
+  properties: {
+    name: { type: "string" },
+    emoji: { type: "string" },
+    how_to: { type: "string" },
+    cost_aud: { type: "number" },
+    items: { type: "array", items: MEAL_PLAN_ITEM_SCHEMA },
+  },
+};
+const MEAL_PLAN_SCHEMA = (function () {
+  const list = { type: "array", items: MEAL_PLAN_MEAL_SCHEMA };
+  const slots = {};
+  MacroCore.MEAL_SLOTS.forEach((s) => (slots[s] = list));
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["meals", "swaps"],
+    properties: {
+      meals: { type: "object", additionalProperties: false, required: MacroCore.MEAL_SLOTS, properties: slots },
+      swaps: { type: "object", additionalProperties: false, required: MacroCore.MEAL_SLOTS, properties: slots },
+    },
+  };
+})();
+
+const MEAL_PLAN_SYSTEM_PROMPT = [
+  "You write simple, healthy weekly meal plans for clients of MaxFit, a personal trainer in Sydney, Australia. Many clients are older, so keep meals simple, familiar and quick, with ingredients from Coles or Woolworths.",
+  "Rules:",
+  "- Write exactly the number of different meals asked for in each slot (breakfast, lunch, snack, dinner), plus exactly 2 alternatives per slot in swaps. Alternatives must have about the same calories and protein as the meals they replace.",
+  "- The days rotate through each slot's meals, so ANY breakfast + lunch + snack + dinner combination must come to about the client's daily calorie target (within 10%) and at least 90% of their protein target. Spread protein across the day.",
+  "- Every item is the client's own single serve. grams is that serve's weight in grams (for liquids, mL as grams). amount_text is how they'd measure it at home: \"150 g\", \"1 cup\", \"2 slices\", \"1 tablespoon\".",
+  "- For things bought whole (eggs, bananas, wraps, tins, fillets, slices), set count to how many in one serve and unit to the singular word (\"egg\", \"banana\", \"wrap\", \"tin\"). Otherwise count 0 and unit \"\".",
+  "- kcal, protein_g, carbs_g, fat_g are for that item's serve, from Australian (FSANZ) values. Keep kcal close to 4 × protein + 4 × carbs + 9 × fat.",
+  "- Use the same shopping name for the same ingredient everywhere (\"Chicken breast\", not \"chicken\" in one place and \"chicken fillet\" in another), so the shopping list adds up.",
+  "- Mark oils, sauces, spices, salt, honey and stock as pantry: true.",
+  "- cost_aud is a rough Coles or Woolworths cost of ONE serve of the meal. Keep the week within the budget given.",
+  "- how_to is one short sentence on making it. Batch-cook where it helps: dinners can be cooked once and eaten twice.",
+  "- Never include anything the client says they don't eat. Prefer foods they already eat. No supplements other than protein powder, and only if they already use it.",
+  "- emoji is one emoji for the meal.",
+].join("\n");
+
+/** One AI meal -> a clean meal whose items' kcal agree with 4/4/9 and whose numbers are sane. */
+function cleanPlanMeal_(raw) {
+  const items = (raw.items || [])
+    .slice(0, 8)
+    .map((it) => {
+      const grams = Math.round(n_(it.grams, 0, 2000));
+      if (!(grams > 0)) return null;
+      const macros = { protein_g: n_(it.protein_g, 0, 300), carbs_g: n_(it.carbs_g, 0, 500), fat_g: n_(it.fat_g, 0, 300) };
+      // 100 g of food can't hold more than 100 g of macros: scale down anything that claims it does.
+      const per100sum = ((macros.protein_g + macros.carbs_g + macros.fat_g) / grams) * 100;
+      if (per100sum > 100) {
+        const f = 100 / per100sum;
+        macros.protein_g *= f;
+        macros.carbs_g *= f;
+        macros.fat_g *= f;
+      }
+      macros.kcal = MacroCore.reconcileKcal({ kcal: n_(it.kcal, 0, 3000), protein_g: macros.protein_g, carbs_g: macros.carbs_g, fat_g: macros.fat_g });
+      const count = n_(it.count, 0, 20);
+      return {
+        name: cleanText_(it.name, 60) || "Food",
+        amount_text: cleanText_(it.amount_text, 40),
+        grams: grams,
+        count: count > 0 && cleanText_(it.unit, 20) ? Math.round(count * 10) / 10 : 0,
+        unit: count > 0 ? cleanText_(it.unit, 20).toLowerCase() : "",
+        kcal: Math.round(macros.kcal),
+        protein_g: MacroCore.round1(macros.protein_g),
+        carbs_g: MacroCore.round1(macros.carbs_g),
+        fat_g: MacroCore.round1(macros.fat_g),
+        aisle: MacroCore.AISLES.indexOf(it.aisle) >= 0 ? it.aisle : "Other",
+        pantry: !!it.pantry,
+      };
+    })
+    .filter(Boolean);
+  if (!items.length) return null;
+  return {
+    name: cleanText_(raw.name, 60) || "Meal",
+    emoji: cleanText_(raw.emoji, 8),
+    how_to: cleanText_(raw.how_to, 200),
+    cost_aud: Math.round(n_(raw.cost_aud, 0, 60) * 100) / 100,
+    items: items,
+  };
+}
+
+/** The client's choices from Plan my week, checked. */
+function cleanPlanPrefs_(p) {
+  p = p || {};
+  const people = Math.round(n_(p.people, 1, 8));
+  return {
+    variety: MacroCore.PLAN_VARIETY[p.variety] ? p.variety : "some",
+    avoid: (Array.isArray(p.avoid) ? p.avoid : []).slice(0, 10).map((a) => cleanText_(a, 30)).filter(Boolean),
+    avoidText: cleanText_(p.avoidText, 120),
+    people: people,
+    sharedDinners: people > 1 && !!p.sharedDinners,
+    budgetMax: Math.round(n_(p.budgetMax, 0, 5000)),
+    budgetLabel: cleanText_(p.budgetLabel, 40),
+  };
+}
+
+function actionMakeMealPlan_(payload, member) {
+  requireMealPlan_(member);
+  const slug = String(member.slug);
+  const prefs = cleanPlanPrefs_(payload.prefs);
+  const targets = targetsFor_(slug);
+  if (!targets || !(Number(targets.kcal) > 0)) throw userError_("no_targets", "Set your daily targets first, so the plan knows what to aim for.");
+  const counts = MacroCore.PLAN_VARIETY[prefs.variety];
+  const share = MacroCore.planBudget(prefs);
+  const recent = recentFor_(slug, readRows_("logs")).map((r) => r.name).slice(0, 15);
+  const prompt = [
+    "Write this client's meal plan for the week.",
+    "Daily targets: " + Math.round(targets.kcal) + " kcal, " + Math.round(targets.protein_g) + " g protein, " + Math.round(targets.carbs_g) + " g carbs, " + Math.round(targets.fat_g) + " g fat.",
+    "Meals in each slot: breakfast " + counts.breakfast + ", lunch " + counts.lunch + ", snack " + counts.snack + ", dinner " + counts.dinner + ".",
+    "Doesn't eat: " + (prefs.avoid.concat(prefs.avoidText ? [prefs.avoidText] : []).join(", ") || "nothing listed") + ".",
+    "Foods they already log: " + (recent.join(", ") || "none yet") + ".",
+    prefs.sharedDinners
+      ? "They cook dinner for " + prefs.people + " people, so dinners should suit a household (keep the items as ONE person's serve; the app scales them)."
+      : "They cook for themselves.",
+    share ? "Keep this plan's own weekly shopping to roughly $" + share + " or less (cost_aud is one serve; dinners are bought for everyone eating them)." : "No budget limit, but keep it sensible.",
+  ].join("\n");
+
+  const fresh = aiToday_(member);
+  if (fresh.left < MEAL_PLAN_AI_USES) {
+    throw userError_("limit", "A meal plan uses " + MEAL_PLAN_AI_USES + " AI uses, and you have " + fresh.left + " left today. They reset at midnight.");
+  }
+  const usageRow = reserveAi_(member, "plan", TEXT_MODEL);
+  // The other two uses a plan counts as, so the daily pool reflects it.
+  const extraRows = withLock_(() =>
+    [1, 2].map(() => appendRow_("usage", { timestamp: nowStamp_(), log_date: todaySydney_(), slug: slug, kind: "plan (counts 3)", model: TEXT_MODEL, ok: "Y" }))
+  );
+  // A failed plan never counts against the client: all three rows are
+  // marked "error" (the first still records what Claude charged).
+  const fail = (reason, usage) => {
+    console.error("Meal plan failed: " + reason);
+    recordUsage_(usageRow, usage, "error", TEXT_MODEL);
+    extraRows.forEach((r) => updateRow_("usage", r, { ok: "error" }));
+    throw userError_("ai_failed", "Couldn't write your plan just now. Try again in a minute. Nothing was used up.");
+  };
+  let res;
+  try {
+    res = UrlFetchApp.fetch("https://api.anthropic.com/v1/messages", {
+      method: "post",
+      contentType: "application/json",
+      headers: { "x-api-key": prop_("ANTHROPIC_API_KEY"), "anthropic-version": "2023-06-01" },
+      payload: JSON.stringify({
+        model: TEXT_MODEL,
+        max_tokens: 12000,
+        system: [{ type: "text", text: MEAL_PLAN_SYSTEM_PROMPT }],
+        output_config: { format: { type: "json_schema", schema: MEAL_PLAN_SCHEMA } },
+        messages: [{ role: "user", content: prompt }],
+      }),
+      muteHttpExceptions: true,
+    });
+  } catch (err) {
+    fail("error", null);
+  }
+  let data = {};
+  try {
+    data = JSON.parse(res.getContentText());
+  } catch (err) {
+    data = {};
+  }
+  if (res.getResponseCode() !== 200 || data.stop_reason === "refusal" || data.stop_reason === "max_tokens") {
+    console.error("Meal plan error", res.getResponseCode(), JSON.stringify(data).slice(0, 500));
+    fail(res.getResponseCode() !== 200 ? "http_" + res.getResponseCode() : data.stop_reason, data.usage);
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse((data.content || []).find((b) => b.type === "text").text);
+  } catch (err) {
+    fail("bad_json", data.usage);
+  }
+  const plan = { start: todaySydney_(), prefs: prefs, meals: {}, swaps: {} };
+  MacroCore.MEAL_SLOTS.forEach((slot) => {
+    plan.meals[slot] = ((parsed.meals || {})[slot] || []).slice(0, counts[slot]).map(cleanPlanMeal_).filter(Boolean);
+    plan.swaps[slot] = ((parsed.swaps || {})[slot] || []).slice(0, 2).map(cleanPlanMeal_).filter(Boolean);
+  });
+  if (!plan.meals.breakfast.length || !plan.meals.lunch.length || !plan.meals.dinner.length) fail("bad_plan", data.usage);
+  recordUsage_(usageRow, data.usage, "Y", TEXT_MODEL);
+  const id = Utilities.getUuid();
+  withLock_(() => appendRow_("mealPlans", { id: id, slug: slug, start: plan.start, prefs: JSON.stringify(prefs), plan: JSON.stringify(plan), created_at: nowStamp_(), updated_at: nowStamp_() }));
+  return { plan: Object.assign(plan, { id: id }), aiToday: aiToday_(member) };
+}
+
+/** Swap a meal for one of its alternatives (free), and keep the shopping list in step. */
+function actionSwapMeal_(payload, member) {
+  requireMealPlan_(member);
+  const slug = String(member.slug);
+  let plan;
+  let list = null;
+  withLock_(() => {
+    const row = latestPlanRow_(slug);
+    plan = planFromRow_(row);
+    if (!plan || plan.id !== String(payload.planId)) throw userError_("stale", "That plan has changed. Close it and open it again.");
+    const slot = MacroCore.MEAL_SLOTS.indexOf(payload.slot) >= 0 ? payload.slot : "";
+    if (!slot) throw userError_("bad_swap", "Pick a meal to swap.");
+    MacroCore.swapMeal(plan, slot, Math.round(n_(payload.index, 0, 9)), Math.round(n_(payload.alt, 0, 9)));
+    const stored = Object.assign({}, plan);
+    delete stored.id;
+    updateRow_("mealPlans", row._row, { plan: JSON.stringify(stored), updated_at: nowStamp_() });
+    if (shoppingFor_(slug).some((i) => i.source === "plan")) list = writePlanShopping_(slug, plan);
+  });
+  return { plan: plan, list: list };
+}
+
+// --- Shopping list ---
+
+function shoppingFor_(slug) {
+  return readRows_("shopping")
+    .filter((r) => String(r.slug) === slug)
+    .map((r) => ({ id: String(r.id), name: String(r.name), amount: String(r.amount || ""), aisle: String(r.aisle || "Other"), done: r.done === "Y", source: String(r.source || "own"), _row: r._row }));
+}
+
+function listOut_(items) {
+  return items.map((i) => ({ id: i.id, name: i.name, amount: i.amount, aisle: i.aisle, done: i.done, source: i.source }));
+}
+
+/** Replace the list's plan items with this plan's shopping (keeping ticks on anything still there). Call under the lock. */
+function writePlanShopping_(slug, plan) {
+  const sheet = tab_("shopping");
+  const current = shoppingFor_(slug);
+  const ticked = {};
+  current.filter((i) => i.source === "plan").forEach((i) => (ticked[i.name.toLowerCase()] = i.done));
+  current
+    .filter((i) => i.source === "plan")
+    .sort((a, b) => b._row - a._row)
+    .forEach((i) => sheet.deleteRow(i._row));
+  MacroCore.planShopping(plan)
+    .filter((i) => !i.pantry)
+    .forEach((i) =>
+      appendRow_("shopping", { id: Utilities.getUuid(), slug: slug, name: i.name, amount: i.amount, aisle: i.aisle, done: ticked[i.name.toLowerCase()] ? "Y" : "", source: "plan", created_at: nowStamp_() })
+    );
+  return listOut_(shoppingFor_(slug));
+}
+
+function actionShoppingList_(payload, member) {
+  requireShopping_(member);
+  return { list: listOut_(shoppingFor_(String(member.slug))) };
+}
+
+function actionShoppingAdd_(payload, member) {
+  requireShopping_(member);
+  const slug = String(member.slug);
+  const name = cleanText_(payload.name, 60);
+  if (!name) throw userError_("no_name", "Type what you need first.");
+  withLock_(() => {
+    const items = shoppingFor_(slug);
+    if (items.length >= 150) throw userError_("too_many", "Your list is full. Clear the ticked things first.");
+    const same = items.find((i) => i.name.toLowerCase() === name.toLowerCase() && !i.done);
+    if (!same) {
+      appendRow_("shopping", {
+        id: Utilities.getUuid(),
+        slug: slug,
+        name: name,
+        amount: cleanText_(payload.amount, 40),
+        aisle: MacroCore.AISLES.indexOf(payload.aisle) >= 0 ? payload.aisle : "Other",
+        done: "",
+        source: payload.source === "snack" ? "snack" : "own",
+        created_at: nowStamp_(),
+      });
+    }
+  });
+  return { list: listOut_(shoppingFor_(slug)) };
+}
+
+function actionShoppingToggle_(payload, member) {
+  requireShopping_(member);
+  const slug = String(member.slug);
+  withLock_(() => {
+    // itemId, not id: id is always the member's own card id.
+    const item = shoppingFor_(slug).find((i) => i.id === String(payload.itemId));
+    if (item) updateRow_("shopping", item._row, { done: payload.done ? "Y" : "" });
+  });
+  return { list: listOut_(shoppingFor_(slug)) };
+}
+
+/** Clears the ticked things (or, with all: true, the whole list). */
+function actionShoppingClear_(payload, member) {
+  requireShopping_(member);
+  const slug = String(member.slug);
+  withLock_(() => {
+    const sheet = tab_("shopping");
+    shoppingFor_(slug)
+      .filter((i) => payload.all || i.done)
+      .sort((a, b) => b._row - a._row)
+      .forEach((i) => sheet.deleteRow(i._row));
+  });
+  return { list: listOut_(shoppingFor_(slug)) };
+}
+
+function actionShoppingFromPlan_(payload, member) {
+  requireMealPlan_(member);
+  const slug = String(member.slug);
+  let list;
+  withLock_(() => {
+    const plan = planFromRow_(latestPlanRow_(slug));
+    if (!plan) throw userError_("no_plan_yet", "Make a meal plan first.");
+    list = writePlanShopping_(slug, plan);
+  });
+  return { list: list };
+}
+
+// ---------------------------------------------------------------------------
+// Monthly goals (2026-10-13, Max): one SMART goal per client, set on their
+// card and running a month from the day it's set (MacroCore.goalEndDate).
+// Strength and training goals work from the name alone, like the card
+// itself (private client links will tighten that); the two built on Fuel's
+// private data (weight, green days) need the client's Fuel key to set or
+// see. No AI anywhere, so goals cost nothing to run.
+// ---------------------------------------------------------------------------
+
+function goalShape_(row) {
+  return {
+    id: String(row.id),
+    type: String(row.type),
+    exercise: String(row.exercise || ""),
+    target: Number(row.target) || 0,
+    target_reps: Number(row.target_reps) || 0,
+    start_value: Number(row.start_value) || 0,
+    start_reps: Number(row.start_reps) || 0,
+    start_date: String(row.start_date),
+    end_date: String(row.end_date),
+    how: String(row.how || "").split("|").map((h) => h.trim()).filter(Boolean),
+    why: String(row.why || ""),
+  };
+}
+
+/** A client's newest goal row (this month's, or the one that just ended), or null. */
+function latestGoalRow_(slug, rows) {
+  const mine = (rows || readRows_("goals")).filter((g) => String(g.slug) === slug);
+  return mine.length ? mine[mine.length - 1] : null;
+}
+
+/** The member if this request carries their valid Fuel key, else null. Never throws. */
+function optionalMember_(payload) {
+  if (!payload.k) return null;
+  try {
+    return authMember_(payload);
+  } catch (err) {
+    return null;
+  }
 }
 
 /**
- * Max records a payment: dollars become photo scans at CENTS_PER_SCAN.
- * A negative amount takes scans back (e.g. a typo), or delete the row in
- * the Scan Credits tab.
+ * The Fuel numbers a goal reads, for one member: weigh-ins, the 14 full
+ * days before today (today is still being logged, so it would drag the
+ * average down) against target, and green days for each week from `since`.
  */
-function actionAddCredit_(payload) {
-  const slug = slugify_(payload.slug);
-  const member = readRows_("members").find((m) => String(m.slug) === slug);
-  if (!member) throw userError_("no_member", "Create this client's Fuel link first.");
-  const dollars = Math.round(Number(payload.dollars) * 100) / 100;
-  if (!Number.isFinite(dollars) || dollars === 0 || Math.abs(dollars) > 1000) {
-    throw userError_("bad_amount", "Enter the amount they paid, in dollars (up to $1,000).");
+function fuelGoalStats_(member, since) {
+  const slug = String(member.slug);
+  const today = todaySydney_();
+  const fortnight = MacroCore.addDays(today, -14);
+  const history = historyFor_(slug);
+  const dayTotals = dayTotalsFor_(slug, MacroCore.mondayOf(since < fortnight ? since : fortnight));
+  // Days before their targets were first recorded are judged against today's targets.
+  const current = targetsFor_(slug);
+  const fallback = current && Number(current.kcal) > 0 ? { kcal: Number(current.kcal), protein_g: Number(current.protein_g) } : null;
+  let kcalSum = 0;
+  let loggedDays = 0;
+  let proteinShortDays = 0;
+  let target = 0;
+  for (let i = 14; i >= 1; i--) {
+    const date = MacroCore.addDays(today, -i);
+    const t = MacroCore.targetOn(history, date) || fallback;
+    if (t) target = t.kcal;
+    const totals = dayTotals[date];
+    if (!totals || !(totals.kcal > 0)) continue;
+    loggedDays++;
+    kcalSum += totals.kcal;
+    if (t && totals.protein_g < t.protein_g * 0.9) proteinShortDays++;
   }
-  const scans = Math.round((dollars * 100) / centsPerScan_());
-  if (scans === 0) throw userError_("bad_amount", "That's less than one scan.");
-  let balance;
+  const greenWeeks = [];
+  for (let m = MacroCore.mondayOf(since); m <= MacroCore.mondayOf(today); m = MacroCore.addDays(m, 7)) {
+    greenWeeks.push({ weekStart: m, greenDays: MacroCore.weekSummary(dayTotals, history, m).greenDays });
+  }
+  return {
+    weights: member.hide_weight === "Y" ? [] : weightsFor_(slug).map((w) => ({ date: w.date, kg: w.kg })),
+    kcal: { avg: loggedDays ? Math.round(kcalSum / loggedDays) : 0, target: target, proteinShortDays: proteinShortDays, loggedDays: loggedDays },
+    greenWeeks: greenWeeks,
+  };
+}
+
+/** The card's goal tile: this client's newest goal, plus their Fuel numbers when the request has their key. */
+function actionGoal_(payload) {
+  const slug = slugify_(payload.id);
+  if (!slug) throw userError_("no_client", "Open your own card link first.");
+  const member = optionalMember_(payload);
+  const row = latestGoalRow_(slug);
+  const goal = row ? goalShape_(row) : null;
+  const today = todaySydney_();
+  const monthAgo = MacroCore.addDays(today, -28);
+  const since = goal && goal.start_date < monthAgo ? goal.start_date : monthAgo;
+  const locked = goal && MacroCore.FUEL_GOAL_TYPES.indexOf(goal.type) >= 0 && !member;
+  const shopping = member && hasShopping_(member) ? shoppingFor_(String(member.slug)).filter((i) => !i.done).length : null;
+  return {
+    today: today,
+    fuel: member ? fuelGoalStats_(member, since) : null,
+    goal: locked ? { type: goal.type, locked: true, start_date: goal.start_date, end_date: goal.end_date } : goal,
+    shoppingToBuy: shopping,
+  };
+}
+
+/**
+ * Sets this month's goal, or changes it (keeping the month it runs to).
+ * Once a month has ended, saving starts a new month from today.
+ */
+function actionSaveGoal_(payload) {
+  const slug = slugify_(payload.id);
+  if (!slug || !crmClients_().some((c) => c.slug === slug)) {
+    throw userError_("no_client", "We couldn't find your card. Open your own card link and try again.");
+  }
+  const g = payload.goal || {};
+  const type = String(g.type || "");
+  if (MacroCore.GOAL_TYPES.indexOf(type) < 0) throw userError_("bad_goal", "Pick a goal first.");
+  if (MacroCore.FUEL_GOAL_TYPES.indexOf(type) >= 0) authMember_(payload);
+  const clean = (v, n) => String(v || "").replace(/\s+/g, " ").trim().slice(0, n);
+  const int = (v, lo, hi) => Math.max(lo, Math.min(hi, Math.round(Number(v) || 0)));
+  const target = Math.round(Number(g.target) * 10) / 10;
+  if (!(target > 0 && target <= 500)) throw userError_("bad_goal", "That target doesn't look right.");
+  const strength = type === "strength";
+  const row = {
+    slug: slug,
+    type: type,
+    exercise: strength ? clean(g.exercise, 80) : "",
+    target: target,
+    target_reps: strength ? int(g.target_reps, 1, 50) : "",
+    start_value: Number(g.start_value) > 0 ? Math.round(Number(g.start_value) * 10) / 10 : "",
+    start_reps: strength ? int(g.start_reps, 1, 50) : "",
+    how: (Array.isArray(g.how) ? g.how : []).slice(0, 2).map((h) => clean(h, 80).replace(/\|/g, "/")).filter(Boolean).join(" | "),
+    why: clean(g.why, 120),
+    updated_at: nowStamp_(),
+  };
+  if (strength && !row.exercise) throw userError_("bad_goal", "Pick a lift.");
+  if ((strength || type === "weight") && !(row.start_value > 0)) throw userError_("bad_goal", "We need your starting point first.");
+  const today = todaySydney_();
+  let saved;
   withLock_(() => {
-    addCreditRow_(slug, scans, dollars, cleanText_(payload.note, 80) || (dollars > 0 ? "Top-up" : "Correction"), "coach");
-    balance = creditBalance_(slug);
+    const current = latestGoalRow_(slug);
+    if (current && String(current.end_date) >= today) {
+      updateRow_("goals", current._row, row);
+      saved = Object.assign({}, current, row);
+    } else {
+      saved = Object.assign({ id: Utilities.getUuid(), start_date: today, end_date: MacroCore.goalEndDate(today), created_at: nowStamp_() }, row);
+      appendRow_("goals", saved);
+    }
   });
-  return { slug: slug, scans: scans, balance: balance };
+  return { goal: goalShape_(saved) };
 }
 
 function actionIssueKey_(payload) {
@@ -1178,12 +2043,11 @@ function actionIssueKey_(payload) {
         hide_kcal: "N",
         created_at: nowStamp_(),
       });
-      // New clients get a few photo scans to try it before paying.
-      if (freeScans_() > 0) addCreditRow_(slug, freeScans_(), 0, "Free trial", "coach");
     }
     link = CARD_URL + "?id=" + encodeURIComponent(slug) + "&k=" + encodeURIComponent(key);
   });
-  return { slug: slug, link: link, credits: creditBalance_(slug) };
+  const member = readRows_("members").find((m) => String(m.slug) === slug);
+  return { slug: slug, link: link, plan: planFor_(member) };
 }
 
 function actionCoachSetTargets_(payload) {
@@ -1194,6 +2058,7 @@ function actionCoachSetTargets_(payload) {
     withLock_(() => {
       const row = readRows_("targets").find((t) => String(t.slug) === slug);
       if (row) tab_("targets").deleteRow(row._row);
+      recordTargetHistory_(slug, { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 }, "cleared");
     });
     return { targets: null };
   }
@@ -1221,7 +2086,836 @@ function actionCoachSetTargets_(payload) {
     const existing = readRows_("targets").find((t) => String(t.slug) === slug);
     if (existing) updateRow_("targets", existing._row, row);
     else appendRow_("targets", row);
+    recordTargetHistory_(slug, row, "coach");
     if (sex && sex !== member.sex) updateRow_("members", member._row, { sex: sex });
   });
   return { targets: targetsFor_(slug) };
+}
+
+function actionCoachGiveMonth_(payload) {
+  const slug = slugify_(payload.slug);
+  let plan;
+  withLock_(() => {
+    const member = readRows_("members").find((m) => String(m.slug) === slug);
+    if (!member) throw userError_("no_member", "Create this client's Fuel link first.");
+    const today = todaySydney_();
+    const current = /^\d{4}-\d{2}-\d{2}$/.test(String(member.comp_until)) ? String(member.comp_until) : "";
+    // Stack onto an existing free month rather than overlapping it.
+    const from = current && current >= today ? MacroCore.addDays(current, 1) : today;
+    const until = MacroCore.addDays(from, 29);
+    const tier = payload.tier === "diamond" ? "diamond" : "gold";
+    updateRow_("members", member._row, { comp_until: until, comp_tier: tier });
+    member.comp_until = until;
+    member.comp_tier = tier;
+    plan = planFor_(member);
+  });
+  return { slug: slug, plan: plan };
+}
+
+function actionCoachSyncStripe_() {
+  if (!prop_("STRIPE_SECRET_KEY")) throw userError_("no_stripe", "Add STRIPE_SECRET_KEY in Script Properties first.");
+  return { sync: syncStripe_() };
+}
+
+// ---------------------------------------------------------------------------
+// Stripe (read-only; see the notes at the top of this file)
+// ---------------------------------------------------------------------------
+
+function stripeGet_(path, params) {
+  const key = prop_("STRIPE_SECRET_KEY");
+  if (!key) throw new Error("STRIPE_SECRET_KEY is not set.");
+  const qs = Object.keys(params || {})
+    .map((k) => encodeURIComponent(k) + "=" + encodeURIComponent(params[k]))
+    .join("&");
+  const res = UrlFetchApp.fetch("https://api.stripe.com/v1/" + path + (qs ? "?" + qs : ""), {
+    headers: { Authorization: "Bearer " + key },
+    muteHttpExceptions: true,
+  });
+  let body = null;
+  try {
+    body = JSON.parse(res.getContentText());
+  } catch (err) {
+    body = null;
+  }
+  if (res.getResponseCode() !== 200 || !body) {
+    const msg = body && body.error && body.error.message ? body.error.message : "HTTP " + res.getResponseCode();
+    throw new Error("Stripe " + path + ": " + msg);
+  }
+  return body;
+}
+
+/** Every page of a Stripe list endpoint (capped, to stay well inside Apps Script's time limit). */
+function stripeList_(path, params, maxPages) {
+  const out = [];
+  let after = null;
+  for (let page = 0; page < (maxPages || 5); page++) {
+    const p = Object.assign({ limit: 100 }, params || {});
+    if (after) p.starting_after = after;
+    const res = stripeGet_(path, p);
+    (res.data || []).forEach((x) => out.push(x));
+    if (!res.has_more || !res.data.length) break;
+    after = res.data[res.data.length - 1].id;
+  }
+  return out;
+}
+
+/** "fuel-jordansmith" → the Members row for jordansmith, or null. */
+function memberForSession_(session, members) {
+  const m = /^fuel-([a-z0-9]+)$/.exec(String(session.client_reference_id || ""));
+  if (!m || session.status !== "complete" || !session.subscription) return null;
+  return members.find((x) => String(x.slug) === m[1]) || null;
+}
+
+function linkSubscription_(member, session) {
+  const sub = String(session.subscription);
+  if (String(member.stripe_subscription) === sub) return false;
+  updateRow_("members", member._row, { stripe_subscription: sub, stripe_customer: String(session.customer || "") });
+  member.stripe_subscription = sub;
+  return true;
+}
+
+/** Copies a Stripe subscription's status and renewal date onto the member. */
+function applySubscription_(member, sub) {
+  // Newer Stripe API versions keep the period end on the subscription item.
+  const item = sub.items && sub.items.data && sub.items.data[0];
+  const end = sub.current_period_end || (item && item.current_period_end);
+  const until = end ? Utilities.formatDate(new Date(end * 1000), TIMEZONE, "yyyy-MM-dd") : "";
+  // The tier is in the price's lookup key: "diamond" or "platinum" (the
+  // renamed Platinum product's keys) is Diamond, anything else Gold. The
+  // period is the price's.
+  const price = (item && item.price) || {};
+  const lookup = String(price.lookup_key || "");
+  const tier = lookup.indexOf("diamond") >= 0 || lookup.indexOf("platinum") >= 0 ? "diamond" : "gold";
+  const interval = price.recurring && price.recurring.interval === "year" ? "year" : "month";
+  if (
+    String(member.plan_status) === sub.status &&
+    String(member.plan_until) === until &&
+    String(member.plan_tier) === tier &&
+    String(member.plan_interval) === interval
+  ) {
+    return false;
+  }
+  updateRow_("members", member._row, { plan_status: sub.status, plan_until: until, plan_tier: tier, plan_interval: interval });
+  member.plan_status = sub.status;
+  member.plan_until = until;
+  member.plan_tier = tier;
+  member.plan_interval = interval;
+  return true;
+}
+
+/**
+ * Links new Fuel AI checkouts to their clients, then refreshes every
+ * linked client's subscription status. Two to a few Stripe calls — fine
+ * for ~30 clients. Returns { linked, updated }.
+ */
+function syncStripe_() {
+  return withLock_(() => {
+    const props = PropertiesService.getScriptProperties();
+    const since = Number(props.getProperty("STRIPE_SYNCED_TO")) || 0;
+    const startedAt = Math.floor(Date.now() / 1000);
+    const members = readRows_("members");
+    let linked = 0;
+    let updated = 0;
+
+    // An hour of overlap, so a checkout finishing mid-sync is never missed.
+    const sessions = stripeList_("checkout/sessions", { status: "complete", "created[gte]": Math.max(0, since - 3600) });
+    sessions.forEach((session) => {
+      const member = memberForSession_(session, members);
+      if (member && linkSubscription_(member, session)) linked++;
+    });
+
+    if (members.some((m) => m.stripe_subscription)) {
+      const subs = {};
+      stripeList_("subscriptions", { status: "all" }).forEach((sub) => (subs[sub.id] = sub));
+      members.forEach((member) => {
+        const sub = subs[String(member.stripe_subscription)];
+        if (sub && applySubscription_(member, sub)) updated++;
+      });
+    }
+    props.setProperty("STRIPE_SYNCED_TO", String(startedAt));
+    props.setProperty("STRIPE_LAST_SYNC_AT", nowStamp_());
+    return { linked: linked, updated: updated };
+  });
+}
+
+/** Run by the 15-minute trigger (and safe to run by hand from the editor). */
+function syncStripe() {
+  if (!prop_("STRIPE_SECRET_KEY")) return "Add STRIPE_SECRET_KEY first.";
+  return JSON.stringify(syncStripe_());
+}
+
+/** Run ONCE from the editor: checks Stripe every 15 minutes from now on. */
+function installStripeSync() {
+  ScriptApp.getProjectTriggers()
+    .filter((t) => t.getHandlerFunction() === "syncStripe")
+    .forEach((t) => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger("syncStripe").timeBased().everyMinutes(15).create();
+  return "Stripe sync will run every 15 minutes.";
+}
+
+/**
+ * The Payment Link redirects to maxfit.now/card/?paid={CHECKOUT_SESSION_ID}.
+ * The card sends that id here; we fetch the session from Stripe (so it
+ * can't be faked) and switch the client's Fuel AI on straight away.
+ */
+function actionStripeReturn_(payload) {
+  const id = String(payload.session_id || "");
+  if (!/^cs_[A-Za-z0-9_]+$/.test(id)) throw userError_("bad_session", "That payment link didn't come back properly.");
+  if (!prop_("STRIPE_SECRET_KEY")) return { linked: false };
+  let session;
+  try {
+    session = stripeGet_("checkout/sessions/" + id, {});
+  } catch (err) {
+    return { linked: false }; // not a real session (or Stripe hiccup): the 15-minute sync is the backstop
+  }
+  let linked = false;
+  withLock_(() => {
+    const member = memberForSession_(session, readRows_("members"));
+    if (!member) return;
+    linkSubscription_(member, session);
+    applySubscription_(member, stripeGet_("subscriptions/" + session.subscription, {}));
+    linked = planFor_(member).access;
+  });
+  return { linked: linked };
+}
+
+// ---------------------------------------------------------------------------
+// Foods: the curated list behind "what to eat next"
+// ---------------------------------------------------------------------------
+
+// About 80 Australian staples, per 100 g (or 100 ml). Whole foods follow
+// AUSNUT/FSANZ-style reference values; takeaway items are approximate
+// published figures. Seeded into the Foods tab once — Max edits them there.
+// [name, category, serve_g, serve_label, kcal, protein, carbs, fat]
+const FOOD_SEED = [
+  ["Chicken breast, grilled", "protein", 150, "", 165, 31, 0, 3.6],
+  ["Chicken thigh, grilled (skin off)", "protein", 150, "", 190, 26, 0, 9.5],
+  ["Roast chicken with skin", "protein", 150, "", 215, 27, 0, 11.5],
+  ["Lean beef mince, cooked", "protein", 150, "", 175, 27, 0, 7.5],
+  ["Rump steak, lean, grilled", "protein", 180, "", 180, 30, 0, 6.5],
+  ["Pork loin, lean, grilled", "protein", 150, "", 165, 30, 0, 4.5],
+  ["Lamb, lean, grilled", "protein", 150, "", 190, 28, 0, 8.5],
+  ["Kangaroo steak, grilled", "protein", 150, "", 105, 24, 0, 1.2],
+  ["Salmon fillet, baked", "protein", 150, "", 206, 22, 0, 13],
+  ["White fish (barramundi), baked", "protein", 150, "", 110, 23, 0, 1.8],
+  ["Prawns, cooked", "protein", 150, "", 99, 24, 0.2, 0.3],
+  ["Tuna in springwater, drained", "protein", 95, "1 small tin", 110, 25, 0, 1],
+  ["Eggs", "protein", 104, "2 eggs", 143, 12.6, 0.7, 9.5],
+  ["Egg whites", "protein", 150, "", 52, 11, 0.7, 0.2],
+  ["Turkey breast, deli sliced", "protein", 80, "", 105, 21, 2, 1.5],
+  ["Ham, lean, deli sliced", "protein", 60, "", 110, 18, 2, 3.5],
+  ["Firm tofu", "protein", 150, "", 144, 15.8, 2.8, 8.7],
+  ["Lentils, cooked", "protein", 150, "", 116, 9, 20, 0.4],
+  ["Chickpeas, canned, drained", "protein", 125, "", 139, 7, 19, 2.6],
+  ["Beef jerky", "snack", 40, "", 280, 45, 11, 5],
+
+  ["Whey protein shake (water)", "shake", 30, "1 scoop", 370, 88, 3, 1.5],
+  ["Greek yoghurt, low fat (e.g. Chobani Fit)", "dairy", 170, "", 59, 10, 4, 0.2],
+  ["High-protein yoghurt pouch (e.g. YoPRO)", "dairy", 160, "1 pouch", 60, 10, 4, 0.2],
+  ["Natural yoghurt, full fat", "dairy", 150, "", 95, 4.5, 6.5, 5.5],
+  ["Cottage cheese, low fat", "dairy", 100, "", 80, 12.5, 3, 1.5],
+  ["Skim milk", "dairy", 250, "1 glass", 36, 3.5, 5, 0.1],
+  ["Full-cream milk", "dairy", 250, "1 glass", 65, 3.4, 4.8, 3.6],
+  ["Cheddar cheese", "snack", 25, "1 slice", 400, 25, 0.1, 33],
+
+  ["White rice, cooked", "carb", 180, "1 cup", 130, 2.4, 28.6, 0.3],
+  ["Microwave rice cup", "carb", 125, "1 cup", 146, 2.8, 32, 0.5],
+  ["Brown rice, cooked", "carb", 180, "1 cup", 123, 2.7, 25.6, 1],
+  ["Pasta, cooked", "carb", 180, "1 cup", 157, 5.8, 30.9, 0.9],
+  ["Potato, boiled", "carb", 200, "", 77, 2, 17, 0.1],
+  ["Sweet potato, baked", "carb", 200, "", 90, 2, 20.7, 0.2],
+  ["Wholemeal bread", "carb", 80, "2 slices", 240, 10, 40, 3],
+  ["Sourdough", "carb", 70, "1 thick slice", 250, 9, 48, 1.5],
+  ["Wholemeal wrap", "carb", 64, "1 wrap", 300, 9, 50, 7],
+  ["Rolled oats (dry)", "cereal", 40, "", 375, 13, 58, 8.5],
+  ["Weet-Bix", "cereal", 33, "2 biscuits", 353, 12.4, 65.9, 1.3],
+  ["Quinoa, cooked", "carb", 150, "", 120, 4.4, 21.3, 1.9],
+  ["Rice cakes", "snack", 20, "2 cakes", 385, 8, 80, 3],
+  ["Crumpets", "snack", 100, "2 crumpets", 190, 6, 38, 1],
+  ["Natural muesli", "cereal", 45, "", 380, 10, 58, 11],
+
+  ["Banana", "fruit", 120, "1 banana", 89, 1.1, 22.8, 0.3],
+  ["Apple", "fruit", 150, "1 apple", 52, 0.3, 13.8, 0.2],
+  ["Mixed berries", "fruit", 100, "", 45, 0.8, 9.5, 0.3],
+  ["Orange", "fruit", 150, "1 orange", 47, 0.9, 11.8, 0.1],
+  ["Mango", "fruit", 150, "", 60, 0.8, 15, 0.4],
+  ["Grapes", "fruit", 100, "", 69, 0.7, 18, 0.2],
+  ["Watermelon", "fruit", 200, "", 30, 0.6, 7.6, 0.2],
+
+  ["Mixed salad leaves", "veg", 50, "", 17, 1.5, 2, 0.2],
+  ["Broccoli, steamed", "veg", 100, "", 35, 2.4, 7, 0.4],
+  ["Stir-fry vegetables", "veg", 150, "", 35, 2, 6, 0.3],
+  ["Green beans", "veg", 100, "", 31, 1.8, 7, 0.1],
+  ["Carrot", "veg", 80, "1 carrot", 41, 0.9, 9.6, 0.2],
+  ["Cucumber", "veg", 100, "", 15, 0.7, 3.6, 0.1],
+  ["Edamame", "veg", 100, "", 121, 11.9, 8.9, 5.2],
+
+  ["Avocado", "fat", 50, "1/4 avocado", 160, 2, 8.5, 14.7],
+  ["Olive oil", "fat", 5, "1 tsp", 884, 0, 0, 100],
+  ["Almonds", "snack", 30, "small handful", 580, 21, 22, 50],
+  ["Peanut butter", "snack", 20, "1 tbsp", 590, 25, 20, 50],
+  ["Protein bar", "snack", 60, "1 bar", 380, 33, 35, 13],
+  ["Popcorn, plain", "snack", 20, "", 387, 12.9, 77.8, 4.5],
+  ["Hummus", "snack", 40, "", 260, 7, 14, 19],
+  ["Rice crackers", "snack", 20, "", 400, 7, 80, 4],
+  ["Dark chocolate (70%)", "snack", 20, "", 600, 7.8, 46, 43],
+
+  ["Flat white, full cream (regular)", "drink", 250, "1 coffee", 45, 2.5, 3.6, 2.3],
+  ["Flat white, skim (regular)", "drink", 250, "1 coffee", 25, 2.6, 3.8, 0.1],
+  ["Orange juice", "drink", 250, "1 glass", 45, 0.7, 10.4, 0.2],
+
+  ["Guzman y Gomez chicken burrito bowl", "meal", 480, "1 bowl", 117, 9, 12.1, 3.3],
+  ["Subway 6-inch chicken breast sub (no sauce)", "meal", 240, "1 sub", 137, 10.4, 17.9, 2.1],
+  ["Nando's quarter chicken breast (plain)", "meal", 170, "1 serve", 135, 23.5, 0.5, 4.1],
+  ["Salmon poke bowl", "meal", 450, "1 bowl", 133, 6.7, 15.6, 4.4],
+  ["Sushi hand roll (chicken avocado)", "meal", 110, "1 roll", 180, 5.5, 32, 3.5],
+  ["McDonald's cheeseburger", "meal", 118, "1 burger", 254, 13.6, 27, 10.6],
+  ["Meat pie", "meal", 175, "1 pie", 257, 7.4, 21.7, 15.4],
+  ["Chicken & salad wrap (cafe)", "meal", 250, "1 wrap", 170, 11, 18, 6],
+];
+
+/** The Foods tab as objects the card and MacroCore understand (seeds it on first use). */
+function foodsList_() {
+  let rows = readRows_("foods");
+  if (!rows.length) {
+    withLock_(() => {
+      if (readRows_("foods").length) return;
+      const sheet = tab_("foods");
+      const values = FOOD_SEED.map((r) => r.slice());
+      sheet.getRange(2, 1, values.length, values[0].length).setValues(values);
+    });
+    rows = readRows_("foods");
+  }
+  return rows
+    .map((r) => ({
+      name: String(r.name || "").trim(),
+      category: String(r.category || "").trim().toLowerCase(),
+      serve_g: Number(r.serve_g) || 0,
+      serve_label: String(r.serve_label || "").trim(),
+      per100: {
+        kcal: Number(r.kcal_100g) || 0,
+        protein_g: Number(r.protein_100g) || 0,
+        carbs_g: Number(r.carbs_100g) || 0,
+        fat_g: Number(r.fat_100g) || 0,
+      },
+    }))
+    .filter((f) => f.name && f.serve_g > 0 && f.per100.kcal > 0);
+}
+
+// ---------------------------------------------------------------------------
+// Ask Fuel: the AI copilot chat (Diamond only)
+// ---------------------------------------------------------------------------
+
+const CHAT_SYSTEM_PROMPT = [
+  "You are Fuel, the nutrition copilot inside MaxFit, the app of Max, an Australian personal trainer in Sydney.",
+  "You help one of Max's clients decide what to eat next so they hit their daily protein, carbohydrate, fat and calorie targets.",
+  "",
+  "How to answer",
+  "- Be brief, warm and practical: 2–5 short sentences, like a supportive coach texting. No lectures, no headings.",
+  "- Use the client's numbers in the context (targets, what they've eaten, what's left). Suggest concrete foods and amounts in grams that fit what's left.",
+  "- Think Australian: supermarket staples (Woolworths, Coles, Aldi), cafe orders, and takeaway like Guzman y Gomez, Subway, Nando's, sushi, poke, Maccas.",
+  "- Put every specific food you recommend eating in `foods`, with realistic grams and macros for that amount (kcal ≈ 4×protein + 4×carbs + 9×fat). Leave `foods` empty if you're not recommending specific foods.",
+  "- If the client hides calories, talk about protein and portions and don't quote calorie numbers in `reply`.",
+  "",
+  "Tone and safety",
+  "- Supportive, never shaming. Going over is information, not failure: say 'no stress' and offer high-protein, lower-calorie options if they're still hungry.",
+  "- Never suggest skipping meals, purging, fasting to compensate, or eating less in a day than the calorie floor given in the context.",
+  "- You're not a doctor or dietitian. If the client mentions a medical condition, medication, pregnancy, an eating disorder or disordered eating, be kind, keep advice general, and suggest they speak with their GP or an Accredited Practising Dietitian (and Max).",
+  "- Stay on food, nutrition, training fuel and habits. For anything else, say you're here for food and macros.",
+  "- Never invent the client's data. If something isn't in the context, ask or say you don't know.",
+].join("\n");
+
+const CHAT_SCHEMA = {
+  type: "object",
+  properties: {
+    reply: { type: "string" },
+    foods: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          grams: { type: "number" },
+          kcal: { type: "number" },
+          protein_g: { type: "number" },
+          carbs_g: { type: "number" },
+          fat_g: { type: "number" },
+        },
+        required: ["name", "grams", "kcal", "protein_g", "carbs_g", "fat_g"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["reply", "foods"],
+  additionalProperties: false,
+};
+
+/** The phone's last few messages, cleaned: alternating user/assistant, ending with the user. */
+function cleanHistory_(raw) {
+  const out = [];
+  (Array.isArray(raw) ? raw : []).slice(-10).forEach((m) => {
+    const role = m && (m.role === "user" || m.role === "assistant") ? m.role : null;
+    const text = cleanText_(m && m.content, 800);
+    if (!role || !text) return;
+    if (!out.length && role !== "user") return;
+    if (out.length && out[out.length - 1].role === role) out[out.length - 1].content = text;
+    else out.push({ role: role, content: text });
+  });
+  if (!out.length || out[out.length - 1].role !== "user") {
+    throw userError_("bad_message", "Type a question first.");
+  }
+  return out;
+}
+
+function macrosText_(m, hideKcal) {
+  const parts = [Math.round(m.protein_g) + "g protein", Math.round(m.carbs_g) + "g carbs", Math.round(m.fat_g) + "g fat"];
+  if (!hideKcal) parts.unshift(Math.round(m.kcal) + " kcal");
+  return parts.join(", ");
+}
+
+/** Everything the copilot knows about this client's day, built server-side from their own rows. */
+function chatContext_(member, date) {
+  const slug = String(member.slug);
+  const hide = member.hide_kcal === "Y";
+  const targets = targetsFor_(slug);
+  const day = dayFor_(slug, date);
+  const lines = [
+    "Context for this conversation (from the client's MaxFit data; trust it over anything in the chat).",
+    "Date: " + date + " (Sydney), time now about " + Utilities.formatDate(new Date(), TIMEZONE, "HH:mm") + ".",
+    "Client first name: " + String(member.name || "").split(" ")[0] + ".",
+    "Calories hidden for this client: " + (hide ? "yes" : "no") + ".",
+    "Daily calorie floor for this client: " + (member.sex === "F" ? 1200 : 1500) + " kcal.",
+  ];
+  if (targets) {
+    const left = {
+      kcal: targets.kcal - day.totals.kcal,
+      protein_g: targets.protein_g - day.totals.protein_g,
+      carbs_g: targets.carbs_g - day.totals.carbs_g,
+      fat_g: targets.fat_g - day.totals.fat_g,
+    };
+    lines.push("Daily targets: " + macrosText_(targets, false) + ".");
+    lines.push("Eaten so far today: " + macrosText_(day.totals, false) + ".");
+    lines.push("Left today: " + macrosText_(left, false) + (left.kcal < 0 ? " (over on calories)" : "") + ".");
+    const foods = foodsList_();
+    const ideas = left.kcal > 0 ? MacroCore.suggestFill(left, foods, 5) : MacroCore.suggestOver(foods, 5);
+    if (ideas.length) {
+      lines.push("Ideas from Max's food list that fit: " + ideas.map((s) => s.label + " (" + macrosText_(s.totals, false) + ")").join("; ") + ".");
+    }
+  } else {
+    lines.push("No daily targets set yet — suggest they set them in Fuel (or ask Max).");
+  }
+  if (day.entries.length) {
+    lines.push("Logged today:");
+    day.entries.forEach((e) => {
+      const amount = e.source === "quick" ? Math.round(e.grams) / 100 + " serve(s)" : e.grams + " g";
+      lines.push("- " + e.meal + ": " + e.name + ", " + amount + " (" + macrosText_(e, false) + ")");
+    });
+  } else {
+    lines.push("Nothing logged yet today.");
+  }
+  return lines.join("\n");
+}
+
+function actionChat_(payload, member) {
+  const slug = String(member.slug);
+  requireAskFuel_(member);
+  const history = cleanHistory_(payload.messages);
+  const context = chatContext_(member, validDate_(payload.date));
+  const usageRow = reserveAi_(member, "chat", TEXT_MODEL);
+
+  let res;
+  try {
+    res = UrlFetchApp.fetch("https://api.anthropic.com/v1/messages", {
+      method: "post",
+      contentType: "application/json",
+      headers: { "x-api-key": prop_("ANTHROPIC_API_KEY"), "anthropic-version": "2023-06-01" },
+      payload: JSON.stringify({
+        model: TEXT_MODEL,
+        max_tokens: 1200,
+        system: [
+          { type: "text", text: CHAT_SYSTEM_PROMPT },
+          { type: "text", text: context },
+        ],
+        output_config: { format: { type: "json_schema", schema: CHAT_SCHEMA } },
+        messages: history,
+      }),
+      muteHttpExceptions: true,
+    });
+  } catch (err) {
+    recordUsage_(usageRow, null, "error", TEXT_MODEL);
+    throw userError_("ai_failed", "Fuel couldn't answer just now. Try again in a moment.");
+  }
+  let data = {};
+  try {
+    data = JSON.parse(res.getContentText());
+  } catch (err) {
+    data = {};
+  }
+  if (res.getResponseCode() !== 200 || data.stop_reason === "refusal" || data.stop_reason === "max_tokens") {
+    recordUsage_(usageRow, data.usage, res.getResponseCode() !== 200 ? "http_" + res.getResponseCode() : data.stop_reason, TEXT_MODEL);
+    console.error("Chat error", res.getResponseCode(), JSON.stringify(data).slice(0, 500));
+    throw userError_("ai_failed", "Fuel couldn't answer just now. Try again in a moment.");
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse((data.content || []).find((b) => b.type === "text").text);
+  } catch (err) {
+    recordUsage_(usageRow, data.usage, "bad_json", TEXT_MODEL);
+    throw userError_("ai_failed", "Fuel couldn't answer just now. Try again in a moment.");
+  }
+  recordUsage_(usageRow, data.usage, "Y", TEXT_MODEL);
+
+  const foods = (parsed.foods || [])
+    .slice(0, 5)
+    .map((f) => {
+      const grams = Math.round(n_(f.grams, 0, 2000));
+      if (!(grams > 0)) return null;
+      const macros = { protein_g: n_(f.protein_g, 0, 500), carbs_g: n_(f.carbs_g, 0, 500), fat_g: n_(f.fat_g, 0, 500) };
+      macros.kcal = MacroCore.reconcileKcal(Object.assign({ kcal: n_(f.kcal, 0, 5000) }, macros));
+      const per100 = MacroCore.per100From(macros, grams);
+      return Object.assign({ name: cleanText_(f.name, 80) || "Food", grams: grams, per100: per100 }, MacroCore.scale(per100, grams));
+    })
+    .filter(Boolean);
+  return {
+    reply: String(parsed.reply || "").trim().slice(0, 1500), // keeps line breaks; the card escapes it
+    foods: foods,
+    aiToday: aiToday_(member),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Progress: weights, target history, green days, nutrition punches
+// ---------------------------------------------------------------------------
+
+function cleanGoalKg_(value) {
+  const n = Number(value);
+  return n >= 30 && n <= 300 ? Math.round(n * 10) / 10 : "";
+}
+
+/** Appends a row to Target History, so past days are judged against the target they had. */
+function recordTargetHistory_(slug, row, setBy) {
+  appendRow_("targetHistory", {
+    slug: slug,
+    effective_date: todaySydney_(),
+    kcal: Number(row.kcal) || 0,
+    protein_g: Number(row.protein_g) || 0,
+    carbs_g: Number(row.carbs_g) || 0,
+    fat_g: Number(row.fat_g) || 0,
+    set_by: setBy,
+    created_at: nowStamp_(),
+  });
+}
+
+/**
+ * A member's target history, oldest first. Members whose targets predate
+ * the history tab get one row seeded from their current target, dated the
+ * day it was last set.
+ */
+function historyFor_(slug, rows) {
+  let mine = (rows || readRows_("targetHistory")).filter((h) => String(h.slug) === slug);
+  if (!mine.length) {
+    const t = readRows_("targets").find((r) => String(r.slug) === slug);
+    if (t && Number(t.kcal) > 0) {
+      const since = /^\d{4}-\d{2}-\d{2}/.test(String(t.updated_at)) ? String(t.updated_at).slice(0, 10) : todaySydney_();
+      const seed = {
+        slug: slug,
+        effective_date: since,
+        kcal: Number(t.kcal),
+        protein_g: Number(t.protein_g),
+        carbs_g: Number(t.carbs_g),
+        fat_g: Number(t.fat_g),
+        set_by: String(t.set_by || "") + " (seeded)",
+        created_at: nowStamp_(),
+      };
+      appendRow_("targetHistory", seed);
+      mine = [seed];
+    }
+  }
+  return mine
+    .map((h) => ({
+      effective_date: String(h.effective_date),
+      kcal: Number(h.kcal) || 0,
+      protein_g: Number(h.protein_g) || 0,
+      carbs_g: Number(h.carbs_g) || 0,
+      fat_g: Number(h.fat_g) || 0,
+      set_by: String(h.set_by || ""),
+    }))
+    .sort((a, b) => (a.effective_date < b.effective_date ? -1 : a.effective_date > b.effective_date ? 1 : 0));
+}
+
+/** { "YYYY-MM-DD": totals } for a member's logs on or after fromDate. */
+function dayTotalsFor_(slug, fromDate, logRows) {
+  const byDate = {};
+  (logRows || readRows_("logs")).forEach((r) => {
+    if (String(r.slug) !== slug) return;
+    const d = String(r.log_date);
+    if (d < fromDate) return;
+    (byDate[d] = byDate[d] || []).push({ kcal: r.kcal, protein_g: r.protein_g, carbs_g: r.carbs_g, fat_g: r.fat_g });
+  });
+  const out = {};
+  Object.keys(byDate).forEach((d) => (out[d] = MacroCore.sumTotals(byDate[d])));
+  return out;
+}
+
+/** A member's weigh-ins, oldest first. */
+function weightsFor_(slug, rows) {
+  return (rows || readRows_("weights"))
+    .filter((w) => String(w.slug) === slug && Number(w.kg) > 0)
+    .map((w) => ({ date: String(w.date), kg: Number(w.kg), by: String(w.by || "") }))
+    .sort((a, b) => (a.date < b.date ? -1 : 1));
+}
+
+/** Latest 7-day-average weight and how it moved over the past week, or null. */
+function weightTrend_(slug) {
+  const since = MacroCore.addDays(todaySydney_(), -60);
+  const trend = MacroCore.movingAverage(weightsFor_(slug).filter((w) => w.date >= since), 7);
+  if (!trend.length) return null;
+  const last = trend[trend.length - 1];
+  const weekAgo = MacroCore.addDays(last.date, -7);
+  const earlier = trend.filter((p) => p.date <= weekAgo).pop();
+  return {
+    kg: MacroCore.round1(last.kg),
+    date: last.date,
+    change7: earlier ? MacroCore.round1(last.kg - earlier.kg) : null,
+  };
+}
+
+// --- CRM (the main MaxFit sheet): loyalty counts ---------------------------------
+
+const CRM_PUNCH_COLUMNS = ["Nutrition Punches", "Free Session Owed"];
+
+/** The CRM's Sessions Remaining tab, with the two loyalty columns added if missing. */
+function crmSheet_() {
+  const id = prop_("MAIN_SHEET_ID");
+  if (!id) return null;
+  const sheet = SpreadsheetApp.openById(id).getSheets().find((s) => s.getSheetId() === MAIN_SESSIONS_GID);
+  if (!sheet) return null;
+  const width = Math.max(1, sheet.getLastColumn());
+  const header = sheet.getRange(1, 1, 1, width).getValues()[0].map((h) => String(h).trim());
+  while (header.length && header[header.length - 1] === "") header.pop();
+  CRM_PUNCH_COLUMNS.forEach((name) => {
+    if (header.some((h) => h.toLowerCase() === name.toLowerCase())) return;
+    header.push(name);
+    sheet.getRange(1, header.length).setValue(name);
+  });
+  return sheet;
+}
+
+/** Loyalty numbers for every CRM client, by name slug. */
+function crmIndex_() {
+  const sheet = crmSheet_();
+  const out = { sheet: sheet, bySlug: {}, col: {} };
+  if (!sheet) return out;
+  const values = sheet.getDataRange().getValues();
+  const header = values[0].map((h) => String(h).trim().toLowerCase());
+  const col = {
+    name: header.indexOf("name"),
+    attended: header.indexOf("total classes attended"),
+    punches: header.indexOf("nutrition punches"),
+    referral: header.indexOf("referral punches"), // added by the check-in script
+    manual: header.indexOf("manual session punches"), // added by the check-in script, for a hand-raised Paid Sessions
+    owed: header.indexOf("free session owed"),
+  };
+  out.col = col;
+  if (col.name < 0) return out;
+  for (let r = 1; r < values.length; r++) {
+    const slug = slugify_(values[r][col.name]);
+    if (!slug) continue;
+    out.bySlug[slug] = {
+      row: r + 1,
+      attended: col.attended >= 0 ? Number(values[r][col.attended]) || 0 : 0,
+      punches: col.punches >= 0 ? Number(values[r][col.punches]) || 0 : 0,
+      referralPunches: col.referral >= 0 ? Number(values[r][col.referral]) || 0 : 0,
+      manualPunches: col.manual >= 0 ? Number(values[r][col.manual]) || 0 : 0,
+      owed: col.owed >= 0 && String(values[r][col.owed]).trim().toUpperCase() === "Y",
+    };
+  }
+  return out;
+}
+
+// --- member actions -----------------------------------------------------------------
+
+function actionProgress_(payload, member) {
+  const slug = String(member.slug);
+  const today = todaySydney_();
+  const thisMonday = MacroCore.mondayOf(today);
+  const lastMonday = MacroCore.addDays(thisMonday, -7);
+  const history = historyFor_(slug);
+  const dayTotals = dayTotalsFor_(slug, MacroCore.addDays(thisMonday, -21));
+  const slim = (w) => ({
+    weekStart: w.weekStart,
+    greenDays: w.greenDays,
+    earnsPunch: w.earnsPunch,
+    days: w.days.map((d) => ({ date: d.date, logged: d.logged, green: d.green })),
+  });
+  const days = [];
+  for (let i = 13; i >= 0; i--) {
+    const date = MacroCore.addDays(today, -i);
+    const totals = dayTotals[date] || { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 };
+    const target = MacroCore.targetOn(history, date);
+    days.push({
+      date: date,
+      kcal: totals.kcal,
+      protein_g: totals.protein_g,
+      target_kcal: target ? target.kcal : null,
+      green: MacroCore.isGreenDay(totals, target),
+    });
+  }
+  const targets = targetsFor_(slug);
+  const crm = crmIndex_().bySlug[slug] || null;
+  const lastWeek = slim(MacroCore.weekSummary(dayTotals, history, lastMonday));
+  lastWeek.awarded = readRows_("punches").some((p) => String(p.slug) === slug && String(p.week_start) === lastMonday);
+  const hideWeight = member.hide_weight === "Y";
+  return {
+    progress: {
+      today: today,
+      hideWeight: hideWeight,
+      weights: hideWeight ? [] : weightsFor_(slug),
+      history: history,
+      days: days,
+      thisWeek: slim(MacroCore.weekSummary(dayTotals, history, thisMonday)),
+      lastWeek: lastWeek,
+      goal: {
+        goal_weight_kg: targets ? targets.goal_weight_kg : null,
+        weekly_rate_kg: targets ? targets.weekly_rate_kg : null,
+        kind: targets && targets.calc_inputs ? targets.calc_inputs.goal : null,
+      },
+      loyalty: crm ? { attended: crm.attended, punches: crm.punches + crm.referralPunches + crm.manualPunches, owed: crm.owed } : null,
+      punchEvery: MacroCore.GREEN_DAYS_FOR_PUNCH,
+    },
+  };
+}
+
+function cleanWeightInput_(payload) {
+  const kg = Math.round(Number(payload.kg) * 10) / 10;
+  if (!(kg >= 30 && kg <= 300)) throw userError_("bad_weight", "Enter your weight in kg (between 30 and 300).");
+  const today = todaySydney_();
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(payload.date || "")) ? String(payload.date) : today;
+  if (date > today) throw userError_("bad_date", "That date's in the future.");
+  if (date < MacroCore.addDays(today, -366)) throw userError_("bad_date", "That's more than a year ago.");
+  return { kg: kg, date: date };
+}
+
+/** One weigh-in per member per day: a second one that day replaces the first. */
+function upsertWeight_(slug, date, kg, by) {
+  withLock_(() => {
+    const existing = readRows_("weights").find((w) => String(w.slug) === slug && String(w.date) === date);
+    if (existing) updateRow_("weights", existing._row, { kg: kg, by: by, created_at: nowStamp_() });
+    else appendRow_("weights", { id: Utilities.getUuid(), slug: slug, date: date, kg: kg, by: by, created_at: nowStamp_() });
+  });
+}
+
+function actionLogWeight_(payload, member) {
+  const slug = String(member.slug);
+  const w = cleanWeightInput_(payload);
+  upsertWeight_(slug, w.date, w.kg, "client");
+  return { weights: weightsFor_(slug), weightTrend: weightTrend_(slug) };
+}
+
+function actionDeleteWeight_(payload, member) {
+  const slug = String(member.slug);
+  const date = String(payload.date || "");
+  withLock_(() => {
+    const row = readRows_("weights").find((w) => String(w.slug) === slug && String(w.date) === date);
+    if (row) tab_("weights").deleteRow(row._row);
+  });
+  return { weights: weightsFor_(slug), weightTrend: weightTrend_(slug) };
+}
+
+// --- coach actions ----------------------------------------------------------------------
+
+function actionCoachLogWeight_(payload) {
+  const slug = slugify_(payload.slug);
+  if (!readRows_("members").some((m) => String(m.slug) === slug)) {
+    throw userError_("no_member", "Create this client's Fuel link first.");
+  }
+  const w = cleanWeightInput_(payload);
+  upsertWeight_(slug, w.date, w.kg, "coach");
+  const last = weightsFor_(slug).pop();
+  return { slug: slug, lastWeight: last ? { date: last.date, kg: last.kg } : null };
+}
+
+/** Max sets a goal weight and a pace in kg/week; the direction follows the goal. */
+function actionCoachSetGoal_(payload) {
+  const slug = slugify_(payload.slug);
+  const row = readRows_("targets").find((t) => String(t.slug) === slug);
+  if (!row) throw userError_("no_targets", "Set this client's targets first.");
+  const goal = cleanGoalKg_(payload.goal_weight_kg);
+  const pace = Math.abs(Number(payload.weekly_rate_kg) || 0);
+  if (pace > 2) throw userError_("bad_rate", "Keep the pace under 2 kg a week.");
+  let rate = "";
+  if (pace > 0) {
+    const latest = weightsFor_(slug).pop();
+    let sign = -1;
+    if (goal && latest) sign = goal > latest.kg ? 1 : -1;
+    else {
+      let calc = null;
+      try {
+        calc = row.calc_inputs ? JSON.parse(row.calc_inputs) : null;
+      } catch (err) {
+        calc = null;
+      }
+      if (calc && calc.goal === "gain") sign = 1;
+    }
+    rate = Math.round(sign * pace * 100) / 100;
+  }
+  updateRow_("targets", row._row, { goal_weight_kg: goal, weekly_rate_kg: rate });
+  return { slug: slug, goal_weight_kg: goal || null, weekly_rate_kg: rate === "" ? null : rate };
+}
+
+// --- weekly nutrition punches -----------------------------------------------------------
+
+/**
+ * For each Fuel member, looks at the last two finished Monday–Sunday weeks;
+ * any week with 5+ green days that hasn't been awarded adds 1 to their
+ * "Nutrition Punches" in the CRM (and sets "Free Session Owed" when that
+ * completes a card of 10). Safe to run any time and as often as you like.
+ */
+function awardPunches_() {
+  const thisMonday = MacroCore.mondayOf(todaySydney_());
+  const weeks = [MacroCore.addDays(thisMonday, -14), MacroCore.addDays(thisMonday, -7)];
+  const members = readRows_("members");
+  const logs = readRows_("logs");
+  const history = readRows_("targetHistory");
+  const awarded = [];
+  withLock_(() => {
+    const done = readRows_("punches").map((p) => String(p.slug) + "|" + String(p.week_start));
+    const crm = crmIndex_();
+    if (!crm.sheet || crm.col.punches < 0) return;
+    members.forEach((m) => {
+      const slug = String(m.slug);
+      const client = crm.bySlug[slug];
+      if (!client) return;
+      const mine = historyFor_(slug, history); // once per member: it may seed a row
+      weeks.forEach((weekStart) => {
+        if (done.indexOf(slug + "|" + weekStart) >= 0) return;
+        const week = MacroCore.weekSummary(dayTotalsFor_(slug, weekStart, logs), mine, weekStart);
+        if (!week.earnsPunch) return;
+        client.punches += 1;
+        crm.sheet.getRange(client.row, crm.col.punches + 1).setValue(client.punches);
+        if ((client.attended + client.punches + client.referralPunches + client.manualPunches) % 10 === 0 && crm.col.owed >= 0) {
+          crm.sheet.getRange(client.row, crm.col.owed + 1).setValue("Y");
+          client.owed = true;
+        }
+        appendRow_("punches", { slug: slug, week_start: weekStart, green_days: week.greenDays, awarded_at: nowStamp_() });
+        done.push(slug + "|" + weekStart);
+        awarded.push({ slug: slug, weekStart: weekStart, greenDays: week.greenDays, freeSessionOwed: client.owed });
+      });
+    });
+  });
+  return awarded;
+}
+
+/** Run by the daily trigger (and safe to run by hand from the editor). */
+function awardPunches() {
+  return JSON.stringify(awardPunches_());
+}
+
+/** Run ONCE from the editor: checks for earned nutrition punches every morning. */
+function installPunchTrigger() {
+  ScriptApp.getProjectTriggers()
+    .filter((t) => t.getHandlerFunction() === "awardPunches")
+    .forEach((t) => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger("awardPunches").timeBased().everyDays(1).atHour(3).create();
+  return "Nutrition punches will be checked every morning.";
 }

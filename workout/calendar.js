@@ -27,6 +27,7 @@ if (!memberId) {
 
 const els = {
   backLink: document.getElementById("backLink"),
+  progressLink: document.getElementById("progressLink"),
   monthLabel: document.getElementById("monthLabel"),
   prevMonth: document.getElementById("prevMonth"),
   nextMonth: document.getElementById("nextMonth"),
@@ -463,6 +464,7 @@ async function init() {
   }
 
   els.backLink.href = `./?id=${encodeURIComponent(memberId)}`;
+  els.progressLink.href = `progress.html?id=${encodeURIComponent(memberId)}`;
 
   try {
     await reloadHistory_();

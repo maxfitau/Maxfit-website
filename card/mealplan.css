@@ -1,0 +1,402 @@
+/* Fuel's meal plan and shopping list (mealplan.js, 2026-10-13). Builds on
+   week.css's full-screen sheet, cards, options and buttons. Big text and
+   44px+ tap targets throughout. */
+
+.mp-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mp-q {
+  margin: 4px 0 8px;
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 22px;
+  color: var(--white);
+}
+
+.mp-gap {
+  margin-top: 14px;
+}
+
+.mp-tight {
+  margin: 0 0 10px;
+}
+
+.mp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mp-chip {
+  min-height: 46px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--white);
+  font: inherit;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.mp-chip.is-on {
+  background: rgba(224, 0, 0, 0.18);
+  border-color: var(--red);
+}
+
+.mp-stepper {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.mp-step {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--white);
+  font-size: 28px;
+  cursor: pointer;
+}
+
+.mp-step__num {
+  min-width: 32px;
+  text-align: center;
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 40px;
+  color: var(--white);
+}
+
+.mp-cost {
+  margin: 0;
+  text-align: center;
+  font-size: 15px;
+  color: var(--grey);
+}
+
+.mp-loading {
+  padding: 60px 0;
+  text-align: center;
+  font-size: 20px;
+  line-height: 1.4;
+  color: var(--white);
+}
+
+.mp-loading__emoji {
+  margin-bottom: 12px;
+  font-size: 56px;
+  animation: mp-bob 1.2s ease-in-out infinite;
+}
+
+@keyframes mp-bob {
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mp-loading__emoji {
+    animation: none;
+  }
+}
+
+/* The plan */
+.mp-seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.mp-seg button {
+  min-height: 48px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--grey);
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.mp-seg button.is-on {
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--white);
+}
+
+.mp-meal__top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mp-meal__emoji {
+  font-size: 30px;
+}
+
+.mp-meal__slot {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 14px;
+  color: var(--red);
+}
+
+.mp-meal__name {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--white);
+}
+
+.mp-meal__days {
+  font-size: 15px;
+  color: var(--grey);
+}
+
+.mp-items {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mp-items li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 17px;
+  color: var(--white);
+}
+
+.mp-items li span:last-child {
+  color: var(--grey);
+  white-space: nowrap;
+}
+
+.mp-macros {
+  margin-top: 10px;
+  font-size: 16px;
+  color: var(--grey);
+}
+
+.mp-macros b {
+  color: var(--white);
+}
+
+.mp-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.mp-btn {
+  min-height: 50px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--white);
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.mp-btn--red {
+  background: var(--red);
+  border-color: var(--red);
+}
+
+.mp-btn--done,
+.mp-btn--done:disabled {
+  background: rgba(48, 209, 88, 0.16);
+  border-color: rgba(48, 209, 88, 0.5);
+  color: #7ee69a;
+  cursor: default;
+}
+
+.mp-day {
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+
+.mp-day:first-of-type {
+  border-top: 0;
+}
+
+.mp-day__name {
+  margin-bottom: 4px;
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 18px;
+  color: var(--white);
+}
+
+.mp-day__row {
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--grey);
+}
+
+.mp-day__row b {
+  font-weight: 600;
+  color: var(--white);
+}
+
+.mp-snack {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+
+.mp-snack:first-of-type {
+  border-top: 0;
+}
+
+.mp-snack__emoji {
+  font-size: 28px;
+  flex-shrink: 0;
+}
+
+.mp-snack__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.mp-snack__name {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--white);
+}
+
+.mp-snack__sub {
+  font-size: 15px;
+  color: var(--grey);
+}
+
+.mp-snack__sub b {
+  color: var(--white);
+  white-space: nowrap;
+}
+
+.mp-snack__add {
+  min-height: 44px;
+  padding: 0 12px;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+/* Shopping list */
+.mp-group {
+  margin: 4px 0 0;
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 16px;
+  color: var(--grey);
+}
+
+.mp-summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.mp-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 58px;
+  padding: 8px 4px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  color: var(--white);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mp-group + .mp-item {
+  border-top: 0;
+}
+
+.mp-box {
+  display: grid;
+  place-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  border: 2px solid var(--grey);
+  font-size: 18px;
+  color: #fff;
+}
+
+.mp-item.is-done .mp-box {
+  background: #30d158;
+  border-color: #30d158;
+}
+
+.mp-item__name {
+  flex: 1;
+  font-size: 18px;
+}
+
+.mp-item__amt {
+  font-size: 16px;
+  color: var(--grey);
+  white-space: nowrap;
+}
+
+.mp-item.is-done .mp-item__name {
+  text-decoration: line-through;
+  color: var(--dim);
+}
+
+.mp-pantry {
+  padding: 6px 0;
+  font-size: 17px;
+  color: var(--grey);
+}
+
+.mp-add {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.mp-add input {
+  flex: 1;
+}
+
+.mp-add .mp-btn {
+  padding: 0 18px;
+}

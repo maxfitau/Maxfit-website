@@ -13,9 +13,6 @@ const SHEET_ID = "1dGQyIoJ2_XrkbvvPvM2JAY0xdeYQfsCnYHal8WZojUg";
 const SHEET_GID = "1169726169"; // "Sessions Remaining" tab
 const SHEET_CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${SHEET_GID}`;
 
-const REFERRALS_GID = "1148655449"; // "Refferals"
-const REFERRALS_CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${REFERRALS_GID}`;
-
 // The workout tabs don't have a fixed gid the way the tabs above do — they
 // only exist once setupWorkoutSheets() creates them in Apps Script, so
 // there's no id to hardcode ahead of time. The gviz endpoint below reads a
@@ -107,36 +104,20 @@ function fetchSheet() {
           programDoc: findColumn(header, "Program Doc"),
           checkInToken: findColumn(header, "Check-in Token"),
           totalAttended: findColumn(header, "Total Classes Attended"),
+          // Bonus punches on the loyalty card: FUEL adds one per week of 5
+          // green days, the check-in script adds one for every session a
+          // referred friend pays for, and one for every session Max adds by
+          // hand to a client's own Paid Sessions. "Free Session Owed" is "Y"
+          // when a bonus punch completed a card.
+          nutritionPunches: findColumn(header, "Nutrition Punches"),
+          referralPunches: findColumn(header, "Referral Punches"),
+          manualPunches: findColumn(header, "Manual Session Punches"),
+          freeOwed: findColumn(header, "Free Session Owed"),
         };
         return { rows, col };
       });
   }
   return sheetPromise;
-}
-
-let referralsPromise;
-
-/** Fetches + parses the "Referrals" tab once per page load, for join.html and referrer.html. */
-function fetchReferrals() {
-  if (!referralsPromise) {
-    referralsPromise = fetch(REFERRALS_CSV_URL, { cache: "no-store" })
-      .then((res) => {
-        if (!res.ok) throw new Error("referrals fetch failed");
-        return res.text();
-      })
-      .then((text) => {
-        const [header, ...rows] = parseCSV(text);
-        const col = {
-          friendName: findColumn(header, "Friend Name"),
-          code: findColumn(header, "Referral Code"),
-          discount: findColumn(header, "Discount"),
-          clientsReferred: findColumn(header, "Clients Referred"),
-          tokensOwed: findColumn(header, "Tokens Owed"),
-        };
-        return { rows, col };
-      });
-  }
-  return referralsPromise;
 }
 
 let exercisesPromise;
@@ -153,7 +134,15 @@ function fetchExercises() {
         const [header, ...rows] = parseCSV(text);
         const col = {
           name: findColumn(header, "Name"),
+          movement: findColumn(header, "Movement"),
+          bodyPart: findColumn(header, "Body Part"),
           startingWeight: findColumn(header, "Default Starting Weight (kg)"),
+          equipment: findColumn(header, "Equipment"),
+          primaryMuscles: findColumn(header, "Primary Muscles"),
+          secondaryMuscles: findColumn(header, "Secondary Muscles"),
+          bestView: findColumn(header, "Best View"),
+          aliases: findColumn(header, "Aliases"),
+          muscleWeights: findColumn(header, "Muscle Weights"),
         };
         return { rows, col };
       });
@@ -184,6 +173,7 @@ function fetchWorkoutExercises() {
           workoutOrder: findColumn(header, "Workout Order"),
           notes: findColumn(header, "Exercise Notes"), // the coach's tip for one exercise
           workoutNotes: findColumn(header, "Workout Notes"), // a note for the whole workout (repeated on each of its rows)
+          superset: findColumn(header, "Superset"), // "Y" = this exercise + the next one (by Order) are done back-to-back
         };
         return { rows, col };
       });

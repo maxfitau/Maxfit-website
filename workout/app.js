@@ -66,6 +66,7 @@ const APP_VERSION = (() => {
 })();
 
 const params = new URLSearchParams(window.location.search);
+let pendingAddExerciseHandled_ = false; // ?addExercise=, from the Exercise Library — added once, see renderWorkout
 let memberId = params.get("id");
 if (!memberId) {
   try {
@@ -551,6 +552,140 @@ function buildSetRow(exercise, setNumber, initial, onSave) {
  * exercise would), and by restoring extras they'd already saved earlier
  * today. Every exercise gets "+ Add Set" for when they do more than planned.
  */
+// Built once during the initial load (card/muscle-map.js's
+// buildExerciseIndex_, from the Exercises tab) so addExerciseSection can
+// show which muscles an exercise works — and refreshMuscleLoadSection_
+// below can resolve a saved set's exercise name to its muscles — without an
+// extra fetch or needing either to become async itself.
+let exerciseIndex_ = { byExact: {}, byNormalized: {} };
+
+/**
+ * The "Muscles Worked" panel at the top of the list (2026-10-05) — the same
+ * live muscle-tracking concept as the coach builder's side panel
+ * (refreshMuscleLoadPanel_, workout/builder.js) and the Muscles tab's
+ * heatmap (workout/heatmap.js), applied here so a client can see what THIS
+ * session is actually training as they go. Unlike either of those: it
+ * counts real SAVED sets (ctx.collectSets()), not planned/target sets or
+ * logged history, so it reads as "what have I done so far today" and
+ * grows as the workout happens. Built once per renderWorkout; repainted by
+ * refreshMuscleLoadSection_ below, piggybacking on ctx.updateSummary
+ * (buildLogSection) — the same existing hook that already fires after
+ * every set save and once at the end of the initial render, so a reload
+ * with sets restored from today's draft shows the real state immediately,
+ * not just after the next new save.
+ */
+function buildMuscleLoadSection(ctx) {
+  const wrap = document.createElement("div");
+  wrap.className = "workout__muscle-load";
+
+  const head = document.createElement("div");
+  head.className = "workout__muscle-load-head";
+  const label = document.createElement("span");
+  label.className = "card__label";
+  label.textContent = "Muscles Worked";
+  const sub = document.createElement("span");
+  sub.className = "workout__muscle-load-sub";
+  sub.textContent = "this session";
+  head.appendChild(label);
+  head.appendChild(sub);
+  wrap.appendChild(head);
+
+  const figs = document.createElement("div");
+  figs.className = "workout__muscle-load-figs";
+  wrap.appendChild(figs);
+
+  const list = document.createElement("div");
+  list.className = "workout__muscle-load-list";
+  wrap.appendChild(list);
+
+  ctx.muscleLoadFigs = figs;
+  ctx.muscleLoadList = list;
+  return wrap;
+}
+
+/** One row of the breakdown — same red/orange "primary+secondary SET count" shape as the builder's side panel (builderHeatRowHtml_, workout/builder.js); this session view stays a direct-count view, same as that panel, not the single red bar the Muscles tab's lists use (heatRowHtml_, workout/library.js). */
+/** Each count sits directly under its own bar segment (2026-10-05, was a combined "3+5" off to the side) so it's unambiguous which number is which. A zero-count side renders no number — an empty segment already shows zero. */
+function muscleLoadRowHtml_(key, primaryN, secondaryN, scale) {
+  const primaryPct = Math.max(0, Math.min(100, (primaryN / scale) * 100));
+  const secondaryPct = Math.max(0, Math.min(100 - primaryPct, (secondaryN / scale) * 100));
+  return `
+    <div class="workout__muscle-load-row">
+      <span class="workout__muscle-load-row__name">${muscleLabel_(key)}</span>
+      <span class="workout__muscle-load-row__bar">
+        <span class="workout__muscle-load-row__track">
+          <span class="workout__muscle-load-row__fill--primary" style="width:${primaryPct}%"></span>
+          <span class="workout__muscle-load-row__fill--secondary" style="width:${secondaryPct}%"></span>
+        </span>
+        <span class="workout__muscle-load-row__nums">
+          ${primaryN > 0 ? `<span class="workout__muscle-load-row__segnum--primary" style="width:${primaryPct}%">${primaryN}</span>` : ""}
+          ${secondaryN > 0 ? `<span class="workout__muscle-load-row__segnum--secondary" style="width:${secondaryPct}%">${secondaryN}</span>` : ""}
+        </span>
+      </span>
+    </div>`;
+}
+
+/** Repaints ctx's Muscles Worked panel from the sets actually saved so far this session — primary=1/secondary=0.5 per set, same weighting as everywhere else this app scores a set. */
+function refreshMuscleLoadSection_(ctx) {
+  if (!ctx.muscleLoadFigs) return;
+
+  const weighted = {};
+  const primaryCount = {};
+  const secondaryCount = {};
+  const unmatchedNames = new Set();
+  ctx.collectSets().forEach((s) => {
+    const exName = String(s.exercise || "").trim();
+    const resolved = resolveExerciseMuscles_(exName, exerciseIndex_);
+    if (!resolved.primary.length && !resolved.secondary.length) {
+      if (exName) unmatchedNames.add(exName);
+      return;
+    }
+    // Effective-sets model (2026-10-09), same engine the Muscles tab's
+    // weekly heatmap and the builder's side panel use — caps a single
+    // set's contribution to any muscle GROUP at 1.0 even when the exercise
+    // lists more than one fine head for it. primaryCount/secondaryCount
+    // stay the plain catalog-role tally the red/orange segments show,
+    // unrelated to the weighted number.
+    const perSet = effectiveSetsPerSet_(resolved);
+    Object.keys(perSet).forEach((k) => {
+      weighted[k] = (weighted[k] || 0) + perSet[k];
+    });
+    new Set(resolved.primary).forEach((k) => {
+      primaryCount[k] = (primaryCount[k] || 0) + 1;
+    });
+    new Set(resolved.secondary).forEach((k) => {
+      secondaryCount[k] = (secondaryCount[k] || 0) + 1;
+    });
+  });
+
+  const frontSvg = muscleFigureSvg("front", "muscleLoadFrontTitle");
+  const backSvg = muscleFigureSvg("back", "muscleLoadBackTitle");
+  ctx.muscleLoadFigs.innerHTML =
+    `<div class="workout__muscle-load-fig-col">${frontSvg}<span class="workout__muscle-load-fig-caption">Front</span></div>` +
+    `<div class="workout__muscle-load-fig-col">${backSvg}<span class="workout__muscle-load-fig-caption">Back</span></div>`;
+  // Relative to this session's busiest muscle, not a fixed set count (2026-10-13).
+  ctx.muscleLoadFigs.querySelectorAll("svg.muscle-figure").forEach((svg) => paintMuscleHeat(svg, weighted));
+
+  const entries = Object.keys(weighted).sort((a, b) => weighted[b] - weighted[a]);
+  const scale = Math.max(1, ...entries.map((k) => (primaryCount[k] || 0) + (secondaryCount[k] || 0)));
+  const rowsHtml = entries.length
+    ? entries.map((k) => muscleLoadRowHtml_(k, primaryCount[k] || 0, secondaryCount[k] || 0, scale)).join("")
+    : '<p class="workout__muscle-load-empty">Save a set to see what this session trains</p>';
+  // Saved sets whose exercise name has no muscle data never silently
+  // vanish from the total (2026-10-09) — same "always show it" rule as the
+  // Muscles tab's weekly heatmap (workout/library.js).
+  const unmatchedHtml = unmatchedNames.size
+    ? `<p class="workout__muscle-load-empty">Not counted — no muscle data for: ${Array.from(unmatchedNames).map(libEscApp_).join(", ")}</p>`
+    : "";
+  ctx.muscleLoadList.innerHTML = rowsHtml + unmatchedHtml;
+}
+
+/** Plain-text escape for the small bits of user-entered text (an exercise name) interpolated into innerHTML on this page — same purpose as library.js's libEsc, duplicated rather than shared since this page doesn't load that file. */
+function libEscApp_(text) {
+  const div = document.createElement("div");
+  div.textContent = text == null ? "" : String(text);
+  return div.innerHTML;
+}
+
 function addExerciseSection(ctx, exercise, opts) {
   const { clientSlug, setRows, setCol, startingWeights } = ctx;
   const isExtra = Boolean(opts && opts.isExtra);
@@ -565,6 +700,20 @@ function addExerciseSection(ctx, exercise, opts) {
   const section = document.createElement("section");
   section.className = "workout__exercise";
   if (isExtra) section.classList.add("workout__exercise--extra");
+
+  // Superset grouping (builder.js's "Superset with next" toggle): a chain of
+  // 2+ exercises done back-to-back with minimal rest. --superset marks every
+  // member (the left accent bar); --superset-link additionally closes the
+  // gap to whichever section renders right after it, so the chain reads as
+  // one joined block instead of separate cards.
+  if (opts && opts.inSuperset) section.classList.add("workout__exercise--superset");
+  if (opts && opts.linksToNext) section.classList.add("workout__exercise--superset-link");
+  if (opts && opts.supersetLabel) {
+    const supersetLabel = document.createElement("span");
+    supersetLabel.className = "workout__superset-label";
+    supersetLabel.textContent = "Superset — back to back, minimal rest";
+    section.appendChild(supersetLabel);
+  }
 
   const head = document.createElement("div");
   head.className = "workout__exercise-head";
@@ -584,6 +733,14 @@ function addExerciseSection(ctx, exercise, opts) {
   head.appendChild(target);
 
   section.appendChild(head);
+
+  const muscles = resolveExerciseMuscles_(exercise.name, exerciseIndex_);
+  if (muscles.primary.length || muscles.secondary.length) {
+    const musclesEl = document.createElement("div");
+    musclesEl.className = "workout__exercise-muscles";
+    renderMuscleHighlight(musclesEl, muscles.primary, muscles.secondary);
+    if (!musclesEl.hidden) section.appendChild(musclesEl);
+  }
 
   const hint = document.createElement("p");
   hint.className = "workout__exercise-hint";
@@ -797,6 +954,10 @@ function buildLogSection(ctx) {
     summary.textContent = count
       ? `${count} set${count === 1 ? "" : "s"} saved — tap Log Workout when you're done.`
       : "Tap Save after each set so nothing gets lost.";
+    // Piggybacks on this hook rather than adding a new call site — it
+    // already fires at exactly the right moments (every save, and once at
+    // the end of the initial render after any draft sets are restored).
+    refreshMuscleLoadSection_(ctx);
   };
   ctx.updateSummary();
 
@@ -973,6 +1134,8 @@ function renderWorkout(shared, workoutName, exercises) {
     ctx.updateSummary();
   };
 
+  els.list.appendChild(buildMuscleLoadSection(ctx));
+
   // The coach's note for the whole workout, if there is one, sits above the exercises.
   const coachNote = shared.workoutNotes ? shared.workoutNotes[workoutName] : "";
   if (coachNote) els.list.appendChild(buildCoachNote(coachNote));
@@ -981,12 +1144,19 @@ function renderWorkout(shared, workoutName, exercises) {
   els.list.appendChild(ctx.addExerciseWrap);
 
   const assignedKeys = new Set();
-  for (const exercise of exercises) {
+  exercises.forEach((exercise, i) => {
     const lower = exercise.name.toLowerCase();
     assignedKeys.add(lower);
     const saved = savedByExercise.get(lower);
-    addExerciseSection(ctx, exercise, { isExtra: false, savedSets: saved ? saved.sets : null });
-  }
+    const prevLinksHere = i > 0 && exercises[i - 1].superset;
+    addExerciseSection(ctx, exercise, {
+      isExtra: false,
+      savedSets: saved ? saved.sets : null,
+      inSuperset: Boolean(exercise.superset || prevLinksHere),
+      linksToNext: Boolean(exercise.superset),
+      supersetLabel: Boolean(exercise.superset && !prevLinksHere), // first exercise of the chain only
+    });
+  });
 
   // Extras they'd saved earlier TODAY come back with the rest of today's
   // session. (Nothing from a previous workout carries over — those live in
@@ -998,6 +1168,22 @@ function renderWorkout(shared, workoutName, exercises) {
 
   els.list.appendChild(buildNotesSection(ctx, restored.notes));
   els.list.appendChild(buildLogSection(ctx));
+
+  // Arrived from the Exercise Library's "Add to Today's Workout" (?addExercise=).
+  // Only once per page load — not on a later renderWorkout (changing the date,
+  // or opening a different workout from the picker) — and only if it isn't
+  // already in this workout under another name.
+  const pendingAdd = !pendingAddExerciseHandled_ && (params.get("addExercise") || "").trim();
+  if (pendingAdd) {
+    pendingAddExerciseHandled_ = true;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("addExercise");
+    history.replaceState(null, "", url.toString());
+    if (!assignedKeys.has(pendingAdd.toLowerCase()) && !savedByExercise.has(pendingAdd.toLowerCase())) {
+      addExerciseSection(ctx, { name: pendingAdd, sets: 1, reps: "" }, { isExtra: true });
+    }
+  }
+
   ctx.updateSummary();
 }
 
@@ -1203,6 +1389,7 @@ async function init() {
         workoutOrder: workout.col.workoutOrder >= 0 ? Number(r[workout.col.workoutOrder]) : NaN,
         note: workout.col.notes >= 0 ? String(r[workout.col.notes] || "").trim() : "",
         workoutNote: workout.col.workoutNotes >= 0 ? String(r[workout.col.workoutNotes] || "").trim() : "",
+        superset: workout.col.superset >= 0 && String(r[workout.col.superset] || "").trim().toUpperCase() === "Y",
       }))
       .filter((ex) => ex.name && ex.sets > 0);
 
@@ -1230,10 +1417,14 @@ async function init() {
       const rawName = (row[exerciseDefaults.col.name] || "").trim();
       if (!rawName) continue;
       exerciseNameOptions.push(rawName);
-      const name = rawName.toLowerCase();
       const weight = Number(row[exerciseDefaults.col.startingWeight]);
-      if (Number.isFinite(weight)) startingWeights[name] = weight;
+      if (Number.isFinite(weight)) startingWeights[rawName.toLowerCase()] = weight;
     }
+    // Shared resolver (card/muscle-map.js), not a plain exact-lowercase
+    // lookup (2026-10-09 fix) — see workout/heatmap.js's header comment for
+    // why: the old matching silently dropped most of what clients actually
+    // logged, here too (this is what the live Train-session panel reads).
+    exerciseIndex_ = buildExerciseIndex_(exerciseDefaults.rows, exerciseDefaults.col);
   } catch (err) {
     showStatus("Couldn't load your workout. Check your connection and reopen.", true);
     return;

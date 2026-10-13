@@ -8,6 +8,238 @@
   gap: 20px;
 }
 
+.builder__layout {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.builder__main {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+/* Side-by-side only once there's real room for it (a laptop window, which
+   is how Max actually uses this page — not a phone). Below this width
+   .builder__side just stacks under the form like any other section. */
+@media (min-width: 860px) {
+  .builder {
+    max-width: 900px;
+  }
+
+  .builder__layout {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 28px;
+  }
+
+  .builder__main {
+    flex: 1 1 460px;
+  }
+
+  .builder__side {
+    flex: 0 0 340px;
+  }
+}
+
+/* The live "how hard did this workout hit each muscle" summary — painted
+   client-side by refreshMuscleLoadPanel_ (builder.js) from the rows
+   currently in the workout (each row's own primary/secondary muscles x its
+   own Sets value), the same primary=1/secondary=0.5 weighting the Muscle
+   Heatmap uses. No network call, recomputed on every add/remove/sets-edit/
+   exercise-pick. Sticky so it stays in view while scrolling a long
+   exercise list on a wide window. Replaces the old per-row muscle chip
+   list (2026-10-05) — that spelled out every exercise's muscles on its own
+   row, which made a long workout very tall for the same information this
+   panel now shows once, aggregated, for the whole thing. */
+.builder__side {
+  position: sticky;
+  top: 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.builder__side-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.builder__side-sub {
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  color: var(--dim);
+}
+
+.builder__side-figs {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.builder__side-fig-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 140px;
+}
+
+.builder__side-figs svg {
+  width: 100%;
+  height: auto;
+}
+
+.builder__side-fig-caption {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.builder__side-heat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+/* A muscle (Quads, Hamstrings...) that opens to its heads (2026-10-10). */
+.builder__side-fam-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.builder__side-fam-head::-webkit-details-marker {
+  display: none;
+}
+
+.builder__side-fam-head .builder__side-heat-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.builder__side-fam-chevron {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--grey);
+  transition: transform 0.2s ease;
+}
+
+.builder__side-fam[open] > .builder__side-fam-head .builder__side-fam-chevron {
+  transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .builder__side-fam-chevron {
+    transition: none;
+  }
+}
+
+.builder__side-fam-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 22px 4px 4px;
+  padding-left: 10px;
+  border-left: 2px solid var(--line);
+}
+
+.builder__side-fam-body .builder__side-heat-row__name {
+  color: var(--grey);
+  font-weight: 500;
+  white-space: normal;
+  line-height: 1.25;
+}
+
+.builder__side-heat-row {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.builder__side-heat-row__name {
+  font-family: var(--font-body);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--white);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The bar + its own count(s) stacked together, so the numbers below line
+   up under the segment they belong to (2026-10-05, was a combined "3+5"
+   off to the side in its own column). */
+.builder__side-heat-row__bar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.builder__side-heat-row__track {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.builder__side-heat-row__fill--primary {
+  background: var(--red);
+}
+
+.builder__side-heat-row__fill--secondary {
+  background: #e08a00;
+}
+
+.builder__side-heat-row__nums {
+  display: flex;
+  height: 13px;
+}
+
+.builder__side-heat-row__segnum--primary,
+.builder__side-heat-row__segnum--secondary {
+  display: flex;
+  justify-content: center;
+  overflow: visible;
+  white-space: nowrap;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.builder__side-heat-row__segnum--primary {
+  color: var(--red);
+}
+
+.builder__side-heat-row__segnum--secondary {
+  color: #e08a00;
+}
+
+.builder__side-empty {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--dim);
+  text-align: center;
+  padding: 6px 0;
+}
+
 .builder__field {
   display: flex;
   flex-direction: column;
@@ -114,12 +346,34 @@
   gap: 10px;
 }
 
+/* The name gets its own full-width line — a coach needs to actually read
+   which exercise this is, and sharing one line with sets/reps/handle/
+   move/remove left it squeezed down to a sliver (and its muscle chips,
+   nested inside the same button, stacking one per line). Sets/reps and the
+   controls share the line below, the tip sits under that. (Children, in
+   order: 1 name, 2 sets, 3 reps, 4 drag handle, 5 up/down, 6 remove, then
+   the tip, then the superset toggle — see the nth-child rules below.) */
 .builder__row {
   display: grid;
-  grid-template-columns: 1fr 52px 76px 26px 26px 30px;
-  gap: 8px;
+  grid-template-columns: 56px 80px 1fr 26px 26px 30px;
+  column-gap: 8px;
+  row-gap: 6px;
   align-items: center;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
 }
+
+.builder__row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.builder__row > :nth-child(1) { grid-column: 1 / -1; grid-row: 1; }
+.builder__row > :nth-child(2) { grid-column: 1; grid-row: 2; }
+.builder__row > :nth-child(3) { grid-column: 2; grid-row: 2; }
+.builder__row > :nth-child(4) { grid-column: 4; grid-row: 2; }
+.builder__row > :nth-child(5) { grid-column: 5; grid-row: 2; }
+.builder__row > :nth-child(6) { grid-column: 6; grid-row: 2; }
 
 .builder__row input {
   font-family: var(--font-body);
@@ -139,6 +393,73 @@
   border-color: var(--red);
 }
 
+/* The exercise field is a button (opens ExercisePicker), styled to match
+   the row's text inputs it sits beside. */
+.builder__row-exercise {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--white);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 11px 10px;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.builder__row-exercise-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.builder__row-exercise:active {
+  border-color: var(--red);
+}
+
+.builder__row-exercise--empty .builder__row-exercise-label {
+  color: var(--dim);
+  font-weight: 500;
+}
+
+.builder__row-exercise-label {
+  flex-grow: 1;
+  min-width: 0;
+}
+
+/* A row whose exercise name has no muscle data at all — not in the
+   Exercises catalog under this exact or a normalised name, or matched a
+   row that itself has none set yet (2026-10-09). Sits under the name/dot
+   line; no separate button, since the row itself already reopens the
+   picker on tap. */
+.builder__row-exercise-warning {
+  text-align: left;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--red);
+}
+
+/* `display: block` only when actually shown — an unconditional one here
+   would override the browser's own `[hidden] { display: none }` rule
+   (same specificity, later in the cascade), making `.hidden = true` a
+   no-op and showing the warning on every row regardless (found 2026-10-09
+   while verifying the effective-sets engine in a real browser — the
+   warning was rendering for every exercise, matched or not). */
+.builder__row-exercise-warning:not([hidden]) {
+  display: block;
+}
+
 .builder__row input[type="number"] {
   text-align: center;
   padding: 11px 4px;
@@ -148,6 +469,7 @@
    the LAST input in the row, so the first three inputs keep their meaning. */
 .builder__row .builder__row-tip {
   grid-column: 1 / -1;
+  grid-row: 3;
   font-size: 12.5px;
   font-weight: 500;
   padding: 8px 10px;
@@ -235,6 +557,63 @@
   border-color: var(--red);
 }
 
+/* Superset: the toggle itself (full-width, own row — see builder.js), plus
+   the visual "joined pair" treatment on a linked row and whichever row
+   lands right after it. A tinted band with no seam between them reads as
+   "these go together" without needing a bracket graphic. */
+.builder__row .builder__superset-toggle {
+  grid-column: 1 / -1;
+  grid-row: 4;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 11.5px;
+  color: var(--dim);
+  background: transparent;
+  border: 1px dashed var(--line-strong, var(--line));
+  border-radius: var(--radius-sm);
+  padding: 9px;
+  cursor: pointer;
+}
+
+.builder__row .builder__superset-toggle:active {
+  border-color: var(--red);
+  color: var(--white);
+}
+
+.builder__row .builder__superset-toggle--on {
+  border-style: solid;
+  border-color: var(--red);
+  color: var(--white);
+  background: rgba(224, 0, 0, 0.1);
+}
+
+.builder__row .builder__superset-toggle[hidden] {
+  display: none;
+}
+
+.builder__row[data-superset="true"] {
+  position: relative;
+  background: rgba(224, 0, 0, 0.06);
+  border-radius: var(--radius-sm);
+  padding: 10px 10px 0;
+  margin-bottom: -10px;
+}
+
+/* No seam between a linked pair, even with the row divider lines on. Must
+   come after the padding set above — it only overrides padding-bottom. */
+.builder__row[data-superset="true"] {
+  border-bottom: none;
+  padding-bottom: 10px;
+}
+
+.builder__row[data-superset="true"] + .builder__row {
+  background: rgba(224, 0, 0, 0.06);
+  border-radius: var(--radius-sm);
+  padding: 10px 10px 10px;
+}
+
 .builder__add {
   font-family: var(--font-head);
   font-weight: 700;
@@ -283,33 +662,6 @@
   color: var(--grey-light);
   text-align: center;
   margin: 0;
-}
-
-/* Phones: name + sets + reps + the drag/move/remove controls can't share one
-   line — the name box shrinks to ~40px and you can't see what you're typing.
-   So the name gets its own full-width line, sets/reps and the controls share
-   the next one, and the tip sits underneath. (Children, in order: 1 name,
-   2 sets, 3 reps, 4 drag handle, 5 up/down, 6 remove, then the tip.) */
-@media (max-width: 440px) {
-  .builder__row {
-    grid-template-columns: 56px 80px 1fr 26px 26px 30px;
-    row-gap: 6px;
-    padding-bottom: 14px;
-    border-bottom: 1px solid var(--line);
-  }
-
-  .builder__row:last-child {
-    border-bottom: none;
-    padding-bottom: 0;
-  }
-
-  .builder__row > :nth-child(1) { grid-column: 1 / -1; grid-row: 1; }
-  .builder__row > :nth-child(2) { grid-column: 1; grid-row: 2; }
-  .builder__row > :nth-child(3) { grid-column: 2; grid-row: 2; }
-  .builder__row > :nth-child(4) { grid-column: 4; grid-row: 2; }
-  .builder__row > :nth-child(5) { grid-column: 5; grid-row: 2; }
-  .builder__row > :nth-child(6) { grid-column: 6; grid-row: 2; }
-  .builder__row .builder__row-tip { grid-column: 1 / -1; grid-row: 3; }
 }
 
 /* The smallest phones: trim the fixed columns so the row still fits inside the card. */

@@ -32,7 +32,8 @@ const els = {
   deleteButton: document.getElementById("deleteButton"),
   error: document.getElementById("builderError"),
   success: document.getElementById("builderSuccess"),
-  exerciseOptions: document.getElementById("exerciseOptions"),
+  sideFigs: document.getElementById("builderSideFigs"),
+  sideHeatList: document.getElementById("builderSideHeatList"),
 };
 
 // This client's existing workouts, keyed by lowercased name — refreshed
@@ -57,21 +58,326 @@ function currentPin() {
   return els.pinInput.value.trim();
 }
 
+/**
+ * The visible exercise control — a button, not a text input, so the only
+ * way to set a name is to pick one from ExercisePicker (or add a new one
+ * through it). That's what guarantees "Bench Press" is spelled the same
+ * way every time it's assigned, so its logged history is never split by a
+ * typo. The actual name travels in nameValueInput (a hidden input, read by
+ * the save handler below) so the picked name survives the same as any
+ * other field even though it isn't typed.
+ *
+ * No per-row muscle chip list any more (2026-10-05) — that detail used to
+ * be spelled out on every single row ("Mid Chest, Lower Chest, Front
+ * Delt..."), which made a long workout very tall for little reason once
+ * the side "Muscles Worked" panel shows the same thing once, aggregated,
+ * for the whole workout. The picked primary/secondary keys still travel
+ * with the row (on wrap.dataset) so refreshMuscleLoadPanel_ can read them.
+ *
+ * A row with a name but no primary AND no secondary muscles — whether its
+ * name never resolved in the Exercises catalog at all, or it resolved to a
+ * real row that just has no muscle data set yet — shows a small warning
+ * (2026-10-09) rather than silently contributing nothing to the panel with
+ * no explanation. Tapping that row opens "what does it work?" for its name
+ * (ExercisePicker.chooseMuscles, 2026-10-10) rather than the normal picker.
+ */
+function buildExerciseControl(exercise) {
+  const wrap = document.createElement("button");
+  wrap.type = "button";
+  wrap.className = "builder__row-exercise";
+
+  const top = document.createElement("span");
+  top.className = "builder__row-exercise-top";
+
+  const dot = document.createElement("span");
+  dot.className = "exercise-dot";
+  dot.hidden = true;
+
+  const label = document.createElement("span");
+  label.className = "builder__row-exercise-label";
+
+  const warning = document.createElement("span");
+  warning.className = "builder__row-exercise-warning";
+  warning.textContent = "⚠ No muscle data — won't count. Tap to choose its muscles.";
+  warning.hidden = true;
+
+  const nameValueInput = document.createElement("input");
+  nameValueInput.type = "hidden";
+  nameValueInput.className = "builder__row-name-value";
+
+  function setChosen(name, movement, bodyPart, primaryMuscles, secondaryMuscles, muscleWeights) {
+    nameValueInput.value = name || "";
+    wrap.dataset.exerciseName = name || "";
+    wrap.dataset.movement = movement || "";
+    wrap.dataset.bodyPart = bodyPart || "";
+    wrap.dataset.primaryMuscles = (primaryMuscles || []).join(",");
+    wrap.dataset.secondaryMuscles = (secondaryMuscles || []).join(",");
+    wrap.dataset.muscleWeights = muscleWeights || "";
+    warning.hidden = !name || Boolean((primaryMuscles && primaryMuscles.length) || (secondaryMuscles && secondaryMuscles.length) || muscleWeights);
+    if (name) {
+      label.textContent = name;
+      wrap.classList.remove("builder__row-exercise--empty");
+      if (bodyPart) {
+        dot.style.background = ExercisePicker.colorFor(bodyPart);
+        dot.hidden = false;
+      } else {
+        dot.hidden = true;
+      }
+    } else {
+      label.textContent = "Choose exercise";
+      wrap.classList.add("builder__row-exercise--empty");
+      dot.hidden = true;
+    }
+  }
+
+  setChosen(
+    (exercise && exercise.name) || "",
+    exercise && exercise.movement,
+    exercise && exercise.bodyPart,
+    exercise && exercise.primaryMuscles,
+    exercise && exercise.secondaryMuscles,
+    exercise && exercise.muscleWeights
+  );
+
+  const onChoose = (picked) => {
+    setChosen(picked.name, picked.movement, picked.bodyPart, picked.primaryMuscles, picked.secondaryMuscles, picked.muscleWeights);
+    // Muscles just chosen for a name: any other row of it with none gets them too.
+    if (picked.primaryMuscles && picked.primaryMuscles.length) {
+      els.rows.querySelectorAll(".builder__row-exercise").forEach((other) => {
+        const same = other !== wrap && (other.dataset.exerciseName || "").toLowerCase() === picked.name.toLowerCase();
+        if (same && !other.dataset.primaryMuscles && !other.dataset.secondaryMuscles && other.setChosen) {
+          other.setChosen(picked.name, picked.movement, picked.bodyPart, picked.primaryMuscles, picked.secondaryMuscles, "");
+        }
+      });
+      exerciseIndexPromise_ = null; // re-read the library next time, with the new muscles in it
+    }
+    refreshMuscleLoadPanel_();
+  };
+  wrap.setChosen = setChosen;
+
+  // A row with no muscle data opens straight on "what does it work?"
+  // (2026-10-10); any other row opens the normal picker to change it.
+  wrap.addEventListener("click", () => {
+    if (!warning.hidden) {
+      ExercisePicker.chooseMuscles({ name: wrap.dataset.exerciseName, movement: wrap.dataset.movement, bodyPart: wrap.dataset.bodyPart, onChoose });
+    } else {
+      ExercisePicker.open({ onChoose });
+    }
+  });
+
+  top.appendChild(dot);
+  top.appendChild(label);
+  wrap.appendChild(top);
+  wrap.appendChild(warning);
+  return { control: wrap, nameValueInput };
+}
+
+/**
+ * The "+ Superset with next" toggle at the bottom of a row — lives inside
+ * the row (not a separate element between rows) so it travels automatically
+ * with drag-reordering and the up/down buttons, same as everything else on
+ * the row. Means "this exercise and whichever one ends up right after it
+ * are done back-to-back, minimal rest" — chains naturally for a tri-set by
+ * marking every exercise but the last in the group, and never goes stale
+ * when rows are reordered since it's not a separate named group to keep in
+ * sync. The last row in the list never gets to be "linked to next" (there
+ * is no next) — refreshSupersetAvailability_ keeps that in sync.
+ */
+function buildSupersetToggle_(row, initial) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "builder__superset-toggle";
+  row.dataset.superset = initial ? "true" : "false";
+
+  function render() {
+    const on = row.dataset.superset === "true";
+    btn.classList.toggle("builder__superset-toggle--on", on);
+    btn.textContent = on ? "⚡ Superset with next — tap to unlink" : "+ Superset with next exercise";
+  }
+  render();
+
+  btn.addEventListener("click", () => {
+    row.dataset.superset = row.dataset.superset === "true" ? "false" : "true";
+    render();
+  });
+
+  return btn;
+}
+
+/** Hides the superset toggle on whichever row is currently last — there's no "next" for it to link to. Call after any add/remove/reorder. */
+function refreshSupersetAvailability_() {
+  const rows = Array.from(els.rows.children);
+  rows.forEach((row, i) => {
+    const btn = row.querySelector(".builder__superset-toggle");
+    if (!btn) return;
+    const isLast = i === rows.length - 1;
+    btn.hidden = isLast;
+    if (isLast) row.dataset.superset = "false"; // nothing to link to — don't silently save a stale "true"
+  });
+}
+
+/**
+ * The side panel's live "Muscles Worked" summary — every row's own
+ * primary/secondary muscles (stashed on wrap.dataset by setChosen above),
+ * weighted by that row's own Sets value and summed across the whole
+ * workout currently being built. Pure client side, no network call, same
+ * as every other muscle-map computation in this app. Call after anything
+ * that changes which exercises are in the workout or how many sets they
+ * have: addRow, a row's remove button, a Sets edit, and an exercise being
+ * (re)picked (see the onChoose handler above).
+ */
+// Which muscles (Quads, Hamstrings...) are open in the side panel's list,
+// kept across the rebuild that every Sets keystroke triggers.
+const builderOpenFamilies_ = new Set();
+
+function refreshMuscleLoadPanel_() {
+  const weighted = {};
+  const primaryCount = {};
+  const secondaryCount = {};
+  // The same tally per muscle (Quads, not each quad head): a row's sets
+  // count once for a muscle, as primary if any of its heads is primary.
+  const familyPrimary = {};
+  const familySecondary = {};
+  // Per muscle, how much each exercise NAME in this workout contributes —
+  // the figure tooltip's "top 3 contributing exercises" (Goal 4, 2026-10-09).
+  const contributionsByMuscle = {};
+
+  Array.from(els.rows.children).forEach((row) => {
+    const control = row.querySelector(".builder__row-exercise");
+    const setsInput = row.querySelector("input");
+    const sets = setsInput ? Number(setsInput.value) : NaN;
+    if (!control || !Number.isFinite(sets) || sets <= 0) return;
+
+    const primary = (control.dataset.primaryMuscles || "").split(",").filter(Boolean);
+    const secondary = (control.dataset.secondaryMuscles || "").split(",").filter(Boolean);
+    const muscleWeights = control.dataset.muscleWeights || "";
+    const exerciseName = control.dataset.exerciseName || "";
+    // Effective-sets model (2026-10-09) — same engine the Muscles tab's
+    // weekly heatmap and the live Train panel use, so a planned workout
+    // previews exactly what logging it will actually score. Caps a single
+    // set's contribution to any muscle GROUP at 1.0 even when the exercise
+    // lists more than one fine head for it, then scales by how many sets
+    // this row plans. primaryCount/secondaryCount stay the plain
+    // catalog-role tally the red/orange segments show.
+    const perSet = effectiveSetsPerSet_({ catalogName: exerciseName, primary, secondary, muscleWeights });
+    Object.keys(perSet).forEach((k) => {
+      const contribution = perSet[k] * sets;
+      weighted[k] = (weighted[k] || 0) + contribution;
+      const byExercise = (contributionsByMuscle[k] = contributionsByMuscle[k] || {});
+      byExercise[exerciseName] = (byExercise[exerciseName] || 0) + contribution;
+    });
+    new Set(primary).forEach((k) => {
+      primaryCount[k] = (primaryCount[k] || 0) + sets;
+    });
+    new Set(secondary).forEach((k) => {
+      secondaryCount[k] = (secondaryCount[k] || 0) + sets;
+    });
+    const famP = new Set(primary.map(muscleFamilyName_));
+    new Set(secondary.map(muscleFamilyName_)).forEach((f) => {
+      if (!famP.has(f)) familySecondary[f] = (familySecondary[f] || 0) + sets;
+    });
+    famP.forEach((f) => {
+      familyPrimary[f] = (familyPrimary[f] || 0) + sets;
+    });
+  });
+
+  // Any open tooltip is anchored to a shape from the figure we're about to
+  // throw away below (muscleFigureSvg builds fresh DOM every call).
+  muscleTooltipHide_();
+
+  const frontSvg = muscleFigureSvg("front", "builderSideFrontTitle");
+  const backSvg = muscleFigureSvg("back", "builderSideBackTitle");
+  els.sideFigs.innerHTML =
+    `<div class="builder__side-fig-col">${frontSvg}<span class="builder__side-fig-caption">Front</span></div>` +
+    `<div class="builder__side-fig-col">${backSvg}<span class="builder__side-fig-caption">Back</span></div>`;
+  const sideSvgs = els.sideFigs.querySelectorAll("svg.muscle-figure");
+  // Relative to this workout's busiest muscle, not a fixed set count (2026-10-13).
+  sideSvgs.forEach((svg) => paintMuscleHeat(svg, weighted));
+
+  // Goal 4 (2026-10-09): hover/tap a shape for its own breakdown. No weekly
+  // target here (a single planned workout, not a week) and no group list to
+  // expand (this panel is a flat list), so just the value/split/exercises.
+  sideSvgs.forEach((svg) =>
+    wireMuscleTooltips_(svg, (key) => {
+      if (!weighted[key] || weighted[key] <= 0) return null;
+      return muscleTooltipContentHtml_(key, weighted[key], primaryCount[key], secondaryCount[key], muscleTopContributions_(contributionsByMuscle[key]), null);
+    })
+  );
+
+  // Muscles (Quads, Hamstrings...), busiest first, each opening to its
+  // heads (2026-10-10, Max: the flat list of every head was too long).
+  const families = muscleTree_(Object.keys(weighted).filter((k) => weighted[k] > 0))
+    .flatMap((s) => s.families)
+    .sort((a, b) => (familyPrimary[b.name] || 0) - (familyPrimary[a.name] || 0) || (familySecondary[b.name] || 0) - (familySecondary[a.name] || 0));
+  // Bars are relative too: the busiest muscle's sets fill its bar.
+  const scale = Math.max(1, ...families.map((f) => (familyPrimary[f.name] || 0) + (familySecondary[f.name] || 0)));
+  els.sideHeatList.innerHTML = families.length
+    ? families.map((f) => builderFamilyHtml_(f, familyPrimary[f.name] || 0, familySecondary[f.name] || 0, primaryCount, secondaryCount, weighted, scale)).join("")
+    : '<p class="builder__side-empty">Add exercises to see what this workout trains</p>';
+  els.sideHeatList.querySelectorAll("details[data-family]").forEach((el) => {
+    el.addEventListener("toggle", () => (el.open ? builderOpenFamilies_.add(el.dataset.family) : builderOpenFamilies_.delete(el.dataset.family)));
+  });
+}
+
+/** One muscle in the side panel: a plain row, or a dropdown row that opens to its heads. */
+function builderFamilyHtml_(f, primaryN, secondaryN, primaryCount, secondaryCount, weighted, scale) {
+  const head = builderHeatRowHtml_(f.name, primaryN, secondaryN, scale);
+  if (f.plain) return head;
+  const heads = f.keys
+    .slice()
+    .sort((a, b) => weighted[b] - weighted[a])
+    .map((k) => builderHeatRowHtml_(muscleLabel_(k), primaryCount[k] || 0, secondaryCount[k] || 0, scale))
+    .join("");
+  const open = builderOpenFamilies_.has(f.name) ? " open" : "";
+  return (
+    `<details class="builder__side-fam"${open} data-family="${f.name}">` +
+    `<summary class="builder__side-fam-head">${head}<svg class="builder__side-fam-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></summary>` +
+    `<div class="builder__side-fam-body">${heads}</div>` +
+    "</details>"
+  );
+}
+
+/**
+ * One row of the side panel's breakdown list — the same red/orange
+ * "primary + secondary set count" shape the Muscles tab's weekly list used
+ * before it moved to a single red bar (heatRowHtml_, workout/library.js) —
+ * this panel stays a direct-count view, scoped to just this one workout. Each count sits
+ * directly under its own segment (2026-10-05, was a
+ * combined "3+5" off to the side) so it's unambiguous which number is
+ * which. A zero-count side renders no number — an empty segment already
+ * shows zero.
+ */
+function builderHeatRowHtml_(label, primaryN, secondaryN, scale) {
+  const primaryPct = Math.max(0, Math.min(100, (primaryN / scale) * 100));
+  const secondaryPct = Math.max(0, Math.min(100 - primaryPct, (secondaryN / scale) * 100));
+  return `
+    <div class="builder__side-heat-row">
+      <span class="builder__side-heat-row__name">${label}</span>
+      <span class="builder__side-heat-row__bar">
+        <span class="builder__side-heat-row__track">
+          <span class="builder__side-heat-row__fill--primary" style="width:${primaryPct}%"></span>
+          <span class="builder__side-heat-row__fill--secondary" style="width:${secondaryPct}%"></span>
+        </span>
+        <span class="builder__side-heat-row__nums">
+          ${primaryN > 0 ? `<span class="builder__side-heat-row__segnum--primary" style="width:${primaryPct}%">${primaryN}</span>` : ""}
+          ${secondaryN > 0 ? `<span class="builder__side-heat-row__segnum--secondary" style="width:${secondaryPct}%">${secondaryN}</span>` : ""}
+        </span>
+      </span>
+    </div>`;
+}
+
 function addRow(exercise) {
   const row = document.createElement("div");
   row.className = "builder__row";
 
-  const nameInput = document.createElement("input");
-  nameInput.type = "text";
-  nameInput.placeholder = "Exercise";
-  nameInput.setAttribute("list", "exerciseOptions");
-  nameInput.value = (exercise && exercise.name) || "";
+  const { control: nameControl, nameValueInput } = buildExerciseControl(exercise);
 
   const setsInput = document.createElement("input");
   setsInput.type = "number";
   setsInput.inputMode = "numeric";
   setsInput.placeholder = "Sets";
   setsInput.value = exercise && exercise.sets ? exercise.sets : "";
+  setsInput.addEventListener("input", refreshMuscleLoadPanel_);
 
   const repsInput = document.createElement("input");
   repsInput.type = "text";
@@ -107,6 +413,7 @@ function addRow(exercise) {
   upButton.addEventListener("click", () => {
     const prev = row.previousElementSibling;
     if (prev) els.rows.insertBefore(row, prev);
+    refreshSupersetAvailability_();
   });
 
   const downButton = document.createElement("button");
@@ -117,6 +424,7 @@ function addRow(exercise) {
   downButton.addEventListener("click", () => {
     const next = row.nextElementSibling;
     if (next) els.rows.insertBefore(next, row);
+    refreshSupersetAvailability_();
   });
 
   moveWrap.appendChild(upButton);
@@ -127,16 +435,29 @@ function addRow(exercise) {
   removeButton.className = "builder__row-remove";
   removeButton.textContent = "×";
   removeButton.setAttribute("aria-label", "Remove exercise");
-  removeButton.addEventListener("click", () => row.remove());
+  removeButton.addEventListener("click", () => {
+    row.remove();
+    refreshSupersetAvailability_();
+    refreshMuscleLoadPanel_();
+  });
 
-  row.appendChild(nameInput);
+  const supersetToggle = buildSupersetToggle_(row, exercise && exercise.superset);
+
+  row.appendChild(nameControl);
   row.appendChild(setsInput);
   row.appendChild(repsInput);
   row.appendChild(handle);
   row.appendChild(moveWrap);
   row.appendChild(removeButton);
   row.appendChild(tipInput);
+  row.appendChild(supersetToggle);
+  // Last, and hidden — keeps the elements above in the exact DOM order the
+  // CSS's nth-child row layout (builder.css) already expects, and keeps
+  // the picked name out of the save handler's positional input lookup below.
+  row.appendChild(nameValueInput);
   els.rows.appendChild(row);
+  refreshSupersetAvailability_();
+  refreshMuscleLoadPanel_();
 }
 
 /**
@@ -175,6 +496,7 @@ function makeRowDraggable(row, handle) {
       handle.removeEventListener("pointermove", onMove);
       handle.removeEventListener("pointerup", onUp);
       handle.removeEventListener("pointercancel", onUp);
+      refreshSupersetAvailability_();
     }
 
     handle.addEventListener("pointermove", onMove);
@@ -185,6 +507,7 @@ function makeRowDraggable(row, handle) {
 
 function clearRows() {
   els.rows.innerHTML = "";
+  refreshMuscleLoadPanel_();
 }
 
 /**
@@ -266,20 +589,39 @@ async function loadClientList() {
   }
 }
 
-async function loadExerciseOptions() {
-  try {
-    const { rows, col } = await fetchExercises();
-    els.exerciseOptions.innerHTML = "";
-    for (const row of rows) {
-      const name = col.name >= 0 ? String(row[col.name] || "").trim() : "";
-      if (!name) continue;
-      const option = document.createElement("option");
-      option.value = name;
-      els.exerciseOptions.appendChild(option);
-    }
-  } catch (err) {
-    // No autocomplete list — free-text entry still works fine without it.
+// The Workout Exercises tab only stores an exercise's NAME against a
+// client, not its category or muscles, so re-opening a saved workout needs
+// a name -> {movement, bodyPart, primary, secondary, matched} lookup to
+// show the same colour dot and muscle data a freshly-picked exercise gets.
+// Built via the shared resolver (buildExerciseIndex_/resolveExerciseMuscles_,
+// card/muscle-map.js) — the same one workout/heatmap.js uses — rather than
+// this file's own plain exact-lowercase lookup (2026-10-09 fix; see that
+// file's header comment for why the old exact-only matching mattered).
+//
+// Cached as the in-flight PROMISE, not the (eventually-built) index itself
+// (2026-10-05 fix, still needed — orthogonal to the matching-logic fix
+// above) — loadClientWorkouts below calls exerciseCategoryFor_ for every
+// exercise in the workout at once, via Promise.all, so all of them run
+// their first synchronous line before any of them finish loading. Caching
+// the plain object meant only the very first caller actually waited for
+// fetchExercises(): every other exercise in the SAME workout saw a cache
+// that already existed but was still empty. Caching the promise itself
+// means every concurrent caller awaits the exact same fetch and sees the
+// real, fully-built index.
+let exerciseIndexPromise_ = null;
+
+function loadExerciseIndex_() {
+  if (!exerciseIndexPromise_) {
+    exerciseIndexPromise_ = fetchExercises()
+      .then(({ rows, col }) => buildExerciseIndex_(rows, col))
+      .catch(() => ({ byExact: {}, byNormalized: {} })); // rows just render without a colour dot or muscle data
   }
+  return exerciseIndexPromise_;
+}
+
+async function exerciseCategoryFor_(name) {
+  const index = await loadExerciseIndex_();
+  return resolveExerciseMuscles_(name, index);
 }
 
 /** Loads every workout name this client already has, grouped into { lowercaseName: { name, exercises } }. */
@@ -289,22 +631,34 @@ async function loadClientWorkouts(clientSlug) {
 
   try {
     const { rows, col } = await fetchWorkoutExercises();
-    const clientRows = rows
-      .filter((r) => String(r[col.client] || "").trim().toLowerCase() === clientSlug)
-      .map((r) => ({
-        workoutName: (col.workoutName >= 0 ? r[col.workoutName] : "") || "",
-        name: (r[col.exercise] || "").trim(),
-        sets: parseSessions(r[col.sets], ""),
-        reps: (r[col.reps] || "").trim(),
-        order: parseSessions(r[col.order], 0),
-        days: (col.days >= 0 ? String(r[col.days] || "") : "").split(",").map((d) => d.trim()).filter(Boolean),
-        workoutOrder: col.workoutOrder >= 0 ? Number(r[col.workoutOrder]) : NaN,
-        note: col.notes >= 0 ? String(r[col.notes] || "").trim() : "",
-        workoutNote: col.workoutNotes >= 0 ? String(r[col.workoutNotes] || "").trim() : "",
-      }))
-      .filter((ex) => ex.name && ex.workoutName);
+    const clientRows = await Promise.all(
+      rows
+        .filter((r) => String(r[col.client] || "").trim().toLowerCase() === clientSlug)
+        .map(async (r) => {
+          const name = (r[col.exercise] || "").trim();
+          const category = await exerciseCategoryFor_(name);
+          return {
+            workoutName: (col.workoutName >= 0 ? r[col.workoutName] : "") || "",
+            name,
+            movement: category.movement,
+            bodyPart: category.bodyPart,
+            primaryMuscles: category.primary,
+            secondaryMuscles: category.secondary,
+            muscleWeights: category.muscleWeights,
+            sets: parseSessions(r[col.sets], ""),
+            reps: (r[col.reps] || "").trim(),
+            order: parseSessions(r[col.order], 0),
+            days: (col.days >= 0 ? String(r[col.days] || "") : "").split(",").map((d) => d.trim()).filter(Boolean),
+            workoutOrder: col.workoutOrder >= 0 ? Number(r[col.workoutOrder]) : NaN,
+            note: col.notes >= 0 ? String(r[col.notes] || "").trim() : "",
+            workoutNote: col.workoutNotes >= 0 ? String(r[col.workoutNotes] || "").trim() : "",
+            superset: col.superset >= 0 && String(r[col.superset] || "").trim().toUpperCase() === "Y",
+          };
+        })
+    );
+    const validRows = clientRows.filter((ex) => ex.name && ex.workoutName);
 
-    for (const ex of clientRows) {
+    for (const ex of validRows) {
       const key = ex.workoutName.toLowerCase();
       if (!clientWorkouts[key]) {
         clientWorkouts[key] = { name: ex.workoutName, exercises: [], days: ex.days, order: ex.workoutOrder, note: "" };
@@ -500,14 +854,19 @@ els.saveButton.addEventListener("click", async () => {
     return;
   }
 
+  // The row's only 4 <input>s now, in DOM order: sets, reps, tip, then the
+  // hidden exercise-name value (see addRow — its visible control is a
+  // button, not an input, precisely so it's skipped here and picked up by
+  // name below instead).
   const exercises = Array.from(els.rows.children)
     .map((row) => {
-      const [nameInput, setsInput, repsInput, tipInput] = row.querySelectorAll("input");
+      const [setsInput, repsInput, tipInput, nameInput] = row.querySelectorAll("input");
       return {
         name: nameInput.value.trim(),
         sets: Number(setsInput.value),
         reps: repsInput.value.trim(),
         note: tipInput ? tipInput.value.trim() : "",
+        superset: row.dataset.superset === "true",
       };
     })
     .filter((ex) => ex.name);
@@ -662,6 +1021,5 @@ function rememberPin_(pin) {
   buildDaysPicker();
   buildWorkoutNoteField();
   loadClientList();
-  loadExerciseOptions();
   addRow();
 })();

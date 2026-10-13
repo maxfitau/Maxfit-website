@@ -188,9 +188,20 @@ const els = {
   tier: document.getElementById("memberTier"),
   qr: document.getElementById("qrCode"),
   status: document.getElementById("status"),
+  cardLoading: document.getElementById("cardLoading"),
   upcomingLabel: document.getElementById("upcomingLabel"),
   upcomingValue: document.getElementById("upcomingValue"),
   upcomingLink: document.getElementById("upcomingLink"),
+  bookLink: document.getElementById("bookLink"),
+  referLink: document.getElementById("referLink"),
+  checkinTile: document.getElementById("checkinTile"),
+  qrModal: document.getElementById("qrModal"),
+  qrModalBackdrop: document.getElementById("qrModalBackdrop"),
+  qrModalClose: document.getElementById("qrModalClose"),
+  coachToolsTile: document.getElementById("coachToolsTile"),
+  coachToolsModal: document.getElementById("coachToolsModal"),
+  coachToolsBackdrop: document.getElementById("coachToolsBackdrop"),
+  coachToolsClose: document.getElementById("coachToolsClose"),
   loyaltyCount: document.getElementById("loyaltyCount"),
   loyaltyBar: document.getElementById("loyaltyBar"),
   picker: document.getElementById("picker"),
@@ -268,10 +279,55 @@ els.completeButton.addEventListener("click", () => {
   if (nowChecked) celebrate();
 });
 
+/** The check-in QR used to sit on the card at all times; it now opens in a focused modal from the Check In tile — bigger and easier to scan, one tap away. */
+function openQrModal() {
+  els.qrModal.hidden = false;
+}
+
+function closeQrModal() {
+  els.qrModal.hidden = true;
+}
+
+els.checkinTile.addEventListener("click", openQrModal);
+els.qrModalBackdrop.addEventListener("click", closeQrModal);
+els.qrModalClose.addEventListener("click", closeQrModal);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !els.qrModal.hidden) closeQrModal();
+});
+
+/**
+ * "Coach Tools" — Max's own quick-links to the tools he reaches for mid-
+ * session (the workout builder, Coach · Fuel, the CRM sheet, the Handbook).
+ * Shown only on his own card (render() checks clientSlug === "maxfrench"),
+ * never anyone else's — the tile itself stays hidden otherwise. Each link
+ * already has its own protection where it matters (builder.html/coach.html
+ * are PIN-gated on load; the CRM sheet is already public-read by design),
+ * so this is just a shortcut to places already reachable, nothing new.
+ */
+function openCoachToolsModal() {
+  els.coachToolsModal.hidden = false;
+}
+
+function closeCoachToolsModal() {
+  els.coachToolsModal.hidden = true;
+}
+
+els.coachToolsTile.addEventListener("click", openCoachToolsModal);
+els.coachToolsBackdrop.addEventListener("click", closeCoachToolsModal);
+els.coachToolsClose.addEventListener("click", closeCoachToolsModal);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !els.coachToolsModal.hidden) closeCoachToolsModal();
+});
+
 function showStatus(message, isError) {
   els.status.textContent = message;
   els.status.hidden = false;
   els.status.classList.toggle("status--error", Boolean(isError));
+}
+
+/** Hides the boot-time loading screen — called once real data is on screen, or immediately if there's nothing to fetch yet (the name picker). Safe to call more than once. */
+function hideCardLoading() {
+  els.cardLoading.hidden = true;
 }
 
 function renderQR(value) {
@@ -282,10 +338,15 @@ function renderQR(value) {
   els.qr.innerHTML = qr.createSvgTag({ scalable: true });
 }
 
-/** 1-in-10 loyalty punchcard — mirrors the auto-tick logic on checkin.html. */
-function renderLoyalty(totalAttended) {
-  const progress = totalAttended % 10;
-  els.loyaltyCount.textContent = `${progress}/10`;
+/**
+ * 1-in-10 loyalty punchcard — mirrors the auto-tick logic on checkin.html.
+ * `punches` is class visits plus nutrition punches (5 green days in FUEL =
+ * 1). `freeOwed` means a nutrition punch just completed a card, so the
+ * free session is waiting for their next check-in.
+ */
+function renderLoyalty(punches, freeOwed) {
+  const progress = freeOwed ? 10 : punches % 10;
+  els.loyaltyCount.textContent = freeOwed ? "Free session ready" : `${progress}/10`;
   els.loyaltyBar.innerHTML = "";
   for (let i = 0; i < 10; i++) {
     const peg = document.createElement("div");
@@ -355,15 +416,31 @@ async function assignedWorkoutSummary_(clientSlug) {
   }
 }
 
-async function render(data) {
+async function render(data, workoutSummary) {
   els.groupSessions.textContent = data.groupSessionsRemaining;
   els.oneOnOneSessions.textContent = data.oneOnOneSessionsRemaining;
   els.name.textContent = data.memberName;
   els.tier.textContent = data.tier;
   renderQR(data.checkInUrl);
-  renderLoyalty(data.totalAttended);
+  renderLoyalty(data.totalAttended + (data.nutritionPunches || 0) + (data.referralPunches || 0) + (data.manualPunches || 0), !!data.freeOwed);
 
-  const { count: assignedCount, names: workoutNames, todayName } = await assignedWorkoutSummary_(data.clientSlug);
+  // Booking and referring are for real members: the demo card has no membership behind either.
+  if (!data.isDemo) {
+    els.bookLink.href = `book.html?id=${encodeURIComponent(data.clientSlug)}`;
+    els.bookLink.hidden = false;
+    els.referLink.href = `refer.html?id=${encodeURIComponent(data.clientSlug)}`;
+    els.referLink.hidden = false;
+    // Last week's recap and this month's goal (week.js, 2026-10-13).
+    if (typeof WeekCard !== "undefined") WeekCard.init(data.clientSlug);
+    // "Coach Tools" (2026-10-13) — Max's own card only, never a client's.
+    if (data.clientSlug === "maxfrench") els.coachToolsTile.hidden = false;
+  }
+
+  // Everything that matters at a glance is on screen now — don't make the
+  // loading screen wait on the slower "Today's Workout" lookup below too.
+  hideCardLoading();
+
+  const { count: assignedCount, names: workoutNames, todayName } = workoutSummary;
   if (assignedCount > 0) {
     els.upcomingLabel.textContent = "Today's Workout";
     els.upcomingLink.href = `../workout/?id=${encodeURIComponent(data.clientSlug)}`;
@@ -424,6 +501,7 @@ async function fetchMemberData(id) {
   if (!match) {
     return {
       ...DEMO_MEMBER,
+      isDemo: true,
       clientSlug: wantedSlug || "demo",
       checkInUrl: `https://maxfit.now/checkin.html?token=${id || "DEMO-0000"}`,
     };
@@ -439,6 +517,10 @@ async function fetchMemberData(id) {
     groupSessionsRemaining: parseSessions(match[col.groupSessions], "N/A"),
     oneOnOneSessionsRemaining: parseSessions(match[col.oneOnOneSessions], "N/A"),
     totalAttended: parseSessions(match[col.totalAttended], 0),
+    nutritionPunches: col.nutritionPunches >= 0 ? parseSessions(match[col.nutritionPunches], 0) : 0,
+    referralPunches: col.referralPunches >= 0 ? parseSessions(match[col.referralPunches], 0) : 0,
+    manualPunches: col.manualPunches >= 0 ? parseSessions(match[col.manualPunches], 0) : 0,
+    freeOwed: col.freeOwed >= 0 && String(match[col.freeOwed] || "").trim().toUpperCase() === "Y",
     checkInUrl: `https://maxfit.now/checkin.html?token=${encodeURIComponent(token)}`,
     programType: programType === "self-guided" ? "self-guided" : "group",
     classLabel: col.class >= 0 ? match[col.class] : undefined,
@@ -448,9 +530,15 @@ async function fetchMemberData(id) {
 
 async function loadCard(id) {
   try {
-    const data = await fetchMemberData(id);
-    await render(data);
+    // Kicked off together, not one after the other — fetchMemberData() and
+    // the workout lookup hit two different sheet tabs, and the workout one
+    // only needs this id's slug, which is known before either fetch starts.
+    const memberPromise = fetchMemberData(id);
+    const workoutPromise = assignedWorkoutSummary_(slugify(id));
+    const data = await memberPromise;
+    await render(data, await workoutPromise);
   } catch (err) {
+    hideCardLoading();
     showStatus("Couldn't load your card. Check your connection and reopen.", true);
   }
 }
@@ -470,6 +558,7 @@ async function loadCard(id) {
  * one storage quirk for.
  */
 function showPicker() {
+  hideCardLoading();
   els.picker.hidden = false;
   els.pickerInput.focus();
 
@@ -503,6 +592,7 @@ function showPicker() {
       // Storage unavailable — card still works for this session.
     }
     els.picker.hidden = true;
+    els.cardLoading.hidden = false;
     loadCard(id);
   });
 }

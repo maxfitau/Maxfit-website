@@ -2,13 +2,20 @@
  * MaxFit membership card — FUEL tab (macro tracker, Phase 1).
  *
  * Draws everything inside #panelFuel plus the bottom sheet (#fuelSheet):
- *   home     — today's totals vs targets, SCAN FOOD, favourites/recent
- *              one-tap chips, and today's entries by meal
+ *   home     — the rings header (day switcher, plan button, protein/
+ *              carbs/fat rings, calorie bar), SCAN FOOD + Ask Fuel, the
+ *              four meals, and meal plan/shopping/progress/settings tiles
  *   scan     — Photo (AI), Barcode (Open Food Facts) or Label (AI)
  *   confirm  — editable grams per item, live macros, ADD TO TODAY
  *   edit     — change grams/meal/name, favourite, delete
  *   targets  — Max's targets (read-only) or the calculator
- *   settings — hide calories, disclaimer
+ *   settings — hide calories, Fuel AI plan, disclaimer
+ *   suggest  — "what to eat next" from Max's Foods list (free, no AI)
+ *   chat     — Ask Fuel, the AI copilot (Diamond only)
+ *   upsell   — Fuel plans: 7-day Diamond trial, then Gold $5.99 or Diamond
+ *              $9.99 a month (or yearly) via Stripe
+ *   progress — weight trend vs goal, calorie target steps, last 14 days
+ *              with green days and the nutrition punches (free)
  *
  * Talks to the server only through MacroApi (macros-api.js); maths come
  * from MacroCore (macros-core.js). Photos are shrunk to 1024px JPEG in the
@@ -17,7 +24,6 @@
 (function () {
   const $ = (id) => document.getElementById(id);
   const els = {
-    tabs: Array.from(document.querySelectorAll(".card__tab")),
     panelCard: $("panelCard"),
     panelFuel: $("panelFuel"),
     sheet: $("fuelSheet"),
@@ -28,9 +34,24 @@
   };
   if (!els.panelFuel || !els.sheet) return;
 
-  const TAB_STORAGE = "maxfitCardTab";
   const MEAL_LABELS = { breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner", snack: "Snacks" };
   const MEAL_SHORT = { breakfast: "Brekky", lunch: "Lunch", dinner: "Dinner", snack: "Snack" };
+
+  // Every loading moment in FUEL (initial load, AI scans, barcode lookups,
+  // suggestions, progress) shares this one spinner markup — swapping it here
+  // swaps the animation everywhere at once. All three layers are the SAME
+  // flame outline at three sizes, anchored to the same base, so every stage
+  // of the build is a complete flame, not a slice of one (see macros.css).
+  const FUEL_FLAME_PATH =
+    "M12 2 C 9.8 6, 6.5 9.5, 6.5 14 C 6.5 18.5, 8.8 22, 12 22 " +
+    "C 15.2 22, 17.5 18.5, 17.5 14 C 17.5 10.5, 15.5 8.5, 14.8 6 " +
+    "C 14.5 8, 13.2 9, 12.3 8 C 11.7 7.2, 12 4.5, 12 2 Z";
+  const FUEL_FLAME_SVG =
+    '<svg class="fuel-flame" viewBox="0 0 24 24" aria-hidden="true">' +
+    `<path class="flame__layer flame__layer--1" d="${FUEL_FLAME_PATH}"/>` +
+    `<path class="flame__layer flame__layer--2" d="${FUEL_FLAME_PATH}"/>` +
+    `<path class="flame__layer flame__layer--3" d="${FUEL_FLAME_PATH}"/>` +
+    "</svg>";
 
   const state = {
     loaded: false,
@@ -41,16 +62,42 @@
     viewDate: MacroCore.sydneyDate(),
     recent: [],
     favourites: [],
-    scansLeft: null,
-    scanLimit: 25,
+    meals: [], // saved meals: { id, name, items }
+    aiToday: null, // { tier, used, limit, left } from the server
+    toBuy: null, // shopping list items not yet ticked (week.js and mealplan.js tell us)
+    addMeal: null, // the meal whose + was tapped, until that food is logged
     busy: false,
     confirm: null,
     pendingPhotoMode: null,
     loadedOn: null,
     aiEnabled: true,
-    scanCredits: null,
-    scanPriceCents: 5,
+    plan: null, // { access, tier, kind, until, daysLeft, interval, links: { gold: { month, year }, … }, portalUrl, aiPerDay } from the server
+    foods: [],
+    moreIdeas: false,
+    chat: [], // Ask Fuel messages, this visit only: { role, content, foods? }
+    awaitingUpgrade: false,
+    weightTrend: null, // { kg, date, change7 } from the server
+    progress: null, // the last `progress` response
+    progressRange: 84, // days shown on the weight chart; 0 = all
+    progressWeek: "this", // which week the Progress week chart shows: "this" or "last"
   };
+
+  // Back from Stripe checkout: the Payment Link redirects to
+  // /card/?paid={CHECKOUT_SESSION_ID}. Take it off the address straight away
+  // so it never ends up in a home-screen icon's start URL.
+  const returnedSession = (() => {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("paid");
+    if (!id) return null;
+    params.delete("paid");
+    const rest = params.toString();
+    try {
+      history.replaceState(null, "", window.location.pathname + (rest ? "?" + rest : "") + window.location.hash);
+    } catch (err) {
+      // ignore
+    }
+    return /^cs_[A-Za-z0-9_]+$/.test(id) ? id : null;
+  })();
 
   // ---------------------------------------------------------------------------
   // Small helpers
@@ -109,7 +156,9 @@
     return state.viewDate === MacroCore.sydneyDate();
   }
 
+  /** The meal a new log goes into: the one whose + was tapped, else by the time of day. */
   function defaultMeal() {
+    if (state.addMeal) return state.addMeal;
     return isToday() ? MacroCore.mealForHour(sydneyHour()) : "snack";
   }
 
@@ -120,38 +169,41 @@
       '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 5v14M7 5v14M11 5v14M14 5v14M18 5v14M20 5v14"/></svg>',
     label:
       '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>',
+    pen:
+      '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>',
+    bowl:
+      '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11h18a9 9 0 0 1-18 0z"/><path d="M8 7c0-1 1-2 2-2M13 7c0-1 1-2 2-2"/></svg>',
+    search:
+      '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>',
+    plus: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
     gear:
       '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
     left: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>',
     right: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>',
     x: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+    spark:
+      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></svg>',
+    chart:
+      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19V5M4 19h16"/><path d="M7 15l4-4 3 3 5-6"/></svg>',
+    lock: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
     star: '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l3 6.9 7.5.7-5.7 5 1.7 7.4L12 18l-6.5 4 1.7-7.4-5.7-5 7.5-.7z"/></svg>',
+    chat: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+    calendar: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>',
+    cart: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2.5 3.5h2.8l2.4 11.2a1.5 1.5 0 0 0 1.5 1.2h8.4a1.5 1.5 0 0 0 1.5-1.1l1.7-6.8H6.4"/></svg>',
   };
 
   // ---------------------------------------------------------------------------
   // Tabs
   // ---------------------------------------------------------------------------
 
-  function showTab(name, remember) {
+  /** Which panel shows — picked once on load from the URL (see the bottom of this file), no in-page switcher any more. */
+  function showTab(name) {
     const fuel = name === "fuel";
-    els.tabs.forEach((t) => {
-      const on = t.dataset.tab === name;
-      t.classList.toggle("is-active", on);
-      t.setAttribute("aria-selected", on ? "true" : "false");
-    });
+    document.body.classList.toggle("is-fuel", fuel); // full-bleed Fuel layout, see macros.css
     els.panelCard.hidden = fuel;
     els.panelFuel.hidden = !fuel;
-    if (remember) {
-      try {
-        localStorage.setItem(TAB_STORAGE, name);
-      } catch (err) {
-        // ignore
-      }
-    }
-    if (fuel && !state.loaded && !state.loading) load();
+    if (fuel && !state.loaded && !state.loading) load(returnedSession ? { sync: true } : undefined);
   }
-
-  els.tabs.forEach((t) => t.addEventListener("click", () => showTab(t.dataset.tab, true)));
 
   // ---------------------------------------------------------------------------
   // Loading
@@ -166,48 +218,97 @@
       </div>`;
   }
 
-  function renderLoading(text) {
-    els.panelFuel.innerHTML = `<div class="fuel-loading"><div class="fuel-spinner"></div><span class="fuel-loading__text">${esc(text || "Loading")}</span></div>`;
+  /**
+   * "Paste the link Max sent you": for a home-screen icon that opened without
+   * the personal link (an older iPhone icon keeps its own storage, separate
+   * from Safari). Saves it on this phone and reloads, so the card follows too.
+   */
+  function renderUnlock(message) {
+    renderNotice(
+      "Unlock Fuel",
+      esc(message),
+      `<form class="fuel-field" data-link-form autocomplete="off">
+         <span class="card__label">Your link from Max</span>
+         <input class="fuel-input" name="link" type="text" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="maxfit.now/card/?id=…" aria-label="Your link from Max" />
+         <button class="fuel-btn" type="submit">Unlock Fuel</button>
+         <p class="fuel-error" data-link-error hidden>That doesn't look like your MaxFit link. Copy the whole link from Max's message and try again.</p>
+       </form>`
+    );
+    const form = els.panelFuel.querySelector("[data-link-form]");
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      if (MacroApi.saveLink(form.elements.link.value)) window.location.reload();
+      else form.querySelector("[data-link-error]").hidden = false;
+    });
   }
 
-  async function load() {
+  function renderLoading(text) {
+    els.panelFuel.innerHTML = `<div class="fuel-loading"><div class="fuel-spinner">${FUEL_FLAME_SVG}</div><span class="fuel-loading__text">${esc(text || "Loading")}</span></div>`;
+  }
+
+  function applyMe(data) {
+    state.member = data.member;
+    state.targets = data.targets;
+    state.day = data.day;
+    state.recent = data.recent || [];
+    state.favourites = data.favourites || [];
+    state.meals = data.meals || [];
+    state.foods = data.foods || [];
+    state.aiToday = data.aiToday || null;
+    state.aiEnabled = data.aiEnabled !== false;
+    state.plan = data.plan || null;
+    state.weightTrend = data.weightTrend || null;
+  }
+
+  async function load(opts) {
     if (!MacroApi.configured()) {
       renderNotice("Fuel is coming soon", "Macro tracking isn't switched on for the card yet. Max will let you know when it's ready.");
       return;
     }
     const who = MacroApi.identity();
     if (!who.id || !who.k) {
-      renderNotice(
-        "Unlock Fuel",
-        "Macro tracking needs your personal link from Max. Open the link Max texts you, then add it to your home screen again so the icon remembers it."
-      );
+      if (returnedSession) {
+        // Paid in a browser that doesn't hold their card (e.g. Safari
+        // instead of the home-screen app): switch Fuel AI on anyway.
+        renderLoading("Switching on Fuel AI");
+        await confirmStripeReturn();
+        renderNotice(
+          "Payment received",
+          "Thanks! Fuel AI is being switched on. Go back to your MaxFit app from your home screen and open the Fuel tab."
+        );
+        return;
+      }
+      renderUnlock("Macro tracking needs your personal link from Max. Paste it below to unlock Fuel on this phone. You only need to do this once.");
       return;
     }
     state.loading = true;
-    renderLoading("Loading your day");
+    if (returnedSession) renderLoading("Switching on Fuel AI");
+    else renderSkeleton();
     try {
-      const data = await MacroApi.call("me", { date: state.viewDate });
-      state.member = data.member;
-      state.targets = data.targets;
-      state.day = data.day;
-      state.recent = data.recent || [];
-      state.favourites = data.favourites || [];
-      state.scansLeft = data.scansLeft;
-      state.scanLimit = data.scanLimit || 25;
-      state.aiEnabled = data.aiEnabled !== false;
-      state.scanCredits = typeof data.scanCredits === "number" ? data.scanCredits : null;
-      state.scanPriceCents = data.scanPriceCents || 5;
+      if (returnedSession) await confirmStripeReturn();
+      const data = await MacroApi.call("me", { date: state.viewDate, sync: !!(opts && opts.sync) });
+      applyMe(data);
       state.loaded = true;
       state.loadedOn = MacroCore.sydneyDate();
       render();
+      if (returnedSession && state.plan && state.plan.kind === "paid") toast(`${TIER_NAMES[tier()]} is on. Welcome!`);
     } catch (err) {
       if (err.code === "bad_key") {
-        renderNotice("Unlock Fuel", esc(err.message));
+        renderUnlock(err.message + " If Max has sent you one, paste it below.");
       } else {
         renderNotice("Couldn't load", esc(err.message), '<button class="fuel-btn fuel-btn--ghost" type="button" data-act="retry">Try again</button>');
       }
     } finally {
       state.loading = false;
+    }
+  }
+
+  /** Tells the server which Stripe checkout just finished, so it can link it straight away. */
+  async function confirmStripeReturn() {
+    try {
+      await MacroApi.call("stripeReturn", { session_id: returnedSession });
+    } catch (err) {
+      // The 15-minute sync will pick it up anyway.
     }
   }
 
@@ -229,173 +330,487 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Home view
+  // Home view: the "concentric rings" layout (2026-10-13). A header panel
+  // (day switcher, plan button, protein/carbs/fat rings, calorie bar), then
+  // Scan Food + Ask Fuel, the four meals, and the plan-ahead tiles.
   // ---------------------------------------------------------------------------
 
-  function progressRow(label, eaten, target, unit, { lead = false, note = "" } = {}) {
-    const pct = target > 0 ? Math.min(100, (eaten / target) * 100) : 0;
-    return `
-      <div class="fuel-row${lead ? " fuel-row--lead" : ""}">
-        <div class="fuel-row__head">
-          <span class="card__label${lead ? " card__label--red" : ""}">${label}</span>
-          ${note ? `<span class="fuel-row__note">${note}</span>` : ""}
-        </div>
-        <div class="fuel-row__nums">${int(eaten)}<span class="fuel-row__target"> / ${int(target)}</span><span class="fuel-row__unit">${unit}</span></div>
-        <div class="fuel-bar"><div class="fuel-bar__fill" style="width:${pct.toFixed(1)}%"></div></div>
-      </div>`;
+  // Ring radii in the 180-unit SVG: protein outside, fat inside.
+  const RINGS = [
+    { key: "protein_g", id: "p", r: 82 },
+    { key: "carbs_g", id: "c", r: 66 },
+    { key: "fat_g", id: "f", r: 50 },
+  ];
+
+  // What the rings and calorie bar last showed. A re-render (food logged,
+  // day changed) draws them here first, then paintRings() moves them to the
+  // new values so they animate instead of jumping. Starts empty, so the
+  // first paint grows in.
+  const shown = { p: 0, c: 0, f: 0, sp: 0, sc: 0, sf: 0 };
+
+  // Plan button icons, outlines in the plan's own colour (see macros.css).
+  const TIER_OUTLINES = {
+    silver: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.5 L19 5.5 V11 C19 15.8 15.8 19.6 12 21.5 C8.2 19.6 5 15.8 5 11 V5.5 Z"/></svg>',
+    gold: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.8 L14.6 9 L21.2 9.5 L16.2 13.9 L17.8 20.5 L12 16.9 L6.2 20.5 L7.8 13.9 L2.8 9.5 L9.4 9 Z"/></svg>',
+    diamond: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 9 L7.5 4 H16.5 L20.5 9 L12 20.5 Z M3.5 9 H20.5 M9.5 4 L8 9 L12 20.5 L16 9 L14.5 4"/></svg>',
+  };
+
+  /** "Tue 13 Oct" or "Monday", for the day switcher. */
+  function dayText(ymd, opts) {
+    const [y, m, d] = ymd.split("-").map(Number);
+    return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-AU", Object.assign({ timeZone: "UTC" }, opts)).replace(",", "");
   }
 
-  function smallRow(label, eaten, target) {
-    const pct = target > 0 ? Math.min(100, (eaten / target) * 100) : 0;
-    return `
-      <div class="fuel-row">
-        <span class="card__label">${label}</span>
-        <div class="fuel-row__nums">${int(eaten)}<span class="fuel-row__target"> / ${int(target)}</span><span class="fuel-row__unit">g</span></div>
-        <div class="fuel-bar"><div class="fuel-bar__fill" style="width:${pct.toFixed(1)}%"></div></div>
-      </div>`;
+  /** "7:40am" from an entry's created_at ("2026-10-13 07:40:00", or a date the sheet turned it into). */
+  function firstTime(items) {
+    const times = items
+      .map((e) => String(e.created_at || "").match(/(\d{1,2}):(\d{2})/))
+      .filter(Boolean)
+      .map((m) => m[1].padStart(2, "0") + ":" + m[2])
+      .sort();
+    if (!times.length) return "";
+    const h = Number(times[0].slice(0, 2));
+    return `${h % 12 || 12}:${times[0].slice(3)}${h < 12 ? "am" : "pm"}`;
   }
 
-  function totalsHtml() {
-    const t = state.day ? state.day.totals : MacroCore.sumTotals([]);
-    const g = state.targets;
-    if (!g) {
-      return `
-        <div class="fuel-panel fuel-notice">
-          <h2 class="fuel-notice__title">Set your daily targets</h2>
-          <p>Two minutes with the calculator and you'll see protein, carbs, fat${hideKcal() ? "" : " and calories"} to aim for each day. Or Max can set them for you.</p>
-          <button class="fuel-btn" type="button" data-act="targets">Set my targets</button>
-          ${
-            state.day && state.day.entries.length
-              ? `<p class="fuel-row__note">So far ${esc(dayLabel(state.viewDate).toLowerCase())}: ${macroLine(t)}</p>`
-              : ""
-          }
-        </div>`;
+  function ringsSvg(label) {
+    const circles = RINGS.map((ring) => {
+      const c = 2 * Math.PI * ring.r;
+      return (
+        `<circle class="fx-ring fx-ring--track fx-ring--${ring.id}" cx="90" cy="90" r="${ring.r}"></circle>` +
+        `<circle class="fx-ring fx-ring--bar fx-ring--${ring.id}" data-ring="${ring.id}" cx="90" cy="90" r="${ring.r}" ` +
+        `stroke-dasharray="${c.toFixed(2)}" transform="rotate(-90 90 90)" style="stroke-dashoffset:${(c * (1 - shown[ring.id])).toFixed(2)}"></circle>`
+      );
+    }).join("");
+    return `<svg class="fx-rings__svg" viewBox="0 0 180 180" role="img" aria-label="${esc(label)}">${circles}</svg>`;
+  }
+
+  /**
+   * MacroHeader: day switcher + plan button, the rings with what's left in
+   * the middle, the legend, and the calorie bar. `skeleton` draws the same
+   * shapes empty while the day loads, so nothing jumps when it arrives.
+   * Hidden calories: the middle shows protein left and there's no calorie
+   * bar, same rule as the rest of Fuel.
+   */
+  function headerHtml(skeleton) {
+    const g = skeleton ? null : state.targets;
+    const t = state.day && !skeleton ? state.day.totals : MacroCore.sumTotals([]);
+    const today = isToday();
+    const fracs = {};
+    RINGS.forEach((ring) => (fracs[ring.id] = g && g[ring.key] > 0 ? Math.max(0, t[ring.key] / g[ring.key]) : 0));
+    const pct = (f) => Math.round(f * 100);
+
+    let num = "–";
+    let unit = skeleton ? "" : "No targets yet";
+    if (g && hideKcal()) {
+      const left = Math.round(g.protein_g - t.protein_g);
+      num = `${int(Math.abs(left))}g`;
+      unit = left >= 0 ? "Protein left" : "Protein over";
+    } else if (g) {
+      const left = Math.round(g.kcal - t.kcal);
+      num = int(Math.abs(left));
+      unit = left >= 0 ? "Kcal left" : "Kcal over";
     }
-    const proteinLeft = g.protein_g - t.protein_g;
-    const proteinNote = proteinLeft > 0 ? `${int(proteinLeft)}g to go` : "Target hit";
-    const kcalLeft = g.kcal - t.kcal;
-    // Over on calories is information, not a failure — keep it calm.
-    const kcalNote = kcalLeft >= 0 ? `${int(kcalLeft)} left` : `${int(-kcalLeft)} over · no stress`;
+
+    const legend = RINGS.map((ring) => {
+      const label = { p: "Protein", c: "Carbs", f: "Fat" }[ring.id];
+      const eaten = Math.round(t[ring.key]);
+      const over = g ? eaten - Math.round(g[ring.key]) : 0;
+      return `
+        <div class="fx-legend__item fx-legend__item--${ring.id}">
+          <span class="fx-legend__label">${label}${over > 0 ? `<span class="fx-over">+${int(over)}g</span>` : ""}</span>
+          <span class="fx-legend__nums">${skeleton ? "<b>–</b>" : g ? `<b>${int(eaten)}</b> / ${int(g[ring.key])}g` : `<b>${int(eaten)}</b>g`}</span>
+        </div>`;
+    }).join("");
+
+    let below = "";
+    if (g && !hideKcal()) {
+      // Each macro's share of the calorie goal (4/4/9 kcal a gram), squeezed
+      // to fit if they add up past 100%.
+      const raw = { p: (t.protein_g * 4) / g.kcal, c: (t.carbs_g * 4) / g.kcal, f: (t.fat_g * 9) / g.kcal };
+      const sum = raw.p + raw.c + raw.f;
+      const k = sum > 1 ? 1 / sum : 1;
+      const seg = (id) =>
+        `<span class="fx-seg fx-seg--${id}" data-seg="${id}" data-frac="${(raw[id] * k).toFixed(4)}" style="width:${(shown["s" + id] * 100).toFixed(2)}%"></span>`;
+      below = `
+        <div class="fx-kcal">
+          <div class="fx-kcal__row"><span>${int(t.kcal)} / ${int(g.kcal)} kcal</span><span>${pct(g.kcal > 0 ? t.kcal / g.kcal : 0)}%</span></div>
+          <div class="fx-kcal__bar" aria-hidden="true">${seg("p")}${seg("c")}${seg("f")}</div>
+        </div>`;
+    } else if (!g && !skeleton) {
+      below = '<button class="fx-settargets" type="button" data-act="targets">Set my daily targets</button>';
+    } else if (skeleton) {
+      below = '<div class="fx-kcal" aria-hidden="true"><div class="fx-kcal__row"><span class="fx-skel fx-skel--text"></span></div><div class="fx-kcal__bar"></div></div>';
+    }
+
+    const tierBtn = skeleton
+      ? '<span class="fx-tier fx-tier--skel" aria-hidden="true"></span>'
+      : state.aiEnabled
+      ? `<button class="fx-tier fx-tier--${tier()}" type="button" data-act="plans" aria-label="${TIER_NAMES[tier()]} membership">${TIER_OUTLINES[tier()]}</button>`
+      : "";
+
     return `
-      <div class="fuel-panel fuel-totals">
-        ${progressRow("Protein", t.protein_g, g.protein_g, "g", { lead: true, note: proteinNote })}
-        ${hideKcal() ? "" : progressRow("Calories", t.kcal, g.kcal, "kcal", { note: kcalNote })}
-        <div class="fuel-grid3" style="grid-template-columns: 1fr 1fr">
-          ${smallRow("Carbs", t.carbs_g, g.carbs_g)}
-          ${smallRow("Fat", t.fat_g, g.fat_g)}
+      <section class="fx-head" aria-label="Today's macros">
+        <div class="fx-head__top">
+          <div class="fx-day">
+            <button class="fx-day__btn" type="button" data-act="day-prev" aria-label="Previous day"${skeleton ? " disabled" : ""}>${ICONS.left}</button>
+            <div class="fx-day__text">
+              <h1 class="fx-day__name">${today ? "Today" : esc(dayText(state.viewDate, { weekday: "long" }))}</h1>
+              <span class="fx-day__date">${esc(dayText(state.viewDate, { weekday: "short", day: "numeric", month: "short" }))}</span>
+            </div>
+            <button class="fx-day__btn" type="button" data-act="day-next" aria-label="Next day"${today || skeleton ? " disabled" : ""}>${ICONS.right}</button>
+          </div>
+          ${tierBtn}
         </div>
-      </div>`;
+        <div class="fx-rings-row">
+          <div class="fx-rings" data-fracs="${fracs.p.toFixed(4)},${fracs.c.toFixed(4)},${fracs.f.toFixed(4)}">
+            ${ringsSvg(skeleton ? "Loading your macros" : `Protein ${pct(fracs.p)}%, carbs ${pct(fracs.c)}%, fat ${pct(fracs.f)}% of goal`)}
+            <div class="fx-rings__centre">
+              <span class="fx-rings__num${num.length >= 5 ? " fx-rings__num--long" : ""}">${num}</span>
+              ${unit ? `<span class="fx-rings__unit">${unit}</span>` : ""}
+            </div>
+          </div>
+          <div class="fx-legend">${legend}</div>
+        </div>
+        ${below}
+      </section>`;
   }
 
-  function chip(item, kind, index) {
-    const m = MacroCore.scale(item.per100, item.grams);
+  /** Moves the rings and calorie bar from where they were drawn to their real values (CSS animates it). */
+  function paintRings() {
+    const box = els.panelFuel.querySelector("[data-fracs]");
+    if (!box) return;
+    const fr = box.dataset.fracs.split(",").map(Number);
+    box.getBoundingClientRect(); // commit the starting point first, or there's nothing to animate from
+    els.panelFuel.querySelectorAll("[data-ring]").forEach((el, i) => {
+      const f = Math.min(1, fr[i] || 0);
+      el.style.strokeDashoffset = (2 * Math.PI * RINGS[i].r * (1 - f)).toFixed(2);
+      shown[el.dataset.ring] = f;
+    });
+    els.panelFuel.querySelectorAll("[data-seg]").forEach((el) => {
+      const f = Math.min(1, Number(el.dataset.frac) || 0);
+      el.style.width = (f * 100).toFixed(2) + "%";
+      shown["s" + el.dataset.seg] = f;
+    });
+  }
+
+  /** ActionsRow: Scan Food, Ask Fuel, and today's AI scans left. */
+  function actionsHtml(skeleton) {
+    const ai = state.aiEnabled;
+    const usedUp = !skeleton && aiUsedUp();
+    let caption = "";
+    if (skeleton) caption = "&nbsp;";
+    else if (ai && !fuelAi()) caption = "Barcode and search are free · AI scans come with Gold";
+    else if (usedUp) caption = "Out of AI scans · resets at midnight";
+    else if (ai && state.aiToday && state.aiToday.limit) caption = `${state.aiToday.left} of ${state.aiToday.limit} AI scans left today`;
+    // Out of AI scans still opens the chooser: barcode and search are free.
     return `
-      <button class="fuel-chip" type="button" data-act="quick" data-kind="${kind}" data-i="${index}">
-        <span class="fuel-chip__name">${kind === "fav" ? `<span style="color:var(--red)">${ICONS.star}</span> ` : ""}${esc(item.name)}</span>
-        <span class="fuel-chip__meta">${int(item.grams)}g · ${int(m.protein_g)}P${hideKcal() ? "" : ` · ${int(m.kcal)} kcal`}</span>
+      <div class="fx-actions">
+        <button class="fx-scan${usedUp ? " is-out" : ""}" type="button" data-act="scan"${skeleton ? " disabled" : ""}>${ICONS.camera}<span>Scan Food</span></button>
+        ${ai || skeleton ? `<button class="fx-ask" type="button" data-act="ask" aria-label="Ask Fuel, your AI nutrition copilot"${skeleton ? " disabled" : ""}>${ICONS.chat}</button>` : ""}
+      </div>
+      ${caption ? `<p class="fx-caption">${caption}</p>` : ""}`;
+  }
+
+  /** MealList: Breakfast, Lunch, Dinner, Snacks. Logged ones open their foods; empty ones get a + to add straight into that meal. */
+  function mealListHtml(skeleton) {
+    const entries = state.day && !skeleton ? state.day.entries : [];
+    const rows = MacroCore.MEALS.map((meal) => {
+      const name = MEAL_LABELS[meal];
+      if (skeleton) {
+        return '<div class="fx-meal" aria-hidden="true"><span class="fx-skel fx-skel--name"></span><span class="fx-skel fx-skel--btn"></span></div>';
+      }
+      const items = entries.filter((e) => e.meal === meal);
+      if (!items.length) {
+        return `
+          <div class="fx-meal">
+            <span class="fx-meal__name fx-meal__name--empty">${name}</span>
+            <button class="fx-add" type="button" data-act="meal-add" data-meal="${meal}" aria-label="Add ${name}">${ICONS.plus}</button>
+          </div>`;
+      }
+      const sum = MacroCore.sumTotals(items);
+      const time = firstTime(items);
+      return `
+        <button class="fx-meal" type="button" data-act="meal-open" data-meal="${meal}">
+          <span class="fx-meal__main">
+            <span class="fx-meal__name">${name}${time ? `<span class="fx-meal__time"> · ${time}</span>` : ""}</span>
+            <span class="fx-chips">
+              <span class="fx-chip fx-chip--p">P ${int(sum.protein_g)}g</span>
+              <span class="fx-chip fx-chip--c">C ${int(sum.carbs_g)}g</span>
+              <span class="fx-chip fx-chip--f">F ${int(sum.fat_g)}g</span>
+            </span>
+          </span>
+          ${hideKcal() ? "" : `<span class="fx-meal__kcal">${int(sum.kcal)}<small>kcal</small></span>`}
+        </button>`;
+    }).join("");
+    return `<section class="fx-meals" aria-label="Meals"><h2 class="fx-h2">Meals</h2>${rows}</section>`;
+  }
+
+  function tileHtml(act, tone, icon, title, sub) {
+    return `
+      <button class="fx-tile fx-tile--${tone}" type="button" data-act="${act}">
+        <span class="fx-tile__icon">${icon}</span>
+        <span class="fx-tile__text">
+          <span class="fx-tile__title">${title}</span>
+          <span class="fx-tile__sub">${esc(sub)}</span>
+        </span>
       </button>`;
   }
 
-  function quickHtml() {
-    const favs = state.favourites || [];
-    const recents = (state.recent || []).filter(
-      (r) => !favs.some((f) => f.name.toLowerCase() === String(r.name).toLowerCase())
-    );
-    if (!favs.length && !recents.length) return "";
-    return `
-      <div class="fuel-section">
-        <div class="fuel-section__head">
-          <span class="card__label">Tap to log again</span>
-          ${favs.length ? '<button class="fuel-link" type="button" data-act="favs">Favourites</button>' : ""}
-        </div>
-        <div class="fuel-chips">
-          ${favs.map((f, i) => chip(f, "fav", i)).join("")}
-          ${recents.map((r) => chip(r, "recent", state.recent.indexOf(r))).join("")}
-        </div>
-      </div>`;
+  /**
+   * PlanAhead: meal plan (Diamond) and shopping list (Gold and Diamond),
+   * then Progress and Settings, which used to live in Today's Log. Locked
+   * tiles name the plan they come with and open the plans sheet. The
+   * screens are card/mealplan.js.
+   */
+  function planAheadHtml() {
+    let html = "";
+    if (state.aiEnabled && typeof MealPlan !== "undefined") {
+      const t = tier();
+      const planOn = fuelAi() && t === "diamond";
+      const listOn = fuelAi() && MacroCore.tierRank(t) >= MacroCore.tierRank("gold");
+      const n = state.toBuy;
+      const listSub = !listOn ? "Gold plan" : n == null ? "Your list" : n ? `${n} item${n === 1 ? "" : "s"}` : "Empty";
+      html += `
+        <section class="fx-tiles" aria-label="Plan ahead">
+          ${tileHtml("mealplan", "plan", ICONS.calendar, "Meal plan", planOn ? "Plan my week" : "Diamond plan")}
+          ${tileHtml("shopping", "list", ICONS.cart, "Shopping", listSub)}
+        </section>`;
+    }
+    const w = state.weightTrend;
+    const weight = w && w.kg ? `${kgText(w.kg)} kg${w.change7 != null && Math.abs(w.change7) >= 0.1 ? ` · ${w.change7 < 0 ? "↓" : "↑"}${kgText(Math.abs(w.change7))}` : ""}` : "Weight & streaks";
+    html += `
+      <nav class="fx-tiles" aria-label="More">
+        ${tileHtml("progress", "progress", ICONS.chart, "Progress", weight)}
+        ${tileHtml("settings", "settings", ICONS.gear, "Settings", "Targets & favourites")}
+      </nav>`;
+    return html;
   }
 
-  function entriesHtml() {
-    const entries = state.day ? state.day.entries : [];
-    if (!entries.length) {
-      return `<div class="fuel-panel"><p class="fuel-empty">Nothing logged ${esc(dayLabel(state.viewDate).toLowerCase())} yet.</p></div>`;
+  /**
+   * Typed-in numbers ("Enter the numbers") are per serve: grams 100 means
+   * 1 serve, and per100 holds the per-serve values. Everything else is grams.
+   */
+  function isServes(item) {
+    return item && item.source === "quick";
+  }
+
+  function servesText(grams) {
+    const n = Math.round(Number(grams)) / 100;
+    const shown = n === 0.5 ? "½" : String(n);
+    return `${shown} serve${n > 1 ? "s" : ""}`;
+  }
+
+  /** "150g", "250ml" or "1 serve". */
+  function amountText(item) {
+    return isServes(item) ? servesText(item.grams) : `${int(item.grams)}${item.unit || "g"}`;
+  }
+
+  function mealTotals(meal) {
+    return MacroCore.sumTotals(meal.items.map((it) => MacroCore.scale(it.per100, it.grams)));
+  }
+
+  /** What mealplan.js needs from Fuel: hidden calories, logging, the plans sheet and the list count. */
+  function mealPlanCtx() {
+    return {
+      hideKcal: hideKcal(),
+      logMeal: (items, slot) => addItems(items, slot),
+      upsell: (reason, message) => openUpsell({ reason, message }),
+      onChange: (toBuy) => {
+        state.toBuy = toBuy;
+        render();
+      },
+      onAi: setAiToday,
+    };
+  }
+
+  /** One meal's foods (tap a logged meal row): each opens the editor, plus "Add to" that meal. */
+  function openMealView(meal) {
+    const items = (state.day ? state.day.entries : []).filter((e) => e.meal === meal);
+    if (!items.length) {
+      addToMeal(meal);
+      return;
     }
-    const groups = MacroCore.MEALS.map((meal) => ({ meal, items: entries.filter((e) => e.meal === meal) })).filter(
-      (g) => g.items.length
+    const sum = MacroCore.sumTotals(items);
+    openSheet(
+      `<h2 class="fuel-sheet__title" id="fuelSheetTitle">${MEAL_LABELS[meal]}</h2>
+       <p class="fuel-sheet__sub">${esc(dayLabel(state.viewDate))} · ${macroLine(sum)}</p>
+       <div class="fuel-panel">
+         ${items
+           .map(
+             (e) => `
+           <button class="fuel-entry" type="button" data-id="${esc(e.id)}">
+             <span>
+               <span class="fuel-entry__name">${esc(e.name)}</span>
+               <span class="fuel-entry__meta">${amountText(e)} · ${int(e.carbs_g)}C · ${int(e.fat_g)}F${hideKcal() ? "" : ` · ${int(e.kcal)} kcal`}</span>
+             </span>
+             <span class="fuel-entry__p">${int(e.protein_g)}<small>P</small></span>
+           </button>`
+           )
+           .join("")}
+       </div>
+       <button class="fuel-btn" type="button" data-add>+ Add to ${MEAL_LABELS[meal]}</button>`,
+      (body) => {
+        body.addEventListener("click", (e) => {
+          const row = e.target.closest("[data-id]");
+          if (row) {
+            const entry = state.day.entries.find((x) => x.id === row.dataset.id);
+            if (entry) openEdit(entry);
+          } else if (e.target.closest("[data-add]")) addToMeal(meal);
+        });
+      }
     );
-    return `
-      <div class="fuel-panel">
-        ${groups
-          .map((g) => {
-            const sum = MacroCore.sumTotals(g.items);
-            return `
-            <div class="fuel-meal">
-              <div class="fuel-meal__head">
-                <span class="card__label card__label--red">${MEAL_LABELS[g.meal]}</span>
-                <span class="fuel-meal__sum">${int(sum.protein_g)}P${hideKcal() ? "" : ` · ${int(sum.kcal)} kcal`}</span>
-              </div>
-              ${g.items
-                .map(
-                  (e) => `
-                <button class="fuel-entry" type="button" data-act="edit" data-id="${esc(e.id)}">
-                  <span>
-                    <span class="fuel-entry__name">${esc(e.name)}</span>
-                    <span class="fuel-entry__meta">${int(e.grams)}g · ${int(e.carbs_g)}C · ${int(e.fat_g)}F${hideKcal() ? "" : ` · ${int(e.kcal)} kcal`}</span>
-                  </span>
-                  <span class="fuel-entry__p">${int(e.protein_g)}<small>P</small></span>
-                </button>`
-                )
-                .join("")}
-            </div>`;
-          })
-          .join("")}
-      </div>`;
+  }
+
+  /** "+" on a meal: the usual Add food chooser, with that meal already picked on the confirm screen. */
+  function addToMeal(meal) {
+    state.addMeal = meal;
+    openScanChooser();
   }
 
   function render() {
     if (!state.loaded) return;
-    const today = isToday();
-    const g = state.targets;
     els.panelFuel.innerHTML = `
-      <div class="fuel__head">
-        <div class="fuel__date">
-          <button class="fuel__day-btn" type="button" data-act="prev" aria-label="Previous day">${ICONS.left}</button>
-          <span class="fuel__day-label">${esc(dayLabel(state.viewDate))}</span>
-          <button class="fuel__day-btn" type="button" data-act="next" aria-label="Next day" ${today ? "disabled" : ""}>${ICONS.right}</button>
+      <div class="fx">
+        ${headerHtml(false)}
+        <div class="fx-body">
+          ${actionsHtml(false)}
+          ${mealListHtml(false)}
+          ${planAheadHtml()}
         </div>
-        <button class="fuel__icon-btn" type="button" data-act="settings" aria-label="Fuel settings">${ICONS.gear}</button>
-      </div>
-      ${totalsHtml()}
-      <button class="fuel-scan" type="button" data-act="scan">${ICONS.camera} Scan food</button>
-      ${quickHtml()}
-      ${entriesHtml()}
-      ${
-        g
-          ? `<p class="fuel-footnote">${g.set_by === "coach" ? "Targets set by Max" : "Targets from your calculator"} · <button class="fuel-link" type="button" data-act="targets">${g.set_by === "coach" ? "View" : "Edit"}</button></p>`
-          : ""
-      }`;
+      </div>`;
+    paintRings();
   }
+
+  /** The same layout, empty, while the day loads. */
+  function renderSkeleton() {
+    els.panelFuel.innerHTML = `
+      <div class="fx" aria-busy="true">
+        ${headerHtml(true)}
+        <div class="fx-body">
+          ${actionsHtml(true)}
+          ${mealListHtml(true)}
+        </div>
+      </div>`;
+  }
+
+  // The shopping list count comes with the card's weekly tiles (week.js
+  // already asks the server for it on every load), so Fuel doesn't ask twice.
+  document.addEventListener("maxfit:tobuy", (e) => {
+    state.toBuy = Number(e.detail) || 0;
+    if (state.loaded) render();
+  });
 
   els.panelFuel.addEventListener("click", (e) => {
     const btn = e.target.closest("[data-act]");
     if (!btn) return;
     const act = btn.dataset.act;
     if (act === "retry") load();
-    else if (act === "prev") changeDay(-1);
-    else if (act === "next") changeDay(1);
-    else if (act === "scan") openScanChooser();
+    else if (act === "day-prev" || act === "day-next") changeDay(act === "day-prev" ? -1 : 1);
+    else if (act === "scan") {
+      state.addMeal = null;
+      openScanChooser();
+    } else if (act === "meal-add") addToMeal(btn.dataset.meal);
+    else if (act === "meal-open") openMealView(btn.dataset.meal);
+    else if (act === "ask") openChat();
+    else if (act === "mealplan") {
+      if (fuelAi() && tier() === "diamond") MealPlan.open(mealPlanCtx());
+      else openUpsell({ reason: "plan" });
+    } else if (act === "shopping") {
+      if (fuelAi() && MacroCore.tierRank(tier()) >= MacroCore.tierRank("gold")) MealPlan.openList(mealPlanCtx());
+      else openUpsell({ reason: "list" });
+    }
+    else if (act === "progress") openProgress();
     else if (act === "settings") openSettings();
     else if (act === "targets") openTargets();
-    else if (act === "favs") openFavourites();
-    else if (act === "edit") {
-      const entry = state.day.entries.find((x) => x.id === btn.dataset.id);
-      if (entry) openEdit(entry);
-    } else if (act === "quick") {
-      const list = btn.dataset.kind === "fav" ? state.favourites : state.recent;
-      const item = list[Number(btn.dataset.i)];
-      if (item) quickLog(item);
-    }
+    else if (act === "plans") openUpsell();
   });
+
+  // ---------------------------------------------------------------------------
+  // What to eat next (free): ranked in MacroCore from Max's Foods list
+  // ---------------------------------------------------------------------------
+
+  let shownIdeas = []; // the suggestions currently on screen, for their Log buttons
+
+  function remainingToday() {
+    const g = state.targets;
+    const t = state.day ? state.day.totals : MacroCore.sumTotals([]);
+    return {
+      kcal: g.kcal - t.kcal,
+      protein_g: g.protein_g - t.protein_g,
+      carbs_g: g.carbs_g - t.carbs_g,
+      fat_g: g.fat_g - t.fat_g,
+    };
+  }
+
+  /** { headline, ideas } for the day on screen, or null without targets/foods. */
+  function ideasFor(limit) {
+    if (!state.targets || !state.foods.length) return null;
+    const left = remainingToday();
+    const p = Math.round(left.protein_g);
+    const k = Math.round(left.kcal);
+    if (k <= 0) {
+      return {
+        over: true,
+        headline: hideKcal()
+          ? "You're past today's target. No stress. If you're still hungry, these are high-protein, lighter options:"
+          : `You're ${int(-k)} kcal over. No stress. If you're still hungry, these are high-protein, low-calorie options:`,
+        ideas: MacroCore.suggestOver(state.foods, limit),
+      };
+    }
+    let ideas = MacroCore.suggestFill(left, state.foods, limit);
+    if (!ideas.length) ideas = MacroCore.suggestOver(state.foods, limit).filter((i) => i.totals.kcal <= k);
+    let headline;
+    if (p <= 0) headline = hideKcal() ? "Protein target hit. Nice work." : `Protein target hit. You've got ${int(k)} kcal left today.`;
+    else headline = hideKcal() ? `You've got ${p}g protein left today.` : `You've got ${p}g protein and ${int(k)} kcal left today.`;
+    return { over: false, headline: headline, ideas: ideas };
+  }
+
+  function ideaMacros(t) {
+    return `${int(t.protein_g)}g P${hideKcal() ? "" : ` · ${int(t.kcal)} kcal`}`;
+  }
+
+  function suggestionsHtml(limit, withMore) {
+    const s = ideasFor(limit);
+    if (!s) return "";
+    shownIdeas = s.ideas;
+    return `
+      <div class="fuel-panel fuel-ideas">
+        <span class="card__label card__label--red">What to eat next</span>
+        <p class="fuel-ideas__headline">${esc(s.headline)}</p>
+        ${s.ideas
+          .map(
+            (idea, i) => `
+          <div class="fuel-idea">
+            <span>
+              <span class="fuel-idea__label">${esc(idea.label)}</span>
+              <span class="fuel-entry__meta">${ideaMacros(idea.totals)}</span>
+            </span>
+            <button class="fuel-idea__log" type="button" data-act="log-idea" data-i="${i}">Log</button>
+          </div>`
+          )
+          .join("")}
+        ${withMore && s.ideas.length >= 3 ? `<button class="fuel-link" type="button" data-act="more-ideas">${state.moreIdeas ? "Fewer ideas" : "More ideas"}</button>` : ""}
+      </div>`;
+  }
+
+  async function logIdea(btn) {
+    const idea = shownIdeas[Number(btn.dataset.i)];
+    if (!idea || state.busy) return;
+    state.busy = true;
+    btn.disabled = true;
+    const meal = defaultMeal();
+    try {
+      const items = idea.items.map((p) => ({ name: p.name, grams: p.grams, per100: p.per100, source: "suggestion" }));
+      const ids = await addItems(items, meal);
+      toast(`Added to ${MEAL_SHORT[meal]}`, () => undoAdd(ids));
+    } catch (err) {
+      btn.disabled = false;
+      toast(err.message);
+    } finally {
+      state.busy = false;
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // Toast
@@ -440,23 +855,10 @@
       items: items.map(payloadItem),
     });
     state.day = data.day;
+    state.addMeal = null;
     if (data.recent) state.recent = data.recent;
     render();
     return data.day.entries.filter((x) => !before.has(x.id)).map((x) => x.id);
-  }
-
-  async function quickLog(item) {
-    if (state.busy) return;
-    state.busy = true;
-    const meal = defaultMeal();
-    try {
-      const ids = await addItems([item], meal);
-      toast(`Added to ${MEAL_SHORT[meal]}`, () => undoAdd(ids));
-    } catch (err) {
-      toast(err.message);
-    } finally {
-      state.busy = false;
-    }
   }
 
   async function undoAdd(ids) {
@@ -512,7 +914,7 @@
   });
 
   function sheetLoading(text) {
-    openSheet(`<div class="fuel-loading"><div class="fuel-spinner"></div><span class="fuel-loading__text">${esc(text)}</span></div>`);
+    openSheet(`<div class="fuel-loading"><div class="fuel-spinner">${FUEL_FLAME_SVG}</div><span class="fuel-loading__text">${esc(text)}</span></div>`);
   }
 
   function sheetError(title, message, buttons) {
@@ -526,6 +928,7 @@
           b.addEventListener("click", () => {
             const kind = b.dataset.retry;
             if (kind === "barcode") openBarcode();
+            else if (kind === "describe") openDescribe(lastDescribed);
             else pickPhoto(kind, true);
           })
         );
@@ -537,40 +940,100 @@
   // Scan chooser + photos
   // ---------------------------------------------------------------------------
 
-  /** Photo and label scans need the API key on the server AND prepaid scans left. */
-  function canPhotoScan() {
-    return state.aiEnabled && (state.scanCredits == null || state.scanCredits > 0);
+  /** Fuel AI (scans, Describe it): API key on the server AND Gold or Diamond (paid, free month or trial). */
+  function fuelAi() {
+    return state.aiEnabled && !!(state.plan && state.plan.access);
   }
 
-  function scansLeftText() {
-    if (!state.aiEnabled || state.scanCredits == null) return "";
-    const n = state.scanCredits;
-    return `${n} photo scan${n === 1 ? "" : "s"} left · barcodes are always free`;
+  const TIER_NAMES = { silver: "Silver", gold: "Gold", diamond: "Diamond" };
+  // What the plans sheet shows. Yearly is 3 months free (pay for 9, get 12);
+  // `save` is 12 months minus the yearly price. Keep in step with Stripe.
+  const TIER_PRICES = {
+    gold: { month: "$5.99", year: "$53.99", save: "$17.89" },
+    diamond: { month: "$9.99", year: "$89.99", save: "$29.89" },
+  };
+  const PAID_TIERS = ["gold", "diamond"];
+
+  /** "silver" | "gold" | "diamond". An old "platinum" (retired 10 Oct 2026) is Diamond. */
+  function tier() {
+    const t = (state.plan && state.plan.tier) || (fuelAi() ? "gold" : "silver");
+    return t === "platinum" ? "diamond" : t;
   }
 
-  /** "$10 = 200 scans", from the price Max set on the server. */
-  function topUpText() {
-    return `Top up with Max: $10 gets you ${int(1000 / state.scanPriceCents)} photo scans.`;
+  /** Ask Fuel is Diamond only (paying, a free month from Max, or the free week). */
+  function askFuelOn() {
+    return fuelAi() && tier() === "diamond";
+  }
+
+  /** Any paid plan with none of today's AI uses left. */
+  function aiUsedUp() {
+    return fuelAi() && !!state.aiToday && state.aiToday.left <= 0;
+  }
+
+  /** After any AI call: the server's fresh count, onto the meter. */
+  function setAiToday(ai) {
+    if (!ai) return;
+    state.aiToday = ai;
+    if (state.plan && ai.tier) state.plan.tier = ai.tier;
+    render();
+  }
+
+  /** "3 of 5 AI uses left today". */
+  function aiLeftText() {
+    const a = state.aiToday;
+    if (!a || !a.limit) return "";
+    return a.left > 0 ? `${a.left} of ${a.limit} AI uses left today` : `All ${a.limit} AI uses used today · back at midnight`;
+  }
+
+  /** "23 Oct", or "23 Oct 2027" when it isn't this year (yearly plans). */
+  function fmtDate(ymd) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(ymd || ""))) return "";
+    const [y, m, d] = ymd.split("-").map(Number);
+    const opts = { day: "numeric", month: "short", timeZone: "UTC" };
+    if (String(y) !== MacroCore.sydneyDate().slice(0, 4)) opts.year = "numeric";
+    return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-AU", opts);
+  }
+
+  /** "Diamond free trial · 5 days left", "Gold · renews 23 Oct", … or "" when Fuel AI is off for everyone. */
+  function planText() {
+    const p = state.plan;
+    if (!state.aiEnabled || !p) return "";
+    const name = TIER_NAMES[tier()] || "Gold";
+    if (p.kind === "paid") {
+      const yearly = p.interval === "year" ? " · yearly" : "";
+      return p.until ? `${name} · renews ${fmtDate(p.until)}${yearly}` : `${name} is on${yearly}`;
+    }
+    if (p.kind === "comp") return `${name} · free until ${fmtDate(p.until)} (from Max)`;
+    if (p.kind === "trial") return `${name} free trial · ${p.daysLeft} day${p.daysLeft === 1 ? "" : "s"} left`;
+    if (p.kind === "lapsed") return "Your subscription has ended, so you're on Silver";
+    if (p.kind === "trial_over") return "Your free week has finished, so you're on Silver";
+    return "Silver";
   }
 
   function openScanChooser() {
-    // Photo and label scans need the Claude API key on the server. Without
-    // it, barcodes are the only way in, so skip straight to the scanner.
-    if (!state.aiEnabled) {
-      openBarcode();
-      return;
-    }
-    const outOfScans = !canPhotoScan();
+    // Photo, label and Describe it need the Claude API key on the server;
+    // without it only the free ways in (barcode and search) are shown.
+    const ai = state.aiEnabled;
+    const locked = ai && !fuelAi();
+    const usedUp = aiUsedUp();
+    const sub = !ai
+      ? "Scan a barcode, or search for it and set the amount."
+      : locked
+      ? "Barcodes, search and saved meals are free. Photo, label and Describe it come with Gold."
+      : [planText(), aiLeftText()].filter(Boolean).join(" · ");
+    const aiTag = (label) => (locked ? "Gold" : usedUp ? "None left today" : label);
+    const aiClass = locked || usedUp ? " is-locked" : "";
     openSheet(
-      `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Scan food</h2>
-       <p class="fuel-sheet__sub">${esc(scansLeftText())}</p>
-       ${outOfScans ? `<p class="fuel-error">You're out of photo scans. ${esc(topUpText())} Barcodes are always free.</p>` : ""}
+      `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Add food</h2>
+       <p class="fuel-sheet__sub">${esc(sub)}</p>
        <div class="fuel-modes">
-         <button class="fuel-mode" type="button" data-mode="meal" ${outOfScans ? "disabled" : ""}>${ICONS.camera}Photo<small>Snap your meal</small></button>
+         ${ai ? `<button class="fuel-mode${aiClass}" type="button" data-mode="meal">${ICONS.camera}Photo<small>${aiTag("Snap your meal")}</small></button>` : ""}
+         ${ai ? `<button class="fuel-mode${aiClass}" type="button" data-mode="describe">${ICONS.pen}Describe<small>${aiTag("Type what you ate")}</small></button>` : ""}
+         ${ai ? `<button class="fuel-mode${aiClass}" type="button" data-mode="label">${ICONS.label}Label<small>${aiTag("Nutrition panel")}</small></button>` : ""}
          <button class="fuel-mode" type="button" data-mode="barcode">${ICONS.barcode}Barcode<small>Packaged food</small></button>
-         <button class="fuel-mode" type="button" data-mode="label" ${outOfScans ? "disabled" : ""}>${ICONS.label}Label<small>Nutrition panel</small></button>
+         <button class="fuel-mode" type="button" data-mode="search">${ICONS.search}Search<small>Foods &amp; saved meals</small></button>
        </div>
-       ${outOfScans ? "" : '<button class="fuel-btn fuel-btn--quiet" type="button" data-mode="library">Choose a meal photo from your library</button>'}`,
+       ${ai && !locked && !usedUp ? '<button class="fuel-btn fuel-btn--quiet" type="button" data-mode="library">Choose a meal photo from your library</button>' : ""}`,
       (body) => {
         body.querySelectorAll("[data-mode]").forEach((b) =>
           b.addEventListener("click", () => {
@@ -578,12 +1041,382 @@
             // input.click() has to happen inside this tap handler, or
             // iOS Safari won't open the camera.
             if (mode === "barcode") openBarcode();
+            else if (mode === "search") openSearch();
+            else if (locked || usedUp) openUpsell(usedUp ? { reason: "limit" } : undefined);
+            else if (mode === "describe") openDescribe();
             else if (mode === "library") pickPhoto("meal", false);
             else pickPhoto(mode, true);
           })
         );
       }
     );
+  }
+
+  /** "Describe it": type what you ate, and the AI estimates it (1 AI use, the cheaper text model). */
+  function openDescribe(text) {
+    openSheet(
+      `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Describe it</h2>
+       <p class="fuel-sheet__sub">What did you eat? Add amounts or where it's from if you know them.</p>
+       <textarea class="fuel-input fuel-note" data-describe rows="3" maxlength="300" placeholder="e.g. Chicken wrap from Subway and a large flat white" aria-label="What you ate">${esc(text || "")}</textarea>
+       <button class="fuel-btn" type="button" data-go>Work it out</button>
+       <p class="fuel-disclaimer">${esc(aiLeftText())}</p>`,
+      (body) => {
+        const box = body.querySelector("[data-describe]");
+        body.querySelector("[data-go]").addEventListener("click", () => {
+          const t = box.value.trim();
+          if (!t) {
+            box.focus();
+            return;
+          }
+          describeMeal(t);
+        });
+      }
+    );
+  }
+
+  let lastDescribed = ""; // so "Try again" keeps what they typed
+
+  async function describeMeal(text) {
+    lastDescribed = text;
+    sheetLoading("Working it out");
+    let data;
+    try {
+      data = await MacroApi.call("describe", { text: text }, { timeoutMs: 60000 });
+    } catch (err) {
+      if (err.code === "no_plan" || err.code === "limit") {
+        if (err.code === "no_plan" && state.plan) state.plan.access = false;
+        openUpsell({ reason: err.code === "limit" ? "limit" : "", message: err.message });
+        return;
+      }
+      sheetError("Hmm", err.message, '<button class="fuel-btn" type="button" data-retry="describe">Try again</button>');
+      return;
+    }
+    setAiToday(data.aiToday);
+    const meal = data.meal;
+    if (!meal.items.length) {
+      sheetError("Nothing to log", meal.meal_guess || "Couldn't find any food in that.", '<button class="fuel-btn" type="button" data-retry="describe">Try again</button>');
+      return;
+    }
+    openConfirm({ title: meal.meal_guess || "Your meal", source: "describe", items: meal.items });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Search and "Enter the numbers" (free, no AI)
+  // ---------------------------------------------------------------------------
+
+  /** Saved meals, favourites, recent foods, then Max's Foods list, each name once. */
+  function searchPool() {
+    const seen = {};
+    const out = [];
+    (state.meals || []).forEach((m) => out.push({ kind: "meal", name: m.name, meal: m }));
+    const add = (kind, name, item, meta) => {
+      const key = String(name).toLowerCase();
+      if (!name || seen[key]) return;
+      seen[key] = true;
+      out.push({ kind: kind, name: String(name), item: item, meta: meta });
+    };
+    const fromLog = (x) => ({ name: x.name, grams: x.grams, per100: x.per100, source: isServes(x) ? "quick" : "manual" });
+    (state.favourites || []).forEach((f) => add("fav", f.name, fromLog(f)));
+    (state.recent || []).forEach((r) => add("recent", r.name, fromLog(r)));
+    (state.foods || []).forEach((f) =>
+      add(
+        "food",
+        f.name,
+        { name: f.name, grams: f.serve_g || 100, per100: f.per100, serving_g: f.serve_g || 0, source: "manual" },
+        f.serve_label || ""
+      )
+    );
+    return out;
+  }
+
+  function searchRowHtml(row, i) {
+    if (row.kind === "meal") {
+      const t = mealTotals(row.meal);
+      return `
+      <button class="fuel-entry" type="button" data-pick="${i}">
+        <span>
+          <span class="fuel-entry__name"><span style="color:var(--red)">${ICONS.bowl}</span> ${esc(row.name)}</span>
+          <span class="fuel-entry__meta">Saved meal · ${row.meal.items.length} food${row.meal.items.length === 1 ? "" : "s"}${hideKcal() ? "" : ` · ${int(t.kcal)} kcal`}</span>
+        </span>
+        <span class="fuel-entry__p">${int(t.protein_g)}<small>P</small></span>
+      </button>`;
+    }
+    const m = MacroCore.scale(row.item.per100, row.item.grams);
+    const amount = row.meta ? `${row.meta} (${amountText(row.item)})` : amountText(row.item);
+    return `
+      <button class="fuel-entry" type="button" data-pick="${i}">
+        <span>
+          <span class="fuel-entry__name">${row.kind === "fav" ? `<span style="color:var(--red)">${ICONS.star}</span> ` : ""}${esc(row.name)}</span>
+          <span class="fuel-entry__meta">${esc(amount)}${hideKcal() ? "" : ` · ${int(m.kcal)} kcal`}</span>
+        </span>
+        <span class="fuel-entry__p">${int(m.protein_g)}<small>P</small></span>
+      </button>`;
+  }
+
+  /**
+   * Search favourites, recent foods and Max's Foods list. opts.into = add the
+   * pick to the confirm sheet that's already open ("+ Add another food").
+   */
+  function openSearch(opts) {
+    const into = !!(opts && opts.into && state.confirm);
+    const pool = searchPool();
+    let shown = [];
+    openSheet(
+      `<h2 class="fuel-sheet__title" id="fuelSheetTitle">${into ? "Add another food" : "Search food"}</h2>
+       <input class="fuel-input" type="search" data-q placeholder="Chicken, rice, banana…" aria-label="Search foods" autocomplete="off" autocapitalize="off" spellcheck="false" />
+       <div class="fuel-panel fuel-search" data-results></div>
+       <button class="fuel-btn fuel-btn--ghost" type="button" data-quick>Can't find it? Enter the numbers</button>
+       <button class="fuel-btn fuel-btn--quiet" type="button" data-back>${into ? "Back" : "Cancel"}</button>`,
+      (body) => {
+        const q = body.querySelector("[data-q]");
+        const results = body.querySelector("[data-results]");
+        const draw = () => {
+          const words = q.value.toLowerCase().split(/\s+/).filter(Boolean);
+          if (words.length) {
+            shown = pool.filter((r) => words.every((w) => r.name.toLowerCase().indexOf(w) >= 0)).slice(0, 40);
+          } else {
+            const mine = pool.filter((r) => r.kind !== "food").slice(0, 8);
+            shown = mine.concat(pool.filter((r) => r.kind === "food"));
+          }
+          results.innerHTML = shown.length
+            ? shown.map(searchRowHtml).join("")
+            : `<p class="fuel-empty">Nothing called "${esc(q.value.trim())}" yet. Enter the numbers below.</p>`;
+        };
+        draw();
+        q.addEventListener("input", draw);
+        results.addEventListener("click", (e) => {
+          const b = e.target.closest("[data-pick]");
+          const row = b && shown[Number(b.dataset.pick)];
+          if (row && row.kind === "meal") openSavedMeal(row.meal, into);
+          else if (row) pickFood(Object.assign({}, row.item), into);
+        });
+        body.querySelector("[data-quick]").addEventListener("click", () => openQuickAdd({ into: into, name: q.value.trim() }));
+        body.querySelector("[data-back]").addEventListener("click", () => (into ? renderConfirm() : closeSheet()));
+      }
+    );
+  }
+
+  /** A food from search or "Enter the numbers": into the open confirm sheet, or a new one. */
+  function pickFood(item, into) {
+    if (into && state.confirm) {
+      const c = state.confirm;
+      // A one-food confirm is titled after that food; with more, it's a meal.
+      if (c.items.length === 1 && c.title === c.items[0].name) c.title = "Your meal";
+      c.items.push(Object.assign({}, item, { grams: Math.round(Number(item.grams) || 100) }));
+      renderConfirm();
+    } else {
+      openConfirm({ title: item.name, source: "manual", items: [item] });
+    }
+  }
+
+  /** A saved meal into the confirm sheet, so today's amounts can differ. */
+  function openSavedMeal(meal, into) {
+    const items = meal.items.map((it) => Object.assign({}, it, { per100: Object.assign({}, it.per100) }));
+    if (into && state.confirm) {
+      const c = state.confirm;
+      if (c.items.length === 1 && c.title === c.items[0].name) c.title = "Your meal";
+      items.forEach((it) => c.items.push(Object.assign(it, { grams: Math.round(Number(it.grams) || 100) })));
+      renderConfirm();
+    } else {
+      openConfirm({ title: meal.name, source: "manual", items: items, savedMealId: meal.id });
+    }
+  }
+
+  /** For food that isn't in the list: the numbers for one serve, off a menu or pack. */
+  function openQuickAdd(opts) {
+    const into = !!(opts && opts.into);
+    const kcalField = hideKcal()
+      ? ""
+      : `<label class="fuel-field"><span class="card__label">Calories</span><input class="fuel-input" name="kcal" type="number" inputmode="decimal" min="0" max="5000" placeholder="kcal" /></label>`;
+    openSheet(
+      `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Enter the numbers</h2>
+       <p class="fuel-sheet__sub">For one serve, as it says on the menu or pack. Leave out anything you don't know.</p>
+       <form class="fuel-form" data-quick-form autocomplete="off">
+         <label class="fuel-field"><span class="card__label">Food</span><input class="fuel-input" name="name" maxlength="80" placeholder="e.g. Chicken burrito bowl" value="${esc((opts && opts.name) || "")}" /></label>
+         ${kcalField}
+         <div class="fuel-fields3">
+           <label class="fuel-field"><span class="card__label">Protein</span><input class="fuel-input" name="protein_g" type="number" inputmode="decimal" min="0" max="500" placeholder="g" /></label>
+           <label class="fuel-field"><span class="card__label">Carbs</span><input class="fuel-input" name="carbs_g" type="number" inputmode="decimal" min="0" max="500" placeholder="g" /></label>
+           <label class="fuel-field"><span class="card__label">Fat</span><input class="fuel-input" name="fat_g" type="number" inputmode="decimal" min="0" max="500" placeholder="g" /></label>
+         </div>
+         <p class="fuel-error" data-quick-error hidden></p>
+         <button class="fuel-btn" type="submit">Next</button>
+       </form>
+       <button class="fuel-btn fuel-btn--quiet" type="button" data-back>Back</button>`,
+      (body) => {
+        const form = body.querySelector("[data-quick-form]");
+        const error = body.querySelector("[data-quick-error]");
+        const num = (name, max) => {
+          const el = form.elements[name];
+          const v = el ? Number(el.value) : 0;
+          return v > 0 ? Math.min(max, Math.round(v * 10) / 10) : 0;
+        };
+        form.addEventListener("submit", (e) => {
+          e.preventDefault();
+          const name = form.elements.name.value.trim();
+          const p = num("protein_g", 500);
+          const c = num("carbs_g", 500);
+          const f = num("fat_g", 500);
+          const kcal = num("kcal", 5000) || Math.round(4 * p + 4 * c + 9 * f);
+          const problem = !name ? "Give it a name." : !(kcal > 0) ? "Add the calories, or at least one of protein, carbs or fat." : "";
+          if (problem) {
+            error.textContent = problem;
+            error.hidden = false;
+            return;
+          }
+          pickFood({ name: name, grams: 100, per100: { kcal: kcal, protein_g: p, carbs_g: c, fat_g: f }, source: "quick" }, into);
+        });
+        body.querySelector("[data-back]").addEventListener("click", () => openSearch({ into: into }));
+      }
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Fuel AI upsell (Stripe)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * The plans: Silver (free), Gold and Diamond, each monthly or yearly
+   * (3 months free). opts.reason "limit" = they just ran out of today's AI
+   * uses (opts.message is the server's wording); "ask" = they tapped Ask
+   * Fuel, which needs Diamond.
+   *
+   * Anyone not paying buys through that plan's Payment Link. A paying
+   * client changes plan (or monthly ↔ yearly) in Stripe's billing page,
+   * never through a second checkout, so nobody pays twice.
+   */
+  let plansInterval = null; // the Monthly / Yearly switch while the sheet is open
+
+  function openUpsell(opts) {
+    opts = opts || {};
+    const p = state.plan || {};
+    const t = tier();
+    const paying = p.kind === "paid";
+    const perDay = p.aiPerDay || { gold: 5, diamond: 20 };
+    const links = p.links || {};
+    const hasYear = PAID_TIERS.some((k) => links[k] && links[k].year);
+    plansInterval = hasYear && paying && p.interval === "year" ? "year" : "month";
+    const sub =
+      opts.reason === "limit"
+        ? opts.message || "That's all your AI uses for today."
+        : opts.reason === "ask"
+        ? "Ask Fuel, your AI nutrition coach, comes with Diamond."
+        : opts.reason === "plan"
+        ? "Weekly meal plans with a shopping list come with Diamond."
+        : opts.reason === "list"
+        ? "Your shopping list comes with Gold and Diamond."
+        : p.kind === "trial_over" || p.kind === "lapsed"
+        ? planText() + "."
+        : "Your AI nutrition coach, in your pocket. Cancel any time.";
+    const badge = (text) => `<span class="fuel-plan-card__badge">${esc(text)}</span>`;
+    const days = (n) => `${n} day${n === 1 ? "" : "s"} left`;
+    const portalBtn = (k, label) =>
+      p.portalUrl ? `<a class="fuel-btn fuel-btn--${k}" href="${esc(p.portalUrl)}" target="_blank" rel="noopener" data-upgrade>${esc(label)}</a>` : "";
+
+    const DESCRIPTIONS = {
+      gold: `<p><b>${perDay.gold} AI uses a day:</b> snap a meal, scan a label or Describe it. <b>Plus your shopping list.</b></p>`,
+      diamond: `<p><b>${perDay.diamond} AI uses a day, plus Ask Fuel</b>, your AI nutrition coach, <b>and a weekly meal plan</b> that fills your shopping list.</p>`,
+    };
+
+    function action(k, iv) {
+      const name = TIER_NAMES[k];
+      const url = links[k] && links[k][iv];
+      const buy = (label) =>
+        url ? `<a class="fuel-btn fuel-btn--${k}" href="${esc(url)}" target="_blank" rel="noopener" data-upgrade>${esc(label)}</a>` : "";
+      if (paying) {
+        if (k === t) {
+          const mine = badge(p.interval === "year" ? "Your plan · yearly" : "Your plan · monthly");
+          return iv === "year" && p.interval !== "year" ? mine + portalBtn(k, "Switch to yearly") : mine;
+        }
+        return MacroCore.tierRank(k) > MacroCore.tierRank(t) ? portalBtn(k, `Switch to ${name}`) : "";
+      }
+      if (k === t && p.kind === "trial") return badge(`Free trial · ${days(p.daysLeft)}`) + buy(`Keep ${name}`);
+      if (k === t && p.kind === "comp") return badge(`Free from Max until ${fmtDate(p.until)}`) + buy(`Keep ${name}`);
+      return buy(`Get ${name}`);
+    }
+
+    function cardHtml(k, iv) {
+      const price = iv === "year" ? `<b>${TIER_PRICES[k].year}</b> a year` : `<b>${TIER_PRICES[k].month}</b> a month`;
+      const save = iv === "year" ? `<p class="fuel-plan-card__save">Save ${TIER_PRICES[k].save} · 3 months free</p>` : "";
+      return `
+        <div class="fuel-plan-card fuel-plan-card--${k}${t === k ? " is-current" : ""}">
+          <div class="fuel-plan-card__head"><span class="fuel-tier fuel-tier--${k}">${TIER_NAMES[k]}</span><span class="fuel-plan-card__price">${price}</span></div>
+          ${save}
+          ${DESCRIPTIONS[k]}
+          ${action(k, iv)}
+        </div>`;
+    }
+
+    function plansHtml(iv) {
+      const anyLink = PAID_TIERS.some((k) => links[k] && links[k][iv]);
+      return `
+        <div class="fuel-plan-card fuel-plan-card--silver${t === "silver" ? " is-current" : ""}">
+          <div class="fuel-plan-card__head"><span class="fuel-tier fuel-tier--silver">Silver</span><span class="fuel-plan-card__price">Free</span></div>
+          <p>Barcodes, search, saved meals, typed-in numbers, what-to-eat ideas and your progress.</p>
+          ${t === "silver" ? badge("Your plan") : ""}
+        </div>
+        ${PAID_TIERS.map((k) => cardHtml(k, iv)).join("")}
+        ${!anyLink && !paying ? '<p class="fuel-error">Sign-ups open soon. Ask Max about it at your next session.</p>' : ""}
+        ${
+          paying && p.portalUrl
+            ? '<p class="fuel-plan-card__note">Switching opens Stripe\'s billing page: choose Update plan. Stripe adjusts your bill for the rest of the period.</p>'
+            : ""
+        }`;
+    }
+
+    const toggle = hasYear
+      ? `<div class="fuel-interval" role="radiogroup" aria-label="How often you pay">
+           <button type="button" role="radio" data-interval="month">Monthly</button>
+           <button type="button" role="radio" data-interval="year">Yearly <small>3 months free</small></button>
+         </div>`
+      : "";
+
+    openSheet(
+      `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Fuel plans</h2>
+       <p class="fuel-sheet__sub">${esc(sub)}</p>
+       ${toggle}
+       <div class="fuel-plans" data-plans></div>
+       ${paying && p.portalUrl ? `<a class="fuel-link fuel-plans__manage" href="${esc(p.portalUrl)}" target="_blank" rel="noopener">Manage or cancel your subscription</a>` : ""}
+       <button class="fuel-btn fuel-btn--quiet" type="button" data-refresh>Already paid? Tap to refresh</button>`,
+      (body) => {
+        const paint = () => {
+          body.querySelector("[data-plans]").innerHTML = plansHtml(plansInterval);
+          body.querySelectorAll("[data-interval]").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.interval === plansInterval)));
+        };
+        body.addEventListener("click", (e) => {
+          const iv = e.target.closest("[data-interval]");
+          if (iv) {
+            plansInterval = iv.dataset.interval;
+            paint();
+          } else if (e.target.closest("[data-upgrade]")) state.awaitingUpgrade = true;
+        });
+        body.querySelector("[data-refresh]").addEventListener("click", (e) => refreshPlan(e.target));
+        paint();
+      }
+    );
+  }
+
+  /** Re-reads the plan (asking the server to check Stripe first). */
+  async function refreshPlan(btn) {
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Checking…";
+    }
+    try {
+      const data = await MacroApi.call("me", { date: state.viewDate, sync: true });
+      applyMe(data);
+      render();
+      if (state.plan && state.plan.kind === "paid") {
+        closeSheet();
+        toast(`${TIER_NAMES[tier()]} is on`);
+      } else if (btn) {
+        btn.disabled = false;
+        btn.textContent = "Not showing yet. Tap to check again";
+      }
+    } catch (err) {
+      if (btn) btn.disabled = false;
+      toast(err.message);
+    }
   }
 
   function pickPhoto(mode, useCamera) {
@@ -599,10 +1432,36 @@
     state.pendingPhotoMode = null;
     if (!file || !mode) return;
     if (mode === "barcodeImage") decodeBarcodePhoto(file);
+    else if (mode === "meal") openPhotoNote(file);
     else analysePhoto(file, mode);
   }
   els.photoInput.addEventListener("change", onPhotoChosen);
   els.libraryInput.addEventListener("change", onPhotoChosen);
+
+  /** Before a meal photo goes to the AI: an optional note on what's in it and how much. */
+  function openPhotoNote(file) {
+    const url = URL.createObjectURL(file);
+    openSheet(
+      `<h2 class="fuel-sheet__title" id="fuelSheetTitle">What's in it?</h2>
+       <p class="fuel-sheet__sub">Optional, but it helps. Name the foods and any amounts you know.</p>
+       <img class="fuel-photo" src="${url}" alt="Your meal photo" />
+       <textarea class="fuel-input fuel-note" data-note rows="2" maxlength="300" placeholder="e.g. 200g chicken breast, 1 cup rice, cooked in olive oil" aria-label="What's in your meal"></textarea>
+       <button class="fuel-btn" type="button" data-go>Read my meal</button>
+       <button class="fuel-btn fuel-btn--quiet" type="button" data-retake>Retake photo</button>`,
+      (body) => {
+        const done = () => URL.revokeObjectURL(url);
+        body.querySelector("[data-go]").addEventListener("click", () => {
+          const note = body.querySelector("[data-note]").value.trim();
+          done();
+          analysePhoto(file, "meal", note);
+        });
+        body.querySelector("[data-retake]").addEventListener("click", () => {
+          done();
+          pickPhoto("meal", true);
+        });
+      }
+    );
+  }
 
   /** Shrinks a photo to 1024px on its long edge, JPEG 0.8, and returns the base64 (no data: prefix). */
   function resizeImage(file, maxEdge = 1024, quality = 0.8) {
@@ -628,20 +1487,18 @@
     });
   }
 
-  async function analysePhoto(file, mode) {
+  async function analysePhoto(file, mode, note) {
     sheetLoading(mode === "label" ? "Reading the label" : "Reading your meal");
     let data;
     try {
       const image = await resizeImage(file);
-      data = await MacroApi.call("analyseImage", { image: image, mode: mode }, { timeoutMs: 90000 });
+      const fields = { image: image, mode: mode };
+      if (note) fields.note = note;
+      data = await MacroApi.call("analyseImage", fields, { timeoutMs: 90000 });
     } catch (err) {
-      if (err.code === "no_credits") {
-        state.scanCredits = 0;
-        sheetError(
-          "Out of photo scans",
-          `${err.message} ${topUpText()}`,
-          '<button class="fuel-btn" type="button" data-retry="barcode">Scan a barcode instead</button>'
-        );
+      if (err.code === "no_plan" || err.code === "limit") {
+        if (err.code === "no_plan" && state.plan) state.plan.access = false;
+        openUpsell({ reason: err.code === "limit" ? "limit" : "", message: err.message });
         return;
       }
       const again = `<button class="fuel-btn" type="button" data-retry="${mode}">Try another photo</button>`;
@@ -649,8 +1506,7 @@
       sheetError("Hmm", err.message, again + alt);
       return;
     }
-    if (typeof data.scansLeft === "number") state.scansLeft = data.scansLeft;
-    if (typeof data.scanCredits === "number") state.scanCredits = data.scanCredits;
+    setAiToday(data.aiToday);
 
     if (mode === "label") {
       const l = data.label;
@@ -879,7 +1735,7 @@
         "Lookup failed",
         err.message,
         '<button class="fuel-btn" type="button" data-retry="barcode">Try again</button>' +
-          (canPhotoScan()
+          (fuelAi()
             ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-retry="label">Snap the nutrition label instead</button>'
             : "")
       );
@@ -891,7 +1747,7 @@
         `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Not in the database yet</h2>
          <p class="fuel-sheet__sub">Barcode ${esc(code)}${p.name ? ` · ${esc(p.name)}` : ""}</p>
          ${
-           canPhotoScan()
+           fuelAi()
              ? `<p class="fuel-disclaimer">No problem. Snap the nutrition panel on the pack and we'll read the numbers from that.</p>
                 <button class="fuel-btn" type="button" data-retry="label">Snap the nutrition label instead</button>
                 <button class="fuel-btn fuel-btn--ghost" type="button" data-retry="barcode">Scan something else</button>`
@@ -939,6 +1795,11 @@
   }
 
   function servesHtml(item, i) {
+    if (isServes(item)) {
+      return `<div class="fuel-serves">
+        ${[50, 100, 150, 200].map((g) => `<button type="button" data-serve="${i}" data-g="${g}">${servesText(g)}</button>`).join("")}
+      </div>`;
+    }
     if (!item.serving_g) {
       return item.source === "barcode" || item.source === "label"
         ? `<div class="fuel-serves"><button type="button" data-serve="${i}" data-g="100">100${item.unit || "g"}</button></div>`
@@ -958,7 +1819,7 @@
   }
 
   function confidenceTag(item) {
-    if (item.source !== "photo") return "";
+    if (item.source !== "photo" && item.source !== "describe") return "";
     if (item.confidence === "low") return '<span class="fuel-tag fuel-tag--red">Unsure</span>';
     if (item.confidence === "medium") return '<span class="fuel-tag">Estimate</span>';
     return "";
@@ -976,8 +1837,12 @@
         </div>
         ${servesHtml(item, i)}
         <div class="fuel-item__grams">
-          <input class="fuel-range" type="range" min="0" max="${max}" step="${step}" value="${Math.min(max, item.grams)}" data-range="${i}" aria-label="Amount" />
-          <label class="fuel-item__gin"><input class="fuel-input" type="number" inputmode="decimal" min="0" max="5000" step="1" value="${item.grams}" data-grams="${i}" aria-label="Grams" /><span>${esc(item.unit || "g")}</span></label>
+          ${
+            isServes(item)
+              ? `<label class="fuel-item__gin fuel-item__gin--serves"><input class="fuel-input" type="number" inputmode="decimal" min="0" max="50" step="0.5" value="${item.grams / 100}" data-grams="${i}" data-per="100" aria-label="Serves" /><span>serves</span></label>`
+              : `<input class="fuel-range" type="range" min="0" max="${max}" step="${step}" value="${Math.min(max, item.grams)}" data-range="${i}" aria-label="Amount" />
+          <label class="fuel-item__gin"><input class="fuel-input" type="number" inputmode="decimal" min="0" max="5000" step="1" value="${item.grams}" data-grams="${i}" aria-label="Grams" /><span>${esc(item.unit || "g")}</span></label>`
+          }
         </div>
         <div class="fuel-item__macros" data-macros="${i}">${macroLine(itemMacros(item), { bold: true })}</div>
         ${item.notes ? `<p class="fuel-item__note">${esc(item.notes)}</p>` : ""}
@@ -992,6 +1857,8 @@
         : "Exact · from the product's label data (Open Food Facts).";
     }
     if (c.source === "label") return "Read from your label photo. Check the numbers match the pack.";
+    if (c.source === "manual") return "Set how much you had, then add it.";
+    if (c.source === "describe") return "Estimated from your description, so check the amounts. A photo or a search is usually closer.";
     return "";
   }
 
@@ -1022,6 +1889,7 @@
       `<h2 class="fuel-sheet__title" id="fuelSheetTitle">${esc(c.title)}</h2>
        <p class="fuel-disclaimer">${esc(sourceNote(c))}</p>
        ${c.items.map(itemHtml).join("")}
+       <button class="fuel-btn fuel-btn--ghost fuel-add-more" type="button" data-more>${ICONS.plus} Add another food</button>
        <div class="fuel-field">
          <span class="card__label">Meal</span>
          <div class="fuel-seg" data-meals>
@@ -1033,6 +1901,9 @@
          <span class="fuel-sum__nums" data-sum>${macroLine(confirmTotals(c))}</span>
        </div>
        <button class="fuel-btn" type="button" data-add>Add to ${esc(where)}</button>
+       <div class="fuel-save-meal" data-save-area>
+         <button class="fuel-btn fuel-btn--quiet" type="button" data-save-meal>☆ Save as a meal for next time</button>
+       </div>
        <button class="fuel-btn fuel-btn--quiet" type="button" data-close>Cancel</button>`,
       (body) => {
         const refresh = (i) => {
@@ -1045,14 +1916,15 @@
           c.items[i].grams = g;
           const range = body.querySelector(`[data-range="${i}"]`);
           const box = body.querySelector(`[data-grams="${i}"]`);
-          if (from !== "range") range.value = Math.min(Number(range.max), g);
-          if (from !== "box") box.value = g;
+          if (range && from !== "range") range.value = Math.min(Number(range.max), g);
+          if (from !== "box") box.value = g / (Number(box.dataset.per) || 1); // serves boxes show grams / 100
+          if (from) body.querySelectorAll(`[data-serve="${i}"]`).forEach((b) => b.classList.remove("is-on"));
           refresh(i);
         };
         body.addEventListener("input", (e) => {
           const t = e.target;
           if (t.dataset.range !== undefined) setGrams(Number(t.dataset.range), t.value, "range");
-          else if (t.dataset.grams !== undefined) setGrams(Number(t.dataset.grams), t.value, "box");
+          else if (t.dataset.grams !== undefined) setGrams(Number(t.dataset.grams), t.value * (Number(t.dataset.per) || 1), "box");
           else if (t.dataset.name !== undefined) c.items[Number(t.dataset.name)].name = t.value;
         });
         body.addEventListener("click", async (e) => {
@@ -1067,6 +1939,42 @@
           if (remove) {
             c.items.splice(Number(remove.dataset.remove), 1);
             renderConfirm();
+            return;
+          }
+          if (e.target.closest("[data-more]")) {
+            openSearch({ into: true });
+            return;
+          }
+          if (e.target.closest("[data-save-meal]")) {
+            const generic = /^(your meal|food)$/i.test(String(c.title).trim());
+            const area = body.querySelector("[data-save-area]");
+            area.innerHTML = `
+              <form class="fuel-inline" data-save-form autocomplete="off">
+                <input class="fuel-input" name="mealName" maxlength="60" placeholder="Name it, e.g. Protein smoothie" value="${esc(generic ? "" : c.title)}" aria-label="Meal name" />
+                <button class="fuel-btn" type="submit">Save</button>
+              </form>`;
+            const form = area.querySelector("[data-save-form]");
+            form.elements.mealName.focus();
+            form.addEventListener("submit", async (ev) => {
+              ev.preventDefault();
+              const name = form.elements.mealName.value.trim();
+              const items = c.items.filter((it) => Number(it.grams) > 0 && String(it.name).trim());
+              if (!name || !items.length) {
+                form.elements.mealName.focus();
+                return;
+              }
+              const saveBtn = form.querySelector("button");
+              saveBtn.disabled = true;
+              try {
+                const data = await MacroApi.call("saveMeal", { name: name, items: items.map(payloadItem) });
+                state.meals = data.meals || [];
+                area.innerHTML = `<p class="fuel-save-meal__done">★ Saved as "${esc(name)}". It's under Tap to log again.</p>`;
+                render();
+              } catch (err) {
+                saveBtn.disabled = false;
+                toast(err.message);
+              }
+            });
             return;
           }
           const meal = e.target.closest("[data-meal]");
@@ -1086,9 +1994,8 @@
             add.textContent = "Adding…";
             try {
               const mealName = c.meal;
-              await addItems(items, mealName);
-              closeSheet();
-              toast(`Added to ${MEAL_SHORT[mealName]}`);
+              const ids = await addItems(items, mealName);
+              openAfterLog(mealName, ids);
             } catch (err) {
               add.disabled = false;
               add.textContent = `Add to ${where}`;
@@ -1096,6 +2003,479 @@
             }
           }
         });
+      }
+    );
+  }
+
+  /** Straight after logging: what's left today and what would fill it. */
+  function openAfterLog(mealName, ids) {
+    const ideas = isToday() ? suggestionsHtml(3, false) : "";
+    if (!ideas) {
+      closeSheet();
+      toast(`Added to ${MEAL_SHORT[mealName]}`, () => undoAdd(ids));
+      return;
+    }
+    openSheet(
+      `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Added to ${esc(MEAL_SHORT[mealName])}</h2>
+       ${ideas}
+       <button class="fuel-btn" type="button" data-close>Done</button>
+       <button class="fuel-btn fuel-btn--quiet" type="button" data-undo>Undo</button>`,
+      (body) => {
+        body.querySelector("[data-undo]").addEventListener("click", async () => {
+          closeSheet();
+          await undoAdd(ids);
+          toast("Removed");
+        });
+        body.addEventListener("click", async (e) => {
+          const btn = e.target.closest('[data-act="log-idea"]');
+          if (!btn) return;
+          await logIdea(btn);
+          closeSheet();
+        });
+      }
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Ask Fuel (Fuel AI): the AI copilot chat
+  // ---------------------------------------------------------------------------
+
+  const CHAT_STARTERS = ["What should I have for dinner?", "What can I get at Guzman?", "I'm hungry but I'm over. Help!"];
+  let chatFoods = []; // loggable foods in the conversation, by index
+
+  function chatHtml() {
+    chatFoods = [];
+    if (!state.chat.length) {
+      // "What to eat next" lived on the main screen until the 2026-10-02
+      // redesign moved it in here — same ideasFor()/shownIdeas plumbing,
+      // just at the top of Ask Fuel's empty state instead.
+      const ideas = isToday() ? suggestionsHtml(3, false) : "";
+      return `${ideas}
+        <p class="fuel-disclaimer">Ask anything about food and your macros today. Fuel can see what you've logged and what's left.</p>
+        <div class="fuel-serves">${CHAT_STARTERS.map((q) => `<button type="button" data-starter="${esc(q)}">${esc(q)}</button>`).join("")}</div>`;
+    }
+    return state.chat
+      .map((m) => {
+        if (m.role === "user") return `<div class="fuel-msg fuel-msg--me">${esc(m.content)}</div>`;
+        if (m.pending) return `<div class="fuel-msg"><span class="fuel-typing"><i></i><i></i><i></i></span></div>`;
+        const chips = (m.foods || [])
+          .map((f) => {
+            chatFoods.push(f);
+            return `<button class="fuel-chip" type="button" data-chat-log="${chatFoods.length - 1}">
+              <span class="fuel-chip__name">+ ${esc(Math.round(f.grams))}g ${esc(f.name)}</span>
+              <span class="fuel-chip__meta">${ideaMacros(f)}</span>
+            </button>`;
+          })
+          .join("");
+        return `<div class="fuel-msg${m.error ? " fuel-msg--error" : ""}">${esc(m.content).replace(/\n/g, "<br>")}</div>${
+          chips ? `<div class="fuel-chips fuel-chips--wrap">${chips}</div>` : ""
+        }`;
+      })
+      .join("");
+  }
+
+  function openChat() {
+    if (!askFuelOn()) {
+      openUpsell({ reason: "ask" });
+      return;
+    }
+    openSheet(
+      `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Ask Fuel</h2>
+       <p class="fuel-sheet__sub" data-chat-left>${esc(aiLeftText() || planText())}</p>
+       <div class="fuel-chat" data-chat>${chatHtml()}</div>
+       <form class="fuel-inline" data-chat-form autocomplete="off">
+         <input class="fuel-input" name="q" maxlength="500" placeholder="Ask about food…" aria-label="Your question" />
+         <button class="fuel-btn" type="submit">Send</button>
+       </form>
+       <p class="fuel-disclaimer">General guidance, not medical advice.</p>`,
+      (body) => {
+        const box = body.querySelector("[data-chat]");
+        const form = body.querySelector("[data-chat-form]");
+        const paint = () => {
+          box.innerHTML = chatHtml();
+          box.scrollTop = box.scrollHeight;
+        };
+        const send = async (text) => {
+          const q = String(text || "").trim();
+          if (!q || state.busy) return;
+          state.busy = true;
+          state.chat.push({ role: "user", content: q });
+          const pending = { role: "assistant", pending: true };
+          state.chat.push(pending);
+          paint();
+          const history = state.chat
+            .filter((m) => !m.pending && !m.error)
+            .slice(-10)
+            .map((m) => ({ role: m.role, content: m.content }));
+          try {
+            const data = await MacroApi.call("chat", { date: state.viewDate, messages: history }, { timeoutMs: 60000 });
+            Object.assign(pending, { pending: false, content: data.reply, foods: data.foods || [] });
+            setAiToday(data.aiToday);
+            const left = body.querySelector("[data-chat-left]");
+            if (left) left.textContent = aiLeftText();
+          } catch (err) {
+            // "platinum" is the code an older backend sends for the same thing.
+            const needsDiamond = err.code === "diamond" || err.code === "platinum";
+            if (err.code === "no_plan" || err.code === "limit" || needsDiamond) {
+              state.chat.pop();
+              state.chat.pop(); // their question too: it didn't go anywhere
+              state.busy = false;
+              if (err.code === "no_plan" && state.plan) state.plan.access = false;
+              openUpsell({ reason: err.code === "limit" ? "limit" : needsDiamond ? "ask" : "", message: err.message });
+              render();
+              return;
+            }
+            Object.assign(pending, { pending: false, error: true, content: err.message });
+          } finally {
+            state.busy = false;
+          }
+          paint();
+        };
+        form.addEventListener("submit", (e) => {
+          e.preventDefault();
+          const q = form.q.value;
+          form.q.value = "";
+          send(q);
+        });
+        box.addEventListener("click", async (e) => {
+          const starter = e.target.closest("[data-starter]");
+          if (starter) {
+            send(starter.dataset.starter);
+            return;
+          }
+          const ideaBtn = e.target.closest('[data-act="log-idea"]');
+          if (ideaBtn) {
+            await logIdea(ideaBtn);
+            paint();
+            return;
+          }
+          const logBtn = e.target.closest("[data-chat-log]");
+          if (logBtn && !state.busy) {
+            const f = chatFoods[Number(logBtn.dataset.chatLog)];
+            if (!f) return;
+            state.busy = true;
+            logBtn.disabled = true;
+            const meal = defaultMeal();
+            try {
+              const ids = await addItems([{ name: f.name, grams: f.grams, per100: f.per100, source: "suggestion" }], meal);
+              toast(`Added to ${MEAL_SHORT[meal]}`, () => undoAdd(ids));
+            } catch (err) {
+              logBtn.disabled = false;
+              toast(err.message);
+            } finally {
+              state.busy = false;
+            }
+          }
+        });
+        box.scrollTop = box.scrollHeight;
+      }
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Progress (free): this week (Screen Time style), weight vs goal, punches
+  // ---------------------------------------------------------------------------
+
+  const SVGNS = "http://www.w3.org/2000/svg";
+  const W = 330; // chart viewBox width
+
+  function svg(parent, tag, attrs, text) {
+    const el = document.createElementNS(SVGNS, tag);
+    Object.keys(attrs || {}).forEach((k) => el.setAttribute(k, attrs[k]));
+    if (text != null) el.textContent = text;
+    parent.appendChild(el);
+    return el;
+  }
+
+  function shortDate(ymd) {
+    const [y, m, d] = ymd.split("-").map(Number);
+    return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+  }
+
+  function kgText(kg) {
+    return (Math.round(kg * 10) / 10).toFixed(1);
+  }
+
+  /** Nice round y-axis ticks between lo and hi. */
+  function ticks(lo, hi, count) {
+    const span = hi - lo || 1;
+    const raw = span / (count || 3);
+    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((m) => m >= raw) || raw;
+    const out = [];
+    for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(Math.round(v * 100) / 100);
+    return out;
+  }
+
+  function drawWeightChart(box, readout) {
+    const p = state.progress;
+    const all = p.weights || [];
+    const trendAll = MacroCore.movingAverage(all, 7);
+    const today = p.today;
+    const from = state.progressRange ? MacroCore.addDays(today, -state.progressRange) : all.length ? all[0].date : today;
+    const pts = all.filter((w) => w.date >= from);
+    const trend = trendAll.filter((w) => w.date >= from);
+    if (!pts.length) {
+      box.innerHTML = `<p class="fuel-empty">Log a weigh-in and your trend line starts here. Weigh yourself first thing in the morning for the fairest comparison.</p>`;
+      return;
+    }
+    // Pace line from the first trend point in view, peeking up to 2 weeks
+    // past today — enough to see where it's heading without squashing the data.
+    const g = p.goal || {};
+    const pace = MacroCore.goalPace(trend[0].date, trend[0].kg, g.weekly_rate_kg, g.goal_weight_kg, MacroCore.addDays(today, 14));
+    const x0 = pts[0].date;
+    const x1 = pace.length && pace[1].date > today ? pace[1].date : today;
+    const values = pts.map((q) => q.kg).concat(trend.map((q) => q.kg), pace.map((q) => q.kg));
+    // The goal gets its own line only when it's close; otherwise it's named in the header.
+    const goalNear = g.goal_weight_kg && Math.abs(g.goal_weight_kg - trend[trend.length - 1].kg) <= 3;
+    if (goalNear) values.push(g.goal_weight_kg);
+    const lo = Math.floor(Math.min.apply(null, values) - 0.5);
+    const hi = Math.ceil(Math.max.apply(null, values) + 0.5);
+    const H = 190, L = 42, R = W - 8, T = 14, B = H - 32;
+    const span = Math.max(1, MacroCore.daysBetween(x0, x1));
+    const x = (d) => L + ((R - L) * MacroCore.daysBetween(x0, d)) / span;
+    const y = (v) => T + ((B - T) * (hi - v)) / (hi - lo || 1);
+    const root = svg(box, "svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img", "aria-label": "Weight trend" });
+    ticks(lo, hi, 3).forEach((v) => {
+      svg(root, "line", { x1: L, x2: R, y1: y(v), y2: y(v), class: "fuel-grid" });
+      svg(root, "text", { x: L - 8, y: y(v) + 5, "text-anchor": "end" }, v);
+    });
+    if (goalNear) {
+      svg(root, "line", { x1: L, x2: R, y1: y(g.goal_weight_kg), y2: y(g.goal_weight_kg), class: "fuel-goal" });
+      svg(root, "text", { x: R, y: y(g.goal_weight_kg) - 7, "text-anchor": "end", class: "fuel-chart__strong" }, `Goal ${kgText(g.goal_weight_kg)} kg`);
+    }
+    if (pace.length) svg(root, "line", { x1: x(pace[0].date), y1: y(pace[0].kg), x2: x(pace[1].date), y2: y(pace[1].kg), class: "fuel-pace" });
+    pts.forEach((q) => svg(root, "circle", { cx: x(q.date), cy: y(q.kg), r: 3.5, class: "fuel-dot" }));
+    if (trend.length > 1) {
+      svg(root, "polyline", { points: trend.map((q) => `${x(q.date)},${y(q.kg)}`).join(" "), class: "fuel-line" });
+    }
+    const last = trend[trend.length - 1];
+    svg(root, "circle", { cx: x(last.date), cy: y(last.kg), r: 6, class: "fuel-dot--now" });
+    svg(root, "text", { x: L, y: H - 6 }, shortDate(x0));
+    svg(root, "text", { x: x(today), y: H - 6, "text-anchor": x1 > today ? "middle" : "end" }, "Today");
+    if (x1 > today) svg(root, "text", { x: R, y: H - 6, "text-anchor": "end" }, pace[1].goalReached ? "Goal" : shortDate(x1));
+    // Tap/hover targets bigger than the dots.
+    pts.forEach((q) => {
+      const avg = trendAll.find((t) => t.date === q.date);
+      const hit = svg(root, "circle", { cx: x(q.date), cy: y(q.kg), r: 16, class: "fuel-hit" });
+      const show = () => (readout.textContent = `${shortDate(q.date)} · ${kgText(q.kg)} kg${avg ? ` · 7-day average ${kgText(avg.kg)} kg` : ""}${q.by === "coach" ? " · logged by Max" : ""}`);
+      hit.addEventListener("pointerenter", show);
+      hit.addEventListener("click", show);
+    });
+  }
+
+  const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+  /** "Thursday 1 Oct" */
+  function longDate(ymd) {
+    const [y, m, d] = ymd.split("-").map(Number);
+    return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "short", timeZone: "UTC" });
+  }
+
+  /** Monday to Sunday of the week starting `weekStart`, from the last 14 days the server sends (always enough for this week and last). Days after today are `future`. */
+  function weekDays(weekStart) {
+    const p = state.progress;
+    const out = [];
+    for (let i = 0; i < 7; i++) {
+      const date = MacroCore.addDays(weekStart, i);
+      const d = (p.days || []).find((x) => x.date === date);
+      out.push(Object.assign({ date: date, kcal: 0, protein_g: 0, target_kcal: null, green: false }, d || {}, { future: date > p.today }));
+    }
+    return out;
+  }
+
+  /** What one day's bar means, in words: shown under the chart when it's tapped. */
+  function dayReadout(d) {
+    if (!(d.kcal > 0)) return `${longDate(d.date)} · nothing logged`;
+    const amount = hideKcal() ? (d.target_kcal ? `${Math.round((d.kcal / d.target_kcal) * 100)}% of your target` : "") : `${int(d.kcal)} kcal`;
+    return [longDate(d.date), amount, `${int(d.protein_g)}g protein`, d.green ? "Green day ✓" : ""].filter(Boolean).join(" · ");
+  }
+
+  /**
+   * The week, like iPhone Screen Time: one bar per day, Monday to Sunday,
+   * as tall as what was eaten, green on a green day, grey otherwise, with
+   * the target as a dashed line. Tap a day for its numbers. Big text on
+   * purpose: plenty of Max's clients don't have young eyes.
+   */
+  function drawWeek(box) {
+    const p = state.progress;
+    const hide = hideKcal();
+    const last = state.progressWeek === "last";
+    const week = last ? p.lastWeek : p.thisWeek;
+    const days = weekDays(week.weekStart);
+    const logged = days.filter((d) => !d.future && d.kcal > 0);
+    const greens = days.filter((d) => d.green).length;
+    const withTarget = days.filter((d) => d.target_kcal > 0);
+    const target = withTarget.length ? withTarget[withTarget.length - 1].target_kcal : null;
+    const top = Math.max(target ? target * 1.2 : 0, ...days.map((d) => d.kcal || 0), 1);
+    const frac = (v) => Math.min(1, v / top);
+    const avg = logged.length ? logged.reduce((sum, d) => sum + (hide ? d.protein_g : d.kcal), 0) / logged.length : null;
+    const cols = days
+      .map((d, i) => {
+        const bar = d.kcal > 0 ? `<span class="fuel-wk__bar${d.green ? " is-green" : ""}" style="height:${Math.max(2, frac(d.kcal) * 100).toFixed(1)}%"></span>` : "";
+        const label = d.date === p.today ? "Today" : DAY_NAMES[i];
+        return `<button type="button" class="fuel-wk__col${d.date === p.today ? " is-today" : ""}" data-day="${d.date}"${d.future ? " disabled" : ""} aria-label="${esc(d.future ? `${longDate(d.date)}, still to come` : dayReadout(d))}">
+            <span class="fuel-wk__track">${bar}</span>
+            <span class="fuel-wk__day">${label}</span>
+          </button>`;
+      })
+      .join("");
+    const line = target
+      ? `<span class="fuel-wk__target" style="bottom:calc(var(--wk-day) + var(--wk-h) * ${frac(target).toFixed(3)})" aria-hidden="true"><span>${hide ? "Target" : `Target ${int(target)}`}</span></span>`
+      : "";
+    const startText = days[0].date === p.today ? "" : "Tap a day to see its numbers.";
+    box.innerHTML = `
+      <div class="fuel-seg fuel-seg--big" data-week-pick>
+        <button type="button" data-week="this" class="${last ? "" : "is-on"}">This week</button>
+        <button type="button" data-week="last" class="${last ? "is-on" : ""}">Last week</button>
+      </div>
+      <div class="fuel-wk__head">
+        <span class="fuel-wk__big">${greens}<span class="fuel-wk__unit">green day${greens === 1 ? "" : "s"}</span></span>
+        <span class="fuel-wk__avg">${avg != null ? `Daily average ${hide ? `${int(avg)}g protein` : `${int(avg)} kcal`}` : last ? "Nothing logged last week" : "Nothing logged yet this week"}</span>
+      </div>
+      <div class="fuel-wk__plot">${line}${cols}</div>
+      <p class="fuel-wk__readout" data-wk-readout aria-live="polite">${esc(startText)}</p>
+      <p class="fuel-wk__key"><span class="fuel-wk__swatch" aria-hidden="true"></span>Green day = protein hit and ${hide ? "on target" : "calories within 10% of your target"}.</p>`;
+    const readout = box.querySelector("[data-wk-readout]");
+    const pick = (date) => {
+      const d = days.find((x) => x.date === date);
+      if (!d || d.future) return;
+      box.querySelectorAll(".fuel-wk__col").forEach((c) => c.classList.toggle("is-picked", c.dataset.day === date));
+      readout.textContent = dayReadout(d);
+    };
+    box.querySelector(".fuel-wk__plot").addEventListener("click", (e) => {
+      const col = e.target.closest("[data-day]");
+      if (col) pick(col.dataset.day);
+    });
+    box.querySelector("[data-week-pick]").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-week]");
+      if (!b || b.dataset.week === state.progressWeek) return;
+      state.progressWeek = b.dataset.week;
+      drawWeek(box);
+    });
+    // Open on today, so the numbers you came for are already there.
+    if (!last && days.some((d) => d.date === p.today)) pick(p.today);
+  }
+
+  function punchText(p) {
+    const need = p.punchEvery || 5;
+    const lw = p.lastWeek;
+    const tw = p.thisWeek;
+    const daysLeft = tw.days.filter((d) => d.date >= p.today).length;
+    const lines = [];
+    if (lw.earnsPunch) {
+      lines.push(lw.awarded ? `Last week: ${lw.greenDays} green days = +1 punch.` : `Last week: ${lw.greenDays} green days. Your punch lands on your card by tomorrow morning.`);
+    } else if (lw.greenDays > 0) {
+      lines.push(`Last week: ${lw.greenDays} green day${lw.greenDays === 1 ? "" : "s"}.`);
+    }
+    if (tw.greenDays >= need) lines.push("This week's punch is in the bag. Nice work.");
+    else if (need - tw.greenDays <= daysLeft) {
+      const more = need - tw.greenDays;
+      lines.push(`This week: ${more} more green day${more === 1 ? "" : "s"} earns a punch.`);
+    } else lines.push("Fresh start Monday. Every green day still counts.");
+    return lines.join(" ");
+  }
+
+  function pegsHtml(loyalty) {
+    if (!loyalty) return "";
+    const filled = loyalty.owed ? 10 : (loyalty.attended + loyalty.punches) % 10;
+    let pegs = "";
+    for (let i = 0; i < 10; i++) {
+      pegs += `<div class="card__loyalty-peg${i < filled ? " card__loyalty-peg--filled" : i === 9 ? " card__loyalty-peg--next" : ""}"></div>`;
+    }
+    return `
+      <div class="fuel-punch">
+        <div class="card__loyalty-head">
+          <span class="card__label card__label--red">Sessions to free</span>
+          <span class="card__loyalty-count">${loyalty.owed ? "Free session ready" : `${filled}/10`}</span>
+        </div>
+        <div class="card__loyalty-bar">${pegs}</div>
+        <span class="fuel-row__note">${int(loyalty.attended)} class${loyalty.attended === 1 ? "" : "es"} + ${int(loyalty.punches)} bonus punch${loyalty.punches === 1 ? "" : "es"} (Fuel and referrals)</span>
+      </div>`;
+  }
+
+  async function openProgress() {
+    sheetLoading("Loading your progress");
+    try {
+      const data = await MacroApi.call("progress", {});
+      state.progress = data.progress;
+      renderProgress();
+    } catch (err) {
+      sheetError("Couldn't load your progress", err.message, "");
+    }
+  }
+
+  function renderProgress() {
+    const p = state.progress;
+    const lastTrend = MacroCore.movingAverage(p.weights || [], 7).pop();
+    const ranges = [[28, "4 wks"], [84, "12 wks"], [0, "All"]];
+    openSheet(
+      `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Progress</h2>
+       <div class="fuel-panel fuel-chartcard">
+         <span class="card__label card__label--red">Your week</span>
+         <div class="fuel-wk" data-week-chart></div>
+         <p class="fuel-punch__text">${esc(punchText(p))}</p>
+         ${pegsHtml(p.loyalty)}
+       </div>
+       ${
+         p.hideWeight
+           ? '<div class="fuel-panel"><span class="card__label card__label--red">Weight</span><p class="fuel-empty">Weight is hidden. You can turn it back on in Fuel settings.</p></div>'
+           : `<div class="fuel-panel fuel-chartcard">
+                <span class="card__label card__label--red">Weight</span>
+                <div class="fuel-chartcard__head">
+                  <span class="fuel-row__nums">${lastTrend ? kgText(lastTrend.kg) : "–"}<span class="fuel-row__unit">kg</span></span>
+                  <span class="fuel-row__note">${lastTrend ? "7-day average" : "No weigh-ins yet"}${p.goal && p.goal.goal_weight_kg ? ` · goal ${kgText(p.goal.goal_weight_kg)} kg` : ""}</span>
+                </div>
+                <form class="fuel-inline" data-weight-form autocomplete="off">
+                  <input class="fuel-input" name="kg" type="number" inputmode="decimal" step="0.1" min="30" max="300" placeholder="Today's weight (kg)" aria-label="Today's weight in kg" />
+                  <button class="fuel-btn" type="submit">Log</button>
+                </form>
+                <div class="fuel-seg fuel-seg--big" data-range>${ranges.map(([d, l]) => `<button type="button" data-days="${d}" class="${state.progressRange === d ? "is-on" : ""}">${l}</button>`).join("")}</div>
+                <div class="fuel-chart" data-weight-chart></div>
+                <p class="fuel-readout" data-weight-readout>Tap a dot for the details.</p>
+                <p class="fuel-legend"><span class="fuel-key fuel-key--line"></span>7-day average <span class="fuel-key fuel-key--dot"></span>weigh-ins ${p.goal && p.goal.weekly_rate_kg ? '<span class="fuel-key fuel-key--pace"></span>goal pace' : ""}</p>
+              </div>`
+       }
+       <button class="fuel-btn fuel-btn--quiet" type="button" data-close>Done</button>`,
+      (body) => {
+        const wBox = body.querySelector("[data-weight-chart]");
+        if (wBox) drawWeightChart(wBox, body.querySelector("[data-weight-readout]"));
+        drawWeek(body.querySelector("[data-week-chart]"));
+        const range = body.querySelector("[data-range]");
+        if (range) {
+          range.addEventListener("click", (e) => {
+            const b = e.target.closest("[data-days]");
+            if (!b) return;
+            state.progressRange = Number(b.dataset.days);
+            range.querySelectorAll("button").forEach((x) => x.classList.toggle("is-on", x === b));
+            wBox.innerHTML = "";
+            drawWeightChart(wBox, body.querySelector("[data-weight-readout]"));
+          });
+        }
+        const form = body.querySelector("[data-weight-form]");
+        if (form) {
+          form.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const kg = Number(form.kg.value);
+            if (!(kg >= 30 && kg <= 300)) {
+              toast("Enter your weight in kg");
+              return;
+            }
+            const btn = form.querySelector("button");
+            btn.disabled = true;
+            try {
+              const data = await MacroApi.call("logWeight", { kg: kg, date: MacroCore.sydneyDate() });
+              state.progress.weights = data.weights;
+              state.weightTrend = data.weightTrend;
+              render();
+              renderProgress();
+              toast("Weight logged");
+            } catch (err) {
+              btn.disabled = false;
+              toast(err.message);
+            }
+          });
+        }
       }
     );
   }
@@ -1111,12 +2491,17 @@
   function openEdit(entry) {
     const draft = { name: entry.name, grams: entry.grams, meal: entry.meal, per100: entry.per100 };
     const max = Math.min(2000, Math.max(50, Math.ceil((entry.grams * 2.5) / 10) * 10));
+    const serves = isServes(entry);
     openSheet(
       `<input class="fuel-item__name fuel-sheet__title" id="fuelSheetTitle" value="${esc(entry.name)}" data-ename aria-label="Food name" maxlength="80" />
        <div class="fuel-item">
          <div class="fuel-item__grams">
-           <input class="fuel-range" type="range" min="0" max="${max}" step="${max > 400 ? 5 : 1}" value="${Math.min(max, entry.grams)}" data-erange aria-label="Amount" />
-           <label class="fuel-item__gin"><input class="fuel-input" type="number" inputmode="decimal" min="0" max="5000" value="${entry.grams}" data-egrams aria-label="Grams" /><span>g</span></label>
+           ${
+             serves
+               ? `<label class="fuel-item__gin fuel-item__gin--serves"><input class="fuel-input" type="number" inputmode="decimal" min="0" max="50" step="0.5" value="${entry.grams / 100}" data-egrams aria-label="Serves" /><span>serves</span></label>`
+               : `<input class="fuel-range" type="range" min="0" max="${max}" step="${max > 400 ? 5 : 1}" value="${Math.min(max, entry.grams)}" data-erange aria-label="Amount" />
+           <label class="fuel-item__gin"><input class="fuel-input" type="number" inputmode="decimal" min="0" max="5000" value="${entry.grams}" data-egrams aria-label="Grams" /><span>g</span></label>`
+           }
          </div>
          <div class="fuel-item__macros" data-emacros>${macroLine(MacroCore.scale(entry.per100, entry.grams), { bold: true })}</div>
        </div>
@@ -1132,14 +2517,15 @@
         const range = body.querySelector("[data-erange]");
         const box = body.querySelector("[data-egrams]");
         const macros = body.querySelector("[data-emacros]");
+        const per = serves ? 100 : 1; // a serves box shows grams / 100
         const update = (g, from) => {
           draft.grams = Math.max(0, Math.min(5000, Number(g) || 0));
-          if (from !== "range") range.value = Math.min(Number(range.max), draft.grams);
-          if (from !== "box") box.value = draft.grams;
+          if (range && from !== "range") range.value = Math.min(Number(range.max), draft.grams);
+          if (from !== "box") box.value = draft.grams / per;
           macros.innerHTML = macroLine(MacroCore.scale(draft.per100, draft.grams), { bold: true });
         };
-        range.addEventListener("input", () => update(range.value, "range"));
-        box.addEventListener("input", () => update(box.value, "box"));
+        if (range) range.addEventListener("input", () => update(range.value, "range"));
+        box.addEventListener("input", () => update(box.value * per, "box"));
         body.querySelector("[data-ename]").addEventListener("input", (e) => (draft.name = e.target.value));
         body.querySelectorAll("[data-emeal]").forEach((b) =>
           b.addEventListener("click", () => {
@@ -1214,9 +2600,28 @@
 
   function openFavourites() {
     const list = state.favourites;
+    const meals = state.meals || [];
     openSheet(
       `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Favourites</h2>
        <p class="fuel-sheet__sub">Tap a favourite on the Fuel screen to log it in one go. Add more from any logged item.</p>
+       <span class="card__label">Saved meals</span>
+       <div class="fuel-panel">
+         ${
+           meals.length
+             ? meals
+                 .map((m) => {
+                   const t = mealTotals(m);
+                   return `
+           <div class="fuel-entry" style="cursor:default">
+             <span><span class="fuel-entry__name">${esc(m.name)}</span><span class="fuel-entry__meta">${esc(m.items.map((it) => it.name).join(", "))} · ${macroLine(t)}</span></span>
+             <button class="fuel-item__remove" type="button" data-unmeal="${esc(m.id)}" aria-label="Delete ${esc(m.name)}">${ICONS.x}</button>
+           </div>`;
+                 })
+                 .join("")
+             : '<p class="fuel-empty">No saved meals yet. Build one with Add food, then tap "Save as a meal".</p>'
+         }
+       </div>
+       <span class="card__label">Foods</span>
        <div class="fuel-panel">
          ${
            list.length
@@ -1224,7 +2629,7 @@
                  .map(
                    (f) => `
            <div class="fuel-entry" style="cursor:default">
-             <span><span class="fuel-entry__name">${esc(f.name)}</span><span class="fuel-entry__meta">${int(f.grams)}g · ${macroLine(MacroCore.scale(f.per100, f.grams))}</span></span>
+             <span><span class="fuel-entry__name">${esc(f.name)}</span><span class="fuel-entry__meta">${amountText(f)} · ${macroLine(MacroCore.scale(f.per100, f.grams))}</span></span>
              <button class="fuel-item__remove" type="button" data-unfav="${esc(f.id)}" aria-label="Remove ${esc(f.name)}">${ICONS.x}</button>
            </div>`
                  )
@@ -1234,6 +2639,20 @@
        </div>
        <button class="fuel-btn fuel-btn--quiet" type="button" data-close>Done</button>`,
       (body) => {
+        body.querySelectorAll("[data-unmeal]").forEach((b) =>
+          b.addEventListener("click", async () => {
+            b.disabled = true;
+            try {
+              const data = await MacroApi.call("deleteMeal", { mealId: b.dataset.unmeal });
+              state.meals = data.meals || [];
+              render();
+              openFavourites();
+            } catch (err) {
+              b.disabled = false;
+              toast(err.message);
+            }
+          })
+        );
         body.querySelectorAll("[data-unfav]").forEach((b) =>
           b.addEventListener("click", async () => {
             b.disabled = true;
@@ -1291,6 +2710,7 @@
       activity: prev.activity || "moderate",
       goal: prev.goal || "maintain",
       adjustPct: prev.adjustPct == null ? null : prev.adjustPct,
+      goalWeightKg: (g && g.goal_weight_kg) || "",
     };
 
     openSheet(
@@ -1321,6 +2741,7 @@
        <div class="fuel-field" data-pace-wrap>
          <span class="card__label">Pace</span>
          <div class="fuel-seg" data-group="adjustPct"></div>
+         <label class="fuel-field" style="margin-top:6px"><span class="card__label">Goal weight kg (optional)</span><input class="fuel-input" name="goalWeightKg" type="number" inputmode="decimal" step="0.1" value="${esc(form.goalWeightKg)}" placeholder="For your progress chart" /></label>
        </div>
        <div data-preview></div>
        <button class="fuel-btn" type="button" data-save-targets>Save targets</button>
@@ -1418,9 +2839,25 @@
     openSheet(
       `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Fuel settings</h2>
        <label class="fuel-toggle">Hide calories, focus on protein <input type="checkbox" data-hide ${hideKcal() ? "checked" : ""} /></label>
+       <label class="fuel-toggle">Hide weight <input type="checkbox" data-hide-weight ${state.member && state.member.hide_weight ? "checked" : ""} /></label>
        <button class="fuel-btn fuel-btn--ghost" type="button" data-s="targets">Daily targets</button>
-       <button class="fuel-btn fuel-btn--ghost" type="button" data-s="favs">Favourites</button>
-       ${state.aiEnabled ? `<p class="fuel-disclaimer">${esc(scansLeftText())}. ${esc(topUpText())}</p>` : ""}
+       <button class="fuel-btn fuel-btn--ghost" type="button" data-s="favs">Favourites &amp; saved meals</button>
+       ${
+         state.aiEnabled && state.plan
+           ? `<div class="fuel-panel fuel-plan">
+                <span class="card__label card__label--red">Your plan</span>
+                <span class="fuel-tier fuel-tier--${tier()}">${TIER_NAMES[tier()]}</span>
+                <span class="fuel-plan__text">${esc(planText())}</span>
+                ${fuelAi() ? `<span class="fuel-plan__text">${esc(aiLeftText())}</span>` : ""}
+                ${
+                  state.plan.kind === "paid" && state.plan.portalUrl
+                    ? `<a class="fuel-link" href="${esc(state.plan.portalUrl)}" target="_blank" rel="noopener">Manage subscription</a>`
+                    : ""
+                }
+                <button class="fuel-link" type="button" data-s="upgrade">See plans</button>
+              </div>`
+           : ""
+       }
        <p class="fuel-disclaimer">Not medical advice. If you have a medical condition, pregnancy or a history of disordered eating, talk to your GP or an Accredited Practising Dietitian.</p>
        <button class="fuel-btn fuel-btn--quiet" type="button" data-close>Done</button>`,
       (body) => {
@@ -1438,7 +2875,25 @@
             toast(err.message);
           }
         });
+        body.querySelector("[data-hide-weight]").addEventListener("change", async (e) => {
+          const want = e.target.checked;
+          try {
+            const data = await MacroApi.call("setPrefs", { hide_weight: want });
+            state.member = data.member;
+            if (want) state.weightTrend = null;
+            else {
+              const me = await MacroApi.call("me", { date: state.viewDate });
+              applyMe(me);
+            }
+            render();
+          } catch (err) {
+            e.target.checked = !want;
+            toast(err.message);
+          }
+        });
         body.querySelector('[data-s="targets"]').addEventListener("click", openTargets);
+        const up = body.querySelector('[data-s="upgrade"]');
+        if (up) up.addEventListener("click", openUpsell);
         body.querySelector('[data-s="favs"]').addEventListener("click", openFavourites);
       }
     );
@@ -1451,6 +2906,11 @@
   // A phone left open overnight should roll over to the new day.
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "visible" || !state.loaded) return;
+    // Came back from the Stripe checkout tab: check whether it went through.
+    if (state.awaitingUpgrade) {
+      state.awaitingUpgrade = false;
+      refreshPlan(null);
+    }
     const today = MacroCore.sydneyDate();
     if (state.loadedOn && state.loadedOn !== today) {
       state.viewDate = today;
@@ -1459,11 +2919,9 @@
     }
   });
 
-  let startTab = "card";
-  try {
-    startTab = window.location.hash === "#fuel" ? "fuel" : localStorage.getItem(TAB_STORAGE) || "card";
-  } catch (err) {
-    startTab = window.location.hash === "#fuel" ? "fuel" : "card";
-  }
-  showTab(startTab === "fuel" ? "fuel" : "card", false);
+  // Which view opens is decided entirely by how they got here (the bottom
+  // nav's Profile vs Macros link) — never a remembered last tab, which used
+  // to mean tapping Profile could land back on Fuel. No in-page Card/Fuel
+  // switcher any more either (2026-10-02): the bottom nav already does that.
+  showTab(window.location.hash === "#fuel" ? "fuel" : "card");
 })();

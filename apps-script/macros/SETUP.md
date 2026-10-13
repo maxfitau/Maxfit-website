@@ -28,11 +28,12 @@ Click **Project Settings** (the gear icon on the left), then **Script Properties
 | `STAFF_PIN` | The same PIN you use for check-in. |
 | `MACRO_SHEET_ID` | The ID you copied in step 1. |
 | `MAIN_SHEET_ID` | `1dGQyIoJ2_XrkbvvPvM2JAY0xdeYQfsCnYHal8WZojUg` |
-| `DAILY_AI_LIMIT` | `25` (optional; 25 photo scans per client per day is the default). |
-| `CENTS_PER_SCAN` | Optional. What a client pays per photo scan, in cents. Defaults to `5`, so $10 = 200 scans. |
-| `FREE_SCANS` | Optional. Free photo scans for each new client. Defaults to `10`. |
+| `GOLD_DAILY_AI` | Optional. AI uses per day on Gold (default 5). |
+| `DIAMOND_DAILY_AI` | Optional. AI uses per day on Diamond (default 20). |
 
-You can leave out `ANTHROPIC_API_KEY` until you buy API credits. Until then photo and label scanning are hidden and clients use barcodes only.
+The three Stripe properties are covered in step 7.
+
+You can leave out `ANTHROPIC_API_KEY` until you buy API credits. Until then Fuel AI (photo/label scans, Describe it and Ask Fuel) is hidden, and clients use barcodes and the free "what to eat next" ideas.
 
 Also set a monthly spend limit in console.anthropic.com → Settings → Limits. A photo scan costs roughly 1 US cent, and the **AI Usage** tab shows this month's total in cell N1.
 
@@ -41,7 +42,7 @@ Also set a monthly spend limit in console.anthropic.com → Settings → Limits.
 1. Go back to the editor.
 2. Pick **setupMacroSheets** in the function dropdown at the top, then press **Run**.
 3. Google will ask for permission. Click **Review permissions**, choose your account, then **Advanced** → **Go to MaxFit Macros**, then **Allow**.
-4. Open the MaxFit Macros sheet. It should now have 6 tabs: Members, Macro Targets, Food Logs, Favourites, Barcode Cache and AI Usage.
+4. Open the MaxFit Macros sheet. It should now have 6 tabs: Members, Macro Targets, Food Logs, Favourites, Barcode Cache and AI Usage. A **Foods** tab (about 80 Australian staples behind "what to eat next") appears by itself the first time a client opens FUEL. You can edit or add foods there any time.
 
 ## 5. Deploy it (first time only)
 
@@ -67,6 +68,58 @@ Paste the new code in and save. Then go to **Deploy** → **Manage deployments**
 
 **What clients need to do:** open the link once in Safari (iPhone) or Chrome (Android), then **Add to Home Screen again**. On iPhone, the old home-screen icon keeps its own storage and won't know the new link.
 
-**When a client pays you for photo scans:** on the coach page, tap **Add top-up** on their card, type the amount they paid (e.g. `10`) and tap **Add scans**. At 5c a scan, $10 gives them 200. Each successful photo or label scan uses 1; failed scans are free. Every top-up is recorded in the **Scan Credits** tab. If you type a wrong amount, enter a negative amount (e.g. `-10`), or just delete that row in the tab.
+**Plans** (Max, 2026-09-27):
+
+| Plan | Monthly | Yearly (3 months free) | What it adds |
+|---|---|---|---|
+| **Silver** | Free | | Barcodes, search, saved meals, typed-in numbers, targets, ideas and progress |
+| **Gold** | $5.99 | $53.99 | 5 AI uses a day: photo and label scans, Describe it |
+| **Diamond** | $9.99 | $89.99 | 20 AI uses a day, plus **Ask Fuel** (the AI chat) |
+
+Platinum was retired on 10 Oct 2026 (Max's brother's idea: 3 plans, not 4). Its Stripe product was renamed **Fuel Diamond** and kept its `fuel_platinum` / `fuel_platinum_year` lookup keys, which the backend reads as Diamond. Anyone still on "platinum" in the Members tab also counts as Diamond.
+
+Everything comes from one daily pool that resets at midnight, and the card shows each client how many they have left. New clients get **7 days of Diamond** from the first time they open FUEL. On the coach page each client shows their plan, and **Free month of Gold / Diamond** unlocks it for 30 days without payment. To change the daily numbers, add `GOLD_DAILY_AI` or `DIAMOND_DAILY_AI` in Script Properties; no redeploy is needed.
 
 Lost phone, or a link shared by mistake? Tap **New link** on the coach page. The old link stops working for FUEL straight away.
+
+## 7. Fuel AI on Stripe (do it in test mode first)
+
+Stripe moves its menus around. If you can't find something, type its name ("Payment Links", "Customer portal", "Restricted keys") into Stripe's search bar.
+
+1. Sign in to **stripe.com**, or create an account for MaxFit. Your business and bank details are yours to enter.
+2. Turn on **Test mode** (the switch at the top right), so nothing is really charged while we test.
+3. **Product catalogue → Add product**, two of them, each with two **Recurring** prices (monthly and yearly). Set each price's **lookup key** (under Advanced). The backend reads it to know the plan: anything containing `diamond` (or the old `platinum`) is Diamond, anything else Gold. The billing period comes from the price itself.
+   - **Fuel Gold:** 5.99 AUD monthly (`fuel_gold`) and 53.99 AUD yearly (`fuel_gold_year`).
+   - **Fuel Diamond:** 9.99 AUD monthly and 89.99 AUD yearly. The live product uses the keys `fuel_platinum` and `fuel_platinum_year` (see above); a fresh setup can use `fuel_diamond` and `fuel_diamond_year`.
+4. **Payment Links → New**, one for each of the six prices. Don't add a free trial in Stripe. On the **After payment** tab, choose **Don't show confirmation page → Redirect customers to your website**, and enter exactly:
+   `https://maxfit.now/card/?paid={CHECKOUT_SESSION_ID}`
+   Copy all six links. They start with `https://buy.stripe.com/`.
+5. **Settings → Billing → Customer portal.** Turn it on, allow cancelling at the end of the billing period, and under **Subscriptions** let customers **switch plans** between all six prices, with proration. That's how a paying client moves up, or from monthly to yearly: the card sends them here, never to a second payment link, so nobody pays twice. Copy the portal's **login link** (`https://billing.stripe.com/p/login/…`).
+6. **Developers → API keys → Create restricted key.** Name it **MaxFit Macros**. Give it **Checkout Sessions: Read** and **Subscriptions: Read**, and leave everything else as None. Create it and copy the key (it starts with `rk_test_`). **Paste it only into Apps Script**: never into chat, email or anywhere else.
+7. In Apps Script → **Project Settings → Script Properties**, add:
+
+| Property | Value |
+|---|---|
+| `STRIPE_SECRET_KEY` | the restricted key from step 6 |
+| `STRIPE_FUEL_LINK` | the Gold monthly payment link from step 4 |
+| `STRIPE_GOLD_YEAR_LINK` | the Gold yearly link |
+| `STRIPE_DIAMOND_LINK` | the Diamond monthly link |
+| `STRIPE_DIAMOND_YEAR_LINK` | the Diamond yearly link |
+| `STRIPE_PORTAL_LINK` | the portal login link from step 5 |
+
+A plan whose link isn't set simply has no buy button, and the Monthly / Yearly switch only appears once at least one yearly link is set.
+
+8. Back in the editor, choose **installStripeSync** in the function dropdown and press **Run** (allow permissions if asked). From now on the backend checks Stripe every 15 minutes, and straight away whenever a client comes back from paying.
+9. **Test on yourself:** open your own FUEL tab → **See plans** → **Get Gold** (or Diamond), and pay with Stripe's test card `4242 4242 4242 4242` (any future expiry date, any CVC). You should land back on the card with "Gold is on", and the coach page should say "Gold: paying · renews …".
+10. **Go live:** turn Test mode off and repeat steps 3–6 in live mode (test products, links and keys don't carry over). Then replace the three Stripe Script Properties with the live values. Finally, in the Macros sheet's **Members** tab, clear `stripe_customer`, `stripe_subscription`, `plan_status` and `plan_until` on any row that paid in test mode (your own, for one). Live mode can't see test subscriptions, so those rows would otherwise stay "paying" until the test renewal date. Use **Give a free month** on the coach page if you want to keep Fuel AI on for yourself.
+
+## 8. Progress and nutrition punches
+
+The Progress screen (weight trend, calorie target, last 14 days) is free for everyone and needs no setup: its tabs (**Weights**, **Target History**, **Punch Awards**) create themselves.
+
+**Nutrition punches:** 5 green days in a Monday–Sunday week earns 1 punch on the client's loyalty card. A green day means protein at least 90% of target and calories within ±10%. Punches are added to a new **Nutrition Punches** column on your Sessions Remaining tab (it appears by itself, next to a **Free Session Owed** column). The card and the check-in page add them to Total Classes Attended. When a nutrition punch completes a card, the check-in page pre-ticks "Free Session (earned with Fuel!)".
+
+1. In the **MaxFit Macros** editor, choose **installPunchTrigger** in the function dropdown and press **Run**, once. From then on it checks every morning around 3am. It's safe to run **awardPunches** by hand at any time; it never gives the same week twice.
+2. The **check-in** script (the *other* Apps Script project, `apps-script/Code.gs`) also changed slightly, so it can clear "Free Session Owed" once that free session is used. Paste the new Code.gs in, save, then go to **Manage deployments → pencil → New version → Deploy**. Opening its URL should show version `2026-09-25a`.
+
+**Weights:** clients log their own weight on the Progress screen, and you can log it from the coach page (**Log weight**) after a session. **Set goal** on the coach page sets a goal weight and a pace (kg per week). The pace line on the client's chart follows it, going up or down depending on the goal.
