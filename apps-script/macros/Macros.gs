@@ -60,7 +60,7 @@
  * or change rows carrying their own id.
  */
 
-const MACROS_VERSION = "2026-10-13c";
+const MACROS_VERSION = "2026-10-13d";
 const TIMEZONE = "Australia/Sydney";
 const MAIN_SESSIONS_GID = 1169726169; // "Sessions Remaining" in the CRM sheet
 const CARD_URL = "https://maxfit.now/card/";
@@ -1552,37 +1552,39 @@ function actionMealPlan_(payload, member) {
   return { plan: planFromRow_(latestPlanRow_(String(member.slug))), aiToday: aiToday_(member) };
 }
 
-const MEAL_PLAN_ITEM_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  required: ["name", "amount_text", "grams", "count", "unit", "kcal", "protein_g", "carbs_g", "fat_g", "aisle", "pantry"],
-  properties: {
-    name: { type: "string" },
-    amount_text: { type: "string" },
-    grams: { type: "number" },
-    count: { type: "number" },
-    unit: { type: "string" },
-    kcal: { type: "number" },
-    protein_g: { type: "number" },
-    carbs_g: { type: "number" },
-    fat_g: { type: "number" },
-    aisle: { type: "string", enum: MacroCore.AISLES },
-    pantry: { type: "boolean" },
-  },
-};
-const MEAL_PLAN_MEAL_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  required: ["name", "emoji", "how_to", "cost_aud", "items"],
-  properties: {
-    name: { type: "string" },
-    emoji: { type: "string" },
-    how_to: { type: "string" },
-    cost_aud: { type: "number" },
-    items: { type: "array", items: MEAL_PLAN_ITEM_SCHEMA },
-  },
-};
-const MEAL_PLAN_SCHEMA = (function () {
+// Built when a plan is made, not when the script loads: Apps Script loads
+// Macro.gs before MacrosCore.gs, so MacroCore doesn't exist yet at load time.
+function mealPlanSchema_() {
+  const MEAL_PLAN_ITEM_SCHEMA = {
+    type: "object",
+    additionalProperties: false,
+    required: ["name", "amount_text", "grams", "count", "unit", "kcal", "protein_g", "carbs_g", "fat_g", "aisle", "pantry"],
+    properties: {
+      name: { type: "string" },
+      amount_text: { type: "string" },
+      grams: { type: "number" },
+      count: { type: "number" },
+      unit: { type: "string" },
+      kcal: { type: "number" },
+      protein_g: { type: "number" },
+      carbs_g: { type: "number" },
+      fat_g: { type: "number" },
+      aisle: { type: "string", enum: MacroCore.AISLES },
+      pantry: { type: "boolean" },
+    },
+  };
+  const MEAL_PLAN_MEAL_SCHEMA = {
+    type: "object",
+    additionalProperties: false,
+    required: ["name", "emoji", "how_to", "cost_aud", "items"],
+    properties: {
+      name: { type: "string" },
+      emoji: { type: "string" },
+      how_to: { type: "string" },
+      cost_aud: { type: "number" },
+      items: { type: "array", items: MEAL_PLAN_ITEM_SCHEMA },
+    },
+  };
   const list = { type: "array", items: MEAL_PLAN_MEAL_SCHEMA };
   const slots = {};
   MacroCore.MEAL_SLOTS.forEach((s) => (slots[s] = list));
@@ -1595,7 +1597,7 @@ const MEAL_PLAN_SCHEMA = (function () {
       swaps: { type: "object", additionalProperties: false, required: MacroCore.MEAL_SLOTS, properties: slots },
     },
   };
-})();
+}
 
 const MEAL_PLAN_SYSTEM_PROMPT = [
   "You write simple, healthy weekly meal plans for clients of MaxFit, a personal trainer in Sydney, Australia. Many clients are older, so keep meals simple, familiar and quick, with ingredients from Coles or Woolworths.",
@@ -1719,7 +1721,7 @@ function actionMakeMealPlan_(payload, member) {
         model: TEXT_MODEL,
         max_tokens: 12000,
         system: [{ type: "text", text: MEAL_PLAN_SYSTEM_PROMPT }],
-        output_config: { format: { type: "json_schema", schema: MEAL_PLAN_SCHEMA } },
+        output_config: { format: { type: "json_schema", schema: mealPlanSchema_() } },
         messages: [{ role: "user", content: prompt }],
       }),
       muteHttpExceptions: true,
