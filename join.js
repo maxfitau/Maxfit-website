@@ -17,6 +17,28 @@ const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbya8dm8g5eC4ldA
 const params = new URLSearchParams(window.location.search);
 const referralCode = (params.get("ref") || "").trim();
 
+/*
+ * Where the visitor came from, so the lead email can say so. Three things go
+ * to the backend, which turns them into words (describeLeadSource_ in
+ * Code.gs):
+ *   - ?ref=  a client's Refer a Friend QR code or share link (sent above).
+ *   - ?src=  a tag on a link Max shares himself, e.g. join.html?src=instagram.
+ *   - the site the browser says they clicked from (document.referrer). Empty
+ *     for QR codes, texts and most in-app browsers, which is why tagged links
+ *     are worth using. Only the host is sent, never the full address.
+ */
+function sourceTag() {
+  return (params.get("src") || "").toLowerCase().replace(/[^a-z0-9._-]/g, "").slice(0, 30);
+}
+
+function referrerHost() {
+  try {
+    return document.referrer ? new URL(document.referrer).hostname.toLowerCase().slice(0, 60) : "";
+  } catch (err) {
+    return "";
+  }
+}
+
 const els = {
   referral: document.getElementById("joinReferral"),
   form: document.getElementById("joinForm"),
@@ -84,6 +106,8 @@ els.form.addEventListener("submit", async (event) => {
         email,
         goals,
         referralCode,
+        src: sourceTag(),
+        fromHost: referrerHost(),
         website: els.website.value, // honeypot — real visitors never fill this
       }),
     });

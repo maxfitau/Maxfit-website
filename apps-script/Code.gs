@@ -32,7 +32,7 @@ const GROCERY_SHEET_NAME = "Grocery Items";
 // Changes whenever this file does, and is shown when you open the deployed
 // URL in a browser (see doGet) — the quick way to tell whether a redeploy
 // actually took, instead of guessing from behaviour.
-const BACKEND_VERSION = "2026-10-13a";
+const BACKEND_VERSION = "2026-10-13b";
 
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -961,6 +961,14 @@ function handleSignup_(payload) {
   const email = String(payload.email || "").trim();
   const goals = String(payload.goals || "").trim();
   const referralCode = String(payload.referralCode || "").trim();
+  // join.js also says which tagged link (?src=) and which site the visitor
+  // came from; the wording for Max is worked out below, after the referrer
+  // has been looked up.
+  const cameFrom = {
+    referralCode: referralCode,
+    src: payload.src,
+    fromHost: payload.fromHost,
+  };
 
   if (!name || (!phone && !email)) {
     return jsonResponse_({ status: "error", message: "Missing name and contact details." });
@@ -995,20 +1003,130 @@ function handleSignup_(payload) {
   // ?ref= is a client's card id (the Refer a Friend QR on every client's
   // card). The Lead gets that client's name in Referred By.
   const referrerName = referralCode ? findClientNameBySlug_(referralCode) : "";
+  cameFrom.referrerName = referrerName;
+  const source = describeLeadSource_(cameFrom);
+
+  // A "Source" column on the Leads tab records it for good (the email is
+  // only a notification). It's added the first time it's needed; if that
+  // ever fails the sign-up still goes through, just without the column.
+  let header = leadsHeader;
+  try {
+    header = ensureColumns_(leadsSheet, [LEADS_SOURCE_COLUMN]);
+  } catch (err) {
+    header = leadsHeader;
+  }
+  col.source = findColumn_(header, LEADS_SOURCE_COLUMN);
 
   const today = Utilities.formatDate(new Date(), TIMEZONE, "yyyy-MM-dd");
-  const newRow = new Array(leadsHeader.length).fill("");
+  const newRow = new Array(header.length).fill("");
   if (col.name >= 0) newRow[col.name] = name;
   if (col.phone >= 0) newRow[col.phone] = phone;
   if (col.email >= 0) newRow[col.email] = email;
   if (col.signupDate >= 0) newRow[col.signupDate] = today;
   if (col.referredBy >= 0) newRow[col.referredBy] = referrerName;
   if (col.goals >= 0) newRow[col.goals] = goals;
+  if (col.source >= 0) newRow[col.source] = source.label;
   leadsSheet.appendRow(newRow);
 
-  notifyNewLead_({ name, phone, email, goals, referrerName });
+  notifyNewLead_({ name, phone, email, goals, referrerName, source });
 
   return jsonResponse_({ status: "success", referrerName: referrerName });
+}
+
+// Header of the Leads column that records where each sign-up came from.
+const LEADS_SOURCE_COLUMN = "Source";
+
+// ?src=<tag> on a link Max shares himself (join.html?src=instagram) shows up
+// in the lead email under the name here. A tag that isn't listed still works:
+// it's shown as typed, so no code change is needed to start using a new one.
+const LEAD_SOURCE_TAGS = {
+  instagram: "Instagram",
+  ig: "Instagram",
+  facebook: "Facebook",
+  fb: "Facebook",
+  google: "Google Business Profile",
+  gbp: "Google Business Profile",
+  maps: "Google Maps",
+  flyer: "Flyer",
+  poster: "Poster",
+  businesscard: "Business card",
+  text: "Text message",
+  sms: "Text message",
+  whatsapp: "WhatsApp",
+  email: "Email",
+  tiktok: "TikTok",
+};
+
+/**
+ * Where a sign-up came from, in plain words, for the lead email and the
+ * Leads tab. `info` is { referralCode, referrerName, src, fromHost }:
+ *   - referralCode: ?ref= on the link, i.e. a client's Refer a Friend QR
+ *     code or share link. referrerName is who it belongs to ("" if the code
+ *     doesn't match a client, for example after a client was renamed).
+ *   - src: a ?src= tag on a link Max made himself.
+ *   - fromHost: the site the visitor's browser says they clicked from
+ *     ("" when it says nothing, which is normal for QR codes and texts).
+ *     undefined means an older copy of the sign-up page that doesn't send it.
+ * Returns { label, text }: label is short (the Source cell, the email
+ * subject), text is the full sentence for the email body.
+ *
+ * Everything from the visitor is cut down to letters, digits and . _ - before
+ * it is used, since this endpoint is public and these values go into a sheet
+ * cell and an email.
+ */
+function describeLeadSource_(info) {
+  const clean = function (value, maxLen) {
+    return String(value == null ? "" : value).toLowerCase().replace(/[^a-z0-9._-]/g, "").slice(0, maxLen);
+  };
+  const code = clean(info.referralCode, 40);
+  const tag = clean(info.src, 30);
+  const host = clean(info.fromHost, 60);
+
+  if (code) {
+    if (info.referrerName) {
+      return {
+        label: "QR code (" + info.referrerName + ")",
+        text: "Scanned " + info.referrerName + "'s Refer a Friend QR code (or tapped their share link)",
+      };
+    }
+    return {
+      label: "QR code (client not found)",
+      text: "A Refer a Friend QR code or share link that doesn't match any client (code: " + code + ")",
+    };
+  }
+
+  if (tag) {
+    const named = LEAD_SOURCE_TAGS[tag];
+    if (named) return { label: named, text: named + ' (a link you tagged "' + tag + '")' };
+    return { label: "Tag: " + tag, text: 'A link you tagged "' + tag + '"' };
+  }
+
+  if (host === "maxfit.now" || host === "www.maxfit.now") {
+    return { label: "Website", text: "Filled out the form on the maxfit.now website" };
+  }
+  if (host === "mail.google.com") {
+    return { label: "Gmail", text: "A link in an email (opened from Gmail)" };
+  }
+  if (/(^|\.)instagram\.com$/.test(host)) {
+    return { label: "Instagram", text: "A link on Instagram (not tagged, so it could be your bio or someone's post)" };
+  }
+  if (/(^|\.)facebook\.com$/.test(host)) {
+    return { label: "Facebook", text: "A link on Facebook (not tagged, so it could be a post or a message)" };
+  }
+  if (/(^|\.)google\.[a-z.]+$/.test(host)) {
+    return { label: "Google", text: "Google (search or Maps)" };
+  }
+  if (host) {
+    return { label: "Link on " + host, text: "A link on " + host };
+  }
+
+  if (info.fromHost === undefined) {
+    return { label: "Unknown", text: "Unknown (sent from an older copy of the sign-up page)" };
+  }
+  return {
+    label: "Direct link",
+    text: "Opened the sign-up link directly (typed in, sent in a message, or a QR code that isn't a client's), so the exact source isn't known",
+  };
 }
 
 /**
@@ -1024,19 +1142,23 @@ function handleSignup_(payload) {
 function notifyNewLead_(lead) {
   const NOTIFY_EMAIL = "max.french28@gmail.com";
   try {
+    const source = lead.source || { label: "", text: "" };
     const lines = [
       "New sign-up on maxfit.now:",
       "",
-      "Name: " + lead.name,
     ];
+    if (source.text) lines.push("Came from: " + source.text, "");
+    lines.push("Name: " + lead.name);
     if (lead.phone) lines.push("Phone: " + lead.phone);
     if (lead.email) lines.push("Email: " + lead.email);
     if (lead.referrerName) lines.push("Referred by: " + lead.referrerName);
     if (lead.goals) lines.push("Goals: " + lead.goals);
 
+    // The "New MaxFit lead: <name>" start is unchanged, so anything matching
+    // on it (a Gmail filter, a label) keeps working; the source is added after.
     MailApp.sendEmail({
       to: NOTIFY_EMAIL,
-      subject: "New MaxFit lead: " + lead.name,
+      subject: "New MaxFit lead: " + lead.name + (source.label ? " - " + source.label : ""),
       body: lines.join("\n"),
     });
   } catch (err) {
