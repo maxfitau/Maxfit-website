@@ -50,7 +50,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="styles.css?v=2026092701" />
+<link rel="stylesheet" href="styles.css?v=2026101401" />
 </head>
 <body>
 
@@ -260,23 +260,39 @@ First Aid Certificate
 </div>
 </section>
 
-<!-- Card showcase: Max's pre-made MaxFit Card promo video, sitting right
-     under "meet your coach" as the concrete proof of what working with him
-     looks like day to day. It plays itself, muted and looping, only while
-     it's actually on screen (paused the rest of the time, for battery and
-     data), and scales in as it arrives. It is deliberately silent and has no
-     controls, so nobody can unmute it: the original soundtrack is copyrighted
-     music, and the audio track has been removed from the file itself as well.
-     With no JS it just shows its poster frame. -->
+<!-- Card showcase: real screens from the current MaxFit card (the card
+     home, Fuel, and the weekly recap), shown in phone frames. They are
+     screenshots of the actual card using a made-up member, so no client's
+     details are on the page. The old promo video (assets/videos/
+     card-showcase.mp4) isn't used here any more: it shows the pre-redesign
+     card and the red referral-partner card, which no longer exist. On
+     phones the three screens sit in a swipeable strip. -->
 <section class="section section--tight showcase" id="card-showcase">
 <div class="container">
 <div class="section-head reveal">
 <span class="eyebrow">The MaxFit Card</span>
 <h2>Your whole membership, on your phone</h2>
-<p>Sessions, check-ins, macros, referrals: it's all on the card you already carry.</p>
+<p>Book sessions, check in, track your food and see your progress. It's all on the card you already carry.</p>
 </div>
-<div class="showcase__frame reveal-scale" id="showcaseFrame">
-<video class="showcase__video" id="showcaseVideo" src="assets/videos/card-showcase.mp4" poster="assets/images/card-showcase-poster.jpg" muted loop playsinline preload="metadata" aria-label="MaxFit Card walkthrough, no sound"></video>
+<div class="showcase__phones" id="showcaseFrame">
+<figure class="showcase__item reveal-scale">
+<div class="showcase__phone">
+<img src="assets/images/card-home.jpg" width="780" height="1900" loading="lazy" alt="The MaxFit card on a phone, showing sessions left, a loyalty punch card, last week's training recap, a monthly goal and tiles for check-in and today's workout" />
+</div>
+<figcaption><strong>Your card</strong><span>Sessions left, your workout, booking and check-in, all in one place.</span></figcaption>
+</figure>
+<figure class="showcase__item reveal-scale">
+<div class="showcase__phone">
+<img src="assets/images/card-fuel.jpg" width="780" height="1900" loading="lazy" alt="Fuel on a phone, showing calorie and macro rings, a Scan Food button and the day's meals" />
+</div>
+<figcaption><strong>Fuel</strong><span>Log your food, hit your protein and see your macros at a glance.</span></figcaption>
+</figure>
+<figure class="showcase__item reveal-scale">
+<div class="showcase__phone">
+<img src="assets/images/card-recap.jpg" width="780" height="1900" loading="lazy" alt="A weekly recap on a phone, showing the kilograms lifted last week, a monthly strength goal and where the work went by muscle group" />
+</div>
+<figcaption><strong>Your week</strong><span>See what you lifted, your new personal bests and how your goal is going.</span></figcaption>
+</figure>
 </div>
 </div>
 </section>
@@ -653,7 +669,7 @@ First Aid Certificate
 </div>
 </div>
 
-<!-- Perks: digital membership + referral cards -->
+<!-- Perks: the membership card + referring a friend -->
 <section class="section section--tight perks" id="perks">
 <div class="container">
 <div class="section-head reveal">
@@ -664,48 +680,48 @@ First Aid Certificate
 <div class="perks-grid">
 <div class="perk-card reveal">
 <div class="perk-card__media">
-<img src="assets/images/perk-card-membership.png" alt="MaxFit digital membership card on a phone screen, showing sessions remaining, today's workout, a loyalty punch card, and a check-in QR code" loading="lazy" />
+<img src="assets/images/card-checkin.jpg" width="780" height="1600" alt="The MaxFit membership card on a phone, showing a check-in QR code to scan at the session" loading="lazy" />
 </div>
 <div class="perk-card__content">
-<span class="perk-card__tag">New · On Your Phone</span>
+<span class="perk-card__tag">On Your Phone</span>
 <div class="perk-card__icon" aria-hidden="true">
 <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/></svg>
 </div>
 <h3>Your Membership, Right On Your Home Screen</h3>
 <p>No app to download, no card to forget. Add your MaxFit card to your phone in seconds and everything you need for training day is right there, always live and always up to date.</p>
 <ul class="perk-list">
-<li>Your sessions remaining, at a glance</li>
-<li>Your next class or workout, front and centre</li>
+<li>Your sessions left and today's workout, front and centre</li>
+<li>Book and cancel your own 1-on-1 sessions in a few taps</li>
+<li>Show your code at the session and you're checked in</li>
 <li>A loyalty punch card, with every 10th session on us</li>
-<li>Scan to check in at the front desk, no queue, no fuss</li>
 </ul>
 </div>
 </div>
 
 <div class="perk-card reveal">
 <div class="perk-card__media">
-<img src="assets/images/perk-card-referral.png" alt="MaxFit referral card on a phone screen, showing clients referred and a personal QR code to scan to sign up" loading="lazy" />
+<img src="assets/images/card-refer.jpg" width="780" height="1600" alt="The Refer a Friend screen on a phone, with a QR code a friend scans to sign up, a Share Your Link button and the punches earned from referrals" loading="lazy" />
 </div>
 <div class="perk-card__content">
 <span class="perk-card__tag">Invite &amp; Earn</span>
 <div class="perk-card__icon" aria-hidden="true">
 <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 10.5l6.8-3.9M8.6 13.5l6.8 3.9"/></svg>
 </div>
-<h3>Bring a Friend, Get Rewarded</h3>
-<p>Love training with us? Share the feeling. Grab your own referral card, add it to your home screen, and share your personal QR code with friends, or anyone who could use a great coach.</p>
+<h3>Bring a Friend, Earn Free Sessions</h3>
+<p>Love training with us? Share the feeling. Every client's card has a Refer a Friend button with a personal QR code and share link. Send it to anyone who could use a great coach.</p>
 <ul class="perk-list">
-<li>Friends sign up with your discount already applied</li>
-<li>You earn rewards automatically the more they train</li>
-<li>No admin, no chasing anyone up. It just works</li>
-<li>Open to current clients and friends of the gym alike</li>
+<li>Your friend scans your QR code, or taps your link, to sign up</li>
+<li>They get a free 1-on-1 session to try MaxFit</li>
+<li>Every session they pay for adds a punch to your loyalty card</li>
+<li>No codes to remember and no admin, it's all on your card</li>
 </ul>
 </div>
 </div>
 </div>
 
 <div class="perks-cta reveal">
-<p>Ask about setting up your cards at your next session.</p>
-<a href="join.html" class="btn btn--outline btn--sm">Book a call</a>
+<p>You get your card as soon as you start training with Max.</p>
+<a href="join.html" class="btn btn--outline btn--sm">Book your free session</a>
 </div>
 </div>
 </section>
@@ -1257,7 +1273,6 @@ Or email directly
 <script src="js/animations/problem.js?v=2026092504"></script>
 <script src="js/animations/about.js?v=2026092504"></script>
 <script src="js/animations/why.js?v=2026092504"></script>
-<script src="js/animations/showcase.js?v=2026092504"></script>
 <script src="js/reviews-config.js?v=2026092703"></script>
 <script src="js/reviews.js?v=2026092701"></script>
 </body>
