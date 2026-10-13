@@ -930,8 +930,8 @@ body::before {
   left: 6px;
   width: calc((100% - 12px) / 4);
   border-radius: 999px;
-  background: linear-gradient(180deg, rgba(224, 0, 0, 0.22), rgba(224, 0, 0, 0.09));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 0 0 1px rgba(224, 0, 0, 0.35);
+  /* Flat red-tinted pill (2026-10-13, the Fuel rings redesign). */
+  background: rgba(215, 49, 31, 0.16);
   transform: translateX(calc(var(--lens-index, 0) * 100%));
   transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
   z-index: 0;
@@ -965,8 +965,14 @@ body::before {
   text-decoration: none;
 }
 
+/* Coral, not --red: the brand red is too dark to read as a small label. */
 .bottom-nav__item.is-active {
-  color: var(--red);
+  color: #ff6b57;
+}
+
+.bottom-nav__item:focus-visible {
+  outline: 2px solid var(--white);
+  outline-offset: 2px;
 }
 
 .bottom-nav__icon {

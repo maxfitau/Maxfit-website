@@ -2,8 +2,9 @@
  * MaxFit membership card — FUEL tab (macro tracker, Phase 1).
  *
  * Draws everything inside #panelFuel plus the bottom sheet (#fuelSheet):
- *   home     — today's totals vs targets, SCAN FOOD, favourites/recent
- *              one-tap chips, and today's entries by meal
+ *   home     — the rings header (day switcher, plan button, protein/
+ *              carbs/fat rings, calorie bar), SCAN FOOD + Ask Fuel, the
+ *              four meals, and meal plan/shopping/progress/settings tiles
  *   scan     — Photo (AI), Barcode (Open Food Facts) or Label (AI)
  *   confirm  — editable grams per item, live macros, ADD TO TODAY
  *   edit     — change grams/meal/name, favourite, delete
@@ -52,19 +53,6 @@
     `<path class="flame__layer flame__layer--3" d="${FUEL_FLAME_PATH}"/>` +
     "</svg>";
 
-  // The medal icon on the Fuel tier hero (see heroHtml()) — one shape per
-  // plan, fill="currentColor" so it takes the medal's --X-ink colour.
-  // Diamond's is a cut gem with pale facet lines on top of the fill.
-  const FUEL_TIER_ICONS = {
-    silver: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2 L19 5 V11 C19 16 15.5 20 12 22 C8.5 20 5 16 5 11 V5 Z"/></svg>',
-    gold: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2 L14.5 9 L22 9.5 L16 14.3 L18 21.5 L12 17.5 L6 21.5 L8 14.3 L2 9.5 L9.5 9 Z"/></svg>',
-    diamond:
-      '<svg viewBox="0 0 24 24" aria-hidden="true">' +
-      '<path fill="currentColor" d="M4 9 L12 2 L20 9 L12 22 Z"/>' +
-      '<path fill="none" stroke="rgba(255,255,255,0.45)" stroke-width="1" d="M4 9 L20 9 M12 2 L8.5 9 L12 22 M12 2 L15.5 9 L12 22"/>' +
-      "</svg>",
-  };
-
   const state = {
     loaded: false,
     loading: false,
@@ -76,7 +64,8 @@
     favourites: [],
     meals: [], // saved meals: { id, name, items }
     aiToday: null, // { tier, used, limit, left } from the server
-    toBuy: 0, // shopping list items not yet ticked (mealplan.js tells us)
+    toBuy: null, // shopping list items not yet ticked (week.js and mealplan.js tell us)
+    addMeal: null, // the meal whose + was tapped, until that food is logged
     busy: false,
     confirm: null,
     pendingPhotoMode: null,
@@ -167,7 +156,9 @@
     return state.viewDate === MacroCore.sydneyDate();
   }
 
+  /** The meal a new log goes into: the one whose + was tapped, else by the time of day. */
   function defaultMeal() {
+    if (state.addMeal) return state.addMeal;
     return isToday() ? MacroCore.mealForHour(sydneyHour()) : "snack";
   }
 
@@ -197,10 +188,8 @@
     lock: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
     star: '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l3 6.9 7.5.7-5.7 5 1.7 7.4L12 18l-6.5 4 1.7-7.4-5.7-5 7.5-.7z"/></svg>',
     chat: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
-    list: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>',
-    plan: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3v7a2 2 0 0 0 4 0V3M9 10v11M17 3c-1.7 0-3 2-3 5s1.3 4 3 4v9"/></svg>',
+    calendar: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>',
     cart: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2.5 3.5h2.8l2.4 11.2a1.5 1.5 0 0 0 1.5 1.2h8.4a1.5 1.5 0 0 0 1.5-1.1l1.7-6.8H6.4"/></svg>',
-    chevron: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>',
   };
 
   // ---------------------------------------------------------------------------
@@ -210,6 +199,7 @@
   /** Which panel shows — picked once on load from the URL (see the bottom of this file), no in-page switcher any more. */
   function showTab(name) {
     const fuel = name === "fuel";
+    document.body.classList.toggle("is-fuel", fuel); // full-bleed Fuel layout, see macros.css
     els.panelCard.hidden = fuel;
     els.panelFuel.hidden = !fuel;
     if (fuel && !state.loaded && !state.loading) load(returnedSession ? { sync: true } : undefined);
@@ -268,11 +258,6 @@
     state.aiEnabled = data.aiEnabled !== false;
     state.plan = data.plan || null;
     state.weightTrend = data.weightTrend || null;
-    // Themes the whole Fuel screen, not just the small plan badges — set on
-    // the panel itself (not inside render()'s innerHTML) so it survives every
-    // view's re-render. Every tier gets its own background now, Silver
-    // included (2026-10-02 redesign, see macros.css).
-    els.panelFuel.dataset.tier = tier();
   }
 
   async function load(opts) {
@@ -297,7 +282,8 @@
       return;
     }
     state.loading = true;
-    renderLoading(returnedSession ? "Switching on Fuel AI" : "Loading your day");
+    if (returnedSession) renderLoading("Switching on Fuel AI");
+    else renderSkeleton();
     try {
       if (returnedSession) await confirmStripeReturn();
       const data = await MacroApi.call("me", { date: state.viewDate, sync: !!(opts && opts.sync) });
@@ -344,77 +330,261 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Home view
+  // Home view: the "concentric rings" layout (2026-10-13). A header panel
+  // (day switcher, plan button, protein/carbs/fat rings, calorie bar), then
+  // Scan Food + Ask Fuel, the four meals, and the plan-ahead tiles.
   // ---------------------------------------------------------------------------
 
-  // Calorie ring geometry (r=42, matching the mockup's SVG exactly).
-  const FUEL_RING_R = 42;
-  const FUEL_RING_C = 2 * Math.PI * FUEL_RING_R;
+  // Ring radii in the 180-unit SVG: protein outside, fat inside.
+  const RINGS = [
+    { key: "protein_g", id: "p", r: 82 },
+    { key: "carbs_g", id: "c", r: 66 },
+    { key: "fat_g", id: "f", r: 50 },
+  ];
 
-  function fuelMacroBar(label, eaten, target) {
-    const pct = target > 0 ? Math.min(100, (eaten / target) * 100) : 0;
-    return `
-      <div class="fuel-mbar">
-        <div class="fuel-mbar__head"><span>${label}</span><span>${int(eaten)} / ${int(target)}g</span></div>
-        <div class="fuel-mbar__track"><div class="fuel-mbar__fill" style="width:${pct.toFixed(1)}%"></div></div>
-      </div>`;
+  // What the rings and calorie bar last showed. A re-render (food logged,
+  // day changed) draws them here first, then paintRings() moves them to the
+  // new values so they animate instead of jumping. Starts empty, so the
+  // first paint grows in.
+  const shown = { p: 0, c: 0, f: 0, sp: 0, sc: 0, sf: 0 };
+
+  // Plan button icons, outlines in the plan's own colour (see macros.css).
+  const TIER_OUTLINES = {
+    silver: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.5 L19 5.5 V11 C19 15.8 15.8 19.6 12 21.5 C8.2 19.6 5 15.8 5 11 V5.5 Z"/></svg>',
+    gold: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.8 L14.6 9 L21.2 9.5 L16.2 13.9 L17.8 20.5 L12 16.9 L6.2 20.5 L7.8 13.9 L2.8 9.5 L9.4 9 Z"/></svg>',
+    diamond: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 9 L7.5 4 H16.5 L20.5 9 L12 20.5 Z M3.5 9 H20.5 M9.5 4 L8 9 L12 20.5 L16 9 L14.5 4"/></svg>',
+  };
+
+  /** "Tue 13 Oct" or "Monday", for the day switcher. */
+  function dayText(ymd, opts) {
+    const [y, m, d] = ymd.split("-").map(Number);
+    return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-AU", Object.assign({ timeZone: "UTC" }, opts)).replace(",", "");
+  }
+
+  /** "7:40am" from an entry's created_at ("2026-10-13 07:40:00", or a date the sheet turned it into). */
+  function firstTime(items) {
+    const times = items
+      .map((e) => String(e.created_at || "").match(/(\d{1,2}):(\d{2})/))
+      .filter(Boolean)
+      .map((m) => m[1].padStart(2, "0") + ":" + m[2])
+      .sort();
+    if (!times.length) return "";
+    const h = Number(times[0].slice(0, 2));
+    return `${h % 12 || 12}:${times[0].slice(3)}${h < 12 ? "am" : "pm"}`;
+  }
+
+  function ringsSvg(label) {
+    const circles = RINGS.map((ring) => {
+      const c = 2 * Math.PI * ring.r;
+      return (
+        `<circle class="fx-ring fx-ring--track fx-ring--${ring.id}" cx="90" cy="90" r="${ring.r}"></circle>` +
+        `<circle class="fx-ring fx-ring--bar fx-ring--${ring.id}" data-ring="${ring.id}" cx="90" cy="90" r="${ring.r}" ` +
+        `stroke-dasharray="${c.toFixed(2)}" transform="rotate(-90 90 90)" style="stroke-dashoffset:${(c * (1 - shown[ring.id])).toFixed(2)}"></circle>`
+      );
+    }).join("");
+    return `<svg class="fx-rings__svg" viewBox="0 0 180 180" role="img" aria-label="${esc(label)}">${circles}</svg>`;
   }
 
   /**
-   * The Today card: a calorie ring + three macro bars, tapping it opens the
-   * full log (openLogView). When the member hides calories the ring runs
-   * off protein instead and only carbs/fat get their own bar — protein
-   * already has the ring, and no calorie figure appears anywhere, same rule
-   * the rest of Fuel follows.
+   * MacroHeader: day switcher + plan button, the rings with what's left in
+   * the middle, the legend, and the calorie bar. `skeleton` draws the same
+   * shapes empty while the day loads, so nothing jumps when it arrives.
+   * Hidden calories: the middle shows protein left and there's no calorie
+   * bar, same rule as the rest of Fuel.
    */
-  function todayHtml() {
-    const g = state.targets;
-    if (!g) {
-      return `
-        <button class="fuel-today" type="button" data-act="targets">
-          <span class="card__label">Today</span>
-          <p class="fuel-row__note">Set your daily targets to see your ring and macros here.</p>
-        </button>`;
+  function headerHtml(skeleton) {
+    const g = skeleton ? null : state.targets;
+    const t = state.day && !skeleton ? state.day.totals : MacroCore.sumTotals([]);
+    const today = isToday();
+    const fracs = {};
+    RINGS.forEach((ring) => (fracs[ring.id] = g && g[ring.key] > 0 ? Math.max(0, t[ring.key] / g[ring.key]) : 0));
+    const pct = (f) => Math.round(f * 100);
+
+    let num = "–";
+    let unit = skeleton ? "" : "No targets yet";
+    if (g && hideKcal()) {
+      const left = Math.round(g.protein_g - t.protein_g);
+      num = `${int(Math.abs(left))}g`;
+      unit = left >= 0 ? "Protein left" : "Protein over";
+    } else if (g) {
+      const left = Math.round(g.kcal - t.kcal);
+      num = int(Math.abs(left));
+      unit = left >= 0 ? "Kcal left" : "Kcal over";
     }
-    const t = state.day ? state.day.totals : MacroCore.sumTotals([]);
-    const showKcal = !hideKcal();
-    const ringEaten = showKcal ? t.kcal : t.protein_g;
-    const ringTarget = showKcal ? g.kcal : g.protein_g;
-    const pct = ringTarget > 0 ? Math.min(1, ringEaten / ringTarget) : 0;
-    const offset = (FUEL_RING_C * (1 - pct)).toFixed(1);
-    const bars = showKcal
-      ? [
-          ["Protein", t.protein_g, g.protein_g],
-          ["Carbs", t.carbs_g, g.carbs_g],
-          ["Fat", t.fat_g, g.fat_g],
-        ]
-      : [
-          ["Carbs", t.carbs_g, g.carbs_g],
-          ["Fat", t.fat_g, g.fat_g],
-        ];
+
+    const legend = RINGS.map((ring) => {
+      const label = { p: "Protein", c: "Carbs", f: "Fat" }[ring.id];
+      const eaten = Math.round(t[ring.key]);
+      const over = g ? eaten - Math.round(g[ring.key]) : 0;
+      return `
+        <div class="fx-legend__item fx-legend__item--${ring.id}">
+          <span class="fx-legend__label">${label}${over > 0 ? `<span class="fx-over">+${int(over)}g</span>` : ""}</span>
+          <span class="fx-legend__nums">${skeleton ? "<b>–</b>" : g ? `<b>${int(eaten)}</b> / ${int(g[ring.key])}g` : `<b>${int(eaten)}</b>g`}</span>
+        </div>`;
+    }).join("");
+
+    let below = "";
+    if (g && !hideKcal()) {
+      // Each macro's share of the calorie goal (4/4/9 kcal a gram), squeezed
+      // to fit if they add up past 100%.
+      const raw = { p: (t.protein_g * 4) / g.kcal, c: (t.carbs_g * 4) / g.kcal, f: (t.fat_g * 9) / g.kcal };
+      const sum = raw.p + raw.c + raw.f;
+      const k = sum > 1 ? 1 / sum : 1;
+      const seg = (id) =>
+        `<span class="fx-seg fx-seg--${id}" data-seg="${id}" data-frac="${(raw[id] * k).toFixed(4)}" style="width:${(shown["s" + id] * 100).toFixed(2)}%"></span>`;
+      below = `
+        <div class="fx-kcal">
+          <div class="fx-kcal__row"><span>${int(t.kcal)} / ${int(g.kcal)} kcal</span><span>${pct(g.kcal > 0 ? t.kcal / g.kcal : 0)}%</span></div>
+          <div class="fx-kcal__bar" aria-hidden="true">${seg("p")}${seg("c")}${seg("f")}</div>
+        </div>`;
+    } else if (!g && !skeleton) {
+      below = '<button class="fx-settargets" type="button" data-act="targets">Set my daily targets</button>';
+    } else if (skeleton) {
+      below = '<div class="fx-kcal" aria-hidden="true"><div class="fx-kcal__row"><span class="fx-skel fx-skel--text"></span></div><div class="fx-kcal__bar"></div></div>';
+    }
+
+    const tierBtn = skeleton
+      ? '<span class="fx-tier fx-tier--skel" aria-hidden="true"></span>'
+      : state.aiEnabled
+      ? `<button class="fx-tier fx-tier--${tier()}" type="button" data-act="plans" aria-label="${TIER_NAMES[tier()]} membership">${TIER_OUTLINES[tier()]}</button>`
+      : "";
+
     return `
-      <button class="fuel-today" type="button" data-act="today">
-        <span class="card__label">Today</span>
-        <div class="fuel-today__body">
-          <div class="fuel-ring">
-            <svg viewBox="0 0 100 100">
-              <defs>
-                <linearGradient id="fuelRingGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stop-color="var(--fuel-ring-a)"></stop>
-                  <stop offset="100%" stop-color="var(--fuel-ring-b)"></stop>
-                </linearGradient>
-              </defs>
-              <circle cx="50" cy="50" r="${FUEL_RING_R}" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="9"></circle>
-              <circle cx="50" cy="50" r="${FUEL_RING_R}" fill="none" stroke="url(#fuelRingGrad)" stroke-width="9" stroke-linecap="round" stroke-dasharray="${FUEL_RING_C.toFixed(1)}" stroke-dashoffset="${offset}"></circle>
-            </svg>
-            <div class="fuel-ring__label">
-              <span class="fuel-ring__num">${int(ringEaten)}</span>
-              <span class="fuel-ring__unit">of ${int(ringTarget)}${showKcal ? "" : "g"}</span>
+      <section class="fx-head" aria-label="Today's macros">
+        <div class="fx-head__top">
+          <div class="fx-day">
+            <button class="fx-day__btn" type="button" data-act="day-prev" aria-label="Previous day"${skeleton ? " disabled" : ""}>${ICONS.left}</button>
+            <div class="fx-day__text">
+              <h1 class="fx-day__name">${today ? "Today" : esc(dayText(state.viewDate, { weekday: "long" }))}</h1>
+              <span class="fx-day__date">${esc(dayText(state.viewDate, { weekday: "short", day: "numeric", month: "short" }))}</span>
+            </div>
+            <button class="fx-day__btn" type="button" data-act="day-next" aria-label="Next day"${today || skeleton ? " disabled" : ""}>${ICONS.right}</button>
+          </div>
+          ${tierBtn}
+        </div>
+        <div class="fx-rings-row">
+          <div class="fx-rings" data-fracs="${fracs.p.toFixed(4)},${fracs.c.toFixed(4)},${fracs.f.toFixed(4)}">
+            ${ringsSvg(skeleton ? "Loading your macros" : `Protein ${pct(fracs.p)}%, carbs ${pct(fracs.c)}%, fat ${pct(fracs.f)}% of goal`)}
+            <div class="fx-rings__centre">
+              <span class="fx-rings__num${num.length >= 5 ? " fx-rings__num--long" : ""}">${num}</span>
+              ${unit ? `<span class="fx-rings__unit">${unit}</span>` : ""}
             </div>
           </div>
-          <div class="fuel-mbars">${bars.map(([label, eaten, target]) => fuelMacroBar(label, eaten, target)).join("")}</div>
+          <div class="fx-legend">${legend}</div>
         </div>
+        ${below}
+      </section>`;
+  }
+
+  /** Moves the rings and calorie bar from where they were drawn to their real values (CSS animates it). */
+  function paintRings() {
+    const box = els.panelFuel.querySelector("[data-fracs]");
+    if (!box) return;
+    const fr = box.dataset.fracs.split(",").map(Number);
+    box.getBoundingClientRect(); // commit the starting point first, or there's nothing to animate from
+    els.panelFuel.querySelectorAll("[data-ring]").forEach((el, i) => {
+      const f = Math.min(1, fr[i] || 0);
+      el.style.strokeDashoffset = (2 * Math.PI * RINGS[i].r * (1 - f)).toFixed(2);
+      shown[el.dataset.ring] = f;
+    });
+    els.panelFuel.querySelectorAll("[data-seg]").forEach((el) => {
+      const f = Math.min(1, Number(el.dataset.frac) || 0);
+      el.style.width = (f * 100).toFixed(2) + "%";
+      shown["s" + el.dataset.seg] = f;
+    });
+  }
+
+  /** ActionsRow: Scan Food, Ask Fuel, and today's AI scans left. */
+  function actionsHtml(skeleton) {
+    const ai = state.aiEnabled;
+    const usedUp = !skeleton && aiUsedUp();
+    let caption = "";
+    if (skeleton) caption = "&nbsp;";
+    else if (ai && !fuelAi()) caption = "Barcode and search are free · AI scans come with Gold";
+    else if (usedUp) caption = "Out of AI scans · resets at midnight";
+    else if (ai && state.aiToday && state.aiToday.limit) caption = `${state.aiToday.left} of ${state.aiToday.limit} AI scans left today`;
+    // Out of AI scans still opens the chooser: barcode and search are free.
+    return `
+      <div class="fx-actions">
+        <button class="fx-scan${usedUp ? " is-out" : ""}" type="button" data-act="scan"${skeleton ? " disabled" : ""}>${ICONS.camera}<span>Scan Food</span></button>
+        ${ai || skeleton ? `<button class="fx-ask" type="button" data-act="ask" aria-label="Ask Fuel, your AI nutrition copilot"${skeleton ? " disabled" : ""}>${ICONS.chat}</button>` : ""}
+      </div>
+      ${caption ? `<p class="fx-caption">${caption}</p>` : ""}`;
+  }
+
+  /** MealList: Breakfast, Lunch, Dinner, Snacks. Logged ones open their foods; empty ones get a + to add straight into that meal. */
+  function mealListHtml(skeleton) {
+    const entries = state.day && !skeleton ? state.day.entries : [];
+    const rows = MacroCore.MEALS.map((meal) => {
+      const name = MEAL_LABELS[meal];
+      if (skeleton) {
+        return '<div class="fx-meal" aria-hidden="true"><span class="fx-skel fx-skel--name"></span><span class="fx-skel fx-skel--btn"></span></div>';
+      }
+      const items = entries.filter((e) => e.meal === meal);
+      if (!items.length) {
+        return `
+          <div class="fx-meal">
+            <span class="fx-meal__name fx-meal__name--empty">${name}</span>
+            <button class="fx-add" type="button" data-act="meal-add" data-meal="${meal}" aria-label="Add ${name}">${ICONS.plus}</button>
+          </div>`;
+      }
+      const sum = MacroCore.sumTotals(items);
+      const time = firstTime(items);
+      return `
+        <button class="fx-meal" type="button" data-act="meal-open" data-meal="${meal}">
+          <span class="fx-meal__main">
+            <span class="fx-meal__name">${name}${time ? `<span class="fx-meal__time"> · ${time}</span>` : ""}</span>
+            <span class="fx-chips">
+              <span class="fx-chip fx-chip--p">P ${int(sum.protein_g)}g</span>
+              <span class="fx-chip fx-chip--c">C ${int(sum.carbs_g)}g</span>
+              <span class="fx-chip fx-chip--f">F ${int(sum.fat_g)}g</span>
+            </span>
+          </span>
+          ${hideKcal() ? "" : `<span class="fx-meal__kcal">${int(sum.kcal)}<small>kcal</small></span>`}
+        </button>`;
+    }).join("");
+    return `<section class="fx-meals" aria-label="Meals"><h2 class="fx-h2">Meals</h2>${rows}</section>`;
+  }
+
+  function tileHtml(act, tone, icon, title, sub) {
+    return `
+      <button class="fx-tile fx-tile--${tone}" type="button" data-act="${act}">
+        <span class="fx-tile__icon">${icon}</span>
+        <span class="fx-tile__text">
+          <span class="fx-tile__title">${title}</span>
+          <span class="fx-tile__sub">${esc(sub)}</span>
+        </span>
       </button>`;
+  }
+
+  /**
+   * PlanAhead: meal plan (Diamond) and shopping list (Gold and Diamond),
+   * then Progress and Settings, which used to live in Today's Log. Locked
+   * tiles name the plan they come with and open the plans sheet. The
+   * screens are card/mealplan.js.
+   */
+  function planAheadHtml() {
+    let html = "";
+    if (state.aiEnabled && typeof MealPlan !== "undefined") {
+      const t = tier();
+      const planOn = fuelAi() && t === "diamond";
+      const listOn = fuelAi() && MacroCore.tierRank(t) >= MacroCore.tierRank("gold");
+      const n = state.toBuy;
+      const listSub = !listOn ? "Gold plan" : n == null ? "Your list" : n ? `${n} item${n === 1 ? "" : "s"}` : "Empty";
+      html += `
+        <section class="fx-tiles" aria-label="Plan ahead">
+          ${tileHtml("mealplan", "plan", ICONS.calendar, "Meal plan", planOn ? "Plan my week" : "Diamond plan")}
+          ${tileHtml("shopping", "list", ICONS.cart, "Shopping", listSub)}
+        </section>`;
+    }
+    const w = state.weightTrend;
+    const weight = w && w.kg ? `${kgText(w.kg)} kg${w.change7 != null && Math.abs(w.change7) >= 0.1 ? ` · ${w.change7 < 0 ? "↓" : "↑"}${kgText(Math.abs(w.change7))}` : ""}` : "Weight & streaks";
+    html += `
+      <nav class="fx-tiles" aria-label="More">
+        ${tileHtml("progress", "progress", ICONS.chart, "Progress", weight)}
+        ${tileHtml("settings", "settings", ICONS.gear, "Settings", "Targets & favourites")}
+      </nav>`;
+    return html;
   }
 
   /**
@@ -440,186 +610,6 @@
     return MacroCore.sumTotals(meal.items.map((it) => MacroCore.scale(it.per100, it.grams)));
   }
 
-  /**
-   * The 2 quick-log tiles on the main screen (replaces the old, unbounded
-   * "tap to log again" chip row — same priority order: saved meals first,
-   * then favourites, then recents, just capped at 2 so the screen stays
-   * tight). The full set is still reachable from Favourites (openFavourites)
-   * and from a saved meal's own chip there, unaffected by this cap.
-   */
-  function quickTilesHtml() {
-    const favs = state.favourites || [];
-    const meals = state.meals || [];
-    const recents = (state.recent || []).filter(
-      (r) => !favs.some((f) => f.name.toLowerCase() === String(r.name).toLowerCase())
-    );
-    const tiles = [];
-    meals.forEach((m, i) => {
-      const t = mealTotals(m);
-      tiles.push({ act: "meal", i, name: m.name, meta: `${m.items.length} food${m.items.length === 1 ? "" : "s"} · +${int(t.protein_g)}g protein` });
-    });
-    favs.forEach((f, i) => {
-      const m = MacroCore.scale(f.per100, f.grams);
-      tiles.push({ act: "quick", kind: "fav", i, name: `${f.name}, ${amountText(f)}`, meta: `+${int(m.protein_g)}g protein` });
-    });
-    recents.forEach((r) => {
-      const m = MacroCore.scale(r.per100, r.grams);
-      tiles.push({ act: "quick", kind: "recent", i: state.recent.indexOf(r), name: `${r.name}, ${amountText(r)}`, meta: `+${int(m.protein_g)}g protein` });
-    });
-    if (!tiles.length) return "";
-    return `
-      <div class="fuel-quicklog">
-        ${tiles
-          .slice(0, 2)
-          .map(
-            (t) => `
-          <button class="fuel-quicklog__tile" type="button" data-act="${t.act}" data-kind="${t.kind || ""}" data-i="${t.i}">
-            <span class="fuel-quicklog__swatch">${ICONS.bowl}</span>
-            <span class="fuel-quicklog__name">${esc(t.name)}</span>
-            <span class="fuel-quicklog__meta">${esc(t.meta)}</span>
-          </button>`
-          )
-          .join("")}
-      </div>`;
-  }
-
-  function entriesHtml() {
-    const entries = state.day ? state.day.entries : [];
-    if (!entries.length) {
-      return `<div class="fuel-panel"><p class="fuel-empty">Nothing logged ${esc(dayLabel(state.viewDate).toLowerCase())} yet.</p></div>`;
-    }
-    const groups = MacroCore.MEALS.map((meal) => ({ meal, items: entries.filter((e) => e.meal === meal) })).filter(
-      (g) => g.items.length
-    );
-    return `
-      <div class="fuel-panel">
-        ${groups
-          .map((g) => {
-            const sum = MacroCore.sumTotals(g.items);
-            return `
-            <div class="fuel-meal">
-              <div class="fuel-meal__head">
-                <span class="card__label card__label--red">${MEAL_LABELS[g.meal]}</span>
-                <span class="fuel-meal__sum">${int(sum.protein_g)}P${hideKcal() ? "" : ` · ${int(sum.kcal)} kcal`}</span>
-              </div>
-              ${g.items
-                .map(
-                  (e) => `
-                <button class="fuel-entry" type="button" data-act="edit" data-id="${esc(e.id)}">
-                  <span>
-                    <span class="fuel-entry__name">${esc(e.name)}</span>
-                    <span class="fuel-entry__meta">${amountText(e)} · ${int(e.carbs_g)}C · ${int(e.fat_g)}F${hideKcal() ? "" : ` · ${int(e.kcal)} kcal`}</span>
-                  </span>
-                  <span class="fuel-entry__p">${int(e.protein_g)}<small>P</small></span>
-                </button>`
-                )
-                .join("")}
-            </div>`;
-          })
-          .join("")}
-      </div>`;
-  }
-
-  /**
-   * The "your plan" moment at the top of Fuel: a medal in the tier's own
-   * metal (same --X-metal/--X-ink tokens as its small badge elsewhere) and
-   * the tier name itself set in that metal as a gradient headline, not just
-   * a tint on the panel behind it. Diamond reuses the badge's own twinkle
-   * glints (fuel-twinkle, macros.css) rather than inventing a second sparkle.
-   */
-  function heroHtml() {
-    const t = tier();
-    const sparkles =
-      t === "diamond"
-        ? '<span class="fuel-hero__spark" style="top:2px;right:26%">✦</span>' +
-          '<span class="fuel-hero__spark" style="bottom:10px;left:24%;font-size:9px;animation-delay:1.3s">✦</span>'
-        : "";
-    return `
-      <div class="fuel-hero fuel-hero--${t}">
-        ${sparkles}
-        <div class="fuel-hero__medal">${FUEL_TIER_ICONS[t]}</div>
-        <span class="fuel-hero__eyebrow">Your Plan</span>
-        <span class="fuel-hero__name">${TIER_NAMES[t]}</span>
-      </div>`;
-  }
-
-  /** Compact "AI scans today" row — hidden entirely for Silver/no AI (spec: hide rather than nudge inline). */
-  function fuelAiCompactHtml() {
-    if (!fuelAi()) return "";
-    const a = state.aiToday || { used: 0, limit: 0, left: 0 };
-    const countText = `${a.left} of ${a.limit}`;
-    const pct = a.limit ? Math.min(100, Math.round((a.used / a.limit) * 100)) : 0;
-    return `
-      <div class="fuel-ai-compact">
-        <div class="fuel-ai-compact__head">
-          <span class="card__label">AI scans today</span>
-          <span class="fuel-ai-compact__count">${esc(countText)}</span>
-        </div>
-        <div class="fuel-ai-compact__track" role="progressbar" aria-valuemin="0" aria-valuemax="${a.limit}" aria-valuenow="${a.used}" aria-label="AI scans today">
-          <div class="fuel-ai-compact__fill" style="width:${pct}%"></div>
-        </div>
-      </div>`;
-  }
-
-  /** "Today's Log" row — opens the full list (openLogView), same visual row style as Ask Fuel. */
-  function logRowHtml() {
-    const entries = state.day ? state.day.entries : [];
-    const groups = MacroCore.MEALS.filter((meal) => entries.some((e) => e.meal === meal));
-    const sum = MacroCore.sumTotals(entries);
-    const hint = entries.length
-      ? `${groups.length} meal${groups.length === 1 ? "" : "s"}${hideKcal() ? "" : ` · ${int(sum.kcal)} kcal`}`
-      : `Nothing logged ${esc(dayLabel(state.viewDate).toLowerCase())} yet`;
-    return `
-      <button class="fuel-link-row" type="button" data-act="today-log">
-        <span class="fuel-link-row__icon">${ICONS.list}</span>
-        <span class="fuel-link-row__text">
-          <span class="fuel-link-row__title">Today's Log</span>
-          <span class="fuel-link-row__hint">${hint}</span>
-        </span>
-        <span class="fuel-link-row__chevron">${ICONS.chevron}</span>
-      </button>`;
-  }
-
-  /** Ask Fuel row — same .fuel-link-row style as logRowHtml, per spec. */
-  function askRowHtml() {
-    if (!state.aiEnabled) return "";
-    const on = askFuelOn();
-    return `
-      <button class="fuel-link-row" type="button" data-act="ask">
-        <span class="fuel-link-row__icon">${ICONS.chat}</span>
-        <span class="fuel-link-row__text">
-          <span class="fuel-link-row__title">Ask Fuel</span>
-          <span class="fuel-link-row__hint">${on ? "Your AI nutrition copilot" : "Unlocks on Diamond"}</span>
-        </span>
-        ${on ? `<span class="fuel-link-row__chevron">${ICONS.chevron}</span>` : '<span class="fuel-link-row__tag">Diamond</span>'}
-      </button>`;
-  }
-
-  /**
-   * Meal plan (Diamond) and shopping list (Gold and Diamond) rows, under Ask
-   * Fuel (2026-10-13). Locked rows show the plan they come with and open
-   * the plans sheet, like Ask Fuel. The screens are card/mealplan.js.
-   */
-  function mealRowsHtml() {
-    if (!state.aiEnabled || typeof MealPlan === "undefined") return "";
-    const t = tier();
-    const planOn = fuelAi() && t === "diamond";
-    const listOn = fuelAi() && MacroCore.tierRank(t) >= MacroCore.tierRank("gold");
-    const row = (act, icon, title, hint, tag) => `
-      <button class="fuel-link-row" type="button" data-act="${act}">
-        <span class="fuel-link-row__icon">${icon}</span>
-        <span class="fuel-link-row__text">
-          <span class="fuel-link-row__title">${title}</span>
-          <span class="fuel-link-row__hint">${esc(hint)}</span>
-        </span>
-        ${tag ? `<span class="fuel-link-row__tag">${tag}</span>` : `<span class="fuel-link-row__chevron">${ICONS.chevron}</span>`}
-      </button>`;
-    return (
-      row("mealplan", ICONS.plan, "Meal plan", planOn ? "Plan my week" : "Unlocks on Diamond", planOn ? "" : "Diamond") +
-      row("shopping", ICONS.cart, "Shopping list", listOn ? (state.toBuy ? `${state.toBuy} to buy` : "Add what you need") : "Unlocks on Gold", listOn ? "" : "Gold")
-    );
-  }
-
   /** What mealplan.js needs from Fuel: hidden calories, logging, the plans sheet and the list count. */
   function mealPlanCtx() {
     return {
@@ -634,84 +624,94 @@
     };
   }
 
-  /**
-   * Today's Log full view (step-1 stand-in: the existing bottom sheet, not
-   * yet the dedicated full-screen slide-in step 3 will build) — date nav,
-   * progress/settings icons (moved off the main screen), the grouped entry
-   * list, weight trend and the AI upsell detail, manual add, and the
-   * targets footnote. Nothing from the old main screen is lost, just moved.
-   */
-  function logViewHtml() {
-    const today = isToday();
-    return `
-      <h2 class="fuel-sheet__title" id="fuelSheetTitle">Today's Log</h2>
-      <div class="fuel__head">
-        <div class="fuel__date">
-          <button class="fuel__day-btn" type="button" data-act="day-prev" aria-label="Previous day">${ICONS.left}</button>
-          <span class="fuel__day-label">${esc(dayLabel(state.viewDate))}</span>
-          <button class="fuel__day-btn" type="button" data-act="day-next" aria-label="Next day" ${today ? "disabled" : ""}>${ICONS.right}</button>
-        </div>
-        <span class="fuel__head-btns">
-          <button class="fuel__icon-btn" type="button" data-act="progress" aria-label="Your progress">${ICONS.chart}</button>
-          <button class="fuel__icon-btn" type="button" data-act="settings" aria-label="Fuel settings">${ICONS.gear}</button>
-        </span>
-      </div>
-      ${entriesHtml()}
-      ${trendHtml()}
-      ${aiMeterHtml()}
-      <button class="fuel-btn fuel-btn--ghost" type="button" data-act="log-scan">+ Add food</button>
-      ${
-        state.targets
-          ? `<p class="fuel-footnote">${state.targets.set_by === "coach" ? "Targets set by Max" : "Targets from your calculator"} · <button class="fuel-link" type="button" data-act="log-targets">${state.targets.set_by === "coach" ? "View" : "Edit"}</button></p>`
-          : ""
-      }`;
-  }
-
-  function wireLogView(body) {
-    body.addEventListener("click", async (e) => {
-      const btn = e.target.closest("[data-act]");
-      if (!btn) return;
-      const act = btn.dataset.act;
-      if (act === "day-prev" || act === "day-next") {
-        await changeDay(act === "day-prev" ? -1 : 1);
-        body.innerHTML = logViewHtml();
-      } else if (act === "progress") openProgress();
-      else if (act === "settings") openSettings();
-      else if (act === "log-scan") {
-        closeSheet();
-        openScanChooser();
-      } else if (act === "log-targets") openTargets();
-      else if (act === "edit") {
-        const entry = state.day.entries.find((x) => x.id === btn.dataset.id);
-        if (entry) openEdit(entry);
+  /** One meal's foods (tap a logged meal row): each opens the editor, plus "Add to" that meal. */
+  function openMealView(meal) {
+    const items = (state.day ? state.day.entries : []).filter((e) => e.meal === meal);
+    if (!items.length) {
+      addToMeal(meal);
+      return;
+    }
+    const sum = MacroCore.sumTotals(items);
+    openSheet(
+      `<h2 class="fuel-sheet__title" id="fuelSheetTitle">${MEAL_LABELS[meal]}</h2>
+       <p class="fuel-sheet__sub">${esc(dayLabel(state.viewDate))} · ${macroLine(sum)}</p>
+       <div class="fuel-panel">
+         ${items
+           .map(
+             (e) => `
+           <button class="fuel-entry" type="button" data-id="${esc(e.id)}">
+             <span>
+               <span class="fuel-entry__name">${esc(e.name)}</span>
+               <span class="fuel-entry__meta">${amountText(e)} · ${int(e.carbs_g)}C · ${int(e.fat_g)}F${hideKcal() ? "" : ` · ${int(e.kcal)} kcal`}</span>
+             </span>
+             <span class="fuel-entry__p">${int(e.protein_g)}<small>P</small></span>
+           </button>`
+           )
+           .join("")}
+       </div>
+       <button class="fuel-btn" type="button" data-add>+ Add to ${MEAL_LABELS[meal]}</button>`,
+      (body) => {
+        body.addEventListener("click", (e) => {
+          const row = e.target.closest("[data-id]");
+          if (row) {
+            const entry = state.day.entries.find((x) => x.id === row.dataset.id);
+            if (entry) openEdit(entry);
+          } else if (e.target.closest("[data-add]")) addToMeal(meal);
+        });
       }
-    });
+    );
   }
 
-  function openLogView() {
-    openSheet(logViewHtml(), wireLogView);
+  /** "+" on a meal: the usual Add food chooser, with that meal already picked on the confirm screen. */
+  function addToMeal(meal) {
+    state.addMeal = meal;
+    openScanChooser();
   }
 
   function render() {
     if (!state.loaded) return;
     els.panelFuel.innerHTML = `
-      ${heroHtml()}
-      ${todayHtml()}
-      ${fuelAiCompactHtml()}
-      <button class="fuel-scan" type="button" data-act="scan">${ICONS.camera} Scan Food</button>
-      ${quickTilesHtml()}
-      ${logRowHtml()}
-      ${askRowHtml()}
-      ${mealRowsHtml()}`;
+      <div class="fx">
+        ${headerHtml(false)}
+        <div class="fx-body">
+          ${actionsHtml(false)}
+          ${mealListHtml(false)}
+          ${planAheadHtml()}
+        </div>
+      </div>`;
+    paintRings();
   }
+
+  /** The same layout, empty, while the day loads. */
+  function renderSkeleton() {
+    els.panelFuel.innerHTML = `
+      <div class="fx" aria-busy="true">
+        ${headerHtml(true)}
+        <div class="fx-body">
+          ${actionsHtml(true)}
+          ${mealListHtml(true)}
+        </div>
+      </div>`;
+  }
+
+  // The shopping list count comes with the card's weekly tiles (week.js
+  // already asks the server for it on every load), so Fuel doesn't ask twice.
+  document.addEventListener("maxfit:tobuy", (e) => {
+    state.toBuy = Number(e.detail) || 0;
+    if (state.loaded) render();
+  });
 
   els.panelFuel.addEventListener("click", (e) => {
     const btn = e.target.closest("[data-act]");
     if (!btn) return;
     const act = btn.dataset.act;
     if (act === "retry") load();
-    else if (act === "today" || act === "today-log") openLogView();
-    else if (act === "scan") openScanChooser();
+    else if (act === "day-prev" || act === "day-next") changeDay(act === "day-prev" ? -1 : 1);
+    else if (act === "scan") {
+      state.addMeal = null;
+      openScanChooser();
+    } else if (act === "meal-add") addToMeal(btn.dataset.meal);
+    else if (act === "meal-open") openMealView(btn.dataset.meal);
     else if (act === "ask") openChat();
     else if (act === "mealplan") {
       if (fuelAi() && tier() === "diamond") MealPlan.open(mealPlanCtx());
@@ -721,25 +721,9 @@
       else openUpsell({ reason: "list" });
     }
     else if (act === "progress") openProgress();
-    else if (act === "more-ideas") {
-      state.moreIdeas = !state.moreIdeas;
-      render();
-    } else if (act === "log-idea") logIdea(btn);
     else if (act === "settings") openSettings();
     else if (act === "targets") openTargets();
-    else if (act === "favs") openFavourites();
     else if (act === "plans") openUpsell();
-    else if (act === "meal") {
-      const meal = state.meals[Number(btn.dataset.i)];
-      if (meal) openSavedMeal(meal);
-    } else if (act === "edit") {
-      const entry = state.day.entries.find((x) => x.id === btn.dataset.id);
-      if (entry) openEdit(entry);
-    } else if (act === "quick") {
-      const list = btn.dataset.kind === "fav" ? state.favourites : state.recent;
-      const item = list[Number(btn.dataset.i)];
-      if (item) quickLog(item);
-    }
   });
 
   // ---------------------------------------------------------------------------
@@ -871,23 +855,10 @@
       items: items.map(payloadItem),
     });
     state.day = data.day;
+    state.addMeal = null;
     if (data.recent) state.recent = data.recent;
     render();
     return data.day.entries.filter((x) => !before.has(x.id)).map((x) => x.id);
-  }
-
-  async function quickLog(item) {
-    if (state.busy) return;
-    state.busy = true;
-    const meal = defaultMeal();
-    try {
-      const ids = await addItems([item], meal);
-      toast(`Added to ${MEAL_SHORT[meal]}`, () => undoAdd(ids));
-    } catch (err) {
-      toast(err.message);
-    } finally {
-      state.busy = false;
-    }
   }
 
   async function undoAdd(ids) {
@@ -1012,40 +983,6 @@
     const a = state.aiToday;
     if (!a || !a.limit) return "";
     return a.left > 0 ? `${a.left} of ${a.limit} AI uses left today` : `All ${a.limit} AI uses used today · back at midnight`;
-  }
-
-  /** The meter under Add food: how much AI is left today, and the way up. */
-  function aiMeterHtml() {
-    if (!state.aiEnabled || !state.plan) return "";
-    if (!fuelAi()) {
-      return `
-        <div class="fuel-panel fuel-meter">
-          <div class="fuel-meter__head">
-            <span class="card__label">AI today</span>
-            <span class="fuel-tier fuel-tier--silver">Silver</span>
-          </div>
-          <p class="fuel-meter__text">Photo scans and Describe it come with Gold. Ask Fuel comes with Diamond.</p>
-          <button class="fuel-link" type="button" data-act="plans">See plans</button>
-        </div>`;
-    }
-    const a = state.aiToday || { used: 0, limit: 0, left: 0 };
-    const pct = a.limit ? Math.min(100, Math.round((a.used / a.limit) * 100)) : 0;
-    const t = tier();
-    const bar = `<div class="fuel-meter__bar" role="progressbar" aria-valuemin="0" aria-valuemax="${a.limit}" aria-valuenow="${a.used}" aria-label="AI uses today">
-          <span style="width:${pct}%"></span>
-        </div>`;
-    return `
-      <div class="fuel-panel fuel-meter fuel-meter--${t}">
-        <div class="fuel-meter__head">
-          <span class="card__label">AI today</span>
-          <span class="fuel-tier fuel-tier--${t}">${TIER_NAMES[t]}${state.plan.kind === "trial" ? " trial" : ""}</span>
-        </div>
-        ${bar}
-        <div class="fuel-meter__foot">
-          <span class="fuel-meter__text">${esc(aiLeftText())}</span>
-          ${t !== "diamond" ? '<button class="fuel-link" type="button" data-act="plans">Get more</button>' : ""}
-        </div>
-      </div>`;
   }
 
   /** "23 Oct", or "23 Oct 2027" when it isn't this year (yearly plans). */
@@ -2257,20 +2194,6 @@
 
   function kgText(kg) {
     return (Math.round(kg * 10) / 10).toFixed(1);
-  }
-
-  /** "74.2 kg · ↓0.4 kg this week" under the totals, once there are weigh-ins. */
-  function trendHtml() {
-    const t = state.weightTrend;
-    if (!t || !isToday()) return "";
-    let change = "";
-    if (t.change7 != null && Math.abs(t.change7) >= 0.1) change = ` · ${t.change7 < 0 ? "↓" : "↑"}${kgText(Math.abs(t.change7))} kg this week`;
-    else if (t.change7 != null) change = " · steady this week";
-    return `<button class="fuel-trend" type="button" data-act="progress">
-      <span class="card__label">Weight trend</span>
-      <span class="fuel-trend__val">${kgText(t.kg)} kg${esc(change)}</span>
-      ${ICONS.right}
-    </button>`;
   }
 
   /** Nice round y-axis ticks between lo and hi. */

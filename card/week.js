@@ -129,7 +129,13 @@ const WeekCard = (function () {
     goal = data.goal || null;
     fuel = data.fuel || null;
     toBuy = Number(data.shoppingToBuy) || 0;
+    shareToBuy();
     if (data.today) today = data.today;
+  }
+
+  /** Fuel's Shopping tile (macros.js) shows the same count, so it doesn't ask the server again. */
+  function shareToBuy() {
+    document.dispatchEvent(new CustomEvent("maxfit:tobuy", { detail: toBuy }));
   }
 
   function progressData() {
@@ -587,6 +593,7 @@ const WeekCard = (function () {
           MealPlan.openList({
             onChange: (n) => {
               toBuy = n;
+              shareToBuy();
               paint();
             },
           });
