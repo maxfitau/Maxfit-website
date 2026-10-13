@@ -1412,22 +1412,24 @@ function muscleHeatColor_(t) {
 /**
  * Colours every `[data-muscle]` shape by how much it's been trained,
  * grey-to-red, instead of paintMuscleFigure's binary primary/secondary —
- * for the Muscle Heatmap (workout/heatmap.js), not an exercise's own
- * figure. `weighted` is `{ key: weightedSetCount }`; `cap` is the count
- * that reads as fully red (so a heavy but not extreme day doesn't look
- * identical to a maximal one) — defaults to 10.
+ * for the heatmaps (Muscles tab Today, the builder's panel, a workout's
+ * panel), not an exercise's own figure. `weighted` is `{ key: sets }`.
+ * Relative, not a fixed number of sets (2026-10-13, Max): the most-worked
+ * muscle in view is fully red and the rest are shaded against it, with a
+ * floor so a muscle hit only lightly still shows clearly red.
  */
-function paintMuscleHeat(svgRoot, weighted, cap) {
+function paintMuscleHeat(svgRoot, weighted) {
   if (!svgRoot) return;
-  const capVal = cap || 10;
-  svgRoot.querySelectorAll("[data-muscle]").forEach((g) => {
-    // A shape's heat is whatever was logged against its OWN fine key (e.g.
-    // "chest-upper") plus whatever was logged against its broad group (e.g.
-    // "chest", from an exercise whose data never got the v2 upgrade) — the
-    // broad hit applies to every sub-region of that muscle, same as it
-    // would've painted the whole muscle before v2 existed.
-    const w = ((weighted && weighted[g.getAttribute("data-muscle")]) || 0) + ((weighted && weighted[g.getAttribute("data-group")]) || 0);
-    g.setAttribute("fill", muscleHeatColor_(w / capVal));
+  const shapes = Array.from(svgRoot.querySelectorAll("[data-muscle]"));
+  // A shape's heat is whatever was logged against its OWN fine key (e.g.
+  // "chest-upper") plus whatever was logged against its broad group (e.g.
+  // "chest", from an exercise whose data never got the v2 upgrade) — the
+  // broad hit applies to every sub-region of that muscle, same as it
+  // would've painted the whole muscle before v2 existed.
+  const values = shapes.map((g) => ((weighted && weighted[g.getAttribute("data-muscle")]) || 0) + ((weighted && weighted[g.getAttribute("data-group")]) || 0));
+  const max = Math.max(0, ...values);
+  shapes.forEach((g, i) => {
+    g.setAttribute("fill", values[i] > 0 && max > 0 ? muscleHeatColor_(0.35 + 0.65 * (values[i] / max)) : MUSCLE_UNUSED_COLOR);
   });
   const title = svgRoot.querySelector("title");
   if (title) title.textContent = svgRoot.dataset.view === "back" ? "Back view" : "Front view";

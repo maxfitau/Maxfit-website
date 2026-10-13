@@ -271,9 +271,10 @@ function libHeatTree_(merged) {
  * One collapsible section of the heat breakdown (Chest, Legs & Hips...),
  * reusing the exercise list's Movement <details> look (lib-movement). Inside,
  * each muscle (Quads, Hamstrings...) is its own dropdown of heads, or one
- * plain row when it has none (libFamilyHtml_). Bars are full at `scale`
- * sets: 10 for Today, the week's busiest muscle for This Week (no weekly
- * targets since 2026-10-10, Max: demotivating).
+ * plain row when it has none (libFamilyHtml_). Bars are full at `scale`:
+ * the busiest muscle in view, Today and This Week alike (relative, not a
+ * set count: no weekly targets since 2026-10-10, Max found them
+ * demotivating, and Today went relative too on 2026-10-13).
  */
 function libMuscleGroupHtml_(s, scale) {
   const open = libGroupIsOpen_(s.section) ? " open" : "";
@@ -403,7 +404,8 @@ async function loadHeat(range) {
 
   libEls.heatEmpty.hidden = setsCounted > 0;
   const tree = libHeatTree_(merged);
-  const scale = range === "week" ? Math.max(1, ...tree.flatMap((s) => s.families.map((f) => f.total))) : 10;
+  // Bars are relative too: the busiest muscle in view fills its bar (Max, 2026-10-13).
+  const scale = Math.max(1, ...tree.flatMap((s) => s.families.map((f) => f.total)));
   libEls.heatBreakdown.innerHTML = tree.map((s) => libMuscleGroupHtml_(s, scale)).join("");
   libEls.heatBreakdown.querySelectorAll("details[data-group], details[data-family]").forEach((el) => {
     el.addEventListener("toggle", () => libSetGroupOpen_(el.dataset.family || el.dataset.group, el.open));

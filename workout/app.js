@@ -603,14 +603,11 @@ function buildMuscleLoadSection(ctx) {
   return wrap;
 }
 
-// Same "fully red" scale as the builder's side panel — a session, not a week.
-const MUSCLE_LOAD_CAP_ = 7;
-
 /** One row of the breakdown — same red/orange "primary+secondary SET count" shape as the builder's side panel (builderHeatRowHtml_, workout/builder.js); this session view stays a direct-count view, same as that panel, not the single red bar the Muscles tab's lists use (heatRowHtml_, workout/library.js). */
 /** Each count sits directly under its own bar segment (2026-10-05, was a combined "3+5" off to the side) so it's unambiguous which number is which. A zero-count side renders no number — an empty segment already shows zero. */
-function muscleLoadRowHtml_(key, primaryN, secondaryN) {
-  const primaryPct = Math.max(0, Math.min(100, (primaryN / MUSCLE_LOAD_CAP_) * 100));
-  const secondaryPct = Math.max(0, Math.min(100 - primaryPct, (secondaryN / MUSCLE_LOAD_CAP_) * 100));
+function muscleLoadRowHtml_(key, primaryN, secondaryN, scale) {
+  const primaryPct = Math.max(0, Math.min(100, (primaryN / scale) * 100));
+  const secondaryPct = Math.max(0, Math.min(100 - primaryPct, (secondaryN / scale) * 100));
   return `
     <div class="workout__muscle-load-row">
       <span class="workout__muscle-load-row__name">${muscleLabel_(key)}</span>
@@ -665,11 +662,13 @@ function refreshMuscleLoadSection_(ctx) {
   ctx.muscleLoadFigs.innerHTML =
     `<div class="workout__muscle-load-fig-col">${frontSvg}<span class="workout__muscle-load-fig-caption">Front</span></div>` +
     `<div class="workout__muscle-load-fig-col">${backSvg}<span class="workout__muscle-load-fig-caption">Back</span></div>`;
-  ctx.muscleLoadFigs.querySelectorAll("svg.muscle-figure").forEach((svg) => paintMuscleHeat(svg, weighted, MUSCLE_LOAD_CAP_));
+  // Relative to this session's busiest muscle, not a fixed set count (2026-10-13).
+  ctx.muscleLoadFigs.querySelectorAll("svg.muscle-figure").forEach((svg) => paintMuscleHeat(svg, weighted));
 
   const entries = Object.keys(weighted).sort((a, b) => weighted[b] - weighted[a]);
+  const scale = Math.max(1, ...entries.map((k) => (primaryCount[k] || 0) + (secondaryCount[k] || 0)));
   const rowsHtml = entries.length
-    ? entries.map((k) => muscleLoadRowHtml_(k, primaryCount[k] || 0, secondaryCount[k] || 0)).join("")
+    ? entries.map((k) => muscleLoadRowHtml_(k, primaryCount[k] || 0, secondaryCount[k] || 0, scale)).join("")
     : '<p class="workout__muscle-load-empty">Save a set to see what this session trains</p>';
   // Saved sets whose exercise name has no muscle data never silently
   // vanish from the total (2026-10-09) — same "always show it" rule as the

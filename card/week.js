@@ -88,7 +88,7 @@ const WeekCard = (function () {
   const WHY_IDEAS = ["keep up with my grandkids", "feel better in my clothes", "stay independent", "sleep better"];
   const SECTION_WORD = { "Legs & Hips": "legs", Chest: "chest", Back: "back", Arms: "arms", Shoulders: "shoulders", Core: "core" };
   const SNOOZE_KEY = "maxfitGoalSnoozed";
-  const MUSCLE_MAP_SRC = "muscle-map.js?v=20261013a";
+  const MUSCLE_MAP_SRC = "muscle-map.js?v=20261013b";
 
   let slug = "";
   let mount = null;

@@ -60,7 +60,7 @@
  * or change rows carrying their own id.
  */
 
-const MACROS_VERSION = "2026-10-13b";
+const MACROS_VERSION = "2026-10-13c";
 const TIMEZONE = "Australia/Sydney";
 const MAIN_SESSIONS_GID = 1169726169; // "Sessions Remaining" in the CRM sheet
 const CARD_URL = "https://maxfit.now/card/";
@@ -1915,22 +1915,26 @@ function optionalMember_(payload) {
 }
 
 /**
- * The Fuel numbers a goal reads, for one member: weigh-ins, the last 14
- * days' calories against target, and green days for each week from `since`.
+ * The Fuel numbers a goal reads, for one member: weigh-ins, the 14 full
+ * days before today (today is still being logged, so it would drag the
+ * average down) against target, and green days for each week from `since`.
  */
 function fuelGoalStats_(member, since) {
   const slug = String(member.slug);
   const today = todaySydney_();
-  const fortnight = MacroCore.addDays(today, -13);
+  const fortnight = MacroCore.addDays(today, -14);
   const history = historyFor_(slug);
   const dayTotals = dayTotalsFor_(slug, MacroCore.mondayOf(since < fortnight ? since : fortnight));
+  // Days before their targets were first recorded are judged against today's targets.
+  const current = targetsFor_(slug);
+  const fallback = current && Number(current.kcal) > 0 ? { kcal: Number(current.kcal), protein_g: Number(current.protein_g) } : null;
   let kcalSum = 0;
   let loggedDays = 0;
   let proteinShortDays = 0;
   let target = 0;
-  for (let i = 13; i >= 0; i--) {
+  for (let i = 14; i >= 1; i--) {
     const date = MacroCore.addDays(today, -i);
-    const t = MacroCore.targetOn(history, date);
+    const t = MacroCore.targetOn(history, date) || fallback;
     if (t) target = t.kcal;
     const totals = dayTotals[date];
     if (!totals || !(totals.kcal > 0)) continue;

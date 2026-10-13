@@ -216,12 +216,6 @@ function refreshSupersetAvailability_() {
   });
 }
 
-// How many weighted sets (primary counts 1, secondary 0.5 — same weighting
-// as the Muscle Heatmap, workout/heatmap.js) reads as "fully red" on the
-// side panel's figure. A single workout, not a week, so a much lower cap
-// than the heatmap's own.
-const BUILDER_MUSCLE_LOAD_CAP_ = 7;
-
 /**
  * The side panel's live "Muscles Worked" summary — every row's own
  * primary/secondary muscles (stashed on wrap.dataset by setChosen above),
@@ -297,7 +291,8 @@ function refreshMuscleLoadPanel_() {
     `<div class="builder__side-fig-col">${frontSvg}<span class="builder__side-fig-caption">Front</span></div>` +
     `<div class="builder__side-fig-col">${backSvg}<span class="builder__side-fig-caption">Back</span></div>`;
   const sideSvgs = els.sideFigs.querySelectorAll("svg.muscle-figure");
-  sideSvgs.forEach((svg) => paintMuscleHeat(svg, weighted, BUILDER_MUSCLE_LOAD_CAP_));
+  // Relative to this workout's busiest muscle, not a fixed set count (2026-10-13).
+  sideSvgs.forEach((svg) => paintMuscleHeat(svg, weighted));
 
   // Goal 4 (2026-10-09): hover/tap a shape for its own breakdown. No weekly
   // target here (a single planned workout, not a week) and no group list to
@@ -314,8 +309,10 @@ function refreshMuscleLoadPanel_() {
   const families = muscleTree_(Object.keys(weighted).filter((k) => weighted[k] > 0))
     .flatMap((s) => s.families)
     .sort((a, b) => (familyPrimary[b.name] || 0) - (familyPrimary[a.name] || 0) || (familySecondary[b.name] || 0) - (familySecondary[a.name] || 0));
+  // Bars are relative too: the busiest muscle's sets fill its bar.
+  const scale = Math.max(1, ...families.map((f) => (familyPrimary[f.name] || 0) + (familySecondary[f.name] || 0)));
   els.sideHeatList.innerHTML = families.length
-    ? families.map((f) => builderFamilyHtml_(f, familyPrimary[f.name] || 0, familySecondary[f.name] || 0, primaryCount, secondaryCount, weighted)).join("")
+    ? families.map((f) => builderFamilyHtml_(f, familyPrimary[f.name] || 0, familySecondary[f.name] || 0, primaryCount, secondaryCount, weighted, scale)).join("")
     : '<p class="builder__side-empty">Add exercises to see what this workout trains</p>';
   els.sideHeatList.querySelectorAll("details[data-family]").forEach((el) => {
     el.addEventListener("toggle", () => (el.open ? builderOpenFamilies_.add(el.dataset.family) : builderOpenFamilies_.delete(el.dataset.family)));
@@ -323,13 +320,13 @@ function refreshMuscleLoadPanel_() {
 }
 
 /** One muscle in the side panel: a plain row, or a dropdown row that opens to its heads. */
-function builderFamilyHtml_(f, primaryN, secondaryN, primaryCount, secondaryCount, weighted) {
-  const head = builderHeatRowHtml_(f.name, primaryN, secondaryN);
+function builderFamilyHtml_(f, primaryN, secondaryN, primaryCount, secondaryCount, weighted, scale) {
+  const head = builderHeatRowHtml_(f.name, primaryN, secondaryN, scale);
   if (f.plain) return head;
   const heads = f.keys
     .slice()
     .sort((a, b) => weighted[b] - weighted[a])
-    .map((k) => builderHeatRowHtml_(muscleLabel_(k), primaryCount[k] || 0, secondaryCount[k] || 0))
+    .map((k) => builderHeatRowHtml_(muscleLabel_(k), primaryCount[k] || 0, secondaryCount[k] || 0, scale))
     .join("");
   const open = builderOpenFamilies_.has(f.name) ? " open" : "";
   return (
@@ -350,9 +347,9 @@ function builderFamilyHtml_(f, primaryN, secondaryN, primaryCount, secondaryCoun
  * which. A zero-count side renders no number — an empty segment already
  * shows zero.
  */
-function builderHeatRowHtml_(label, primaryN, secondaryN) {
-  const primaryPct = Math.max(0, Math.min(100, (primaryN / BUILDER_MUSCLE_LOAD_CAP_) * 100));
-  const secondaryPct = Math.max(0, Math.min(100 - primaryPct, (secondaryN / BUILDER_MUSCLE_LOAD_CAP_) * 100));
+function builderHeatRowHtml_(label, primaryN, secondaryN, scale) {
+  const primaryPct = Math.max(0, Math.min(100, (primaryN / scale) * 100));
+  const secondaryPct = Math.max(0, Math.min(100 - primaryPct, (secondaryN / scale) * 100));
   return `
     <div class="builder__side-heat-row">
       <span class="builder__side-heat-row__name">${label}</span>
