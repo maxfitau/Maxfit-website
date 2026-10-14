@@ -3,7 +3,7 @@
  *
  * Draws everything inside #panelFuel plus the bottom sheet (#fuelSheet):
  *   home     — the rings header (day switcher, plan button, protein/
- *              carbs/fat rings, calorie bar), SCAN FOOD + Ask Fuel, the
+ *              carbs/fat rings, calorie bar), LOG FOOD + Ask Fuel, the
  *              four meals, and meal plan/shopping/progress/settings tiles
  *   scan     — Photo (AI), Barcode (Open Food Facts) or Label (AI)
  *   confirm  — editable grams per item, live macros, ADD TO TODAY
@@ -165,7 +165,7 @@
   const ICONS = {
     camera:
       '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8a2 2 0 0 1 2-2h2l2-2h6l2 2h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.5"/></svg>',
-    // Scan Food on the home screen: a plus, not a camera, since it opens every way in (photo, describe, label, barcode, search).
+    // Log Food on the home screen: a plus, not a camera, since it opens every way in (photo, describe, label, barcode, search).
     add: '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>',
     barcode:
       '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 5v14M7 5v14M11 5v14M14 5v14M18 5v14M20 5v14"/></svg>',
@@ -334,7 +334,7 @@
   // ---------------------------------------------------------------------------
   // Home view: the "concentric rings" layout (2026-10-13). A header panel
   // (day switcher, plan button, protein/carbs/fat rings, calorie bar), then
-  // Scan Food + Ask Fuel, the four meals, and the plan-ahead tiles.
+  // Log Food + Ask Fuel, the four meals, and the plan-ahead tiles.
   // ---------------------------------------------------------------------------
 
   // Ring radii in the 180-unit SVG: protein outside, fat inside.
@@ -496,7 +496,7 @@
     });
   }
 
-  /** ActionsRow: Scan Food, Ask Fuel, and today's AI scans left. */
+  /** ActionsRow: Log Food, Ask Fuel, and today's AI scans left. */
   function actionsHtml(skeleton) {
     const ai = state.aiEnabled;
     const usedUp = !skeleton && aiUsedUp();
@@ -508,7 +508,7 @@
     // Out of AI scans still opens the chooser: barcode and search are free.
     return `
       <div class="fx-actions">
-        <button class="fx-scan${usedUp ? " is-out" : ""}" type="button" data-act="scan"${skeleton ? " disabled" : ""}>${ICONS.add}<span>Scan Food</span></button>
+        <button class="fx-scan${usedUp ? " is-out" : ""}" type="button" data-act="scan"${skeleton ? " disabled" : ""}>${ICONS.add}<span>Log Food</span></button>
         ${ai || skeleton ? `<button class="fx-ask" type="button" data-act="ask" aria-label="Ask Fuel, your AI nutrition copilot"${skeleton ? " disabled" : ""}>${ICONS.chat}</button>` : ""}
       </div>
       ${caption ? `<p class="fx-caption">${caption}</p>` : ""}`;
