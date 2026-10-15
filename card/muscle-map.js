@@ -1577,6 +1577,43 @@ function wireMuscleTooltips_(svgRoot, contentForKey, onSelect) {
     // detail figure (showLibDetail, workout/library.js) uses the same
     // .muscle-figure class without calling this, and isn't tappable.
     shape.style.cursor = "pointer";
+
+    // A thin, diagonal sliver (e.g. traps-mid, traps-upper) can have a
+    // bounding-box CENTRE that falls outside its own filled path — SVG hit
+    // tests the actual path geometry, not the box, so a tap square in the
+    // middle of where the muscle visually sits can miss it entirely and
+    // hit the <svg> behind it instead (found 2026-10-15, Max tapping mid
+    // back on a real phone: traps-mid/traps-upper's own centre-point test
+    // landed on the svg root, not the path).
+    //
+    // Fix is SELECTIVE, not blanket: a shape whose own centre already
+    // falls inside its own fill (confirmed with isPointInFill_, the real
+    // geometry test, not a screen-rendered guess) is left exactly as it
+    // was — most muscles are fine and a wider rect would risk stealing
+    // clicks from a tightly-packed neighbour (e.g. a plain bounding-box
+    // rect for traps-mid genuinely overlaps infraspinatus's own area —
+    // confirmed while fixing this). Only a shape that actually FAILS its
+    // own centre test gets a corrective transparent rect sized to its own
+    // bounding box, so the "can't tap it at all" bug is fixed everywhere
+    // it occurs without widening hit-areas that already work.
+    let hitTarget = shape;
+    const bbox = shape.getBBox();
+    const centerPt = svgRoot.createSVGPoint();
+    centerPt.x = bbox.x + bbox.width / 2;
+    centerPt.y = bbox.y + bbox.height / 2;
+    const centerHitsSelf = typeof shape.isPointInFill !== "function" || shape.isPointInFill(centerPt);
+    if (!centerHitsSelf) {
+      const hitArea = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      hitArea.setAttribute("x", bbox.x);
+      hitArea.setAttribute("y", bbox.y);
+      hitArea.setAttribute("width", bbox.width);
+      hitArea.setAttribute("height", bbox.height);
+      hitArea.setAttribute("fill", "transparent");
+      hitArea.style.cursor = "pointer";
+      shape.parentNode.insertBefore(hitArea, shape.nextSibling);
+      hitTarget = hitArea;
+    }
+
     function show() {
       const html = contentForKey(rawKey);
       if (!html) return;
@@ -1586,10 +1623,10 @@ function wireMuscleTooltips_(svgRoot, contentForKey, onSelect) {
       muscleTooltipOpenShape_ = shape;
     }
     if (canHover) {
-      shape.addEventListener("mouseenter", show);
-      shape.addEventListener("mouseleave", muscleTooltipHide_);
+      hitTarget.addEventListener("mouseenter", show);
+      hitTarget.addEventListener("mouseleave", muscleTooltipHide_);
     }
-    shape.addEventListener("click", (e) => {
+    hitTarget.addEventListener("click", (e) => {
       e.stopPropagation(); // keep the document-level listener below from treating this as "tapped outside"
       if (muscleTooltipOpenShape_ === shape) {
         muscleTooltipHide_();
