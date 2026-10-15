@@ -2629,25 +2629,37 @@ body.vt-lightbox-open { overflow: hidden; }
 
 /* ---------- Card showcase ---------- */
 
-/* Three real screens of the current card in phone frames. Side by side on a
-   wide screen (the middle one sits a little lower), a swipeable strip on a phone. */
+/* Five real screens of the current card in phone frames. On a wide screen they
+   sit three then two (the second row centred, one phone in each row a little
+   lower); on a phone they're a swipeable strip. A six-column grid so each phone
+   takes two columns and the last two can start a column in. */
 .showcase__phones {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: clamp(16px, 3.2vw, 44px);
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: clamp(40px, 5vw, 64px) clamp(16px, 3.2vw, 44px);
   max-width: 940px;
   margin: 0 auto;
   align-items: start;
 }
 
 .showcase__item {
+  grid-column: span 2;
   margin: 0;
   display: flex;
   flex-direction: column;
   gap: 20px;
 }
 
-.showcase__item:nth-child(2) {
+.showcase__item:nth-child(4) {
+  grid-column: 2 / span 2;
+}
+
+.showcase__item:nth-child(5) {
+  grid-column: 4 / span 2;
+}
+
+.showcase__item:nth-child(2),
+.showcase__item:nth-child(5) {
   margin-top: 36px;
 }
 
@@ -2704,10 +2716,14 @@ body.vt-lightbox-open { overflow: hidden; }
     padding: 4px 24px 24px;
     scroll-padding-inline: 24px;
   }
-  .showcase__item {
+  .showcase__item,
+  .showcase__item:nth-child(4),
+  .showcase__item:nth-child(5) {
+    grid-column: auto;
     scroll-snap-align: start;
   }
-  .showcase__item:nth-child(2) {
+  .showcase__item:nth-child(2),
+  .showcase__item:nth-child(5) {
     margin-top: 0;
   }
 }
