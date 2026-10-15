@@ -60,7 +60,7 @@
  * or change rows carrying their own id.
  */
 
-const MACROS_VERSION = "2026-10-13d";
+const MACROS_VERSION = "2026-10-15a";
 const TIMEZONE = "Australia/Sydney";
 const MAIN_SESSIONS_GID = 1169726169; // "Sessions Remaining" in the CRM sheet
 const CARD_URL = "https://maxfit.now/card/";
@@ -233,6 +233,7 @@ const MEMBER_ACTIONS = {
   logWeight: actionLogWeight_,
   mealPlan: actionMealPlan_,
   makeMealPlan: actionMakeMealPlan_,
+  fridgeIdeas: actionFridgeIdeas_,
   swapMeal: actionSwapMeal_,
   shoppingList: actionShoppingList_,
   shoppingAdd: actionShoppingAdd_,
@@ -1755,6 +1756,197 @@ function actionMakeMealPlan_(payload, member) {
   const id = Utilities.getUuid();
   withLock_(() => appendRow_("mealPlans", { id: id, slug: slug, start: plan.start, prefs: JSON.stringify(prefs), plan: JSON.stringify(plan), created_at: nowStamp_(), updated_at: nowStamp_() }));
   return { plan: Object.assign(plan, { id: id }), aiToday: aiToday_(member) };
+}
+
+// ---------------------------------------------------------------------------
+// What can I make? (Gold and Diamond, 2026-10-15): up to 3 photos of the
+// fridge, freezer or cupboard, plus what it's for, and the vision model
+// suggests 3 things to make that fit what's left of today's targets. One
+// request counts as 2 AI uses (it reads several photos and writes recipes).
+// ---------------------------------------------------------------------------
+
+const FRIDGE_AI_USES = 2;
+const FRIDGE_MAX_PHOTOS = 3;
+
+// What the client can say it's for (card/macros.js shows the same keys).
+const FRIDGE_PURPOSES = {
+  breakfast: "breakfast",
+  lunch: "lunch",
+  dinner: "dinner",
+  snack: "a snack",
+  preworkout: "before a workout (light, easy to digest, some quick carbs, eaten 30 to 90 minutes before training)",
+  postworkout: "after a workout (protein-forward, with some carbs to refuel)",
+  quick: "quick: 10 minutes or less, little or no cooking",
+};
+
+const FRIDGE_SYSTEM_PROMPT = [
+  "You help clients of MaxFit, a personal trainer in Sydney, Australia, decide what to make from what they already have. Many clients are older, so keep ideas simple, familiar and quick.",
+  "You get one to three photos of a fridge, freezer or pantry, what the food is for, any note from the client, and how much protein and how many calories they have left today.",
+  "Rules:",
+  "- spotted: the foods you can actually see, as short everyday names (\"Greek yoghurt\", \"eggs\", \"baby spinach\"), most useful first, at most 20. Never guess at what might be hidden.",
+  "- Write exactly 3 ideas. Build each mainly from spotted foods. Basic staples (salt, pepper, oil, water) can be assumed. Anything else not visible goes in need, and keep need short (0 to 2 items).",
+  "- Fit the purpose and the note. Fit what is left today: never go over the calories left; when protein is left, make protein count.",
+  "- items are the client's own single serve: name, amount_text the way they'd measure it at home (\"2 eggs\", \"1 cup\", \"150 g\"), grams (mL as grams for liquids), and that amount's kcal, protein_g, carbs_g and fat_g, using Australian food composition values.",
+  "- why: one short, encouraging sentence on why it suits what they asked for. steps: 1 to 4 short steps. minutes: total time. uses: the spotted foods it uses. emoji: one food emoji.",
+  "- Plain Australian English. No brand names unless they're on a visible label.",
+].join("\n");
+
+function fridgeSchema_() {
+  const item = {
+    type: "object",
+    additionalProperties: false,
+    required: ["name", "amount_text", "grams", "kcal", "protein_g", "carbs_g", "fat_g"],
+    properties: {
+      name: { type: "string" },
+      amount_text: { type: "string" },
+      grams: { type: "number" },
+      kcal: { type: "number" },
+      protein_g: { type: "number" },
+      carbs_g: { type: "number" },
+      fat_g: { type: "number" },
+    },
+  };
+  const list = { type: "array", items: { type: "string" } };
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["spotted", "ideas"],
+    properties: {
+      spotted: list,
+      ideas: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["name", "emoji", "minutes", "why", "uses", "need", "steps", "items"],
+          properties: {
+            name: { type: "string" },
+            emoji: { type: "string" },
+            minutes: { type: "number" },
+            why: { type: "string" },
+            uses: list,
+            need: list,
+            steps: list,
+            items: { type: "array", items: item },
+          },
+        },
+      },
+    },
+  };
+}
+
+/** One idea from Claude, checked: the foods go through the same clean-up as meal plans. */
+function cleanFridgeIdea_(raw) {
+  const meal = cleanPlanMeal_({ name: raw.name, emoji: raw.emoji, items: raw.items });
+  if (!meal) return null;
+  const strings = (a, max, len) => (Array.isArray(a) ? a : []).slice(0, max).map((s) => cleanText_(s, len)).filter(Boolean);
+  return {
+    name: meal.name,
+    emoji: meal.emoji,
+    minutes: Math.round(n_(raw.minutes, 0, 240)),
+    why: cleanText_(raw.why, 200),
+    uses: strings(raw.uses, 10, 40),
+    need: strings(raw.need, 3, 40),
+    steps: strings(raw.steps, 4, 200),
+    items: meal.items.map((it) => ({ name: it.name, amount_text: it.amount_text, grams: it.grams, kcal: it.kcal, protein_g: it.protein_g, carbs_g: it.carbs_g, fat_g: it.fat_g })),
+  };
+}
+
+function actionFridgeIdeas_(payload, member) {
+  const slug = String(member.slug);
+  const images = (Array.isArray(payload.images) ? payload.images : [])
+    .slice(0, FRIDGE_MAX_PHOTOS)
+    .map((im) => String(im || "").replace(/^data:image\/\w+;base64,/, ""))
+    .filter(Boolean);
+  if (!images.length) throw userError_("no_image", "Add a photo of your fridge or cupboard first.");
+  // A 1024px JPEG at 0.8 is ~100–300 KB; 2 MB of base64 means resizing was skipped.
+  if (images.some((im) => im.length > 2000000)) throw userError_("too_big", "One of those photos is too large. Try again.");
+  requireFuelAi_(member);
+  const apiKey = prop_("ANTHROPIC_API_KEY");
+  if (!apiKey) throw userError_("ai_off", "Fuel AI isn't switched on yet. Barcodes still work.");
+
+  const purposes = (Array.isArray(payload.purposes) ? payload.purposes : []).filter((p) => FRIDGE_PURPOSES[p]).slice(0, 4);
+  const note = cleanText_(payload.note, 200);
+  const left = payload.left || {};
+  const kcalLeft = Math.round(n_(left.kcal, -5000, 10000));
+  const proteinLeft = Math.round(n_(left.protein_g, -500, 1000));
+  const avoid = (Array.isArray(payload.avoid) ? payload.avoid : []).slice(0, 6).map((s) => cleanText_(s, 60)).filter(Boolean);
+  const prompt = [
+    "It's for: " + (purposes.map((p) => FRIDGE_PURPOSES[p]).join("; ") || "anything") + ".",
+    note ? 'The client says: "' + note.replace(/"/g, "'") + '"' : "",
+    left.kcal != null ? "Left today: " + Math.max(0, kcalLeft) + " kcal and " + Math.max(0, proteinLeft) + " g protein." : "",
+    avoid.length ? "They've already seen these, so suggest different ones: " + avoid.join(", ") + "." : "",
+    "Photos: " + images.length + ".",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const fresh = aiToday_(member);
+  if (fresh.left < FRIDGE_AI_USES) {
+    throw userError_("limit", "What can I make? uses " + FRIDGE_AI_USES + " AI scans, and you have " + fresh.left + " left today. They reset at midnight.");
+  }
+  const usageRow = reserveAi_(member, "fridge", VISION_MODEL);
+  // The second use it counts as, so the daily pool reflects it.
+  const extraRow = withLock_(() =>
+    appendRow_("usage", { timestamp: nowStamp_(), log_date: todaySydney_(), slug: slug, kind: "fridge (counts 2)", model: VISION_MODEL, ok: "Y" })
+  );
+  // A failed request never counts against the client: both rows are marked
+  // "error" (the first still records what Claude charged).
+  const fail = (reason, usage, message) => {
+    console.error("Fridge ideas failed: " + reason);
+    recordUsage_(usageRow, usage, "error", VISION_MODEL);
+    updateRow_("usage", extraRow, { ok: "error" });
+    throw userError_("ai_failed", (message || "Couldn't come up with ideas just now. Try again in a moment.") + " Nothing was used up.");
+  };
+  let res;
+  try {
+    res = UrlFetchApp.fetch("https://api.anthropic.com/v1/messages", {
+      method: "post",
+      contentType: "application/json",
+      headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+      payload: JSON.stringify({
+        model: VISION_MODEL,
+        max_tokens: 4000,
+        system: [{ type: "text", text: FRIDGE_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+        output_config: { effort: "low", format: { type: "json_schema", schema: fridgeSchema_() } },
+        messages: [
+          {
+            role: "user",
+            content: images
+              .map((data) => ({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: data } }))
+              .concat([{ type: "text", text: prompt }]),
+          },
+        ],
+      }),
+      muteHttpExceptions: true,
+    });
+  } catch (err) {
+    fail("error", null);
+  }
+  let data = {};
+  try {
+    data = JSON.parse(res.getContentText());
+  } catch (err) {
+    data = {};
+  }
+  if (res.getResponseCode() !== 200 || data.stop_reason === "refusal" || data.stop_reason === "max_tokens") {
+    console.error("Fridge error", res.getResponseCode(), JSON.stringify(data).slice(0, 500));
+    fail(res.getResponseCode() !== 200 ? "http_" + res.getResponseCode() : data.stop_reason, data.usage);
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse((data.content || []).find((b) => b.type === "text").text);
+  } catch (err) {
+    fail("bad_json", data.usage);
+  }
+  const ideas = (parsed.ideas || []).slice(0, 3).map(cleanFridgeIdea_).filter(Boolean);
+  if (!ideas.length) fail("no_ideas", data.usage, "Couldn't spot enough food to suggest anything. Try a clearer photo with the door wide open.");
+  recordUsage_(usageRow, data.usage, "Y", VISION_MODEL);
+  return {
+    spotted: (parsed.spotted || []).slice(0, 20).map((s) => cleanText_(s, 40)).filter(Boolean),
+    ideas: ideas,
+    aiToday: aiToday_(member),
+  };
 }
 
 /** Swap a meal for one of its alternatives (free), and keep the shopping list in step. */

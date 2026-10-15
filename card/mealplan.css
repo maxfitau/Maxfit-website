@@ -400,3 +400,157 @@
 .mp-add .mp-btn {
   padding: 0 18px;
 }
+
+/* ---- What can I make? (macros.js openFridge, 2026-10-15). Lives in
+   Fuel's bottom sheet and reuses the meal-plan chips, cards and buttons. */
+.fr-hint {
+  margin: -6px 0 0;
+  font-size: 16px;
+  line-height: 1.35;
+  color: var(--grey);
+}
+
+.fr-photos {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.fr-photo {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.fr-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.fr-photo__x {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  cursor: pointer;
+}
+
+.fr-photo--add {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px;
+  border: 2px dashed var(--line);
+  background: transparent;
+  color: var(--grey);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+}
+
+.fr-photo--add span {
+  font-size: 30px;
+  line-height: 1;
+}
+
+.fr-text {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 52px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--white);
+  font: inherit;
+  font-size: 17px;
+}
+
+.fr-left {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.4;
+  color: var(--grey);
+}
+
+.fr-left b {
+  color: var(--white);
+}
+
+.fr-spotted {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fr-spotted span {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  font-size: 15px;
+  color: var(--grey);
+}
+
+.fr-meta {
+  margin-top: 2px;
+  font-size: 16px;
+  color: var(--grey);
+}
+
+.fr-meta b {
+  color: var(--white);
+}
+
+.fr-why {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(48, 209, 88, 0.1);
+  color: #a6ebb8;
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.fr-need {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  font-size: 16px;
+  color: var(--grey);
+}
+
+.fr-need b {
+  color: #ffc24b;
+  font-weight: 600;
+}
+
+.fr-steps {
+  margin: 10px 0 0;
+  padding-left: 22px;
+  font-size: 16px;
+  line-height: 1.45;
+  color: var(--white);
+}
+
+.fr-log {
+  width: 100%;
+  margin-top: 14px;
+}

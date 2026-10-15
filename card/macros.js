@@ -11,6 +11,8 @@
  *   targets  — Max's targets (read-only) or the calculator
  *   settings — hide calories, Fuel AI plan, disclaimer
  *   suggest  — "what to eat next" from Max's Foods list (free, no AI)
+ *   fridge   — What can I make? photos of the fridge/cupboard → 3 ideas
+ *              that fit what's left today (Gold and Diamond, 2 AI uses)
  *   chat     — Ask Fuel, the AI copilot (Diamond only)
  *   upsell   — Fuel plans: 7-day Diamond trial, then Gold $5.99 or Diamond
  *              $9.99 a month (or yearly) via Stripe
@@ -167,6 +169,8 @@
       '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8a2 2 0 0 1 2-2h2l2-2h6l2 2h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.5"/></svg>',
     // Log Food on the home screen: a plus, not a camera, since it opens every way in (photo, describe, label, barcode, search).
     add: '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>',
+    fridge:
+      '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="2.5" width="14" height="19" rx="2.5"/><path d="M5 9.5h14M8.5 5.5v2M8.5 12.5v3"/></svg>',
     barcode:
       '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 5v14M7 5v14M11 5v14M14 5v14M18 5v14M20 5v14"/></svg>',
     label:
@@ -1034,6 +1038,7 @@
          ${ai ? `<button class="fuel-mode${aiClass}" type="button" data-mode="label">${ICONS.label}Label<small>${aiTag("Nutrition panel")}</small></button>` : ""}
          <button class="fuel-mode" type="button" data-mode="barcode">${ICONS.barcode}Barcode<small>Packaged food</small></button>
          <button class="fuel-mode" type="button" data-mode="search">${ICONS.search}Search<small>Foods &amp; saved meals</small></button>
+         ${ai ? `<button class="fuel-mode${aiClass}" type="button" data-mode="fridge">${ICONS.fridge}What can I make?<small>${aiTag("Photo of your fridge")}</small></button>` : ""}
        </div>
        ${ai && !locked && !usedUp ? '<button class="fuel-btn fuel-btn--quiet" type="button" data-mode="library">Choose a meal photo from your library</button>' : ""}`,
       (body) => {
@@ -1045,6 +1050,7 @@
             if (mode === "barcode") openBarcode();
             else if (mode === "search") openSearch();
             else if (locked || usedUp) openUpsell(usedUp ? { reason: "limit" } : undefined);
+            else if (mode === "fridge") openFridge();
             else if (mode === "describe") openDescribe();
             else if (mode === "library") pickPhoto("meal", false);
             else pickPhoto(mode, true);
@@ -1435,6 +1441,7 @@
     if (!file || !mode) return;
     if (mode === "barcodeImage") decodeBarcodePhoto(file);
     else if (mode === "meal") openPhotoNote(file);
+    else if (mode === "fridge") addFridgePhoto(file);
     else analysePhoto(file, mode);
   }
   els.photoInput.addEventListener("change", onPhotoChosen);
@@ -1463,6 +1470,227 @@
         });
       }
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // What can I make? (Gold and Diamond, 2026-10-15): photos of the fridge,
+  // freezer or cupboard, what it's for, and 3 ideas that fit what's left
+  // today. One request counts as 2 AI uses (Macros.gs actionFridgeIdeas_).
+  // ---------------------------------------------------------------------------
+
+  const FRIDGE_PURPOSES = [
+    ["breakfast", "Breakfast"],
+    ["lunch", "Lunch"],
+    ["dinner", "Dinner"],
+    ["snack", "Snack"],
+    ["preworkout", "Before a workout"],
+    ["postworkout", "After a workout"],
+    ["quick", "Quick (10 min)"],
+  ];
+  const FRIDGE_AI_USES = 2;
+  const FRIDGE_MAX_PHOTOS = 3;
+  // Kept for this visit only, so "Try different ideas" can reuse the photos.
+  // The photos only ever leave the phone inside the request itself.
+  const fridge = { photos: [], purposes: new Set(), note: "", result: null, seen: [] };
+
+  function openFridge() {
+    if (!fridge.purposes.size) fridge.purposes.add(defaultMeal());
+    openSheet(fridgeSetupHtml(), wireFridgeSetup);
+  }
+
+  function fridgeSetupHtml() {
+    const r = state.targets ? remainingToday() : null;
+    const a = state.aiToday;
+    const photos = fridge.photos
+      .map(
+        (p, i) => `
+        <div class="fr-photo">
+          <img src="${p.url}" alt="Photo ${i + 1}" />
+          <button class="fr-photo__x" type="button" data-remove="${i}" aria-label="Remove photo ${i + 1}">${ICONS.x}</button>
+        </div>`
+      )
+      .join("");
+    const add =
+      fridge.photos.length < FRIDGE_MAX_PHOTOS
+        ? `<button class="fr-photo fr-photo--add" type="button" data-add><span aria-hidden="true">+</span>${fridge.photos.length ? "Add another" : "Add a photo"}</button>`
+        : "";
+    const when = isToday() ? "today" : esc(dayLabel(state.viewDate).toLowerCase());
+    const p = `<b>${int(Math.max(0, r ? r.protein_g : 0))}g protein</b>`;
+    const left = r
+      ? `You've got ${p}${hideKcal() ? "" : ` and <b>${int(Math.max(0, r.kcal))} kcal</b>`} left ${when}. Ideas will fit that.`
+      : "";
+    return `
+      <h2 class="fuel-sheet__title" id="fuelSheetTitle">What can I make?</h2>
+      <p class="fr-hint">Take photos of your fridge, freezer or cupboard, up to ${FRIDGE_MAX_PHOTOS}. Open the door wide.</p>
+      <div class="fr-photos">${photos}${add}</div>
+      <div>
+        <p class="mp-q mp-tight">What's it for?</p>
+        <div class="mp-chips">${FRIDGE_PURPOSES.map(
+          ([key, label]) =>
+            `<button class="mp-chip${fridge.purposes.has(key) ? " is-on" : ""}" type="button" data-purpose="${key}" aria-pressed="${fridge.purposes.has(key)}">${label}</button>`
+        ).join("")}</div>
+      </div>
+      <div>
+        <p class="mp-q mp-tight">Anything else?</p>
+        <input class="fr-text" type="text" data-note maxlength="200" value="${esc(fridge.note)}" placeholder="e.g. I'm training in an hour" aria-label="Anything else" />
+      </div>
+      ${left ? `<p class="fr-left">${left}</p>` : ""}
+      <button class="week-btn" type="button" data-go${fridge.photos.length ? "" : " disabled"}>Find ideas</button>
+      <p class="mp-cost">Uses ${FRIDGE_AI_USES} of your AI scans${a && a.limit ? ` · ${a.left} left today` : ""}</p>`;
+  }
+
+  function wireFridgeSetup(body) {
+    body.querySelector("[data-note]").addEventListener("input", (e) => {
+      fridge.note = e.target.value;
+    });
+    body.addEventListener("click", (e) => {
+      const b = e.target.closest("button");
+      if (!b) return;
+      if (b.dataset.remove !== undefined) {
+        const [gone] = fridge.photos.splice(Number(b.dataset.remove), 1);
+        if (gone) URL.revokeObjectURL(gone.url);
+        openFridge();
+      } else if (b.dataset.add !== undefined) {
+        // No capture attribute, so the phone offers the camera or the photo library.
+        pickPhoto("fridge", false);
+      } else if (b.dataset.purpose) {
+        const key = b.dataset.purpose;
+        if (fridge.purposes.has(key)) fridge.purposes.delete(key);
+        else fridge.purposes.add(key);
+        b.classList.toggle("is-on", fridge.purposes.has(key));
+        b.setAttribute("aria-pressed", String(fridge.purposes.has(key)));
+      } else if (b.dataset.go !== undefined) findFridgeIdeas(false);
+    });
+  }
+
+  async function addFridgePhoto(file) {
+    try {
+      const b64 = await resizeImage(file);
+      if (fridge.photos.length < FRIDGE_MAX_PHOTOS) fridge.photos.push({ b64, url: URL.createObjectURL(file) });
+    } catch (err) {
+      toast("Couldn't read that photo. Try another one.");
+    }
+    openFridge();
+  }
+
+  async function findFridgeIdeas(more) {
+    if (state.busy || !fridge.photos.length) return;
+    state.busy = true;
+    sheetLoading(more ? "Thinking of something different" : "Looking in your fridge");
+    const r = state.targets ? remainingToday() : null;
+    try {
+      const data = await MacroApi.call("fridgeIdeas", {
+        images: fridge.photos.map((p) => p.b64),
+        purposes: [...fridge.purposes],
+        note: fridge.note.trim(),
+        left: r ? { kcal: Math.round(r.kcal), protein_g: Math.round(r.protein_g) } : null,
+        avoid: more ? fridge.seen : [],
+      });
+      fridge.result = data;
+      fridge.seen = (more ? fridge.seen : []).concat(data.ideas.map((i) => i.name)).slice(-6);
+      setAiToday(data.aiToday);
+      showFridgeIdeas();
+    } catch (err) {
+      if (err.code === "limit" || err.code === "no_plan") openUpsell({ reason: "limit", message: err.message });
+      else {
+        openSheet(
+          `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Couldn't find ideas</h2>
+           <p class="fuel-error">${esc(err.message)}</p>
+           <button class="fuel-btn" type="button" data-again>Try again</button>
+           <button class="fuel-btn fuel-btn--quiet" type="button" data-back>Change photos</button>`,
+          (body) => {
+            body.querySelector("[data-again]").addEventListener("click", () => findFridgeIdeas(more));
+            body.querySelector("[data-back]").addEventListener("click", openFridge);
+          }
+        );
+      }
+    } finally {
+      state.busy = false;
+    }
+  }
+
+  function fridgeIdeaHtml(idea, i, listOn) {
+    const t = MacroCore.sumTotals(idea.items);
+    const meta = [idea.minutes ? `<b>${idea.minutes} min</b>` : "", `${int(t.protein_g)}g protein`, hideKcal() ? "" : `${int(t.kcal)} kcal`]
+      .filter(Boolean)
+      .join(" · ");
+    return `
+      <div class="week-card">
+        <div class="mp-meal__top">
+          <span class="mp-meal__emoji" aria-hidden="true">${esc(idea.emoji || "🍽️")}</span>
+          <div><div class="mp-meal__name">${esc(idea.name)}</div><div class="fr-meta">${meta}</div></div>
+        </div>
+        ${idea.why ? `<p class="fr-why">${esc(idea.why)}</p>` : ""}
+        <ul class="mp-items">${idea.items.map((it) => `<li><span>${esc(it.name)}</span><span>${esc(it.amount_text || `${int(it.grams)}g`)}</span></li>`).join("")}</ul>
+        ${idea.need
+          .map(
+            (n) => `
+          <div class="fr-need">
+            <span>You'd need: <b>${esc(n)}</b></span>
+            ${listOn ? `<button class="mp-btn mp-snack__add" type="button" data-need="${esc(n)}">+ List</button>` : ""}
+          </div>`
+          )
+          .join("")}
+        ${idea.steps.length ? `<ol class="fr-steps">${idea.steps.map((s) => `<li>${esc(s)}</li>`).join("")}</ol>` : ""}
+        <button class="mp-btn mp-btn--red fr-log" type="button" data-log="${i}">Log it</button>
+      </div>`;
+  }
+
+  function showFridgeIdeas() {
+    const res = fridge.result;
+    const listOn = MacroCore.tierRank(tier()) >= MacroCore.tierRank("gold");
+    const shownSpotted = res.spotted.slice(0, 12);
+    const moreSpotted = res.spotted.length - shownSpotted.length;
+    openSheet(
+      `<h2 class="fuel-sheet__title" id="fuelSheetTitle">What you could make</h2>
+       ${
+         res.spotted.length
+           ? `<div>
+                <p class="week-dates">Spotted in your photos</p>
+                <div class="fr-spotted">${shownSpotted.map((s) => `<span>${esc(s)}</span>`).join("")}${moreSpotted > 0 ? `<span>+${moreSpotted} more</span>` : ""}</div>
+              </div>`
+           : ""
+       }
+       ${res.ideas.map((idea, i) => fridgeIdeaHtml(idea, i, listOn)).join("")}
+       <button class="week-btn week-btn--ghost" type="button" data-more>Try different ideas</button>
+       <p class="mp-cost">Uses ${FRIDGE_AI_USES} more AI scans</p>
+       <button class="fuel-btn fuel-btn--quiet" type="button" data-back>Change photos or what it's for</button>`,
+      (body) => {
+        body.addEventListener("click", async (e) => {
+          const b = e.target.closest("button");
+          if (!b) return;
+          if (b.dataset.log !== undefined) logFridgeIdea(res.ideas[Number(b.dataset.log)]);
+          else if (b.dataset.more !== undefined) findFridgeIdeas(true);
+          else if (b.dataset.back !== undefined) openFridge();
+          else if (b.dataset.need) {
+            b.disabled = true;
+            try {
+              const data = await MacroApi.call("shoppingAdd", { name: b.dataset.need });
+              state.toBuy = data.list.filter((i) => !i.done).length;
+              b.textContent = "✓ On list";
+              b.classList.add("mp-btn--done");
+            } catch (err) {
+              b.disabled = false;
+              toast(err.message);
+            }
+          }
+        });
+      }
+    );
+  }
+
+  /** Into the usual confirm screen, so amounts can change first. A meal they picked goes straight into that meal. */
+  function logFridgeIdea(idea) {
+    if (!idea) return;
+    const slot =
+      ["breakfast", "lunch", "dinner", "snack"].find((k) => fridge.purposes.has(k)) ||
+      (fridge.purposes.has("preworkout") || fridge.purposes.has("postworkout") ? "snack" : null);
+    if (slot) state.addMeal = slot;
+    openConfirm({
+      title: idea.name,
+      source: "fridge",
+      items: idea.items.map((it) => ({ name: it.name, grams: it.grams, per100: MacroCore.per100From(it, it.grams), source: "fridge" })),
+    });
   }
 
   /** Shrinks a photo to 1024px on its long edge, JPEG 0.8, and returns the base64 (no data: prefix). */

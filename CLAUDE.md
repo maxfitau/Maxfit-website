@@ -67,6 +67,13 @@ In Fuel, under Ask Fuel: **Meal plan** (Diamond only) and **Shopping list** (Gol
 - **Shopping list** (private **Shopping List** tab, source plan/snack/own): `shoppingList`, `shoppingAdd`, `shoppingToggle` (`itemId`, because `id` is always the member's card id), `shoppingClear`. Grouped by aisle, big tick boxes, pantry staples listed separately, a rough Coles/Woolworths cost for plan items, "Send this list to someone" (share sheet or SMS).
 - **Testing:** a scratchpad harness runs the real Macros.gs against fake sheets and a fake Claude reply (41 checks: who can do what, counts, cleaning, prompt contents, budget share, logging, list maths, swaps keeping ticks, failures not counted, limits, no targets), and the real card was driven against it in the browser. Don't commit the harness.
 
+## What can I make? (fridge scanner, built 2026-10-15)
+
+- In Fuel's Log Food chooser (`card/macros.js`, `openFridge`). Gold and Diamond; Silver sees it locked like the other AI modes.
+- Up to 3 photos (fridge, freezer, cupboard), resized in the browser like meal photos, plus purpose chips (breakfast/lunch/dinner/snack/preworkout/postworkout/quick), an optional note, and what's left today. Backend `fridgeIdeas` (`Macros.gs`, `actionFridgeIdeas_`) asks the vision model for 3 ideas and counts as **2 AI uses** (a reserved row plus a "fridge (counts 2)" row; both marked "error" if it fails, so nothing is used up).
+- Ideas' foods go through `cleanPlanMeal_`. "Log it" opens the normal confirm screen (source `fridge`), with the chosen meal pre-picked (workout purposes go to Snack). "+ List" uses `shoppingAdd`.
+- The JSON schema is built inside `fridgeSchema_()`, never at load time: Apps Script loads Macro.gs before MacrosCore.gs, so top-level code can't touch `MacroCore`.
+
 ## Booking (1-on-1 sessions, built 2026-09-26)
 
 Clients book from the card: **Book a session** (Card tab) opens `card/book.html` (`book.js`, `book.css`), a day grid then a time list, then confirm. Max chose: 1-on-1 only, hours set in a sheet, cancelling up to 24 hours before.
