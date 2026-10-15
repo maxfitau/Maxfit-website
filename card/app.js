@@ -597,6 +597,10 @@ function showPicker() {
   });
 }
 
+// The Macros tab draws its own loading layout (macros.js), so it doesn't
+// wait behind this cover for the card's data, which it never shows.
+if (window.location.hash === "#fuel") hideCardLoading();
+
 if (memberId) {
   loadCard(memberId);
 } else {

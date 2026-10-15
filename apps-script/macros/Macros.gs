@@ -60,7 +60,7 @@
  * or change rows carrying their own id.
  */
 
-const MACROS_VERSION = "2026-10-15a";
+const MACROS_VERSION = "2026-10-15b";
 const TIMEZONE = "Australia/Sydney";
 const MAIN_SESSIONS_GID = 1169726169; // "Sessions Remaining" in the CRM sheet
 const CARD_URL = "https://maxfit.now/card/";
@@ -331,10 +331,33 @@ function tab_(key) {
   const spec = TABS[key];
   const ss = macroSheet_();
   let sheet = ss.getSheetByName(spec.name);
-  if (sheet) addMissingColumns_(sheet, spec);
-  else sheet = createTab_(ss, spec);
+  if (sheet) {
+    // Checking the header row costs a sheet read per tab on every request,
+    // so it's done once per tab per code version, then remembered for 6 hours.
+    if (!columnsChecked_(key)) {
+      addMissingColumns_(sheet, spec);
+      CacheService.getScriptCache().put(columnsKey_(key), "1", 21600);
+    }
+  } else sheet = createTab_(ss, spec);
   tabCache_[key] = sheet;
   return sheet;
+}
+
+function columnsKey_(key) {
+  return "cols_" + MACROS_VERSION + "_" + key;
+}
+
+let columnsChecked_cache_ = null;
+/** One cache read per request covers every tab (Speed, 2026-10-15). */
+function columnsChecked_(key) {
+  if (!columnsChecked_cache_) {
+    try {
+      columnsChecked_cache_ = CacheService.getScriptCache().getAll(Object.keys(TABS).map(columnsKey_)) || {};
+    } catch (err) {
+      columnsChecked_cache_ = {};
+    }
+  }
+  return !!columnsChecked_cache_[columnsKey_(key)];
 }
 
 function addMissingColumns_(sheet, spec) {
@@ -2569,7 +2592,24 @@ const FOOD_SEED = [
 ];
 
 /** The Foods tab as objects the card and MacroCore understand (seeds it on first use). */
+/** Max's Foods tab for suggestions and search. Kept for an hour, since it rarely changes and every Fuel load needs it. */
 function foodsList_() {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get("foods_list");
+  if (hit) {
+    try {
+      return JSON.parse(hit);
+    } catch (err) {
+      // fall through and read the tab
+    }
+  }
+  const list = readFoodsList_();
+  const json = JSON.stringify(list);
+  if (json.length < 95000) cache.put("foods_list", json, 3600); // CacheService holds at most 100 KB a key
+  return list;
+}
+
+function readFoodsList_() {
   let rows = readRows_("foods");
   if (!rows.length) {
     withLock_(() => {

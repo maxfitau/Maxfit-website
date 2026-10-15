@@ -2579,23 +2579,60 @@ body.is-fuel #panelFuel > .fuel-loading {
   filter: brightness(0.9);
 }
 
+/* Ask Fuel (2026-10-15): a labelled button in Diamond's icy blue, so it
+   reads as the second main action, not a small icon beside Log Food. */
 .fx-ask {
-  width: 60px;
   height: 60px;
   flex-shrink: 0;
-  display: grid;
-  place-items: center;
-  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
   border-radius: 18px;
-  background: var(--surface);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: var(--text);
+  background: linear-gradient(140deg, rgba(201, 214, 245, 0.22), rgba(201, 214, 245, 0.08));
+  border: 1px solid rgba(201, 214, 245, 0.55);
+  box-shadow: 0 0 18px rgba(170, 200, 255, 0.18);
+  color: var(--diamond);
   cursor: pointer;
+}
+
+.fx-ask span {
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 18px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .fx-ask svg {
   width: 24px;
   height: 24px;
+  flex-shrink: 0;
+}
+
+.fx-ask:active {
+  filter: brightness(1.15);
+}
+
+.fx-ask:disabled {
+  opacity: 0.5;
+}
+
+@media (max-width: 370px) {
+  .fx-ask {
+    padding: 0 12px;
+  }
+
+  .fx-ask span {
+    font-size: 16px;
+    letter-spacing: 0.05em;
+  }
+
+  .fx-scan span {
+    font-size: 18px;
+    letter-spacing: 0.08em;
+  }
 }
 
 .fx-caption {

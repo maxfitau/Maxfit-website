@@ -171,6 +171,9 @@
     add: '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>',
     fridge:
       '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="2.5" width="14" height="19" rx="2.5"/><path d="M5 9.5h14M8.5 5.5v2M8.5 12.5v3"/></svg>',
+    // Ask Fuel on the home screen: a chat bubble with a sparkle, so it reads as the AI.
+    askFuel:
+      '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12.5a7.5 7.5 0 0 1-11.1 6.6L4 20.5l1.4-4.6A7.5 7.5 0 1 1 20 12.5z"/><path d="M12.5 8.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z" fill="currentColor" stroke="none"/></svg>',
     barcode:
       '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 5v14M7 5v14M11 5v14M14 5v14M18 5v14M20 5v14"/></svg>',
     label:
@@ -288,24 +291,78 @@
       return;
     }
     state.loading = true;
+    // Last time's reply first, so Fuel is on screen straight away; the
+    // server's fresh copy (a few seconds) then replaces it.
+    const cached = !returnedSession && state.viewDate === MacroCore.sydneyDate() ? readMeCache() : null;
     if (returnedSession) renderLoading("Switching on Fuel AI");
-    else renderSkeleton();
+    else if (cached) {
+      applyMe(cached);
+      state.loaded = true;
+      state.loadedOn = MacroCore.sydneyDate();
+      render();
+    } else renderSkeleton();
+    const dayAtStart = state.day;
     try {
       if (returnedSession) await confirmStripeReturn();
       const data = await MacroApi.call("me", { date: state.viewDate, sync: !!(opts && opts.sync) });
+      saveMeCache(data);
+      // Anything logged, edited or day-switched while this was on its way
+      // already holds the newer day: keep it.
+      const keepDay = cached && state.day !== dayAtStart ? state.day : null;
       applyMe(data);
+      if (keepDay) state.day = keepDay;
       state.loaded = true;
       state.loadedOn = MacroCore.sydneyDate();
       render();
       if (returnedSession && state.plan && state.plan.kind === "paid") toast(`${TIER_NAMES[tier()]} is on. Welcome!`);
     } catch (err) {
       if (err.code === "bad_key") {
+        clearMeCache();
+        state.loaded = false;
         renderUnlock(err.message + " If Max has sent you one, paste it below.");
+      } else if (cached) {
+        toast("Couldn't refresh just now. Showing what's saved on this phone.");
       } else {
         renderNotice("Couldn't load", esc(err.message), '<button class="fuel-btn fuel-btn--ghost" type="button" data-act="retry">Try again</button>');
       }
     } finally {
       state.loading = false;
+    }
+  }
+
+  // The last `me` reply, saved on this phone (Speed, 2026-10-15). Only for
+  // the same person's link; a saved copy from an earlier day keeps their
+  // targets, foods and plan but starts the day empty with all AI uses back.
+  const ME_CACHE_KEY = "maxfitFuelMe";
+
+  function readMeCache() {
+    try {
+      const c = JSON.parse(localStorage.getItem(ME_CACHE_KEY) || "null");
+      if (!c || !c.data || c.id !== MacroApi.identity().id) return null;
+      const data = c.data;
+      if (c.date !== MacroCore.sydneyDate()) {
+        data.day = { date: state.viewDate, entries: [], totals: MacroCore.sumTotals([]) };
+        if (data.aiToday) data.aiToday = Object.assign({}, data.aiToday, { used: 0, left: data.aiToday.limit });
+      }
+      return data;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function saveMeCache(data) {
+    try {
+      localStorage.setItem(ME_CACHE_KEY, JSON.stringify({ id: MacroApi.identity().id, date: MacroCore.sydneyDate(), data }));
+    } catch (err) {
+      // Full or blocked storage: Fuel just loads the slow way next time.
+    }
+  }
+
+  function clearMeCache() {
+    try {
+      localStorage.removeItem(ME_CACHE_KEY);
+    } catch (err) {
+      // ignore
     }
   }
 
@@ -513,7 +570,7 @@
     return `
       <div class="fx-actions">
         <button class="fx-scan${usedUp ? " is-out" : ""}" type="button" data-act="scan"${skeleton ? " disabled" : ""}>${ICONS.add}<span>Log Food</span></button>
-        ${ai || skeleton ? `<button class="fx-ask" type="button" data-act="ask" aria-label="Ask Fuel, your AI nutrition copilot"${skeleton ? " disabled" : ""}>${ICONS.chat}</button>` : ""}
+        ${ai || skeleton ? `<button class="fx-ask" type="button" data-act="ask" aria-label="Ask Fuel, your AI nutrition copilot"${skeleton ? " disabled" : ""}>${ICONS.askFuel}<span>Ask Fuel</span></button>` : ""}
       </div>
       ${caption ? `<p class="fx-caption">${caption}</p>` : ""}`;
   }
