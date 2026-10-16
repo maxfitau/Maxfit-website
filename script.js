@@ -654,4 +654,40 @@ document.addEventListener("DOMContentLoaded", function () {
       if (e.key === "Escape" && vtLightbox.classList.contains("is-open")) closeVideoLightbox();
     });
   }
+
+  /* ---------- Card video ----------
+     The card tour has music, and a browser only plays sound after a tap. So one
+     big button starts it, and the video's own controls appear once it's playing.
+     Without this script the video just shows its controls from the start. */
+  var showcaseVideo = document.getElementById("showcaseVideo");
+  var showcasePlay = document.getElementById("showcasePlay");
+
+  if (showcaseVideo && showcasePlay) {
+    showcaseVideo.removeAttribute("controls");
+    showcasePlay.hidden = false;
+
+    showcasePlay.addEventListener("click", function () {
+      showcaseVideo.setAttribute("controls", "");
+      showcasePlay.hidden = true;
+      var started = showcaseVideo.play();
+      if (started && typeof started.catch === "function") {
+        // Blocked or failed to load: the controls are there to try again.
+        started.catch(function () {});
+      }
+      showcaseVideo.focus({ preventScroll: true });
+    });
+
+    // Don't leave the music playing once the video has scrolled out of sight.
+    // The observer is only the trigger: the pause goes by where the video is
+    // right now, so a late reading can't stop a video someone is watching.
+    if ("IntersectionObserver" in window) {
+      new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting || showcaseVideo.paused) return;
+          var box = showcaseVideo.getBoundingClientRect();
+          if (box.bottom < 0 || box.top > window.innerHeight) showcaseVideo.pause();
+        });
+      }, { threshold: 0 }).observe(showcaseVideo);
+    }
+  }
 });
