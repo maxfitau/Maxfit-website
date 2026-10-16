@@ -50,7 +50,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="styles.css?v=2026101501" />
+<link rel="stylesheet" href="styles.css?v=2026101601" />
 </head>
 <body>
 
@@ -260,20 +260,31 @@ First Aid Certificate
 </div>
 </section>
 
-<!-- Card showcase: real screens from the current MaxFit card (the card
-     home, the workout tracker, the weekly muscle heatmap, the weekly recap
-     and Fuel), shown in phone frames. They are screenshots of the actual
-     pages using a made-up member, so no client's details are on the page.
-     The old promo video (assets/videos/card-showcase.mp4) isn't used here
-     any more: it shows the pre-redesign card and the red referral-partner
-     card, which no longer exist. On a wide screen the phones sit three then
-     two; on a phone they're a swipeable strip. -->
+<!-- Card showcase: a 50 second video tour of the current card (assets/videos/
+     card-showcase.mp4, made by Max, with music), then real screens from the
+     card (the card home, the workout tracker, the weekly muscle heatmap, the
+     weekly recap and Fuel) in phone frames. The video has music, so browsers
+     only let it play with sound after a tap: it starts from the big play
+     button (script.js, "Card video") and doesn't download until then. The
+     video and the screenshots all use a made-up member, so no client's
+     details are on the page. On a wide screen the phones sit three then two;
+     on a phone they're a swipeable strip. -->
 <section class="section section--tight showcase" id="card-showcase">
 <div class="container">
 <div class="section-head reveal">
 <span class="eyebrow">The MaxFit Card</span>
 <h2>Your whole membership, on your phone</h2>
 <p>Book sessions, check in, log your workouts, track your food and see your progress. It's all on the card you already carry.</p>
+</div>
+<div class="showcase__video reveal-scale">
+<video id="showcaseVideo" controls playsinline preload="none" poster="assets/images/card-showcase-poster.jpg?v=20261016" aria-label="A 50 second tour of the MaxFit card, with music: sessions left, your week, logging sets, your muscles, Fuel and check-in">
+<source src="assets/videos/card-showcase.mp4?v=20261016" type="video/mp4" />
+Your browser can't play this video.
+</video>
+<button class="showcase__play" id="showcasePlay" type="button" hidden>
+<span class="showcase__play-icon" aria-hidden="true"></span>
+<span class="showcase__play-text"><strong>Watch it in 50 seconds</strong><span>Sound on</span></span>
+</button>
 </div>
 <div class="showcase__phones" id="showcaseFrame">
 <figure class="showcase__item reveal-scale">
@@ -1269,7 +1280,7 @@ Or email directly
 </div>
 </div>
 
-<script src="script.js?v=2026092504"></script>
+<script src="script.js?v=2026101601"></script>
 
 <!-- Redesign: GSAP + Lenis from CDN, pinned versions. No build step —
      plain <script> tags, same pattern as the Google Fonts <link> above. -->
