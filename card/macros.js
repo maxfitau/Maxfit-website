@@ -14,7 +14,7 @@
  *   fridge   — What can I make? photos of the fridge/cupboard → 3 ideas
  *              that fit what's left today (Gold and Diamond, 2 AI uses)
  *   chat     — Ask Fuel, the AI copilot (Diamond only)
- *   upsell   — Fuel plans: 7-day Diamond trial, then Gold $5.99 or Diamond
+ *   upsell   — Fuel plans: Silver free, Gold $5.99 or Diamond
  *              $9.99 a month (or yearly) via Stripe
  *   progress — weight trend vs goal, calorie target steps, last 14 days
  *              with green days and the nutrition punches (free)

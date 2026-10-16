@@ -258,7 +258,7 @@
     if (p.kind === "trial") return `${tier}: free trial · ${p.daysLeft} day${p.daysLeft === 1 ? "" : "s"} left`;
     if (p.kind === "lapsed") return "Silver: subscription ended";
     if (p.kind === "trial_over") return "Silver: trial finished, not subscribed";
-    return "Silver: the free week starts when they first open Fuel";
+    return "Silver: free plan";
   }
 
   function render() {

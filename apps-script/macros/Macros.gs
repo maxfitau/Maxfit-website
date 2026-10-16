@@ -60,7 +60,7 @@
  * or change rows carrying their own id.
  */
 
-const MACROS_VERSION = "2026-10-15b";
+const MACROS_VERSION = "2026-10-16a";
 const TIMEZONE = "Australia/Sydney";
 const MAIN_SESSIONS_GID = 1169726169; // "Sessions Remaining" in the CRM sheet
 const CARD_URL = "https://maxfit.now/card/";
@@ -689,8 +689,12 @@ function planPayload_(member) {
 
 function actionMe_(payload, member) {
   const slug = String(member.slug);
-  // The free week starts the first time they open FUEL while Fuel AI is on.
-  if (aiOn_() && !member.trial_started) {
+  // The free Diamond week used to start by itself the first time a client
+  // opened Fuel. Max switched that off (2026-10-16): new clients start on
+  // Silver, and he gives free months from the coach page instead. Set the
+  // Script Property AUTO_TRIAL to Y to turn the automatic week back on.
+  // Anyone already in a free week keeps it until it ends.
+  if (aiOn_() && !member.trial_started && prop_("AUTO_TRIAL") === "Y") {
     updateRow_("members", member._row, { trial_started: todaySydney_() });
     member.trial_started = todaySydney_();
   }
