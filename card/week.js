@@ -126,11 +126,17 @@ const WeekCard = (function () {
   async function loadGoal() {
     if (typeof MacroApi === "undefined" || !MacroApi.configured()) return;
     const data = await MacroApi.call("goal", { id: slug });
+    lastGoalReply = { goal: data.goal || null, fuel: data.fuel || null, shoppingToBuy: data.shoppingToBuy, today: data.today };
+    applyGoal(lastGoalReply);
+  }
+
+  function applyGoal(data) {
+    if (!data) return;
     goal = data.goal || null;
     fuel = data.fuel || null;
     toBuy = Number(data.shoppingToBuy) || 0;
     shareToBuy();
-    if (data.today) today = data.today;
+    if (data.today && data.today >= today) today = data.today;
   }
 
   /** Fuel's Shopping tile (macros.js) shows the same count, so it doesn't ask the server again. */
@@ -601,11 +607,68 @@ const WeekCard = (function () {
         else openSetup(null);
       });
     }
-    const results = await Promise.allSettled([loadSets(), loadGoal()]);
+    // Last time's tiles straight away, then each part repaints as soon as
+    // its own fresh copy arrives (2026-10-21): the recap used to wait for the
+    // slower goal call too, so on a slow or failed backend reply nothing
+    // showed at all.
+    const cached = readCache();
+    if (cached) {
+      sets = cached.sets;
+      applyGoal(cached.goal);
+      ready = !!cached.goal;
+      paint();
+    }
+    const setsDone = loadSets()
+      .then(() => {
+        saveCache();
+        paint();
+      })
+      .catch(() => {});
+    let goalOk = false;
+    for (let attempt = 0; attempt < 2 && !goalOk; attempt++) {
+      if (attempt) await new Promise((r) => setTimeout(r, 2500));
+      try {
+        await loadGoal();
+        goalOk = true;
+      } catch (err) {
+        // one retry: a cold or busy backend often answers the second time
+      }
+    }
     // Goals need the backend; without it the card just shows the recap.
-    ready = results[1].status === "fulfilled" && typeof MacroApi !== "undefined" && MacroApi.configured();
+    if (goalOk) ready = typeof MacroApi !== "undefined" && MacroApi.configured();
+    await setsDone;
+    if (goalOk) saveCache();
     paint();
-    maybePrompt();
+    if (goalOk) maybePrompt();
+  }
+
+  // ---------------------------------------------------------------------------
+  // The last recap and goal, saved on this phone so the tiles show instantly.
+  // Only for the same client; the backend's copy always replaces it.
+  // ---------------------------------------------------------------------------
+
+  const CACHE_KEY = "maxfitWeekTiles";
+  let lastGoalReply = null;
+
+  function readCache() {
+    try {
+      const c = JSON.parse(localStorage.getItem(CACHE_KEY) || "null");
+      if (!c || c.slug !== slug || !Array.isArray(c.sets)) return null;
+      return { sets: c.sets.map((s) => ({ date: s[0], exercise: s[1], kg: s[2], reps: s[3] })), goal: c.goal || null };
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function saveCache() {
+    try {
+      localStorage.setItem(
+        CACHE_KEY,
+        JSON.stringify({ slug, sets: sets.map((s) => [s.date, s.exercise, s.kg, s.reps]), goal: lastGoalReply })
+      );
+    } catch (err) {
+      // Full or blocked storage: the tiles just load the slow way.
+    }
   }
 
   return { init };
