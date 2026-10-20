@@ -50,7 +50,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="styles.css?v=2026101602" />
+<link rel="stylesheet" href="styles.css?v=2026102101" />
 </head>
 <body>
 
@@ -196,14 +196,18 @@ Loading your fitness dreams
 <!-- About -->
 <section class="about" id="about">
 
+<!-- One compact block instead of a long scroll: on a wide screen the photo
+     stands beside the heading and the bio with the credentials in a strip
+     underneath; on a phone it stacks (heading, photo, bio, credentials).
+     The photo is trimmed and smaller than the original cutout (918x1450). -->
 <div class="container about__body">
+<div class="about__head">
 <span class="eyebrow">About</span>
 <h2>Meet your coach</h2>
-
-<div class="about__headshot-wrap">
-<div class="about__headshot-mask" id="aboutHeadshotMask">
-<img class="about__headshot" src="assets/images/coach-headshot.png" alt="Max, Founder &amp; Coach" width="300" height="300" />
 </div>
+
+<div class="about__photo reveal">
+<img class="coach-photo" src="assets/images/coach-photo.png?v=20261021" alt="Max, Founder &amp; Coach" width="918" height="1450" loading="lazy" />
 </div>
 
 <div class="about__copy">
@@ -212,22 +216,15 @@ Loading your fitness dreams
 <p>Personally, I could be working a forgettable job just to get by. Instead I chose to build something real around what I love: fitness, and helping people grow. My interest in psychology, exploring motivation, connection, and mindset, is a big part of why. If you're ready to stop guessing and start seeing results, I'd love to help you get there.</p>
 </div>
 
-<table class="about__creds" aria-label="Credentials">
-<tr class="about__creds-row reveal">
-<td>6 yrs</td>
-<td>Gym experience</td>
-</tr>
-<tr class="about__creds-row reveal">
-<td>Cert III &amp; IV</td>
-<td>Fitness &middot; NHFA, 2026</td>
-</tr>
-<tr class="about__creds-row reveal">
-<td>Hons</td>
-<td>Psychology &middot; UTS (enrolled)</td>
-</tr>
-</table>
+<div class="about__creds">
+<div>
+<ul class="about__stats" aria-label="Credentials">
+<li><strong>6 yrs</strong><span>Gym experience</span></li>
+<li><strong>Cert III &amp; IV</strong><span>Fitness &middot; NHFA, 2026</span></li>
+<li><strong>Hons</strong><span>Psychology &middot; UTS (enrolled)</span></li>
+</ul>
 <p class="about__creds-note">Optimal programming. Zero gimmicks.</p>
-
+</div>
 <div class="creds-links">
 <span class="creds-links__label">Verified qualifications</span>
 <div class="creds-links__row">
@@ -245,8 +242,7 @@ First Aid Certificate
 </a>
 </div>
 </div>
-
-<img class="coach-photo reveal" src="assets/images/coach-photo.png" alt="Max, Founder &amp; Coach" />
+</div>
 </div>
 
 <!-- 02 · Manifesto — pinned: the motto, then the pull-quote reveals
@@ -1359,7 +1355,7 @@ Or email directly
      Why it matters). A pin created before one above it computes its start
      without that pin's extra scroll distance, and opens too early. -->
 <script src="js/animations/problem.js?v=2026092504"></script>
-<script src="js/animations/about.js?v=2026092504"></script>
+<script src="js/animations/about.js?v=2026102101"></script>
 <script src="js/animations/why.js?v=2026092504"></script>
 <script src="js/reviews-config.js?v=2026092703"></script>
 <script src="js/reviews.js?v=2026092701"></script>
