@@ -32,7 +32,7 @@ const GROCERY_SHEET_NAME = "Grocery Items";
 // Changes whenever this file does, and is shown when you open the deployed
 // URL in a browser (see doGet) — the quick way to tell whether a redeploy
 // actually took, instead of guessing from behaviour.
-const BACKEND_VERSION = "2026-10-13b";
+const BACKEND_VERSION = "2026-10-21b";
 
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -2750,6 +2750,12 @@ function bookingSyncCalendarCreate_(clientName, date, startMin, endMin, meetingP
     if (meetingPlace) event.setLocation(meetingPlace);
     return event.getId();
   } catch (err) {
+    // Swallowed on purpose (a calendar failure must never fail a booking
+    // that's already saved) — but logged, because a silently-caught error
+    // used to mean this was undiagnosable even from the Executions panel.
+    // console.error (not Logger.log) because the Executions page's Cloud
+    // logs panel only shows console output, not the old Logger transcript.
+    console.error("bookingSyncCalendarCreate_ failed: " + err);
     return "";
   }
 }
@@ -2762,7 +2768,7 @@ function bookingSyncCalendarDelete_(eventId) {
     const event = cal.getEventById(eventId);
     if (event) event.deleteEvent();
   } catch (err) {
-    // Nothing to do — the booking is still correctly cancelled either way.
+    console.error("bookingSyncCalendarDelete_ failed: " + err);
   }
 }
 
