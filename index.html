@@ -50,7 +50,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="styles.css?v=2026101601" />
+<link rel="stylesheet" href="styles.css?v=2026102102" />
 </head>
 <body>
 
@@ -196,14 +196,18 @@ Loading your fitness dreams
 <!-- About -->
 <section class="about" id="about">
 
+<!-- One compact block instead of a long scroll: on a wide screen the photo
+     stands beside the heading and the bio with the credentials in a strip
+     underneath; on a phone it stacks (heading, photo, bio, credentials).
+     The photo is trimmed and smaller than the original cutout (918x1450). -->
 <div class="container about__body">
+<div class="about__head">
 <span class="eyebrow">About</span>
 <h2>Meet your coach</h2>
-
-<div class="about__headshot-wrap">
-<div class="about__headshot-mask" id="aboutHeadshotMask">
-<img class="about__headshot" src="assets/images/coach-headshot.png" alt="Max, Founder &amp; Coach" width="300" height="300" />
 </div>
+
+<div class="about__photo reveal">
+<img class="coach-photo" src="assets/images/coach-photo.png?v=20261021" alt="Max, Founder &amp; Coach" width="918" height="1450" loading="lazy" />
 </div>
 
 <div class="about__copy">
@@ -212,22 +216,15 @@ Loading your fitness dreams
 <p>Personally, I could be working a forgettable job just to get by. Instead I chose to build something real around what I love: fitness, and helping people grow. My interest in psychology, exploring motivation, connection, and mindset, is a big part of why. If you're ready to stop guessing and start seeing results, I'd love to help you get there.</p>
 </div>
 
-<table class="about__creds" aria-label="Credentials">
-<tr class="about__creds-row reveal">
-<td>6 yrs</td>
-<td>Gym experience</td>
-</tr>
-<tr class="about__creds-row reveal">
-<td>Cert III &amp; IV</td>
-<td>Fitness &middot; NHFA, 2026</td>
-</tr>
-<tr class="about__creds-row reveal">
-<td>Hons</td>
-<td>Psychology &middot; UTS (enrolled)</td>
-</tr>
-</table>
+<div class="about__creds">
+<div>
+<ul class="about__stats" aria-label="Credentials">
+<li><strong>6 yrs</strong><span>Gym experience</span></li>
+<li><strong>Cert III &amp; IV</strong><span>Fitness &middot; NHFA, 2026</span></li>
+<li><strong>Hons</strong><span>Psychology &middot; UTS (enrolled)</span></li>
+</ul>
 <p class="about__creds-note">Optimal programming. Zero gimmicks.</p>
-
+</div>
 <div class="creds-links">
 <span class="creds-links__label">Verified qualifications</span>
 <div class="creds-links__row">
@@ -245,8 +242,7 @@ First Aid Certificate
 </a>
 </div>
 </div>
-
-<img class="coach-photo reveal" src="assets/images/coach-photo.png" alt="Max, Founder &amp; Coach" />
+</div>
 </div>
 
 <!-- 02 · Manifesto — pinned: the motto, then the pull-quote reveals
@@ -407,7 +403,7 @@ Your browser can't play this video.
 <div class="program__body">
 <div class="program__body-inner">
 <p class="program__desc">Online personal training for clients anywhere, from Inner West Sydney to overseas. Train at your own gym or from home, on your own schedule. Get a custom weekly program built around your goals, with regular check-ins to keep you accountable and adjust as you progress, for a fraction of the price of in-person coaching.</p>
-<a href="#pricing" class="btn btn--outline btn--sm">See pricing</a>
+<a href="join.html" class="btn btn--outline btn--sm">Book a call</a>
 </div>
 </div>
 </div>
@@ -523,7 +519,7 @@ Your browser can't play this video.
 </div>
 <p class="timetable__note">Sample weekly schedule. Update the days and times above to match your real class calendar.</p>
 
-<a href="#pricing" class="btn btn--outline btn--sm">See pricing</a>
+<a href="join.html" class="btn btn--outline btn--sm">Book a call</a>
 </div>
 </div>
 </div>
@@ -551,62 +547,69 @@ Your browser can't play this video.
 </ul>
 </div>
 
-<div class="pricing-grid">
-
-<div class="price-card reveal">
-<h3 class="price-card__title">Group Classes</h3>
-<p class="price-card__desc">45-minute sessions, small group energy and accountability.</p>
-<div class="price-card__rows">
-<div class="price-card__row">
-<span>Single class</span>
-<span class="price-card__amount">29</span>
-</div>
-<div class="price-card__row price-card__row--highlight">
-<span>6-class pack <em>Best value</em></span>
-<span class="price-card__amount">149</span>
-</div>
-</div>
-<a href="join.html" class="btn btn--outline btn--sm">Book a call</a>
+<!-- The 6-packs up front, set against MaxFit's usual prices (Max's own rates:
+     $90 for 30 minutes, $100 for 45 minutes, $120 an hour) and framed as the
+     opening sale, not as cheaper than other trainers. The sums: 6 x $90 = $540
+     against $199 (save $341, $33.17 a session); 6 x $100 = $600 against $249
+     (save $351, $41.50 a session); the singles save $51 each. If a price
+     changes, redo these numbers and the bar widths (--w = sale total / usual
+     total). This block is the whole pricing section now: the old Group Classes /
+     Individual Sessions / Online Coaching cards were removed (21 Oct), and the
+     sale terms are in the banner above and the note below. -->
+<div class="compare reveal">
+<div class="compare__head">
+<span class="eyebrow">The 6-pack</span>
+<h3 class="compare__title">Save up to $351 on your first 6-pack</h3>
+<p class="compare__lead">Our usual rates are <strong>$90 for 30 minutes</strong>, <strong>$100 for 45 minutes</strong> and <strong>$120 for an hour</strong>. For our first 10 members, the opening-sale 6-pack takes more than half off, and most clients start with one.</p>
 </div>
 
-<div class="price-card price-card--featured reveal">
-<span class="price-card__badge">Most Popular</span>
-<h3 class="price-card__title">Individual Sessions</h3>
-<p class="price-card__desc">Fully personalized one-on-one coaching, built around you.</p>
-<div class="price-card__rows">
-<div class="price-card__row">
-<span>Single session · 30 min <em>Sale, save 31</em></span>
-<span class="price-card__amount"><s class="price-card__was">70</s>39</span>
+<div class="compare__packs">
+<article class="compare__pack">
+<h4 class="compare__pack-title">6-pack · 30 min</h4>
+<p class="compare__price"><span class="compare__cur">$</span>199<span class="compare__for">for all 6</span></p>
+<p class="compare__per">That's <strong>$33.17</strong> a session, <span>usually $90</span></p>
+<div class="compare__bars">
+<div class="compare__bar">
+<p class="compare__bar-text"><span>Usual price <small>6 × $90</small></span><strong>$540</strong></p>
+<span class="compare__track" aria-hidden="true"><span class="compare__fill compare__fill--usual" style="--w: 100%"></span></span>
 </div>
-<div class="price-card__row">
-<span>Single session · 45 min <em>Sale, save 41</em></span>
-<span class="price-card__amount"><s class="price-card__was">90</s>49</span>
-</div>
-<div class="price-card__row price-card__row--highlight">
-<span>6-pack · 30 min</span>
-<span class="price-card__amount">199</span>
-</div>
-<div class="price-card__row price-card__row--highlight">
-<span>6-pack · 45 min <em>Best value</em></span>
-<span class="price-card__amount">249</span>
+<div class="compare__bar">
+<p class="compare__bar-text"><span>Opening sale</span><strong>$199</strong></p>
+<span class="compare__track" aria-hidden="true"><span class="compare__fill" style="--w: 36.9%"></span></span>
 </div>
 </div>
-<a href="join.html" class="btn btn--primary btn--sm">Book a call</a>
+<p class="compare__save"><span>You save</span><strong>$341</strong></p>
+</article>
+
+<article class="compare__pack compare__pack--best">
+<span class="compare__badge">Best value</span>
+<h4 class="compare__pack-title">6-pack · 45 min</h4>
+<p class="compare__price"><span class="compare__cur">$</span>249<span class="compare__for">for all 6</span></p>
+<p class="compare__per">That's <strong>$41.50</strong> a session, <span>usually $100</span></p>
+<div class="compare__bars">
+<div class="compare__bar">
+<p class="compare__bar-text"><span>Usual price <small>6 × $100</small></span><strong>$600</strong></p>
+<span class="compare__track" aria-hidden="true"><span class="compare__fill compare__fill--usual" style="--w: 100%"></span></span>
+</div>
+<div class="compare__bar">
+<p class="compare__bar-text"><span>Opening sale</span><strong>$249</strong></p>
+<span class="compare__track" aria-hidden="true"><span class="compare__fill" style="--w: 41.5%"></span></span>
+</div>
+</div>
+<p class="compare__save"><span>You save</span><strong>$351</strong></p>
+</article>
 </div>
 
-<div class="price-card reveal">
-<h3 class="price-card__title">Online Coaching</h3>
-<p class="price-card__desc">Science-based programming wherever you train, with weekly check-ins.</p>
-<div class="price-card__rows">
-<div class="price-card__row">
-<span>Weekly coaching <em>Sale, save 30</em></span>
-<span class="price-card__amount"><s class="price-card__was">60</s>30<small>/wk</small></span>
-</div>
-</div>
-<p class="price-card__footnote">A weekly check-in means you're never figuring it out alone, with real support to keep you moving toward your goals even on the weeks that get busy.</p>
-<a href="join.html" class="btn btn--outline btn--sm">Book a call</a>
-</div>
+<p class="compare__label">Just want one session?</p>
+<ul class="compare__singles">
+<li><span>Single session · 30 min</span><span>Usually <s>$90</s></span><strong>$39</strong></li>
+<li><span>Single session · 45 min</span><span>Usually <s>$100</s></span><strong>$49</strong></li>
+</ul>
 
+<div class="compare__foot">
+<a href="join.html" class="btn btn--primary">Book your free consult</a>
+<p class="compare__note">Usual prices are MaxFit's regular rates.</p>
+</div>
 </div>
 
 <p class="pricing-note">Prices shown are MaxFit opening-sale rates for our first 10 members. Once those slots fill, regular pricing applies. Most clients start with a 6-pack, since it usually takes 6-8 weeks of consistent training to see real, lasting results.</p>
@@ -1295,7 +1298,7 @@ Or email directly
      Why it matters). A pin created before one above it computes its start
      without that pin's extra scroll distance, and opens too early. -->
 <script src="js/animations/problem.js?v=2026092504"></script>
-<script src="js/animations/about.js?v=2026092504"></script>
+<script src="js/animations/about.js?v=2026102101"></script>
 <script src="js/animations/why.js?v=2026092504"></script>
 <script src="js/reviews-config.js?v=2026092703"></script>
 <script src="js/reviews.js?v=2026092701"></script>
