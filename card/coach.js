@@ -9,7 +9,7 @@
  *     anything under the 1,500 / 1,200 kcal floor explicitly
  *   - hand targets back to the client's own calculator
  *   - see each client's plan (Silver / Gold / Diamond: trial, paying or
- *     free month), give a free month of Gold or Diamond, and ask the
+ *     free month), give a free week or month of Gold or Diamond, and ask the
  *     backend to check Stripe now
  *   - log a client's weight after a session, set their goal weight and
  *     pace, and see this week's green days and their nutrition punches
@@ -132,7 +132,13 @@
         <div class="coach-actions">
           ${c.link ? '<button class="fuel-btn" type="button" data-a="copy">Copy link</button>' : '<button class="fuel-btn" type="button" data-a="issue">Create Fuel link</button>'}
           <button class="fuel-btn fuel-btn--ghost" type="button" data-a="targets">Set targets</button>
-          ${c.hasKey && aiEnabled ? ["gold", "diamond"].map((t) => `<button class="fuel-btn fuel-btn--ghost" type="button" data-a="giveMonth" data-tier="${t}">Free month of ${TIER_NAMES[t]}</button>`).join("") : ""}
+          ${
+            c.hasKey && aiEnabled
+              ? [7, 30]
+                  .map((d) => ["gold", "diamond"].map((t) => `<button class="fuel-btn fuel-btn--ghost" type="button" data-a="giveMonth" data-tier="${t}" data-days="${d}">Free ${d === 7 ? "week" : "month"} of ${TIER_NAMES[t]}</button>`).join(""))
+                  .join("")
+              : ""
+          }
           ${c.hasKey ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="weight">Log weight</button>' : ""}
           ${c.hasKey && c.targets ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="goal">Set goal</button>' : ""}
           ${c.link ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="rotate">New link</button>' : ""}
@@ -254,7 +260,7 @@
     const tier = TIER_NAMES[p.tier] || "Gold";
     const period = p.interval === "year" ? "paying yearly" : "paying monthly";
     if (p.kind === "paid") return `${tier}: ${period}${p.until ? ` · renews ${date(p.until)}` : ""}${p.status === "past_due" ? " · card failed, Stripe retrying" : ""}`;
-    if (p.kind === "comp") return `${tier}: free month · until ${date(p.until)}`;
+    if (p.kind === "comp") return `${tier}: free from you · until ${date(p.until)}`;
     if (p.kind === "trial") return `${tier}: free trial · ${p.daysLeft} day${p.daysLeft === 1 ? "" : "s"} left`;
     if (p.kind === "lapsed") return "Silver: subscription ended";
     if (p.kind === "trial_over") return "Silver: trial finished, not subscribed";
@@ -405,7 +411,7 @@
         render();
         toast(`Saved ${c.name}'s goal`);
       } else if (a === "giveMonth") {
-        const data = await MacroApi.coach("coachGiveMonth", pin, { slug: slug, tier: btn.dataset.tier });
+        const data = await MacroApi.coach("coachGiveMonth", pin, { slug: slug, tier: btn.dataset.tier, days: Number(btn.dataset.days) || 30 });
         c.plan = data.plan;
         render();
         toast(`${c.name} has ${TIER_NAMES[btn.dataset.tier] || "Gold"} free until ${planText(data.plan).split("until ")[1] || "next month"}`);

@@ -60,7 +60,7 @@
  * or change rows carrying their own id.
  */
 
-const MACROS_VERSION = "2026-10-16a";
+const MACROS_VERSION = "2026-10-22a";
 const TIMEZONE = "Australia/Sydney";
 const MAIN_SESSIONS_GID = 1169726169; // "Sessions Remaining" in the CRM sheet
 const CARD_URL = "https://maxfit.now/card/";
@@ -2323,7 +2323,9 @@ function actionCoachGiveMonth_(payload) {
     const current = /^\d{4}-\d{2}-\d{2}$/.test(String(member.comp_until)) ? String(member.comp_until) : "";
     // Stack onto an existing free month rather than overlapping it.
     const from = current && current >= today ? MacroCore.addDays(current, 1) : today;
-    const until = MacroCore.addDays(from, 29);
+    // A free week (days: 7, 2026-10-22) or, by default, a free month (30 days).
+    const days = Number(payload.days) === 7 ? 7 : 30;
+    const until = MacroCore.addDays(from, days - 1);
     const tier = payload.tier === "diamond" ? "diamond" : "gold";
     updateRow_("members", member._row, { comp_until: until, comp_tier: tier });
     member.comp_until = until;
