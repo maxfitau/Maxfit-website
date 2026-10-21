@@ -1009,6 +1009,12 @@ function rememberPin_(pin) {
   }
 }
 
+// The Exercises tab (exercise-manager.js) has added or filled in an exercise:
+// forget the cached name -> muscles lookup so rows and pickers see it.
+document.addEventListener("maxfit:exercises-changed", () => {
+  exerciseIndexPromise_ = null;
+});
+
 (function init() {
   let rememberedPin = "";
   try {
