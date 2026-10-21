@@ -276,12 +276,26 @@ async function init() {
     return;
   }
 
-  const exercisesByKey = new Map(exercises.map((ex) => [ex.key, ex]));
-  populatePicker_(exercises);
+  // Max's call: a lift that's net down since its first logged session (same
+  // comparison as the headline "-X kg since ..." delta) just doesn't show
+  // here at all, rather than surfacing a decrease. A single-session exercise
+  // has no earlier point to compare against, so it's never "decreased" —
+  // it stays. Matches the site's existing no-shaming rule (CLAUDE.md).
+  const visible = exercises.filter((ex) => ex.points.length < 2 || ex.points[ex.points.length - 1].value >= ex.points[0].value);
+
+  if (!visible.length) {
+    els.empty.hidden = false;
+    els.empty.querySelector(".progress__empty-text").textContent =
+      "Nothing trending up right now — once a lift ticks back up, it'll show here.";
+    return;
+  }
+
+  const exercisesByKey = new Map(visible.map((ex) => [ex.key, ex]));
+  populatePicker_(visible);
   els.pickerRow.hidden = false;
-  els.select.value = exercises[0].key;
+  els.select.value = visible[0].key;
   els.content.hidden = false;
-  renderExercise_(exercises[0]);
+  renderExercise_(visible[0]);
 
   els.select.addEventListener("change", () => {
     const ex = exercisesByKey.get(els.select.value);
