@@ -701,17 +701,24 @@ function addExerciseSection(ctx, exercise, opts) {
   section.className = "workout__exercise";
   if (isExtra) section.classList.add("workout__exercise--extra");
 
-  // Superset grouping (builder.js's "Superset with next" toggle): a chain of
-  // 2+ exercises done back-to-back with minimal rest. --superset marks every
-  // member (the left accent bar); --superset-link additionally closes the
-  // gap to whichever section renders right after it, so the chain reads as
-  // one joined block instead of separate cards.
+  // Superset/Circuit grouping (builder.js's "Superset with next" toggle): a
+  // chain of 2+ exercises done back-to-back with minimal rest. The whole
+  // chain is styled as one shared panel (tinted background + a border that
+  // wraps the group, rounded only at its two ends) rather than relying on
+  // a thin accent line to carry the whole signal — easy to miss at a glance
+  // or a quick scroll, especially for Max's older clients (readable-text
+  // rule). --superset-start/-end mark the two ends of the panel for the
+  // rounded corners and the label; --superset-link closes the list's normal
+  // gap so members sit flush against each other inside the shared panel.
   if (opts && opts.inSuperset) section.classList.add("workout__exercise--superset");
+  if (opts && opts.isChainStart) section.classList.add("workout__exercise--superset-start");
+  if (opts && opts.isChainEnd) section.classList.add("workout__exercise--superset-end");
   if (opts && opts.linksToNext) section.classList.add("workout__exercise--superset-link");
   if (opts && opts.supersetLabel) {
     const supersetLabel = document.createElement("span");
     supersetLabel.className = "workout__superset-label";
-    supersetLabel.textContent = "Superset — back to back, minimal rest";
+    const word = opts.chainLength >= 3 ? "Circuit" : "Superset";
+    supersetLabel.textContent = `${word} — back to back, minimal rest`;
     section.appendChild(supersetLabel);
   }
 
@@ -720,7 +727,16 @@ function addExerciseSection(ctx, exercise, opts) {
 
   const name = document.createElement("h2");
   name.className = "workout__exercise-name";
-  name.textContent = exercise.name;
+  // A small numbered badge for its spot in the sequence (1, 2, 3...) — makes
+  // the order explicit, which matters most for a 3+ circuit (go in order,
+  // repeat), not just "these are linked".
+  if (opts && opts.inSuperset && opts.chainIndex) {
+    const indexBadge = document.createElement("span");
+    indexBadge.className = "workout__superset-index";
+    indexBadge.textContent = String(opts.chainIndex);
+    name.appendChild(indexBadge);
+  }
+  name.appendChild(document.createTextNode(exercise.name));
   head.appendChild(name);
 
   const target = document.createElement("span");
@@ -1143,18 +1159,40 @@ function renderWorkout(shared, workoutName, exercises) {
   ctx.addExerciseWrap = buildAddExerciseControl(ctx, exerciseNameOptions || []);
   els.list.appendChild(ctx.addExerciseWrap);
 
+  // A chain's length (how many exercises are linked back-to-back, counting
+  // the starting one) decides its label: 2 reads as "Superset", 3+ reads as
+  // "Circuit" — same join mechanism either way, wording only.
+  const chainLengthFrom = (startIndex) => {
+    let n = 1;
+    let i = startIndex;
+    while (exercises[i] && exercises[i].superset) {
+      n++;
+      i++;
+    }
+    return n;
+  };
+
   const assignedKeys = new Set();
+  let chainIndex = 0; // this exercise's 1-based spot within its own chain; 0 outside any chain
   exercises.forEach((exercise, i) => {
     const lower = exercise.name.toLowerCase();
     assignedKeys.add(lower);
     const saved = savedByExercise.get(lower);
     const prevLinksHere = i > 0 && exercises[i - 1].superset;
+    const inSuperset = Boolean(exercise.superset || prevLinksHere);
+    const isChainStart = Boolean(exercise.superset && !prevLinksHere); // first exercise of the chain only
+    const isChainEnd = inSuperset && !exercise.superset; // last exercise of the chain only
+    chainIndex = inSuperset ? (prevLinksHere ? chainIndex + 1 : 1) : 0;
     addExerciseSection(ctx, exercise, {
       isExtra: false,
       savedSets: saved ? saved.sets : null,
-      inSuperset: Boolean(exercise.superset || prevLinksHere),
+      inSuperset,
+      isChainStart,
+      isChainEnd,
+      chainIndex,
       linksToNext: Boolean(exercise.superset),
-      supersetLabel: Boolean(exercise.superset && !prevLinksHere), // first exercise of the chain only
+      supersetLabel: isChainStart,
+      chainLength: isChainStart ? chainLengthFrom(i) : 0,
     });
   });
 
