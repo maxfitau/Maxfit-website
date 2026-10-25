@@ -488,6 +488,64 @@ body {
   text-align: left;
 }
 
+.book__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.book__location {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.book__location-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.book__location-opt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  text-align: left;
+  font-family: var(--font-body);
+  color: var(--white);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  cursor: pointer;
+}
+
+.book__location-opt:active {
+  border-color: var(--red);
+}
+
+.book__location-opt.is-selected {
+  background: rgba(224, 0, 0, 0.1);
+  border-color: var(--red);
+}
+
+.book__location-opt b {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.book__location-opt span {
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.book__location-opt:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* ---- Messages ---- */
 
 .book__message,

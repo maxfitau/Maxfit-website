@@ -32,7 +32,7 @@ const GROCERY_SHEET_NAME = "Grocery Items";
 // Changes whenever this file does, and is shown when you open the deployed
 // URL in a browser (see doGet) — the quick way to tell whether a redeploy
 // actually took, instead of guessing from behaviour.
-const BACKEND_VERSION = "2026-10-21b";
+const BACKEND_VERSION = "2026-10-25a";
 
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -747,6 +747,15 @@ function doPost(e) {
   }
   if (action === "cancelBooking") {
     return withLock_(() => handleCancelBooking_(payload));
+  }
+  // Max creating a booking himself (card/book-staff.html, his card's Coach
+  // Tools only) — STAFF_PIN + any client by slug, same slot/eligibility
+  // rules and the same client confirmation email as self-service.
+  if (action === "coachBookingInfo") {
+    return handleCoachBookingInfo_(payload);
+  }
+  if (action === "coachBookSession") {
+    return withLock_(() => handleCoachBookSession_(payload));
   }
   if (action === "checkGroceryCode") {
     return handleCheckGroceryCode_(payload);
@@ -2063,6 +2072,12 @@ function handleDeleteGroceryItem_(payload) {
 const BOOKING_SHEET_ID_PROPERTY = "BOOKING_SHEET_ID";
 const BOOKING_SELFTEST_SHEET_ID_PROPERTY = "BOOKING_SELFTEST_SHEET_ID";
 const BOOKING_SHEET_TITLE = "MaxFit Bookings";
+// The private "MaxFit Macros" sheet's id (Script Properties, pasted by Max —
+// see the "MaxFit Macros" sheet's own url). Optional: lets issueBookingCodes
+// fill in each client's Fuel Link automatically; blank just leaves that
+// column empty rather than breaking anything (same fail-open spirit as
+// every other optional cross-project read in this file).
+const MACRO_SHEET_ID_PROPERTY = "MACRO_SHEET_ID";
 const BOOKING_NOTIFY_DEFAULT = "max.french28@gmail.com";
 const BOOKING_SITE_URL = "https://maxfit.now"; // where the Book page lives, for the link in a client's confirmation email
 const BOOKING_DEFAULT_MINUTES = 45;
@@ -2082,12 +2097,19 @@ const BOOKING_TABS = {
   upcoming: "Upcoming",
   prices: "Prices",
   payments: "Payments",
+  locations: "Locations",
 };
 const BOOKING_AVAILABILITY_HEADER = ["On", "Day", "Start", "End", "Session Minutes", "Buffer Minutes"];
 const BOOKING_TIME_OFF_HEADER = ["From", "To", "Note"];
 const BOOKING_SETTINGS_HEADER = ["Setting", "Value", "What it does"];
-const BOOKING_CLIENTS_HEADER = ["Name", "Slug", "Booking Code", "Text to send", "Email"];
-const BOOKINGS_HEADER = ["Booking ID", "Date", "Start", "End", "Minutes", "Client", "Client Slug", "Status", "Booked At", "Cancelled At", "Calendar Event Id"];
+const BOOKING_CLIENTS_HEADER = ["Name", "Slug", "Booking Code", "Text to send", "Email", "Fuel Link"];
+// Column 12 (Location), deliberately past the first ten the Upcoming tab's
+// formula reads by letter — same reasoning as Calendar Event Id at 11.
+const BOOKINGS_HEADER = ["Booking ID", "Date", "Start", "End", "Minutes", "Client", "Client Slug", "Status", "Booked At", "Cancelled At", "Calendar Event Id", "Location"];
+// Empty by default — unlike Prices, there's no sensible generic starting
+// row here, Max adds his own real places. A client only sees a location
+// step at all once at least one row here is On.
+const BOOKING_LOCATIONS_HEADER = ["On", "Name", "Address"];
 const BOOKING_PRICES_HEADER = ["On", "Name", "Sessions", "Price", "Stripe lookup key", "Pay link"];
 const BOOKING_PAYMENTS_HEADER = ["Stripe Session", "Paid At", "Client", "Slug", "Item", "Sessions", "Amount", "Before", "After", "Status", "Note"];
 
@@ -2201,7 +2223,7 @@ function setupBooking() {
     bookingEnsureSettingRows_(settings.sheet); // settings added in a later version
   }
 
-  const clients = bookingEnsureTab_(ss, BOOKING_TABS.clients, BOOKING_CLIENTS_HEADER, [], ["Slug", "Booking Code", "Email"]);
+  const clients = bookingEnsureTab_(ss, BOOKING_TABS.clients, BOOKING_CLIENTS_HEADER, [], ["Slug", "Booking Code", "Email", "Fuel Link"]);
   if (clients.isNew) {
     clients.sheet.getRange(1, 3).setNote("Each client's personal booking code. Text it to them: they type it once on each phone. To give someone a new code, clear their cell and run issueBookingCodes.");
     clients.sheet.getRange(1, 5).setNote("Where this client's booking confirmations go. Copied from the CRM when it has one, or typed by the client the first time they book. Clear it to stop their emails.");
@@ -2234,6 +2256,15 @@ function setupBooking() {
     prices.sheet.setColumnWidth(2, 220);
     prices.sheet.setColumnWidth(5, 170);
     prices.sheet.setColumnWidth(6, 380);
+  }
+
+  const locations = bookingEnsureTab_(ss, BOOKING_TABS.locations, BOOKING_LOCATIONS_HEADER, [], ["Name", "Address"]);
+  if (locations.isNew) {
+    locations.sheet.getRange(1, 1).setNote("Yes/blank to offer it. Add a row per place you train. Leave the whole tab empty to keep the old single \"Meeting place\" (Settings tab) behaviour — clients only see a location to pick once a row here is On.");
+    locations.sheet.getRange(1, 3).setNote("Optional extra detail shown with the name, e.g. \"by the rotunda\". Leave blank to show just the name.");
+    locations.sheet.setColumnWidth(1, 60);
+    locations.sheet.setColumnWidth(2, 220);
+    locations.sheet.setColumnWidth(3, 380);
   }
 
   const payments = bookingEnsureTab_(ss, BOOKING_TABS.payments, BOOKING_PAYMENTS_HEADER, [], ["Stripe Session", "Paid At", "Slug", "Amount", "Before", "After"]);
@@ -2322,6 +2353,41 @@ function bookingBook_() {
     return SpreadsheetApp.openById(id);
   } catch (err) {
     return null;
+  }
+}
+
+/** The private "MaxFit Macros" sheet, or null if MACRO_SHEET_ID isn't set (or can't be opened) — fails open, same spirit as bookingBook_ above and the calendar sync. */
+function macroBook_() {
+  const id = PropertiesService.getScriptProperties().getProperty(MACRO_SHEET_ID_PROPERTY);
+  if (!id) return null;
+  try {
+    return SpreadsheetApp.openById(id);
+  } catch (err) {
+    return null;
+  }
+}
+
+/** slug -> Fuel key, read from the Macros sheet's Members tab (issueBookingCodes uses this to fill in Fuel Link). Empty map if MACRO_SHEET_ID isn't set, the sheet can't be opened, or it has no Members tab yet — never throws. */
+function macroKeysBySlug_() {
+  const book = macroBook_();
+  if (!book) return {};
+  try {
+    const sheet = book.getSheetByName("Members");
+    if (!sheet) return {};
+    const values = sheet.getDataRange().getDisplayValues();
+    const header = values[0] || [];
+    const slugCol = findColumn_(header, "slug");
+    const keyCol = findColumn_(header, "key");
+    if (slugCol < 0 || keyCol < 0) return {};
+    const out = {};
+    for (let i = 1; i < values.length; i++) {
+      const slug = slugify_(values[i][slugCol]);
+      const key = String(values[i][keyCol] || "").trim();
+      if (slug && key) out[slug] = key;
+    }
+    return out;
+  } catch (err) {
+    return {};
   }
 }
 
@@ -2556,6 +2622,7 @@ function bookingRows_(ss) {
       slug: String(r[c.slug]).trim().toLowerCase(),
       active: status.toLowerCase() === "booked",
       calendarEventId: c.calendarEventId >= 0 ? String(r[c.calendarEventId] || "").trim() : "",
+      location: c.location >= 0 ? String(r[c.location] || "").trim() : "",
     });
   });
   return out;
@@ -2584,6 +2651,8 @@ function bookingColumns_(header) {
   // event id until it has (bookingSyncCalendarCreate_/_Delete_ already treat
   // a missing column as "nothing to sync," same as any other gap).
   c.calendarEventId = findColumn_(header, "Calendar Event Id");
+  // Same "added later, not required" treatment (2026-10-25, Locations).
+  c.location = findColumn_(header, "Location");
   return c;
 }
 
@@ -2787,6 +2856,7 @@ function bookingMine_(rows, member, settings, now) {
         end: bookingFormatMinutes_(x.b.endMin),
         minutes: x.b.minutes,
         canCancel: (x.ms - now.ms) / 3600000 >= settings.cancelNoticeHours,
+        location: x.b.location,
       };
     });
 }
@@ -2884,12 +2954,17 @@ function bookingStoredCode_(ss, slug) {
  * whenever a new client joins (setupBooking runs it too). Existing codes are
  * never changed. To give someone a new code, clear their Booking Code cell and
  * run this again.
+ *
+ * Also fills in Fuel Link for anyone who already has a Fuel key (via
+ * macroKeysBySlug_, which needs MACRO_SHEET_ID set — see that function).
+ * Same never-overwrite rule as everything else here: a blank cell gets
+ * filled in, one that already has something in it is left alone.
  */
 function issueBookingCodes() {
   const ss = bookingBook_();
   if (!ss) throw new Error("Run setupBooking first.");
-  const sheet = ss.getSheetByName(BOOKING_TABS.clients) || bookingEnsureTab_(ss, BOOKING_TABS.clients, BOOKING_CLIENTS_HEADER, [], ["Slug", "Booking Code", "Email"]).sheet;
-  if (sheet.getLastColumn() > 0) ensureColumns_(sheet, ["Email"]); // a sheet set up before confirmation emails existed
+  const sheet = ss.getSheetByName(BOOKING_TABS.clients) || bookingEnsureTab_(ss, BOOKING_TABS.clients, BOOKING_CLIENTS_HEADER, [], ["Slug", "Booking Code", "Email", "Fuel Link"]).sheet;
+  if (sheet.getLastColumn() > 0) ensureColumns_(sheet, ["Email", "Fuel Link"]); // a sheet set up before confirmation emails/Fuel Link existed
   const table = bookingTable_(sheet);
   const c = {
     name: findColumn_(table.header, "Name"),
@@ -2897,8 +2972,14 @@ function issueBookingCodes() {
     code: findColumn_(table.header, "Booking Code"),
     text: findColumn_(table.header, "Text to send"),
     email: findColumn_(table.header, "Email"),
+    fuelLink: findColumn_(table.header, "Fuel Link"),
   };
   if (c.slug < 0 || c.code < 0) throw new Error("The Clients tab is missing its Slug or Booking Code column.");
+  const fuelKeys = macroKeysBySlug_();
+  const fuelLinkFor = function (slug) {
+    const key = fuelKeys[slug];
+    return key ? BOOKING_SITE_URL + "/card/?id=" + slug + "&k=" + key : "";
+  };
 
   const rowBySlug = {};
   const taken = {};
@@ -2927,6 +3008,7 @@ function issueBookingCodes() {
   let added = 0;
   let filled = 0;
   let emails = 0;
+  let fuelLinks = 0;
   const seen = {};
   for (let i = 1; i < crm.length; i++) {
     const name = String(crm[i][nameCol] || "").trim();
@@ -2946,6 +3028,13 @@ function issueBookingCodes() {
         values[c.email] = crmEmail;
         emails++;
       }
+      if (c.fuelLink >= 0) {
+        const link = fuelLinkFor(slug);
+        if (link) {
+          values[c.fuelLink] = link;
+          fuelLinks++;
+        }
+      }
       const target = sheet.getRange(sheet.getLastRow() + 1, 1, 1, values.length);
       target.setNumberFormat("@");
       target.setValues([values]);
@@ -2963,9 +3052,19 @@ function issueBookingCodes() {
       sheet.getRange(row, c.email + 1).setNumberFormat("@").setValue(crmEmail);
       emails++;
     }
+    // Same never-overwrite rule: only fill a blank Fuel Link cell, and only
+    // once a Fuel key actually exists for them (Max creates it on the coach
+    // page) — missing entirely until then, not an error.
+    if (c.fuelLink >= 0 && !String(table.rows[row - 2][c.fuelLink] || "").trim()) {
+      const link = fuelLinkFor(slug);
+      if (link) {
+        sheet.getRange(row, c.fuelLink + 1).setNumberFormat("@").setValue(link);
+        fuelLinks++;
+      }
+    }
   }
   SpreadsheetApp.flush();
-  return { added: added, filled: filled, emails: emails };
+  return { added: added, filled: filled, emails: emails, fuelLinks: fuelLinks };
 }
 
 /**
@@ -3022,6 +3121,34 @@ function bookingContext_(payload) {
     return { error: { status: "error", code: auth.error.code, message: auth.error.message } };
   }
   return { ss: ss, member: auth.member, settings: settings, now: bookingNow_() };
+}
+
+/**
+ * Same shape as bookingContext_, for Max creating a booking himself rather
+ * than a client self-identifying (2026-10-25, "I create it, it notifies
+ * them" — the staff-mode side of card/book.html). STAFF_PIN instead of a
+ * booking code, and any client picked straight off the CRM by slug rather
+ * than whoever the card link belongs to. Deliberately NOT exempt from
+ * anything else — same eligibility rules (sessions left, max active
+ * bookings), same slot/calendar-busy checks as self-service, so Max can't
+ * accidentally double-book himself or hand out a session that isn't really
+ * owed. If that turns out too strict for how he actually wants to use it,
+ * loosen it then, not pre-emptively.
+ */
+function bookingStaffContext_(payload) {
+  if (!checkPin_(payload.pin)) {
+    return { error: { status: "error", code: "bad-pin", message: "Wrong PIN." } };
+  }
+  const ss = bookingBook_();
+  if (!ss) {
+    return { error: { status: "error", code: "not-set-up", message: "Booking isn't switched on yet. Run setupBooking first." } };
+  }
+  const slug = slugify_(payload.clientSlug);
+  const member = bookingCrmMember_(slug);
+  if (!member) {
+    return { error: { status: "error", code: "unknown-member", message: "No client with that name on Sessions Remaining." } };
+  }
+  return { ss: ss, member: member, settings: bookingSettings_(ss), now: bookingNow_() };
 }
 
 function bookingFail_(code, message) {
@@ -3364,6 +3491,33 @@ function bookingPrices_(ss) {
       };
     })
     .filter(function (p) { return p.name && p.lookup; });
+}
+
+/**
+ * Every active place to train, as [{ name, address }], in sheet order.
+ * Empty if the Locations tab doesn't exist yet or nothing on it is On —
+ * which is exactly the signal the client page uses to skip the location
+ * step entirely and fall back to the single Settings "Meeting place",
+ * same as before Locations existed. Not folded into bookingPrices_'s
+ * pattern 1:1 because there's no lookup key here, just name + address.
+ */
+function bookingLocations_(ss) {
+  const table = bookingTable_(ss.getSheetByName(BOOKING_TABS.locations));
+  const c = {
+    on: findColumn_(table.header, "On"),
+    name: findColumn_(table.header, "Name"),
+    address: findColumn_(table.header, "Address"),
+  };
+  if (c.name < 0) return [];
+  return table.rows
+    .map(function (r) {
+      return {
+        on: c.on < 0 ? true : !bookingIsNo_(r[c.on]),
+        name: bookingOneLine_(r[c.name], 80),
+        address: c.address < 0 ? "" : bookingOneLine_(r[c.address], 160),
+      };
+    })
+    .filter(function (l) { return l.on && l.name; });
 }
 
 /** What a client with no sessions left can buy: [{ name, sessions, price, url }], only rows that are on, add a session and have a Stripe Pay link. */
@@ -3814,9 +3968,20 @@ function checkBookingPayments() {
 
 /** What the Book page needs in one go: the client's own bookings, whether they can book, and the times on offer. Read-only. */
 function handleBookingInfo_(payload) {
+  const ctx = bookingContext_(payload);
+  if (ctx.error) return jsonResponse_(ctx.error);
+  return bookingInfoCore_(ctx);
+}
+
+function handleCoachBookingInfo_(payload) {
+  const ctx = bookingStaffContext_(payload);
+  if (ctx.error) return jsonResponse_(ctx.error);
+  return bookingInfoCore_(ctx);
+}
+
+/** Who is asking (self-service booking code, or Max's PIN picking any client) is already decided by the time ctx gets here — everything below is identical either way. */
+function bookingInfoCore_(ctx) {
   try {
-    const ctx = bookingContext_(payload);
-    if (ctx.error) return jsonResponse_(ctx.error);
     const rows = bookingRows_(ctx.ss);
     const mine = bookingMine_(rows, ctx.member, ctx.settings, ctx.now);
     const eligibility = bookingEligibility_(ctx.member, ctx.settings, mine.length);
@@ -3854,6 +4019,9 @@ function handleBookingInfo_(payload) {
       buy: buy,
       bookings: mine,
       slots: slots,
+      // [] when the Locations tab is empty/unused — the page's cue to skip
+      // the location step and keep today's single-"Meeting place" behaviour.
+      locations: bookingLocations_(ctx.ss),
     });
   } catch (err) {
     return bookingServerError_("info", err);
@@ -3862,9 +4030,20 @@ function handleBookingInfo_(payload) {
 
 /** Books one slot. Runs under the script lock, and re-checks everything, because the page's list may be a few seconds old. */
 function handleBookSession_(payload) {
+  const ctx = bookingContext_(payload);
+  if (ctx.error) return jsonResponse_(ctx.error);
+  return bookSessionCore_(ctx, payload);
+}
+
+function handleCoachBookSession_(payload) {
+  const ctx = bookingStaffContext_(payload);
+  if (ctx.error) return jsonResponse_(ctx.error);
+  return bookSessionCore_(ctx, payload);
+}
+
+/** Same deal as bookingInfoCore_ — identity is already settled, everything here runs the same for a client booking themselves or Max booking on their behalf. */
+function bookSessionCore_(ctx, payload) {
   try {
-    const ctx = bookingContext_(payload);
-    if (ctx.error) return jsonResponse_(ctx.error);
     const date = bookingParseDateKey_(payload.date);
     const startMin = bookingParseTime_(payload.start);
     if (!date || startMin < 0) return bookingFail_("bad-request", "That time isn't valid. Please pick another.");
@@ -3880,6 +4059,18 @@ function handleBookSession_(payload) {
 
     const eligibility = bookingEligibility_(ctx.member, ctx.settings, mine.length);
     if (!eligibility.canBook) return bookingFail_(eligibility.code, eligibility.message);
+
+    // A location must be chosen once any are configured (Locations tab has
+    // at least one On row) — the client page always sends one then. With
+    // none configured, payload.location is ignored and the single Settings
+    // "Meeting place" is used instead, exactly as before Locations existed.
+    const locations = bookingLocations_(ctx.ss);
+    let location = null;
+    if (locations.length) {
+      location = locations.filter(function (l) { return l.name === bookingOneLine_(payload.location, 80); })[0];
+      if (!location) return bookingFail_("bad-request", "Pick where you'll meet.");
+    }
+    const place = location ? (location.address ? location.name + " — " + location.address : location.name) : ctx.settings.meetingPlace;
 
     const active = rows.filter(function (b) { return b.active && b.date >= ctx.now.dateKey; });
     const candidates = bookingCandidates_(bookingWindows_(ctx.ss), bookingTimeOff_(ctx.ss), active, ctx.settings, ctx.now);
@@ -3907,15 +4098,25 @@ function handleBookSession_(payload) {
     row[c.slug] = ctx.member.slug;
     row[c.status] = "Booked";
     row[c.bookedAt] = ctx.now.stamp;
+    if (c.location >= 0 && location) row[c.location] = location.name;
     const target = sheet.getRange(sheet.getLastRow() + 1, 1, 1, row.length);
     target.setNumberFormat("@");
     target.setValues([row]);
     SpreadsheetApp.flush(); // commit before the lock is released, or the next request could still read the slot as free
 
-    // The booking is saved, so nothing from here on may fail it: emails and the calendar sync only report back.
-    const emailedTo = bookingConfirmClient_(ctx, payload.email, { id: id, date: date, startMin: startMin, endMin: candidate.endMin, minutes: candidate.minutes });
+    // The booking is saved, so nothing from here on may fail it: emails and
+    // the calendar sync only report back. `place` (the chosen location, or
+    // the old single Meeting place when none are configured) stands in for
+    // ctx.settings.meetingPlace here, so bookingConfirmationEmail_/bookingIcs_
+    // need no changes of their own — they already just read settings.meetingPlace.
+    const effectiveSettings = Object.assign({}, ctx.settings, { meetingPlace: place });
+    const emailedTo = bookingConfirmClient_(
+      Object.assign({}, ctx, { settings: effectiveSettings }),
+      payload.email,
+      { id: id, date: date, startMin: startMin, endMin: candidate.endMin, minutes: candidate.minutes }
+    );
     if (c.calendarEventId >= 0) {
-      const eventId = bookingSyncCalendarCreate_(ctx.member.name, date, startMin, candidate.endMin, ctx.settings.meetingPlace);
+      const eventId = bookingSyncCalendarCreate_(ctx.member.name, date, startMin, candidate.endMin, place);
       if (eventId) sheet.getRange(target.getRow(), c.calendarEventId + 1).setNumberFormat("@").setValue(eventId);
     }
 
@@ -3925,7 +4126,7 @@ function handleBookSession_(payload) {
       "",
       "When: " + when + " to " + bookingClock12_(candidate.endMin) + " (" + candidate.minutes + " min)",
       ctx.member.unlimited ? "Plan: unlimited" : "1-on-1 sessions left: " + (ctx.member.sessionsLeft === null ? "not set" : ctx.member.sessionsLeft),
-    ].concat(bookingEmailedLine_(ctx.settings, emailedTo), [
+    ].concat(location ? ["Location: " + location.name] : [], bookingEmailedLine_(ctx.settings, emailedTo), [
       "",
       "To cancel it yourself, change its Status to Cancelled in the Bookings tab:",
       ctx.ss.getUrl(),

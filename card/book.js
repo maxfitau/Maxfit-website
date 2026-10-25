@@ -76,6 +76,9 @@
     confirmBox: $("confirmBox"),
     confirmWhen: $("confirmWhen"),
     confirmNote: $("confirmNote"),
+    locationBox: $("locationBox"),
+    locationList: $("locationList"),
+    locationError: $("locationError"),
     emailBox: $("emailBox"),
     emailInput: $("emailInput"),
     emailError: $("emailError"),
@@ -96,6 +99,7 @@
     info: null, // the backend's last "bookingInfo" reply
     selectedDate: "",
     selectedStart: "",
+    location: "", // the chosen location's Name, once info.locations isn't empty
     email: "", // what's in the "Email me a confirmation" box
     emailEdited: false, // once they've touched the box, a reload of the times doesn't overwrite it
     cancelingId: "", // the booking whose "Yes, cancel" is showing
@@ -327,6 +331,7 @@
       const when = mk("div", "book__mine-when");
       when.appendChild(mk("span", "book__mine-day", dayLabel(b.date)));
       when.appendChild(mk("span", "book__mine-time", timeRange(b) + " · " + b.minutes + " min"));
+      if (b.location) when.appendChild(mk("span", "book__mine-note", b.location));
       if (!b.canCancel) {
         when.appendChild(mk("span", "book__mine-note", "Less than " + hoursText(info.policy.cancelHours) + " away. Message Max to change it."));
         const link = contactLink("Message Max", "Hi Max, it's " + firstName() + ". I need to change my session on " + dayLabel(b.date) + " at " + clock(b.start) + ".");
@@ -461,6 +466,29 @@
     if (chosen) {
       els.confirmWhen.textContent = dayLabel(chosen.date) + " · " + timeRange(chosen) + " (" + chosen.minutes + " min)";
       els.confirmNote.textContent = "Free to cancel up to " + hoursText(info.policy.cancelHours) + " before. Your session is used when you check in, not when you book.";
+
+      const locations = info.locations || [];
+      show(els.locationBox, locations.length > 0);
+      if (locations.length > 0) {
+        // Nothing picked yet, or an earlier reload's choice no longer exists:
+        // only pre-pick when there's genuinely one option, otherwise make
+        // them choose rather than silently guessing where they'll be.
+        if (!locations.some((l) => l.name === state.location)) {
+          state.location = locations.length === 1 ? locations[0].name : "";
+        }
+        els.locationList.textContent = "";
+        locations.forEach((loc) => {
+          const opt = mk("button", "book__location-opt" + (loc.name === state.location ? " is-selected" : ""));
+          opt.type = "button";
+          opt.disabled = state.busy;
+          opt.appendChild(mk("b", "", loc.name));
+          if (loc.address) opt.appendChild(mk("span", "", loc.address));
+          opt.setAttribute("aria-pressed", loc.name === state.location ? "true" : "false");
+          opt.addEventListener("click", () => selectLocation(loc.name));
+          els.locationList.appendChild(opt);
+        });
+      }
+
       show(els.emailBox, Boolean(info.policy.emailClients));
       if (els.emailInput.value !== state.email) els.emailInput.value = state.email;
       els.emailInput.disabled = state.busy;
@@ -489,6 +517,12 @@
     state.error = "";
     renderAll();
     scrollTo(els.confirmBox);
+  }
+
+  function selectLocation(name) {
+    state.location = name;
+    showLocationError("");
+    renderAll();
   }
 
   function setBusy(on) {
@@ -534,12 +568,25 @@
     show(els.emailError, Boolean(text));
   }
 
+  function showLocationError(text) {
+    els.locationError.textContent = text;
+    show(els.locationError, Boolean(text));
+  }
+
   async function confirmBooking() {
     if (state.busy || !state.selectedDate || !state.selectedStart) return;
     state.error = "";
 
+    const locations = (state.info && state.info.locations) || [];
+    if (locations.length > 0 && !locations.some((l) => l.name === state.location)) {
+      showLocationError("Pick where you'll meet.");
+      scrollTo(els.locationBox);
+      return;
+    }
+    showLocationError("");
+
     // Only sent when Max has confirmation emails switched on. A blank box is sent as blank on purpose: "not this time".
-    const fields = { date: state.selectedDate, start: state.selectedStart };
+    const fields = { date: state.selectedDate, start: state.selectedStart, location: state.location };
     let typedEmail = "";
     if (state.info && state.info.policy.emailClients) {
       typedEmail = state.email.trim();

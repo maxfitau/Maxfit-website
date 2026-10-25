@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://script.google.com" />
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="styles.css?v=20261013a" />
-<link rel="stylesheet" href="book.css?v=20260927b" />
+<link rel="stylesheet" href="book.css?v=20261025a" />
 </head>
 <body>
 
@@ -76,6 +76,11 @@
       <div class="book__confirm" id="confirmBox" hidden>
         <p class="book__confirm-when" id="confirmWhen"></p>
         <p class="book__confirm-note" id="confirmNote"></p>
+        <div class="book__location" id="locationBox" hidden>
+          <span class="card__label">Where</span>
+          <div class="book__location-list" id="locationList"></div>
+          <p class="book__error book__error--left" id="locationError" role="alert" hidden></p>
+        </div>
         <div class="book__email" id="emailBox" hidden>
           <label class="card__label" for="emailInput">Email me a confirmation</label>
           <input class="book__email-input" id="emailInput" type="email" inputmode="email" autocomplete="email" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="120" placeholder="you@example.com" aria-describedby="emailHint emailError" />
@@ -93,6 +98,6 @@
 </main>
 
 <script src="sheet.js?v=20261009b" defer></script>
-<script src="book.js?v=20260927b" defer></script>
+<script src="book.js?v=20261025a" defer></script>
 </body>
 </html>
