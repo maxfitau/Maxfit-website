@@ -150,6 +150,11 @@ function fetchExercises() {
   return exercisesPromise;
 }
 
+/** Forget the cached Exercises tab, so the next fetchExercises() reads the sheet again (the builder calls this after adding an exercise). */
+function resetExercisesCache() {
+  exercisesPromise = undefined;
+}
+
 let workoutExercisesPromise;
 
 /** Fetches + parses the "Workout Exercises" tab — every client's currently assigned workout lives in here, one row per exercise. */

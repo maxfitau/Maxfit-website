@@ -455,5 +455,11 @@ const ExercisePicker = (function () {
     }
   }
 
-  return { open, chooseMuscles, close, colorFor, MOVEMENTS, BODY_PARTS_BY_MOVEMENT };
+  // The Exercises tab (exercise-manager.js) adds exercises without going
+  // through this picker: forget the cached list so the next open() shows them.
+  document.addEventListener("maxfit:exercises-changed", () => {
+    exercisesCache = null;
+  });
+
+  return { open, chooseMuscles, close, colorFor, MOVEMENTS, BODY_PARTS_BY_MOVEMENT, muscleKeyForShape: chooserKeyFor_ };
 })();

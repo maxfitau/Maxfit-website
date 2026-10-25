@@ -1,0 +1,499 @@
+/* ==========================================================================
+   MAX FIT · coach builder, "Exercises" tab (exercise-manager.js)
+   Loads on top of card/styles.css, builder.css and exercise-picker.css (the
+   muscle chips and legend are the picker's own, reused as they are).
+   Laptop first, like the rest of the builder: form on the left, a sticky body
+   figure on the right, the exercise library underneath. Stacks on a phone.
+   ========================================================================== */
+
+/* ---- The Workouts | Exercises switch ---- */
+
+.builder__tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  align-self: stretch;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+@media (min-width: 860px) {
+  .builder__tabs {
+    align-self: flex-start;
+  }
+}
+
+.builder__tab {
+  flex: 1 1 0;
+  min-height: 40px;
+  padding: 0 28px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--grey);
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.builder__tab[aria-selected="true"] {
+  background: var(--red);
+  color: var(--on-red);
+}
+
+.builder__tab:focus-visible {
+  outline: 2px solid var(--white);
+  outline-offset: 2px;
+}
+
+/* ---- Layout ---- */
+
+.exm {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.exm[hidden] {
+  display: none;
+}
+
+.exm__layout {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.exm__main {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+@media (min-width: 860px) {
+  .exm__layout {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 28px;
+  }
+
+  .exm__main {
+    flex: 1 1 460px;
+  }
+
+  .exm__side {
+    position: sticky;
+    top: 20px;
+    flex: 0 0 340px;
+  }
+}
+
+.exm__intro {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--grey);
+}
+
+.exm__form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.exm__form[hidden],
+.exm__view[hidden] {
+  display: none;
+}
+
+.exm__hint {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--grey);
+}
+
+.exm__hint[hidden],
+.exm__needs[hidden] {
+  display: none;
+}
+
+.exm__hint--note {
+  color: var(--white);
+}
+
+/* ---- Chips: movement and body part ---- */
+
+.exm__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.exm__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--white);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.exm__chip[aria-pressed="true"] {
+  border-color: var(--red);
+  background: rgba(224, 0, 0, 0.16);
+}
+
+.exm__chip:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.exm__chip:focus-visible,
+.exm__item:focus-visible {
+  outline: 2px solid var(--white);
+  outline-offset: 2px;
+}
+
+.exm__chip-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.exm__pick-first {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--dim);
+}
+
+/* ---- Muscle list: one row per section (label, then its chips) ---- */
+
+.exm__muscles {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 10px 12px;
+  align-items: center;
+}
+
+.exm__muscles .exercise-picker__muscle-section {
+  margin: 0;
+}
+
+@media (max-width: 520px) {
+  .exm__muscles {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .exm__muscles .exercise-picker__muscle-chips {
+    margin-bottom: 8px;
+  }
+}
+
+/* ---- Save row ---- */
+
+.exm__actions {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.exm__save {
+  flex: 1 1 auto;
+}
+
+.exm__clear {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 13px;
+  color: var(--grey);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0 22px;
+  cursor: pointer;
+}
+
+.exm__clear:active {
+  color: var(--red);
+  border-color: var(--red);
+}
+
+/* inside the read-only card it is a plain button under the text, not a full-width bar */
+.exm__view .exm__clear {
+  align-self: flex-start;
+  padding: 12px 22px;
+}
+
+.exm__needs {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--dim);
+}
+
+/* ---- Read-only card for an exercise that already has its muscles ---- */
+
+.exm__view {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.exm__view-name {
+  margin: 0;
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 26px;
+  line-height: 1.1;
+  text-transform: uppercase;
+  color: var(--white);
+}
+
+.exm__view-cat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-body);
+  font-size: 15px;
+  color: var(--grey);
+}
+
+.exm__view-note {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--grey);
+}
+
+/* ---- Side panel: the body figure ---- */
+
+.exm__side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.exm__side-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.exm__side-sub {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.exm__figs {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.exm__fig-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 150px;
+}
+
+.exm__figs svg {
+  width: 100%;
+  height: auto;
+}
+
+.exm__figs [data-muscle] {
+  cursor: pointer;
+}
+
+.exm__figs--readonly [data-muscle] {
+  cursor: default;
+}
+
+.exm__fig-caption {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.exm__side .exercise-picker__muscle-legend {
+  margin: 0;
+}
+
+.exm__summary {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--grey);
+}
+
+.exm__summary b {
+  color: var(--white);
+}
+
+/* ---- Library ---- */
+
+.exm__library {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.exm__library-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+
+.exm__library-count {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--grey);
+}
+
+.exm__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.exm__filters .exm__chip {
+  min-height: 36px;
+  padding: 0 14px;
+  font-size: 14px;
+}
+
+.exm__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 440px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.exm__item {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  text-align: left;
+  color: var(--white);
+  background: var(--bg);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  cursor: pointer;
+}
+
+.exm__item:hover {
+  border-color: var(--line);
+}
+
+.exm__item[aria-current="true"] {
+  border-color: var(--red);
+}
+
+.exm__item-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.exm__item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.exm__item-name {
+  font-weight: 600;
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.exm__item-sub {
+  font-size: 13px;
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.exm__item-tag {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--red);
+  border: 1px solid var(--red);
+  border-radius: 999px;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
+.exm__empty {
+  margin: 0;
+  padding: 14px 4px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--dim);
+  text-align: center;
+}
+
+@media (max-width: 859px) {
+  .exm__item {
+    grid-template-columns: 10px minmax(0, 1fr);
+  }
+
+  .exm__item-tag {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
