@@ -28,7 +28,7 @@
   background: transparent;
   border: none;
   border-radius: 999px;
-  min-height: 40px;
+  min-height: 48px;
   font-family: var(--font-head);
   font-weight: 700;
   text-transform: uppercase;
@@ -148,7 +148,7 @@
 }
 
 .lib-heat-row__fill--secondary {
-  background: #e08a00;
+  background: #cccccc;
 }
 
 .lib-heat-row__num {
@@ -278,8 +278,8 @@
   gap: 8px;
   font-family: var(--font-head);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  text-transform: none;
+  letter-spacing: 0;
   font-size: 14px;
   color: var(--grey);
   padding: 6px 2px;
@@ -365,7 +365,7 @@
   background: var(--bg-card);
   border: 1px solid var(--line);
   border-radius: 999px;
-  min-height: 44px;
+  min-height: 48px;
   padding: 0 16px;
   cursor: pointer;
 }
@@ -410,8 +410,8 @@
   gap: 7px;
   font-family: var(--font-head);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  text-transform: none;
+  letter-spacing: 0;
   font-size: 14px;
   color: var(--grey);
 }
@@ -428,7 +428,7 @@
 }
 
 .lib-muscle-card__dot--secondary {
-  background: #ff9a7a;
+  background: #b3b3b3;
 }
 
 .lib-muscle-card__names {

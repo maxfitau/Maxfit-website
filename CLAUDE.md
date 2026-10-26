@@ -39,6 +39,17 @@ Max French runs MaxFit, a personal-training business in Inner West Sydney with *
 - **Progress:** thin red bars in the same style as the loyalty punch card (`.card__loyalty-peg`).
 - **Tone:** supportive everywhere. No shaming, no red "failure" screens, and clients can hide calorie numbers.
 
+## Client app readability rules (set 2026-10-27, applies to card, workout logger, muscles, Fuel)
+
+- **Type:** nothing under 14px anywhere. Body text 16px or more. Small labels are sentence case at 14px (Barlow Condensed or Barlow), never tiny all-caps. Big headings and buttons may stay uppercase.
+- **Tap targets:** every button at least 48x48px, including the set logger's - and + steppers, Save set, + Add set, close buttons and the back arrow.
+- **Colour:** red `#E00000` is the ONLY accent. Everything else is white, grey (`#ccc`, `#999`) or near-black. No green, blue, coral, yellow or lavender. In Fuel the macros are told apart by labels and position: protein red, carbs white, fat grey. Muscles: primary red, secondary grey (`#b3b3b3`). The one exception left on purpose is the Gold and Diamond plan medals and badges in Fuel (each plan's identity); Max can ask for those to go red-only too.
+- **Icons:** red line icons from `card/icons.js` (`MaxIcon("target")` and so on), not emoji. Leftover emoji: the comparison animals in the weekly recap text only.
+- **Set logger (`workout/app.js` `buildSetRow`):** each set is a card: "Set 1" with a status (Saved, Suggested, not saved, or Not saved yet), two labelled steppers (Weight (kg) and Reps, 48px buttons), "Last time: 80 kg x 6 reps" at 16px, and a full-width Save set button. Pre-filled "last time" values show grey with a dashed card until touched or saved. The version number is no longer shown.
+- **Fuel** sits in the same glass `.card` as the other tabs (`body.is-fuel` only hides the membership header). The floating nav's spacer (`bottom-nav.js`) and the workout page's bottom padding keep content clear of the nav.
+- **Muscles** opens on "This week" (Monday to Sunday). Muscle names stay detailed (for example "Triceps (Lateral Head)") on client screens too, by Max's choice. "Group left" shows even when 0, by Max's choice.
+- Cache tags: every changed script and stylesheet was bumped to `?v=20261026b`.
+
 ## Card home screen (redesigned 2026-09-29)
 
 The Card tab is a 2×2 grid of square tiles — Check In, Today's Workout/Upcoming Session, 1-on-1 Sessions, Refer a Friend — instead of the old stacked rows. Check In opens the QR in a modal (`#qrModal`) instead of showing it on the card at all times. All existing element ids were kept, so `app.js`'s render logic barely changed. No reinstall needed for UI changes like this: the card has no service worker, so the home-screen icon just re-fetches the page fresh every time it's opened (only the icon image and app name are fixed at install time).

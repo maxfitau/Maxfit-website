@@ -32,8 +32,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 48px;
+  height: 48px;
   margin: -6px 0 -6px -6px;
   border-radius: 8px;
 }
@@ -93,7 +93,7 @@ body {
 
 .book__hint {
   font-family: var(--font-body);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
   color: var(--dim);
   margin: 0;
@@ -102,7 +102,7 @@ body {
 .book__link {
   align-self: flex-start;
   font-family: var(--font-body);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--white);
   text-decoration: underline;
@@ -184,7 +184,7 @@ body {
 .book__btn--small {
   width: auto;
   padding: 9px 12px;
-  font-size: 12px;
+  font-size: 14px;
   letter-spacing: 0.04em;
 }
 
@@ -225,7 +225,7 @@ body {
 
 .book__mine-time {
   font-family: var(--font-body);
-  font-size: 13px;
+  font-size: 14px;
   color: var(--grey);
 }
 
@@ -239,7 +239,7 @@ body {
 
 .book__mine-note {
   font-family: var(--font-body);
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.4;
   color: var(--dim);
   padding-top: 4px;
@@ -259,7 +259,7 @@ body {
   text-align: center;
   font-family: var(--font-head);
   font-weight: 700;
-  font-size: 11px;
+  font-size: 14px;
   letter-spacing: 0.04em;
   color: var(--dim);
 }
@@ -307,9 +307,9 @@ body {
 .book__day-month {
   font-family: var(--font-head);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-size: 9px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
   line-height: 1;
   color: var(--grey);
 }
@@ -400,15 +400,15 @@ body {
 .book__buy-name {
   font-family: var(--font-head);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  text-transform: none;
+  letter-spacing: 0;
   font-size: 17px;
   line-height: 1.2;
 }
 
 .book__buy-detail {
   font-family: var(--font-body);
-  font-size: 13px;
+  font-size: 14px;
   color: var(--dim);
 }
 
@@ -446,7 +446,7 @@ body {
 
 .book__confirm-note {
   font-family: var(--font-body);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.45;
   color: var(--dim);
   margin: 0;
@@ -537,7 +537,7 @@ body {
 }
 
 .book__location-opt span {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--dim);
 }
 

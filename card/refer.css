@@ -104,7 +104,7 @@ body {
 
 .refer__copied {
   font-family: var(--font-body);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--white);
   margin: -8px 0 0;
@@ -125,13 +125,13 @@ body {
 
 .refer__link-label {
   font-family: var(--font-body);
-  font-size: 12px;
+  font-size: 14px;
   color: var(--dim);
 }
 
 .refer__link-value {
   font-family: var(--font-body);
-  font-size: 13px;
+  font-size: 14px;
   color: var(--grey);
   word-break: break-all;
   user-select: all;

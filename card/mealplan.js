@@ -79,7 +79,7 @@ const MealPlan = (function () {
   }
 
   function loading(title, text) {
-    show(title, `<div class="mp-loading"><div class="mp-loading__emoji" aria-hidden="true">🍳</div>${esc(text)}</div>`);
+    show(title, `<div class="mp-loading"><div class="mp-loading__emoji" aria-hidden="true">${MaxIcon("utensils")}</div>${esc(text)}</div>`);
   }
 
   /** Server errors: "diamond"/"gold" open the plans, anything else is shown in place. */
@@ -204,7 +204,7 @@ const MealPlan = (function () {
     const key = `${date} ${slot}`;
     const done = logged.has(key);
     return (
-      `<div class="week-card"><div class="mp-meal__top"><span class="mp-meal__emoji" aria-hidden="true">${esc(meal.emoji || "🍽️")}</span><div>` +
+      `<div class="week-card"><div class="mp-meal__top"><span class="mp-meal__emoji" aria-hidden="true">${MaxIcon("utensils")}</span><div>` +
       `<div class="mp-meal__slot">${SLOT_NAMES[slot]}</div><div class="mp-meal__name">${esc(meal.name)}</div><div class="mp-meal__days">${esc(MacroCore.mealDays(plan, slot, index))}</div></div></div>` +
       `<ul class="mp-items">${meal.items.map((it) => `<li><span>${esc(it.name)}</span><span>${esc(it.amount_text || `${it.grams} g`)}</span></li>`).join("")}</ul>` +
       (meal.how_to ? `<p class="week-note">${esc(meal.how_to)}</p>` : "") +
@@ -218,10 +218,10 @@ const MealPlan = (function () {
   function snacksCard() {
     const adding = new Set(((list || []).filter((i) => !i.done)).map((i) => i.name.toLowerCase()));
     return (
-      '<div class="week-card"><h3 class="week-h">💪 High-protein snack ideas</h3><p class="week-note mp-tight">Good any time you\'re peckish. Tap to add one to your shopping list.</p>' +
+      '<div class="week-card"><h3 class="week-h">'+MaxIcon("dumbbell")+'High-protein snack ideas</h3><p class="week-note mp-tight">Good any time you\'re peckish. Tap to add one to your shopping list.</p>' +
       SNACKS.map(([emoji, name, serve, kcal, protein, item], i) => {
         const on = adding.has(item.toLowerCase());
-        return `<div class="mp-snack"><span class="mp-snack__emoji" aria-hidden="true">${emoji}</span><span class="mp-snack__text"><span class="mp-snack__name">${esc(name)}</span><span class="mp-snack__sub">${esc(serve)} · ${ctx.hideKcal ? "" : `${kcal} cal · `}<b>${protein} g protein</b></span></span>` +
+        return `<div class="mp-snack"><span class="mp-snack__emoji" aria-hidden="true">${MaxIcon("utensils")}</span><span class="mp-snack__text"><span class="mp-snack__name">${esc(name)}</span><span class="mp-snack__sub">${esc(serve)} · ${ctx.hideKcal ? "" : `${kcal} cal · `}<b>${protein} g protein</b></span></span>` +
           `<button class="mp-btn mp-snack__add${on ? " mp-btn--done" : ""}" type="button" data-snack="${i}" ${on ? "disabled" : ""}>${on ? "✓ On list" : "+ List"}</button></div>`;
       }).join("") +
       "</div>"
@@ -265,7 +265,7 @@ const MealPlan = (function () {
           .join("") +
         "</div>";
     }
-    html += '<button class="week-btn" type="button" data-tolist>🛒 Put it all on my shopping list</button><button class="week-link" type="button" data-newplan>Make a new plan</button>';
+    html += '<button class="week-btn" type="button" data-tolist>' + MaxIcon("cart") + ' Put it all on my shopping list</button><button class="week-link" type="button" data-newplan>Make a new plan</button>';
     const body = show("Your meal plan", html);
     body.addEventListener("click", onPlanClick);
   }
@@ -334,7 +334,7 @@ const MealPlan = (function () {
         plan.swaps[slot]
           .map((m, i) => {
             const t = MacroCore.mealTotals(m);
-            return `<button class="week-opt" type="button" data-alt="${i}"><span class="week-opt__emoji" aria-hidden="true">${esc(m.emoji || "🍽️")}</span><span class="week-opt__text"><span class="week-opt__main">${esc(m.name)}</span><span class="week-opt__sub">${ctx.hideKcal ? "" : `${MacroCore.thousands(t.kcal)} calories · `}${Math.round(t.protein_g)} g protein</span></span></button>`;
+            return `<button class="week-opt" type="button" data-alt="${i}"><span class="week-opt__emoji" aria-hidden="true">${MaxIcon("utensils")}</span><span class="week-opt__text"><span class="week-opt__main">${esc(m.name)}</span><span class="week-opt__sub">${ctx.hideKcal ? "" : `${MacroCore.thousands(t.kcal)} calories · `}${Math.round(t.protein_g)} g protein</span></span></button>`;
           })
           .join("") +
         '<button class="week-link" type="button" data-back>Keep what I have</button>'

@@ -45,7 +45,7 @@ const MUSCLE_KEYS = {
 };
 
 const MUSCLE_PRIMARY_COLOR = "#ff2a1f";
-const MUSCLE_SECONDARY_COLOR = "#ff9a7a";
+const MUSCLE_SECONDARY_COLOR = "#b3b3b3";
 const MUSCLE_UNUSED_COLOR = "#3c3c3c"; // a muscle key that exists, but isn't part of this exercise
 const MUSCLE_BASE_COLOR = "#2a2a2a"; // head, neck, hands, feet — never individually highlighted
 const MUSCLE_TENDON_COLOR = "#333333"; // tendons/bony landmarks (v2 figure only) — between base and unused
@@ -1609,6 +1609,7 @@ function wireMuscleTooltips_(svgRoot, contentForKey, onSelect) {
       hitArea.setAttribute("width", bbox.width);
       hitArea.setAttribute("height", bbox.height);
       hitArea.setAttribute("fill", "transparent");
+      hitArea.setAttribute("stroke", "none"); // the figure's muscle group strokes its children; the invisible tap area must not show an outline
       hitArea.style.cursor = "pointer";
       shape.parentNode.insertBefore(hitArea, shape.nextSibling);
       hitTarget = hitArea;

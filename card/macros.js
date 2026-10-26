@@ -1687,7 +1687,7 @@
     return `
       <div class="week-card">
         <div class="mp-meal__top">
-          <span class="mp-meal__emoji" aria-hidden="true">${esc(idea.emoji || "🍽️")}</span>
+          <span class="mp-meal__emoji" aria-hidden="true">${MaxIcon("utensils")}</span>
           <div><div class="mp-meal__name">${esc(idea.name)}</div><div class="fr-meta">${meta}</div></div>
         </div>
         ${idea.why ? `<p class="fr-why">${esc(idea.why)}</p>` : ""}

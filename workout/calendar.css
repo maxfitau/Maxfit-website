@@ -21,8 +21,8 @@
   background: transparent;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  width: 36px;
-  height: 36px;
+  width: 48px;
+  height: 48px;
   cursor: pointer;
 }
 
@@ -34,8 +34,8 @@
 .calendar__month-label {
   font-family: var(--font-head);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  text-transform: none;
+  letter-spacing: 0;
   font-size: 15px;
   color: var(--white);
 }
@@ -49,7 +49,7 @@
 .calendar__weekdays span {
   font-family: var(--font-head);
   font-weight: 700;
-  font-size: 11px;
+  font-size: 14px;
   letter-spacing: 0.04em;
   color: var(--dim);
 }
@@ -96,7 +96,7 @@
 
 .calendar__hint {
   font-family: var(--font-body);
-  font-size: 12.5px;
+  font-size: 14px;
   color: var(--dim);
   margin: 0;
   text-align: center;
@@ -146,9 +146,9 @@
 .calendar__undo-btn {
   font-family: var(--font-head);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
   color: var(--grey-light);
   background: transparent;
   border: 1px solid var(--line);
@@ -168,7 +168,7 @@
 
 .calendar__save-status {
   font-family: var(--font-body);
-  font-size: 12.5px;
+  font-size: 14px;
   color: var(--dim);
   margin: -6px 0 0;
 }
@@ -196,8 +196,8 @@
 .calendar__detail-workout-name {
   font-family: var(--font-head);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  text-transform: none;
+  letter-spacing: 0;
   font-size: 14px;
   color: var(--red);
   margin: 0;
@@ -206,7 +206,7 @@
 .calendar__detail-notes {
   font-family: var(--font-body);
   font-style: italic;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--grey-light);
   margin: -2px 0 0;
 }
@@ -220,7 +220,7 @@
 
 .calendar__detail-empty {
   font-family: var(--font-body);
-  font-size: 13px;
+  font-size: 14px;
   color: var(--dim);
   margin: 0;
 }
@@ -243,7 +243,7 @@
 .calendar__remove-exercise {
   font-family: var(--font-body);
   font-weight: 600;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--dim);
   background: transparent;
   border: none;
@@ -272,9 +272,9 @@
 .calendar__edit-set-num {
   font-family: var(--font-head);
   font-weight: 700;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-size: 14px;
+  text-transform: none;
+  letter-spacing: 0;
   color: var(--dim);
 }
 
@@ -316,9 +316,9 @@
   align-self: flex-start;
   font-family: var(--font-head);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
   color: var(--grey-light);
   background: transparent;
   border: 1px dashed var(--line-strong, var(--line));

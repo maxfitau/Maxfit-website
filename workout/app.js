@@ -435,14 +435,20 @@ function rowValues(row) {
   return { weight, reps, valid: Number.isFinite(weight) && weight >= 0 && Number.isFinite(reps) && reps > 0 };
 }
 
-/** Save button reads "Save" until the row's current numbers match what was last saved, then a tick — edit a saved set and it goes back to "Save". */
+/** Save button reads "Save set" until the row's current numbers match what was last saved, then "Saved" with a tick; edit a saved set and it goes back to "Save set". The small status beside "Set 1" says which it is: saved, a suggestion from last time, or typed but not saved yet. */
 function refreshRowState(row) {
   const values = rowValues(row);
   const isSaved = Boolean(row._saved) && values.valid && values.weight === row._saved.weight && values.reps === row._saved.reps;
   row.classList.toggle("workout__set--saved", isSaved);
+  // once a set is saved its numbers are real, so they stop looking like suggestions
+  if (isSaved) row.querySelectorAll(".workout__weight-input--prefilled, .workout__reps-input--prefilled").forEach((el) => el.classList.remove("workout__weight-input--prefilled", "workout__reps-input--prefilled"));
+  const isSuggestion = !isSaved && !row._touched && Boolean(row.querySelector(".workout__weight-input--prefilled, .workout__reps-input--prefilled"));
+  row.classList.toggle("workout__set--suggested", isSuggestion);
   const btn = row.querySelector(".workout__set-save");
-  btn.textContent = isSaved ? "✓" : "Save";
+  btn.textContent = isSaved ? "Saved ✓" : "Save set";
   btn.setAttribute("aria-label", isSaved ? `Set ${row.dataset.setNumber} saved` : `Save set ${row.dataset.setNumber}`);
+  const status = row.querySelector(".workout__set-status");
+  if (status) status.textContent = isSaved ? "Saved" : isSuggestion ? "Suggested, not saved" : "Not saved yet";
 }
 
 /**
@@ -459,24 +465,55 @@ function buildSetRow(exercise, setNumber, initial, onSave) {
   row._saved = initial.saved ? { weight: initial.weight, reps: initial.reps } : null;
   row._touched = false;
 
+  // "Set 1" on the left, and on the right whether it is saved, only a suggestion, or not saved yet.
+  const title = document.createElement("div");
+  title.className = "workout__set-title";
   const label = document.createElement("span");
   label.className = "workout__set-num";
   label.textContent = `Set ${setNumber}`;
-  row.appendChild(label);
+  const status = document.createElement("span");
+  status.className = "workout__set-status";
+  title.appendChild(label);
+  title.appendChild(status);
+  row.appendChild(title);
 
-  const weightWrap = document.createElement("div");
-  weightWrap.className = "workout__weight";
+  const fields = document.createElement("div");
+  fields.className = "workout__set-fields";
 
-  const minus = document.createElement("button");
-  minus.type = "button";
-  minus.className = "workout__step";
-  minus.textContent = "−";
-  minus.setAttribute("aria-label", "Decrease weight");
+  // One labelled stepper: a 48px minus, the value, a 48px plus.
+  function stepper(wrapClass, labelText, input, minusLabel, plusLabel, onStep) {
+    const field = document.createElement("div");
+    field.className = "workout__field";
+    const fieldLabel = document.createElement("span");
+    fieldLabel.className = "workout__field-label";
+    fieldLabel.textContent = labelText;
+    const wrap = document.createElement("div");
+    wrap.className = wrapClass;
+    const minus = document.createElement("button");
+    minus.type = "button";
+    minus.className = "workout__step";
+    minus.textContent = "−";
+    minus.setAttribute("aria-label", minusLabel);
+    const plus = document.createElement("button");
+    plus.type = "button";
+    plus.className = "workout__step";
+    plus.textContent = "+";
+    plus.setAttribute("aria-label", plusLabel);
+    minus.addEventListener("click", () => onStep(-1));
+    plus.addEventListener("click", () => onStep(1));
+    wrap.appendChild(minus);
+    wrap.appendChild(input);
+    wrap.appendChild(plus);
+    field.appendChild(fieldLabel);
+    field.appendChild(wrap);
+    return field;
+  }
 
   const weightInput = document.createElement("input");
   weightInput.type = "text";
   weightInput.inputMode = "decimal";
   weightInput.className = "workout__weight-input";
+  weightInput.setAttribute("aria-label", `Set ${setNumber} weight in kilograms`);
   if (initial.weight !== null && initial.weight !== undefined) {
     weightInput.value = formatWeight(initial.weight);
     if (initial.suggestion) weightInput.classList.add("workout__weight-input--prefilled");
@@ -484,16 +521,11 @@ function buildSetRow(exercise, setNumber, initial, onSave) {
     weightInput.placeholder = "kg";
   }
 
-  const plus = document.createElement("button");
-  plus.type = "button";
-  plus.className = "workout__step";
-  plus.textContent = "+";
-  plus.setAttribute("aria-label", "Increase weight");
-
   const repsInput = document.createElement("input");
   repsInput.type = "number";
   repsInput.inputMode = "numeric";
   repsInput.className = "workout__reps-input";
+  repsInput.setAttribute("aria-label", `Set ${setNumber} reps`);
   if (initial.reps !== null && initial.reps !== undefined) {
     repsInput.value = String(initial.reps);
     if (initial.suggestion) repsInput.classList.add("workout__reps-input--prefilled");
@@ -505,14 +537,18 @@ function buildSetRow(exercise, setNumber, initial, onSave) {
     row._touched = true;
     refreshRowState(row);
   }
-  function nudge(direction) {
+  function nudgeWeight(direction) {
     const current = Number(weightInput.value) || 0;
     weightInput.value = formatWeight(Math.max(0, current + direction * WEIGHT_STEP));
     weightInput.classList.remove("workout__weight-input--prefilled");
     touched();
   }
-  minus.addEventListener("click", () => nudge(-1));
-  plus.addEventListener("click", () => nudge(1));
+  function nudgeReps(direction) {
+    const current = Number(repsInput.value) || 0;
+    repsInput.value = String(Math.max(0, current + direction));
+    repsInput.classList.remove("workout__reps-input--prefilled");
+    touched();
+  }
   weightInput.addEventListener("input", () => {
     weightInput.classList.remove("workout__weight-input--prefilled");
     touched();
@@ -528,11 +564,17 @@ function buildSetRow(exercise, setNumber, initial, onSave) {
     }
   });
 
-  weightWrap.appendChild(minus);
-  weightWrap.appendChild(weightInput);
-  weightWrap.appendChild(plus);
-  row.appendChild(weightWrap);
-  row.appendChild(repsInput);
+  fields.appendChild(stepper("workout__weight", "Weight (kg)", weightInput, "Decrease weight", "Increase weight", nudgeWeight));
+  fields.appendChild(stepper("workout__reps", "Reps", repsInput, "Decrease reps", "Increase reps", nudgeReps));
+  row.appendChild(fields);
+
+  // What they did on this set last time, kept in plain sight whatever they type.
+  if (initial.last && Number.isFinite(initial.last.weight)) {
+    const last = document.createElement("p");
+    last.className = "workout__set-last";
+    last.textContent = `Last time: ${formatWeight(initial.last.weight)} kg${Number.isFinite(initial.last.reps) ? ` × ${initial.last.reps} reps` : ""}`;
+    row.appendChild(last);
+  }
 
   const saveBtn = document.createElement("button");
   saveBtn.type = "button";
@@ -745,7 +787,7 @@ function addExerciseSection(ctx, exercise, opts) {
     ? "Extra"
     : exercise.reps
       ? `${exercise.sets} × ${exercise.reps}`
-      : `${exercise.sets} sets`;
+      : `${exercise.sets} ${exercise.sets === 1 ? "set" : "sets"}`;
   head.appendChild(target);
 
   section.appendChild(head);
@@ -760,8 +802,10 @@ function addExerciseSection(ctx, exercise, opts) {
 
   const hint = document.createElement("p");
   hint.className = "workout__exercise-hint";
+  // With history, each set row shows its own "Last time" line, so this hint is only for the no-history cases.
+  hint.hidden = historyWeight !== null;
   hint.textContent = historyWeight !== null
-    ? `Last time: ${formatWeight(historyWeight)}kg${Number.isFinite(firstSetHistory.reps) ? ` × ${firstSetHistory.reps}` : ""}`
+    ? ""
     : prefillWeight !== null
       ? `Starting weight: ${formatWeight(prefillWeight)}kg`
       : "New exercise — enter your starting weight";
@@ -791,11 +835,13 @@ function addExerciseSection(ctx, exercise, opts) {
 
     const saved = savedSets.get(setCount);
     if (saved) {
-      initial = { weight: saved.weight, reps: saved.reps, saved: true, suggestion: false };
+      const histForSaved = historySets && (historySets.get(setCount) || historySets.get(maxHistSetNumber));
+      initial = { weight: saved.weight, reps: saved.reps, saved: true, suggestion: false, last: histForSaved || null };
     } else if (addedByClient && setsWrap.lastElementChild) {
       // An extra set is most likely "same again" — start from the set above.
       const above = rowValues(setsWrap.lastElementChild);
-      if (above.valid) initial = { weight: above.weight, reps: above.reps, saved: false, suggestion: true };
+      const histForExtra = historySets && (historySets.get(setCount) || historySets.get(maxHistSetNumber));
+      if (above.valid) initial = { weight: above.weight, reps: above.reps, saved: false, suggestion: true, last: histForExtra || null };
     }
     if (!initial) {
       // Set-for-set against last session where possible (today's Set 2 gets
@@ -804,6 +850,7 @@ function addExerciseSection(ctx, exercise, opts) {
       // blind, since that's the closest known data point.
       const hist = historySets && (historySets.get(setCount) || historySets.get(maxHistSetNumber));
       initial = {
+        last: hist || null,
         weight: hist ? hist.weight : prefillWeight,
         reps: hist ? hist.reps : null,
         saved: false,
@@ -820,7 +867,7 @@ function addExerciseSection(ctx, exercise, opts) {
   const addSetBtn = document.createElement("button");
   addSetBtn.type = "button";
   addSetBtn.className = "workout__add-set";
-  addSetBtn.textContent = "+ Add Set";
+  addSetBtn.textContent = "+ Add set";
   addSetBtn.addEventListener("click", () => appendSetRow(true));
   section.appendChild(addSetBtn);
 
@@ -1137,7 +1184,7 @@ function renderWorkout(shared, workoutName, exercises) {
     const values = rowValues(row);
     if (!values.valid) {
       const needsWeight = !Number.isFinite(values.weight) || values.weight < 0;
-      row.querySelector(needsWeight ? ".workout__weight" : ".workout__reps-input").classList.add("workout__field--invalid");
+      row.querySelector(needsWeight ? ".workout__weight" : ".workout__reps").classList.add("workout__field--invalid");
       setTimeout(() => row.querySelectorAll(".workout__field--invalid").forEach((el) => el.classList.remove("workout__field--invalid")), 1400);
       flashStatus(needsWeight ? "Add the weight first (0 for bodyweight)." : "Add the reps first.", true);
       return;
@@ -1507,11 +1554,6 @@ async function init() {
   showPicker(shared, workoutGroups, workoutNames);
 }
 
-if (APP_VERSION) {
-  const stamp = document.createElement("p");
-  stamp.className = "workout__version";
-  stamp.textContent = `Version ${APP_VERSION}`;
-  document.getElementById("workout").appendChild(stamp);
-}
+// The version number used to be printed at the bottom of the page; clients don't need it, so it's hidden (APP_VERSION stays for debugging).
 
 init();

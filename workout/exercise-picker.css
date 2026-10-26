@@ -255,9 +255,9 @@
   color: var(--grey);
   font-family: var(--font-head);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-size: 12.5px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
   cursor: pointer;
 }
 
@@ -344,7 +344,7 @@
 }
 
 .exercise-picker__muscle-key--helps {
-  background: #ff9a7a;
+  background: #b3b3b3;
 }
 
 .exercise-picker__muscle-section {
@@ -384,7 +384,7 @@
 
 .exercise-picker__muscle-chip[data-state="helps"] {
   background: rgba(255, 154, 122, 0.18);
-  border-color: #ff9a7a;
+  border-color: #b3b3b3;
   color: #ffd2c4;
 }
 

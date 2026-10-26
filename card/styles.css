@@ -36,7 +36,7 @@
   /* Ambient background only — never used on text, icons or controls, so red
      stays the only real UI accent. */
   --ambient-red: rgba(224, 0, 0, 0.34);
-  --ambient-blue: rgba(56, 112, 172, 0.42);
+  --ambient-blue: rgba(0, 0, 0, 0);
 }
 
 /* A surface with no real blur support (or the user asked for less
@@ -167,18 +167,18 @@ body::before {
 .card__tag {
   font-family: var(--font-head);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
   color: var(--dim);
 }
 
 .card__label {
   font-family: var(--font-head);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
   color: var(--grey);
 }
 
@@ -326,9 +326,9 @@ body::before {
 .card__tile-label {
   font-family: var(--font-head);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.09em;
-  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
   color: var(--dim);
 }
 
@@ -405,8 +405,8 @@ body::before {
   position: absolute;
   top: 12px;
   right: 12px;
-  width: 32px;
-  height: 32px;
+  width: 48px;
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -517,9 +517,9 @@ body::before {
 .card__scan-caption {
   font-family: var(--font-head);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  font-size: 11px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
   color: #666666;
 }
 
@@ -973,8 +973,8 @@ body::before {
 .muscle-figure-caption {
   font-family: var(--font-head);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
+  text-transform: none;
+  letter-spacing: 0;
   font-size: 14px;
   color: var(--grey);
 }
@@ -1052,9 +1052,10 @@ body::before {
   text-decoration: none;
 }
 
-/* Coral, not --red: the brand red is too dark to read as a small label. */
+/* Active tab: white text on a red tint (red is the only accent; plain red text is too dark for a small label). */
 .bottom-nav__item.is-active {
-  color: #ff6b57;
+  color: #ffffff;
+  background: rgba(224, 0, 0, 0.4);
 }
 
 .bottom-nav__item:focus-visible {
@@ -1076,8 +1077,8 @@ body::before {
 .bottom-nav__label {
   font-family: var(--font-head);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  text-transform: none;
+  letter-spacing: 0;
   font-size: 14px;
 }
 
@@ -1103,8 +1104,8 @@ body::before {
 .muscle-tooltip__name {
   font-family: var(--font-head);
   font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  text-transform: none;
+  letter-spacing: 0;
   font-size: 15px;
   color: var(--white);
 }
@@ -1128,9 +1129,9 @@ body::before {
 .muscle-tooltip__label {
   font-family: var(--font-head);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
   color: var(--dim);
   margin-top: 10px;
   padding-top: 10px;

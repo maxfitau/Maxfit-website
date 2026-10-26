@@ -31,7 +31,7 @@
 }
 
 .mp-chip {
-  min-height: 46px;
+  min-height: 48px;
   padding: 0 16px;
   border-radius: 999px;
   border: 1px solid var(--line);
@@ -148,8 +148,8 @@
 .mp-meal__slot {
   font-family: var(--font-head);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  text-transform: none;
+  letter-spacing: 0;
   font-size: 14px;
   color: var(--red);
 }
@@ -226,9 +226,9 @@
 
 .mp-btn--done,
 .mp-btn--done:disabled {
-  background: rgba(48, 209, 88, 0.16);
-  border-color: rgba(48, 209, 88, 0.5);
-  color: #7ee69a;
+  background: rgba(224, 0, 0, 0.16);
+  border-color: rgba(224, 0, 0, 0.5);
+  color: #ffffff;
   cursor: default;
 }
 
@@ -245,8 +245,8 @@
   margin-bottom: 4px;
   font-family: var(--font-head);
   font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  text-transform: none;
+  letter-spacing: 0;
   font-size: 18px;
   color: var(--white);
 }
@@ -304,7 +304,7 @@
 }
 
 .mp-snack__add {
-  min-height: 44px;
+  min-height: 48px;
   padding: 0 12px;
   font-size: 14px;
   flex-shrink: 0;
@@ -361,8 +361,8 @@
 }
 
 .mp-item.is-done .mp-box {
-  background: #30d158;
-  border-color: #30d158;
+  background: #e00000;
+  border-color: #e00000;
 }
 
 .mp-item__name {
@@ -521,8 +521,8 @@
   margin: 10px 0 0;
   padding: 10px 12px;
   border-radius: 10px;
-  background: rgba(48, 209, 88, 0.1);
-  color: #a6ebb8;
+  background: rgba(224, 0, 0, 0.1);
+  color: #ffffff;
   font-size: 16px;
   line-height: 1.35;
 }
@@ -538,7 +538,7 @@
 }
 
 .fr-need b {
-  color: #ffc24b;
+  color: #ffffff;
   font-weight: 600;
 }
 
