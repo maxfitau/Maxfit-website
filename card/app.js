@@ -189,11 +189,13 @@ const els = {
   qr: document.getElementById("qrCode"),
   status: document.getElementById("status"),
   cardLoading: document.getElementById("cardLoading"),
+  cardLoadingBarFill: document.getElementById("cardLoadingBarFill"),
   upcomingLabel: document.getElementById("upcomingLabel"),
   upcomingValue: document.getElementById("upcomingValue"),
   upcomingLink: document.getElementById("upcomingLink"),
   bookLink: document.getElementById("bookLink"),
   referLink: document.getElementById("referLink"),
+  replayTourLink: document.getElementById("replayTourLink"),
   checkinTile: document.getElementById("checkinTile"),
   qrModal: document.getElementById("qrModal"),
   qrModalBackdrop: document.getElementById("qrModalBackdrop"),
@@ -325,8 +327,46 @@ function showStatus(message, isError) {
   els.status.classList.toggle("status--error", Boolean(isError));
 }
 
+/**
+ * Drives a fake progress bar: fast at first, then slows as it creeps up on
+ * `cap` (default 94%) and never quite gets there on its own — a real finish
+ * always has to call .finish() to snap it to 100%. The classic "almost
+ * done" trick (2026-10-26, Max's call) so a wait reads as nearly-over
+ * rather than stalled, on every loading moment that shows a bar, not just
+ * this one. Self-stops if `fill` leaves the DOM (its loading screen got
+ * replaced/hidden), so nothing has to remember to clean it up.
+ * Shared with macros.js (window.startFakeProgress) — app.js loads first.
+ */
+function startFakeProgress(fill, cap) {
+  let pct = 0;
+  const target = cap || 94;
+  const id = setInterval(() => {
+    if (!fill.isConnected) {
+      clearInterval(id);
+      return;
+    }
+    // ~75% by about 1.2s, then visibly slower each second after — tuned to
+    // read as "fast, then creeping" rather than one steady decay the whole way.
+    pct += (target - pct) * 0.18;
+    fill.style.width = pct.toFixed(1) + "%";
+  }, 150);
+  return {
+    finish() {
+      clearInterval(id);
+      if (fill.isConnected) fill.style.width = "100%";
+    },
+  };
+}
+window.startFakeProgress = startFakeProgress;
+
+let cardLoadingProgress_ = null;
+
 /** Hides the boot-time loading screen — called once real data is on screen, or immediately if there's nothing to fetch yet (the name picker). Safe to call more than once. */
 function hideCardLoading() {
+  if (cardLoadingProgress_) {
+    cardLoadingProgress_.finish();
+    cardLoadingProgress_ = null;
+  }
   els.cardLoading.hidden = true;
 }
 
@@ -430,8 +470,20 @@ async function render(data, workoutSummary) {
     els.bookLink.hidden = false;
     els.referLink.href = `refer.html?id=${encodeURIComponent(data.clientSlug)}`;
     els.referLink.hidden = false;
-    // Last week's recap and this month's goal (week.js, 2026-10-13).
-    if (typeof WeekCard !== "undefined") WeekCard.init(data.clientSlug);
+    els.replayTourLink.hidden = false;
+    // Last week's recap and this month's goal (week.js, 2026-10-13). A
+    // first-time client sees the welcome tour first — it's also a
+    // full-screen takeover, so WeekCard (which can open its own goal-setup
+    // popup) only starts once the tour is closed. A returning client skips
+    // straight to WeekCard, same as before the tour existed.
+    const startWeekCard = () => {
+      if (typeof WeekCard !== "undefined") WeekCard.init(data.clientSlug);
+    };
+    if (typeof Tour !== "undefined" && !Tour.hasSeen()) {
+      Tour.show(startWeekCard);
+    } else {
+      startWeekCard();
+    }
     // "Coach Tools" (2026-10-13) — Max's own card only, never a client's.
     if (data.clientSlug === "maxfrench") els.coachToolsTile.hidden = false;
   }
@@ -529,6 +581,8 @@ async function fetchMemberData(id) {
 }
 
 async function loadCard(id) {
+  if (cardLoadingProgress_) cardLoadingProgress_.finish(); // a re-run via showPicker() shouldn't leave an old one ticking
+  cardLoadingProgress_ = startFakeProgress(els.cardLoadingBarFill);
   try {
     // Kicked off together, not one after the other — fetchMemberData() and
     // the workout lookup hit two different sheet tabs, and the workout one

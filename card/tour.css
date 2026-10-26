@@ -1,0 +1,165 @@
+/* First-launch tour overlay (tour.js, 2026-10-26). Full-screen takeover,
+   same z-index tier as the other full-screen sheets (week.css), built from
+   card/styles.css's own tokens so it reads as part of the app, not a bolt-on. */
+
+.tour {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+}
+
+.tour__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: calc(16px + env(safe-area-inset-top, 0px)) 18px 10px;
+}
+
+.tour__dots {
+  display: flex;
+  gap: 7px;
+}
+
+.tour__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.tour__dot.is-active {
+  background: var(--red);
+  width: 20px;
+}
+
+.tour__skip {
+  font-family: var(--font-head);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 14px;
+  color: var(--dim);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 10px 8px;
+  min-height: 44px;
+}
+
+.tour__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 20px 28px 10px;
+  gap: 20px;
+  overflow-y: auto;
+}
+
+.tour__icon {
+  width: 84px;
+  height: 84px;
+  border-radius: 999px;
+  background: var(--glass-bg, rgba(255, 255, 255, 0.06));
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--red);
+  flex-shrink: 0;
+}
+
+.tour__icon svg {
+  width: 38px;
+  height: 38px;
+}
+
+.tour__eyebrow {
+  font-family: var(--font-head);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 13px;
+  color: var(--red);
+  margin: 0;
+}
+
+.tour__headline {
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  font-size: 28px;
+  color: var(--white);
+  margin: 0;
+  line-height: 1.08;
+}
+
+.tour__text {
+  font-size: 17px;
+  line-height: 1.55;
+  color: var(--grey);
+  margin: 0;
+  max-width: 34ch;
+}
+
+.tour__text b {
+  color: var(--white);
+}
+
+.tour__bottom {
+  padding: 14px 20px calc(24px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  gap: 10px;
+}
+
+.tour__back {
+  flex: 0 0 auto;
+  min-width: 52px;
+  min-height: 52px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--white);
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.tour__back[hidden] {
+  display: none;
+}
+
+.tour__next {
+  flex: 1;
+  min-height: 52px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: var(--red);
+  color: var(--on-red);
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+/* The "watch it again" link on the Profile tab. */
+.card__replay-tour {
+  display: block;
+  text-align: center;
+  font-size: 14px;
+  color: var(--dim);
+  text-decoration: underline;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 12px 8px;
+  margin: 0 auto;
+  min-height: 44px;
+}

@@ -55,6 +55,17 @@
     `<path class="flame__layer flame__layer--3" d="${FUEL_FLAME_PATH}"/>` +
     "</svg>";
 
+  /** Shared markup for every one of Fuel's loading moments (renderLoading, sheetLoading) — the flame plus a fake progress bar (window.startFakeProgress, app.js). */
+  function fuelLoadingHtml_(text) {
+    return (
+      '<div class="fuel-loading">' +
+      `<div class="fuel-spinner">${FUEL_FLAME_SVG}</div>` +
+      `<span class="fuel-loading__text">${esc(text)}</span>` +
+      '<div class="fuel-loading__bar"><div class="fuel-loading__bar-fill"></div></div>' +
+      "</div>"
+    );
+  }
+
   const state = {
     loaded: false,
     loading: false,
@@ -252,7 +263,8 @@
   }
 
   function renderLoading(text) {
-    els.panelFuel.innerHTML = `<div class="fuel-loading"><div class="fuel-spinner">${FUEL_FLAME_SVG}</div><span class="fuel-loading__text">${esc(text || "Loading")}</span></div>`;
+    els.panelFuel.innerHTML = fuelLoadingHtml_(text || "Loading");
+    if (window.startFakeProgress) window.startFakeProgress(els.panelFuel.querySelector(".fuel-loading__bar-fill"));
   }
 
   function applyMe(data) {
@@ -977,7 +989,8 @@
   });
 
   function sheetLoading(text) {
-    openSheet(`<div class="fuel-loading"><div class="fuel-spinner">${FUEL_FLAME_SVG}</div><span class="fuel-loading__text">${esc(text)}</span></div>`);
+    openSheet(fuelLoadingHtml_(text));
+    if (window.startFakeProgress) window.startFakeProgress(els.sheetBody.querySelector(".fuel-loading__bar-fill"));
   }
 
   function sheetError(title, message, buttons) {

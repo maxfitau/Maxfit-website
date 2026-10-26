@@ -558,6 +558,31 @@ body::before {
   color: var(--grey);
 }
 
+/* Fake progress bar (startFakeProgress, app.js) — fast, then creeps up and
+   slows as it nears the cap, so the wait reads as nearly-over rather than
+   stalled. Same trick on every loading moment with a bar, not just this one. */
+.card-loading__bar {
+  width: 140px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.card-loading__bar-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--red);
+  border-radius: 999px;
+  transition: width 0.15s linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-loading__bar-fill {
+    transition: none;
+  }
+}
+
 /* The dumbbell builds itself: the bar stays put, and the collars then the
    outer plates slide on and stack up, hold complete for a beat, then clear
    and build again — reads as "loading" rather than a static icon. */

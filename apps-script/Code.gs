@@ -32,7 +32,7 @@ const GROCERY_SHEET_NAME = "Grocery Items";
 // Changes whenever this file does, and is shown when you open the deployed
 // URL in a browser (see doGet) — the quick way to tell whether a redeploy
 // actually took, instead of guessing from behaviour.
-const BACKEND_VERSION = "2026-10-25a";
+const BACKEND_VERSION = "2026-10-26a";
 
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -2135,6 +2135,7 @@ const BOOKING_SETTING_DEFAULTS = [
   ["Contact link", "", "How clients message you. Put {message} where the ready-typed message goes. WhatsApp: https://wa.me/61400000000?text={message}   Text: sms:+61400000000?&body={message}. Leave blank to hide the Message Max buttons."],
   ["Email clients", "Yes", "Yes: a client with an email on the Clients tab gets a confirmation (with a calendar file) when they book, and a note when they cancel. No: only you are emailed."],
   ["Meeting place", "", "Where you meet clients, e.g. Petersham Park by the rotunda. It goes in the confirmation email and the calendar file. Leave blank to leave it out."],
+  ["Arrive early (minutes)", 10, "How many minutes before the session you want clients there to warm up on their own, so you can get straight into training. Goes in the confirmation email. 0 leaves it out."],
   ["Online payments", "No", "Yes: a client with no 1-on-1 sessions left sees Buy buttons (from the Prices tab) instead of \"message Max\". Needs the Stripe key in Script Properties and a Pay link on the Prices tab. No: they're told to message you."],
 ];
 
@@ -2517,7 +2518,7 @@ function bookingTable_(sheet) {
 }
 
 function bookingSettings_(ss) {
-  const s = { notifyEmail: BOOKING_NOTIFY_DEFAULT, minNoticeHours: 12, bookAheadDays: 28, cancelNoticeHours: 24, requireSession: true, maxActive: 6, requireCode: true, contactLink: "", emailClients: true, meetingPlace: "", onlinePayments: false };
+  const s = { notifyEmail: BOOKING_NOTIFY_DEFAULT, minNoticeHours: 12, bookAheadDays: 28, cancelNoticeHours: 24, requireSession: true, maxActive: 6, requireCode: true, contactLink: "", emailClients: true, meetingPlace: "", arriveEarlyMinutes: 10, onlinePayments: false };
   const table = bookingTable_(ss.getSheetByName(BOOKING_TABS.settings));
   const keyCol = findColumn_(table.header, "Setting");
   const valueCol = findColumn_(table.header, "Value");
@@ -2537,6 +2538,7 @@ function bookingSettings_(ss) {
   s.contactLink = bookingSafeLink_(map["contact link"]);
   if (map["email clients"]) s.emailClients = !bookingIsNo_(map["email clients"]);
   s.meetingPlace = bookingOneLine_(map["meeting place"], 160);
+  s.arriveEarlyMinutes = Math.floor(bookingNumber_(map["arrive early (minutes)"], s.arriveEarlyMinutes, 0, 120));
   s.onlinePayments = Boolean(map["online payments"]) && !bookingIsNo_(map["online payments"]); // off unless it says so
   return s;
 }
@@ -3272,6 +3274,9 @@ function bookingConfirmationEmail_(booking, member, settings, nowMs) {
     "When: " + when + " to " + bookingClock12_(booking.endMin),
   ];
   if (settings.meetingPlace) lines.push("Where: " + settings.meetingPlace);
+  if (settings.arriveEarlyMinutes > 0) {
+    lines.push("Get there " + settings.arriveEarlyMinutes + " minutes early if you can, so you can warm up on your own and we can get straight into the session.");
+  }
   lines.push(
     "",
     "Need to change it? You can cancel for free up to " + bookingHoursText_(settings.cancelNoticeHours) + " before, from your card:",
@@ -3986,9 +3991,12 @@ function bookingInfoCore_(ctx) {
     const mine = bookingMine_(rows, ctx.member, ctx.settings, ctx.now);
     const eligibility = bookingEligibility_(ctx.member, ctx.settings, mine.length);
 
-    // A client with nothing left can buy more on Stripe, if Max has switched that on and given at least one row a Pay link.
+    // Buying is never gated on the client's current balance (2026-10-26, Max's
+    // call) — someone can top up whether they're out, running low, or just
+    // want to stock up ahead of time. Only switched off entirely when Max
+    // hasn't turned online payments on, or hasn't given any Price row a Pay link.
     let buy = [];
-    if (!eligibility.canBook && eligibility.code === "no-sessions" && bookingPaymentsOn_(ctx.settings)) {
+    if (bookingPaymentsOn_(ctx.settings)) {
       buy = bookingBuyOptions_(ctx.ss, ctx.member, bookingClientEmail_(ctx.ss, ctx.member.slug));
     }
 

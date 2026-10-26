@@ -1049,6 +1049,31 @@ select.fuel-input {
   color: var(--grey);
 }
 
+/* Fake progress bar (window.startFakeProgress, app.js) — same "fast then
+   creeps up and slows" trick as the card-loading dumbbell, on every one of
+   Fuel's loading moments: initial load, AI scans, barcodes, suggestions. */
+.fuel-loading__bar {
+  width: 140px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.fuel-loading__bar-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--red);
+  border-radius: 999px;
+  transition: width 0.15s linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fuel-loading__bar-fill {
+    transition: none;
+  }
+}
+
 .fuel-error {
   font-family: var(--font-body);
   font-size: 14px;

@@ -398,8 +398,9 @@
   }
 
   function renderBuy(info) {
-    // Only for someone who is out of sessions: never for a client who has some (even if all of them are booked).
-    const options = !info.client.canBook && info.client.reason === "no-sessions" ? buyOptions(info) : [];
+    // Shown regardless of current balance (2026-10-26) — topping up ahead of
+    // time or catching up are both just "buy sessions," same as being out.
+    const options = buyOptions(info);
     show(els.buySection, options.length > 0);
     els.buyList.textContent = "";
     options.forEach((o) => {
