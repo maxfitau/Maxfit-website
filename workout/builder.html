@@ -14,6 +14,7 @@
 <link rel="stylesheet" href="../checkin.css?v=20260917a" />
 <link rel="stylesheet" href="builder.css?v=20261010a" />
 <link rel="stylesheet" href="exercise-picker.css?v=20261013b" />
+<link rel="stylesheet" href="exercise-manager.css?v=20261022a" />
 </head>
 <body>
 
@@ -23,6 +24,12 @@
     <span class="card__tag">Build Workout</span>
   </div>
 
+  <nav class="builder__tabs" role="tablist" aria-label="Builder sections">
+    <button class="builder__tab" type="button" role="tab" id="tabWorkouts" aria-selected="true" aria-controls="panelWorkouts">Workouts</button>
+    <button class="builder__tab" type="button" role="tab" id="tabExercises" aria-selected="false" aria-controls="panelExercises" tabindex="-1">Exercises</button>
+  </nav>
+
+  <div id="panelWorkouts" role="tabpanel" aria-labelledby="tabWorkouts">
   <div class="builder__layout">
     <div class="builder__main">
       <div class="builder__field">
@@ -67,13 +74,18 @@
       <div class="builder__side-heat-list" id="builderSideHeatList"></div>
     </aside>
   </div>
+  </div>
+
+  <!-- The Exercises tab: exercise-manager.js builds everything inside this. -->
+  <section class="exm" id="panelExercises" role="tabpanel" aria-labelledby="tabExercises" hidden></section>
 </main>
 
 <datalist id="workoutNameOptions"></datalist>
 
-<script src="../card/sheet.js?v=20261009b"></script>
+<script src="../card/sheet.js?v=20261022a"></script>
 <script src="../card/muscle-map.js?v=20261015b"></script>
-<script src="builder.js?v=20261013b"></script>
-<script src="exercise-picker.js?v=20261013b"></script>
+<script src="builder.js?v=20261022a"></script>
+<script src="exercise-picker.js?v=20261022a"></script>
+<script src="exercise-manager.js?v=20261022a"></script>
 </body>
 </html>
