@@ -99,6 +99,7 @@ const WeekCard = (function () {
   let goal = null;
   let ready = false;
   let toBuy = 0; // shopping list items not yet ticked (Gold and Diamond only)
+  let early = null; // the goal request started at page load, before the card has even drawn (see the end of this file)
 
   const esc = (t) => String(t == null ? "" : t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many || one + "s"}`;
@@ -125,7 +126,12 @@ const WeekCard = (function () {
 
   async function loadGoal() {
     if (typeof MacroApi === "undefined" || !MacroApi.configured()) return;
-    const data = await MacroApi.call("goal", { id: slug });
+    let data = null;
+    if (early && early.slug === slug && !early.used) {
+      early.used = true;
+      data = await early.goal; // already on its way since the page loaded
+    }
+    if (!data) data = await MacroApi.call("goal", { id: slug });
     lastGoalReply = { goal: data.goal || null, fuel: data.fuel || null, shoppingToBuy: data.shoppingToBuy, today: data.today };
     applyGoal(lastGoalReply);
   }
@@ -670,6 +676,20 @@ const WeekCard = (function () {
       // Full or blocked storage: the tiles just load the slow way.
     }
   }
+
+  // Start asking for the goal (and warm the workout sets) the moment this script
+  // loads, using the id the card already remembers, so the answer is usually back
+  // by the time the card has drawn instead of starting only then.
+  (function prefetch() {
+    try {
+      const id = String(new URLSearchParams(window.location.search).get("id") || localStorage.getItem("maxfitMemberId") || "").toLowerCase();
+      if (!id || typeof MacroApi === "undefined" || !MacroApi.configured()) return;
+      early = { slug: id, used: false, goal: MacroApi.call("goal", { id }).catch(() => null) };
+      if (typeof fetchLoggedSets === "function") fetchLoggedSets().catch(() => {});
+    } catch (err) {
+      // Nothing to prefetch: init asks as before.
+    }
+  })();
 
   return { init };
 })();

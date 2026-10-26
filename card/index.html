@@ -123,7 +123,19 @@
       <span class="card__tile-value">Get your link</span>
     </a>
 
+    <!-- Shown by app.js for real members only (not the demo card). -->
+    <a class="card__tile" id="progressLink" href="../workout/progress.html" hidden>
+      <svg class="card__tile-icon" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg>
+      <span class="card__tile-label">Strength Progress</span>
+      <span class="card__tile-value">See your lifts improve</span>
+    </a>
+
     <!-- Shown by app.js only on Max's own card (clientSlug === "maxfrench"), never anyone else's. -->
+    <a class="card__tile" id="clientsTile" href="clients.html" hidden>
+      <svg class="card__tile-icon" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.25"/><path d="M3.5 20c0-3.6 2.46-6 5.5-6s5.5 2.4 5.5 6"/><path d="M16 5.2a3.25 3.25 0 0 1 0 5.6M18 14.4c1.9.8 3 2.7 3 5.6"/></svg>
+      <span class="card__tile-label">Clients</span>
+      <span class="card__tile-value">Pick one, log their workout</span>
+    </a>
     <button class="card__tile" id="coachToolsTile" type="button" hidden>
       <svg class="card__tile-icon" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.6 4.9L4 16.3V20h3.7l5.1-5.1a4 4 0 0 0 4.9-5.6l-2.8 2.8-2.1-2.1 2.8-2.8z"/></svg>
       <span class="card__tile-label">Coach Tools</span>
@@ -183,6 +195,10 @@
     </button>
     <h2 class="qr-modal__title" id="coachToolsTitle">Coach Tools</h2>
     <div class="coach-links">
+      <a class="coach-links__row" href="clients.html">
+        <span class="coach-links__text"><b>Clients</b><small>Pick a client, then the workout to log for them</small></span>
+        <span class="coach-links__chevron" aria-hidden="true">›</span>
+      </a>
       <a class="coach-links__row" href="../workout/builder.html" target="_blank" rel="noopener">
         <span class="coach-links__text"><b>Workout Builder</b><small>Adjust a client's workout on the spot</small></span>
         <span class="coach-links__chevron" aria-hidden="true">›</span>
@@ -228,11 +244,11 @@
 <script src="vendor/qrcode.js" defer></script>
 <script src="sheet.js?v=20261009b" defer></script>
 <script src="tour.js?v=20261026a" defer></script>
-<script src="app.js?v=20261026b" defer></script>
+<script src="app.js?v=20261027a" defer></script>
 <script src="icons.js?v=20261026b" defer></script>
 <script src="macros-core.js?v=20261013b" defer></script>
 <script src="macros-api.js?v=20260925a" defer></script>
-<script src="week.js?v=20261026b" defer></script>
+<script src="week.js?v=20261027a" defer></script>
 <script src="mealplan.js?v=20261026b" defer></script>
 <script src="macros.js?v=20261026b" defer></script>
 <script src="bottom-nav.js?v=20261003a" defer></script>

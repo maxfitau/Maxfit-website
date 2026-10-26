@@ -1,0 +1,49 @@
+/* Coach's Clients page (card/clients.html): pick a client, then the workout to log. Phone first. */
+html, body { height: auto; }
+body { align-items: flex-start; }
+.clients { gap: 14px; padding-bottom: max(130px, calc(env(safe-area-inset-bottom, 0px) + 120px)); }
+.clients [hidden] { display: none !important; }
+
+.clients__back {
+  display: flex; align-items: center; justify-content: center;
+  width: 48px; height: 48px; margin: -10px 0 -10px -10px;
+  color: var(--grey-light); border-radius: 10px;
+}
+
+.clients__list-view, .clients__detail-view { display: flex; flex-direction: column; gap: 12px; }
+
+.clients__status { margin: 0; font-size: 16px; color: var(--grey-light); }
+.clients__status:empty { display: none; }
+
+.clients__list { display: flex; flex-direction: column; gap: 8px; }
+
+.clients__row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  width: 100%; min-height: 56px; padding: 10px 14px; text-align: left;
+  font-family: var(--font-body); color: var(--white);
+  background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer;
+}
+.clients__row:active { border-color: var(--red); }
+.clients__row b { font-size: 18px; font-weight: 600; }
+.clients__row small { font-size: 14px; color: var(--grey-light); white-space: nowrap; }
+
+.clients__change {
+  align-self: flex-start; min-height: 48px; padding: 0 14px 0 0;
+  font-family: var(--font-body); font-size: 16px; font-weight: 600;
+  color: var(--grey-light); background: none; border: 0; cursor: pointer;
+}
+
+.clients__name { margin: 0; font-family: var(--font-head); font-weight: 800; font-size: 30px; line-height: 1.05; text-transform: uppercase; color: var(--white); }
+.clients__meta { margin: 0; font-size: 16px; color: var(--grey-light); }
+
+.clients__workouts, .clients__actions { display: flex; flex-direction: column; gap: 8px; }
+
+.clients__workout {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  min-height: 60px; padding: 10px 14px; text-decoration: none; color: var(--white);
+  background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-sm);
+}
+.clients__workout:active { border-color: var(--red); }
+.clients__workout--today { border-color: var(--red); background: rgba(224, 0, 0, 0.14); }
+.clients__workout b { font-family: var(--font-head); font-weight: 800; font-size: 20px; text-transform: uppercase; }
+.clients__workout span { font-size: 14px; color: var(--grey-light); }

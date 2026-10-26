@@ -195,6 +195,7 @@ const els = {
   upcomingLink: document.getElementById("upcomingLink"),
   bookLink: document.getElementById("bookLink"),
   referLink: document.getElementById("referLink"),
+  progressLink: document.getElementById("progressLink"),
   replayTourLink: document.getElementById("replayTourLink"),
   checkinTile: document.getElementById("checkinTile"),
   qrModal: document.getElementById("qrModal"),
@@ -470,6 +471,8 @@ async function render(data, workoutSummary) {
     els.bookLink.hidden = false;
     els.referLink.href = `refer.html?id=${encodeURIComponent(data.clientSlug)}`;
     els.referLink.hidden = false;
+    els.progressLink.href = `../workout/progress.html?id=${encodeURIComponent(data.clientSlug)}`;
+    els.progressLink.hidden = false;
     els.replayTourLink.hidden = false;
     // Last week's recap and this month's goal (week.js, 2026-10-13). A
     // first-time client sees the welcome tour first — it's also a
@@ -485,7 +488,10 @@ async function render(data, workoutSummary) {
       startWeekCard();
     }
     // "Coach Tools" (2026-10-13) — Max's own card only, never a client's.
-    if (data.clientSlug === "maxfrench") els.coachToolsTile.hidden = false;
+    if (data.clientSlug === "maxfrench") {
+      els.coachToolsTile.hidden = false;
+      document.getElementById("clientsTile").hidden = false;
+    }
   }
 
   // Everything that matters at a glance is on screen now — don't make the

@@ -109,6 +109,7 @@ const els = {
   status: document.getElementById("status"),
   backLink: document.getElementById("backLink"),
   historyLink: document.getElementById("historyLink"),
+  progressLink: document.getElementById("progressLink"),
 };
 
 function showStatus(message, isError) {
@@ -1447,6 +1448,7 @@ async function init() {
 
   els.backLink.href = homeHref();
   els.historyLink.href = `calendar.html?id=${encodeURIComponent(memberId)}`;
+  els.progressLink.href = `progress.html?id=${encodeURIComponent(memberId)}`;
   const clientSlug = slugify(memberId);
 
   let workoutGroups;
