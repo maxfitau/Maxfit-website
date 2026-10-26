@@ -9,6 +9,37 @@
   background: var(--bg);
   display: flex;
   flex-direction: column;
+  transition: background 0.2s ease;
+}
+
+/* A step with a real target: dim the page instead of hiding it, so the
+   spotlighted element (lifted above this layer — see .tour-spotlight-target
+   below) reads as "that thing, right there" against its own real surroundings. */
+.tour--spotlight {
+  background: rgba(8, 8, 8, 0.86);
+}
+
+/* The real page element a step points at. Lifted above .tour's z-index
+   with its own glow, in its normal on-page position — not a clone, not
+   moved — so what's highlighted is exactly where the client will find it
+   once the tour's over. */
+.tour-spotlight-target {
+  position: relative;
+  z-index: 201;
+  border-radius: var(--radius, var(--radius-sm));
+  box-shadow: 0 0 0 4px var(--bg), 0 0 0 7px var(--red), 0 0 36px 6px rgba(224, 0, 0, 0.45);
+  animation: tour-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes tour-pulse {
+  0%, 100% { box-shadow: 0 0 0 4px var(--bg), 0 0 0 7px var(--red), 0 0 36px 6px rgba(224, 0, 0, 0.45); }
+  50% { box-shadow: 0 0 0 4px var(--bg), 0 0 0 7px var(--red), 0 0 48px 10px rgba(224, 0, 0, 0.6); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tour-spotlight-target {
+    animation: none;
+  }
 }
 
 .tour__top {
@@ -49,7 +80,9 @@
   min-height: 44px;
 }
 
-.tour__body {
+/* Default (no target this step): a plain centered card filling the space
+   between the top bar and the Next/Back row — welcome and closing only. */
+.tour__card {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -57,8 +90,49 @@
   justify-content: center;
   text-align: center;
   padding: 20px 28px 10px;
-  gap: 20px;
+  gap: 14px;
   overflow-y: auto;
+}
+
+/* Pointing at a real element: a small floating callout near it instead of
+   filling the screen, positioned by tour.js (top/left + the arrow's own
+   offset, via --tour-arrow-left) once it knows the target's real position. */
+.tour__card--pointing {
+  position: fixed;
+  flex: none;
+  width: min(300px, calc(100vw - 32px));
+  max-height: 60vh;
+  align-items: flex-start;
+  text-align: left;
+  padding: 18px 20px;
+  gap: 8px;
+  background: var(--bg-card, #1c1c1c);
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.14));
+  border-radius: var(--radius, var(--radius-sm));
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+.tour__card--pointing::before {
+  content: "";
+  position: absolute;
+  left: var(--tour-arrow-left, 50%);
+  width: 14px;
+  height: 14px;
+  background: var(--bg-card, #1c1c1c);
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.14));
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.tour__card--pointing.tour__card--below::before {
+  top: -8px;
+  border-right: none;
+  border-bottom: none;
+}
+
+.tour__card--pointing.tour__card--above::before {
+  bottom: -8px;
+  border-left: none;
+  border-top: none;
 }
 
 .tour__icon {
@@ -110,6 +184,18 @@
 
 .tour__text b {
   color: var(--white);
+}
+
+/* The pointing callout is much narrower than the centered welcome/closing
+   card, so its headline/text read at a smaller, left-aligned scale rather
+   than overflowing a 300px box. */
+.tour__card--pointing .tour__headline {
+  font-size: 19px;
+}
+
+.tour__card--pointing .tour__text {
+  font-size: 15px;
+  max-width: none;
 }
 
 .tour__bottom {

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+<title>MaxFit — Create Your Account</title>
+<meta name="theme-color" content="#111111" />
+<meta name="description" content="Create your MaxFit account — instant, no waiting on Max." />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="card/styles.css?v=20261026a" />
+<link rel="stylesheet" href="checkin.css?v=20260917a" />
+<link rel="stylesheet" href="join.css?v=20261026a" />
+</head>
+<body>
+
+<main class="card join" id="join">
+  <div class="card__top">
+    <img class="card__wordmark" src="assets/images/maxfit-logo.png" alt="MaxFit" />
+    <span class="card__tag">Create Account</span>
+  </div>
+
+  <h1 class="join__title">Get Your Card</h1>
+  <p class="join__hint">Takes 10 seconds — your card's ready the moment you submit this, no waiting on Max.</p>
+
+  <form id="signupForm" autocomplete="off">
+    <div class="join__field">
+      <span class="card__label">Name</span>
+      <input class="picker__input" id="signupName" name="name" type="text" autocapitalize="words" required />
+    </div>
+    <div class="join__field">
+      <span class="card__label">Email</span>
+      <input class="picker__input" id="signupEmail" name="email" type="email" inputmode="email" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="you@example.com" required />
+      <p class="join__field-hint">Your card link and booking code go here.</p>
+    </div>
+    <div class="join__field">
+      <span class="card__label">Phone (optional)</span>
+      <input class="picker__input" id="signupPhone" name="phone" type="tel" inputmode="tel" placeholder="0400 123 456" />
+    </div>
+
+    <!-- Honeypot: invisible to real visitors, often auto-filled by bots. -->
+    <div class="join__honeypot" aria-hidden="true">
+      <label for="signupWebsite">Leave this field blank</label>
+      <input id="signupWebsite" name="website" type="text" tabindex="-1" autocomplete="off" />
+    </div>
+
+    <button class="checkin__confirm" id="signupSubmit" type="submit">Create My Account</button>
+    <p class="checkin__error" id="signupError" hidden></p>
+  </form>
+
+  <div class="join__success" id="signupSuccess" hidden>
+    <p class="checkin__success-title">You're In</p>
+    <p class="checkin__success-text" id="signupSuccessText">Check your email for your card link and booking code.</p>
+    <a class="checkin__confirm" id="signupCardLink" href="card/" style="display:block; text-align:center; text-decoration:none; margin-top:14px;">Open Your Card Now</a>
+  </div>
+</main>
+
+<script src="signup.js?v=20261026a"></script>
+</body>
+</html>

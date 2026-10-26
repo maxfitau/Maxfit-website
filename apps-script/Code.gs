@@ -32,7 +32,7 @@ const GROCERY_SHEET_NAME = "Grocery Items";
 // Changes whenever this file does, and is shown when you open the deployed
 // URL in a browser (see doGet) — the quick way to tell whether a redeploy
 // actually took, instead of guessing from behaviour.
-const BACKEND_VERSION = "2026-10-26a";
+const BACKEND_VERSION = "2026-10-26b";
 
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -721,6 +721,9 @@ function doPost(e) {
   if (action === "signup") {
     return withLock_(() => handleSignup_(payload));
   }
+  if (action === "selfSignup") {
+    return withLock_(() => handleSelfSignup_(payload));
+  }
   if (action === "assignWorkout") {
     return withLock_(() => handleAssignWorkout_(payload));
   }
@@ -1040,6 +1043,130 @@ function handleSignup_(payload) {
   notifyNewLead_({ name, phone, email, goals, referrerName, source });
 
   return jsonResponse_({ status: "success", referrerName: referrerName });
+}
+
+/**
+ * Self-serve account creation (signup.html, 2026-10-26) — for "people I
+ * don't know or train" to get a real, working account with zero manual
+ * work from Max, not an enquiry he reviews first (that's handleSignup_,
+ * above — a different page, a different intent). This is the automated
+ * version of the three things Max used to do by hand for every new client:
+ * type their row into Sessions Remaining, run backfillTokens() for their
+ * Check-in Token, and run issueBookingCodes() for their personal code.
+ * They start at 0 sessions — buying their first package happens from their
+ * own card afterward (the Buy-anytime booking flow), same as any client
+ * topping up, not as part of signing up.
+ */
+function handleSelfSignup_(payload) {
+  // Honeypot, same idea as handleSignup_: invisible to a real visitor, so a
+  // bot that fills every field blind trips it. Pretend success either way.
+  if (payload.website) {
+    return jsonResponse_({ status: "success" });
+  }
+
+  const name = cleanNote_(payload.name, 80);
+  const email = bookingCleanEmail_(payload.email);
+  const phone = cleanNote_(payload.phone, 30);
+
+  if (!name) return jsonResponse_({ status: "error", message: "Enter your name." });
+  if (!email) return jsonResponse_({ status: "error", message: "Enter a valid email." });
+
+  const slug = slugify_(name);
+  if (!slug) return jsonResponse_({ status: "error", message: "Enter your name." });
+
+  const sheet = getSheetByGid_(SESSIONS_SHEET_GID);
+  const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const col = {
+    name: findColumn_(header, "Name"),
+    signupDate: findColumn_(header, "Sign-up Date"),
+    packageType: findColumn_(header, "Package Type"),
+    groupRemaining: findColumn_(header, "Group Sessions Remaining"),
+    oneOnOne: findColumn_(header, "1 on 1 Remaining"),
+    token: findColumn_(header, "Check-in Token"),
+    phone: findColumn_(header, "Phone"),
+    email: findColumn_(header, "Email"),
+  };
+  if (col.name < 0 || col.token < 0) {
+    return jsonResponse_({ status: "error", message: "Sign-ups aren't set up yet. Please message Max." });
+  }
+
+  // Same duplicate rule as handleSignup_: an existing client (by name-slug
+  // or by email) gets told so, not a second row.
+  const lastRow = sheet.getLastRow();
+  if (lastRow >= 2) {
+    const names = sheet.getRange(2, col.name + 1, lastRow - 1, 1).getValues().flat();
+    if (names.some(function (n) { return n && slugify_(n) === slug; })) {
+      return jsonResponse_({ status: "duplicate", message: "Looks like you already have an account — check your email for your card link, or message Max." });
+    }
+  }
+  if (isEmailAlreadyPresent_(sheet, col.email, email)) {
+    return jsonResponse_({ status: "duplicate", message: "That email already has an account — check your inbox for your card link, or message Max." });
+  }
+
+  const row = header.map(function () { return ""; });
+  row[col.name] = name;
+  if (col.signupDate >= 0) row[col.signupDate] = Utilities.formatDate(new Date(), TIMEZONE, "yyyy-MM-dd");
+  if (col.packageType >= 0) row[col.packageType] = "Casual";
+  if (col.groupRemaining >= 0) row[col.groupRemaining] = 0;
+  if (col.oneOnOne >= 0) row[col.oneOnOne] = 0;
+  row[col.token] = Utilities.getUuid();
+  if (col.phone >= 0 && phone) row[col.phone] = phone;
+  if (col.email >= 0) row[col.email] = email;
+
+  const target = sheet.getRange(sheet.getLastRow() + 1, 1, 1, row.length);
+  target.setNumberFormat("@");
+  target.setValues([row]);
+  SpreadsheetApp.flush();
+
+  // The row is saved, so nothing from here on may fail the signup — the
+  // booking code, and both emails, only report back, same spirit as
+  // bookSessionCore_'s "booking is saved, everything after just reports."
+  let bookingCode = "";
+  try {
+    issueBookingCodes(); // re-scans the whole CRM; picks up this new row along with anyone else missing a code
+    const book = bookingBook_();
+    if (book) bookingCode = bookingStoredCode_(book, slug);
+  } catch (err) {
+    Logger.log("Self-signup booking code provisioning failed: " + err);
+  }
+
+  const cardUrl = BOOKING_SITE_URL + "/card/?id=" + encodeURIComponent(slug);
+  try {
+    MailApp.sendEmail({
+      to: email,
+      subject: "Welcome to MaxFit — your card is ready",
+      body: [
+        "Hi " + name.split(" ")[0] + ",",
+        "",
+        "You're all set. Here's your MaxFit card — open it and add it to your home screen so it's always one tap away:",
+        cardUrl,
+        "",
+        bookingCode ? "Your booking code (enter it once, the first time you book a 1-on-1): " + bookingCode : "",
+        "",
+        "See you soon,",
+        "Max",
+      ].filter(function (line) { return line !== ""; }).join("\n"),
+    });
+  } catch (err) {
+    Logger.log("Self-signup welcome email failed: " + err);
+  }
+
+  try {
+    MailApp.sendEmail({
+      to: BOOKING_NOTIFY_DEFAULT,
+      subject: "New sign-up: " + name,
+      body: [
+        name + " created their own MaxFit account — nothing for you to do.",
+        "Card: " + cardUrl,
+        email ? "Email: " + email : "",
+        phone ? "Phone: " + phone : "",
+      ].filter(function (line) { return line !== ""; }).join("\n"),
+    });
+  } catch (err) {
+    Logger.log("Self-signup notify failed: " + err);
+  }
+
+  return jsonResponse_({ status: "success", cardUrl: cardUrl });
 }
 
 // Header of the Leads column that records where each sign-up came from.

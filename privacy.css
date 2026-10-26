@@ -1,0 +1,79 @@
+/* Privacy policy page (privacy.html, 2026-10-26). Long-form text, so this
+   is the one client-facing page that scrolls freely rather than fitting a
+   single screen — still the same dark/red card look, readable-text rule
+   (16px+ body) applies same as everywhere else. */
+
+.privacy {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding-bottom: 48px;
+  height: auto;
+  min-height: 100dvh;
+  overflow-y: visible;
+}
+
+.privacy__updated {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--dim);
+  margin: 0;
+}
+
+.privacy__lede {
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--grey, #ccc);
+  margin: 0;
+}
+
+.privacy__section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.privacy__section h2 {
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: 20px;
+  color: var(--white);
+  margin: 0;
+}
+
+.privacy__section p,
+.privacy__section ul {
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--grey, #ccc);
+  margin: 0;
+}
+
+.privacy__section ul {
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.privacy__section li::marker {
+  color: var(--red);
+}
+
+.privacy__section b {
+  color: var(--white);
+}
+
+.privacy a {
+  color: var(--white);
+  text-decoration-color: var(--red);
+  text-underline-offset: 3px;
+}
+
+.privacy a:hover {
+  color: var(--red);
+}

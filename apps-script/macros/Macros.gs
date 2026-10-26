@@ -60,7 +60,7 @@
  * or change rows carrying their own id.
  */
 
-const MACROS_VERSION = "2026-10-22a";
+const MACROS_VERSION = "2026-10-26a";
 const TIMEZONE = "Australia/Sydney";
 const MAIN_SESSIONS_GID = 1169726169; // "Sessions Remaining" in the CRM sheet
 const CARD_URL = "https://maxfit.now/card/";
@@ -2032,6 +2032,41 @@ function actionShoppingList_(payload, member) {
   return { list: listOut_(shoppingFor_(String(member.slug))) };
 }
 
+// Max's own request (2026-10-26): when HE specifically adds something to
+// his Fuel shopping list, it also lands on the French family's shared
+// household list (grocery/, the main CRM sheet's Grocery Items tab) — he's
+// part of that household and doesn't want to keep two separate lists.
+// Deliberately hardcoded to his own slug, not a general per-client setting
+// every Fuel member gets — nobody else asked for this, and most clients
+// have no shared household list to sync to. Only wired into the single-item
+// add path (manual add, and the "+ List" buttons from snack ideas/fridge
+// scans, which all funnel through actionShoppingAdd_) — NOT into
+// writePlanShopping_, which replaces the plan-sourced items on the Fuel
+// list every time a plan changes; syncing that blindly would re-add
+// duplicates to the family list on every meal swap instead of once.
+const FAMILY_SYNC_SLUG_ = "maxfrench";
+const FAMILY_SYNC_SURNAME_ = "French";
+
+/** Appends one item straight onto the family grocery list's sheet — not through the public addGroceryItem action/code check, since this is an authenticated server-side step off Max's own Fuel session, not an unauthenticated client request. Never throws: a sync failure must not undo the Fuel shopping-list add that already succeeded. */
+function syncToFamilyGroceryList_(itemName) {
+  try {
+    const id = prop_("MAIN_SHEET_ID");
+    if (!id) return;
+    const sheet = SpreadsheetApp.openById(id).getSheetByName("Grocery Items");
+    if (!sheet) return;
+    const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map((h) => String(h).trim().toLowerCase());
+    const col = { id: header.indexOf("id"), surname: header.indexOf("surname"), item: header.indexOf("item"), addedAt: header.indexOf("added at") };
+    const row = new Array(header.length).fill("");
+    if (col.id >= 0) row[col.id] = Utilities.getUuid();
+    if (col.surname >= 0) row[col.surname] = FAMILY_SYNC_SURNAME_;
+    if (col.item >= 0) row[col.item] = itemName;
+    if (col.addedAt >= 0) row[col.addedAt] = new Date();
+    sheet.appendRow(row);
+  } catch (err) {
+    // Ignore — the Fuel-side add already succeeded either way.
+  }
+}
+
 function actionShoppingAdd_(payload, member) {
   requireShopping_(member);
   const slug = String(member.slug);
@@ -2052,6 +2087,7 @@ function actionShoppingAdd_(payload, member) {
         source: payload.source === "snack" ? "snack" : "own",
         created_at: nowStamp_(),
       });
+      if (slug === FAMILY_SYNC_SLUG_) syncToFamilyGroceryList_(name);
     }
   });
   return { list: listOut_(shoppingFor_(slug)) };
