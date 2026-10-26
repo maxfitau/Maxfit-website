@@ -75,6 +75,11 @@
       <span class="card__label card__label--red">1-on-1 left</span>
       <span class="card__sessions-num card__sessions-num--split" id="oneOnOneSessionsNum">—</span>
     </div>
+    <!-- Only shown to a client who has duo sessions (app.js). -->
+    <div class="card__sessions" id="duoSessionsStat" hidden>
+      <span class="card__label card__label--red">Duo left</span>
+      <span class="card__sessions-num card__sessions-num--split" id="duoSessionsNum">—</span>
+    </div>
   </div>
 
   <div class="card__meta">
@@ -112,8 +117,8 @@
     <!-- Shown by app.js for real members only (not the demo card). -->
     <a class="card__tile" id="bookLink" href="book.html" hidden>
       <svg class="card__tile-icon" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>
-      <span class="card__tile-label">1-on-1 Sessions</span>
-      <span class="card__tile-value">Book a session</span>
+      <span class="card__tile-label">Sessions</span>
+      <span class="card__tile-value">Book or buy more</span>
     </a>
 
     <!-- Shown by app.js for real members only (not the demo card). -->
@@ -242,9 +247,9 @@
 </div>
 
 <script src="vendor/qrcode.js" defer></script>
-<script src="sheet.js?v=20261009b" defer></script>
+<script src="sheet.js?v=20261027b" defer></script>
 <script src="tour.js?v=20261026a" defer></script>
-<script src="app.js?v=20261027a" defer></script>
+<script src="app.js?v=20261027b" defer></script>
 <script src="icons.js?v=20261026b" defer></script>
 <script src="macros-core.js?v=20261013b" defer></script>
 <script src="macros-api.js?v=20260925a" defer></script>

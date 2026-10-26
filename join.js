@@ -45,6 +45,9 @@ const els = {
   name: document.getElementById("joinName"),
   contact: document.getElementById("joinContact"),
   goals: document.getElementById("joinGoals"),
+  interest: document.getElementById("joinInterest"),
+  partnerField: document.getElementById("joinPartnerField"),
+  partner: document.getElementById("joinPartner"),
   website: document.getElementById("joinWebsite"),
   submit: document.getElementById("joinSubmit"),
   error: document.getElementById("joinError"),
@@ -74,6 +77,17 @@ async function showReferralBanner() {
     // Sheet unreachable — just skip the banner, don't block sign-up.
   }
 }
+
+// The pricing cards link here with ?interest=duo (and so on), so the choice is already made.
+function syncPartnerField() {
+  els.partnerField.hidden = els.interest.value !== "duo";
+}
+(function preselectInterest() {
+  const wanted = new URLSearchParams(window.location.search).get("interest");
+  if (wanted && Array.from(els.interest.options).some((o) => o.value === wanted)) els.interest.value = wanted;
+  syncPartnerField();
+})();
+els.interest.addEventListener("change", syncPartnerField);
 
 els.form.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -105,6 +119,8 @@ els.form.addEventListener("submit", async (event) => {
         phone,
         email,
         goals,
+        interest: els.interest.value,
+        partnerName: els.interest.value === "duo" ? els.partner.value.trim() : "",
         referralCode,
         src: sourceTag(),
         fromHost: referrerHost(),

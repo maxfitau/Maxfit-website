@@ -79,6 +79,11 @@
     locationBox: $("locationBox"),
     locationList: $("locationList"),
     locationError: $("locationError"),
+    typeSection: $("typeSection"),
+    typeSwitch: $("typeSwitch"),
+    partnerBox: $("partnerBox"),
+    partnerInput: $("partnerInput"),
+    partnerError: $("partnerError"),
     emailBox: $("emailBox"),
     emailInput: $("emailInput"),
     emailError: $("emailError"),
@@ -100,6 +105,8 @@
     selectedDate: "",
     selectedStart: "",
     location: "", // the chosen location's Name, once info.locations isn't empty
+    type: "one-on-one", // what they are booking: "one-on-one" or "duo" (two people, one coach)
+    partner: "", // a duo's second person, as typed
     email: "", // what's in the "Email me a confirmation" box
     emailEdited: false, // once they've touched the box, a reload of the times doesn't overwrite it
     cancelingId: "", // the booking whose "Yes, cancel" is showing
@@ -301,6 +308,7 @@
     const info = state.info;
     renderIntro(info);
     renderMine(info);
+    renderType(info);
     renderMessage(info);
     renderBuy(info);
     renderPicker(info);
@@ -319,6 +327,9 @@
       const booked = info.bookings.length;
       line = first + ", you have " + plural(info.client.sessionsLeft, "session") + " left" + (booked ? " (" + booked + " already booked)." : ".");
     }
+    if (info.client.duoAvailable) {
+      line += (line ? " " : first + ", ") + "You have " + plural(info.client.duoLeft || 0, "duo session") + " left.";
+    }
     els.intro.textContent = line;
   }
 
@@ -331,6 +342,7 @@
       const when = mk("div", "book__mine-when");
       when.appendChild(mk("span", "book__mine-day", dayLabel(b.date)));
       when.appendChild(mk("span", "book__mine-time", timeRange(b) + " · " + b.minutes + " min"));
+      if (b.type === "duo") when.appendChild(mk("span", "book__mine-note", "Duo session" + (b.partner ? " with " + b.partner : "")));
       if (b.location) when.appendChild(mk("span", "book__mine-note", b.location));
       if (!b.canCancel) {
         when.appendChild(mk("span", "book__mine-note", "Less than " + hoursText(info.policy.cancelHours) + " away. Message Max to change it."));
@@ -369,17 +381,21 @@
     let text = "";
     let ask = "";
     let linkText = "Message Max";
-    if (!info.client.canBook) {
-      text = info.client.message;
-      ask = info.client.reason === "no-sessions" ? "I'd like to top up my 1-on-1 sessions." : "I'd like to book another session.";
-      if (info.client.reason === "no-sessions" && buyOptions(info).length) {
-        text = "You don't have any 1-on-1 sessions left. Buy some below to keep training.";
+    const duo = state.type === "duo";
+    const who = duo ? info.client.duo : info.client;
+    const label = duo ? "duo" : "1-on-1";
+    if (!who.canBook) {
+      text = who.message;
+      ask = (duo ? who.reason === "no-duo-sessions" : who.reason === "no-sessions") ? "I'd like to top up my " + label + " sessions." : "I'd like to book another session.";
+      const buyHere = buyOptions(info).filter((o) => (o.kind === "duo") === duo);
+      if ((duo ? who.reason === "no-duo-sessions" : who.reason === "no-sessions") && buyHere.length) {
+        text = duo ? "You don't have any duo sessions left. Buy one below. You pay for both of you." : "You don't have any 1-on-1 sessions left. Buy some below to keep training.";
         ask = "I have a question about buying sessions.";
         linkText = "Questions? Message Max";
       }
     } else if (!info.slots.length) {
       text = "No times are open right now. Check back soon, or message Max.";
-      ask = "I'd like to book a 1-on-1 session but I can't see any times.";
+      ask = "I'd like to book a " + label + " session but I can't see any times.";
     }
     els.message.textContent = text;
     if (text) {
@@ -409,7 +425,7 @@
       a.rel = "noopener";
       const text = mk("span", "book__buy-text");
       text.appendChild(mk("span", "book__buy-name", String(o.name)));
-      text.appendChild(mk("span", "book__buy-detail", plural(Number(o.sessions) || 1, "session") + " added to your account"));
+      text.appendChild(mk("span", "book__buy-detail", o.kind === "duo" ? "A duo session for the two of you, added to your account" : plural(Number(o.sessions) || 1, "session") + " added to your account"));
       a.appendChild(text);
       a.appendChild(mk("span", "book__buy-price", String(o.price || "")));
       els.buyList.appendChild(a);
@@ -418,7 +434,7 @@
 
   function renderPicker(info) {
     const slots = info.slots;
-    const open = info.client.canBook && slots.length > 0;
+    const open = canBookNow(info) && slots.length > 0;
     show(els.pickSection, open);
     if (!open) return;
 
@@ -466,7 +482,7 @@
     show(els.confirmBox, Boolean(chosen));
     if (chosen) {
       els.confirmWhen.textContent = dayLabel(chosen.date) + " · " + timeRange(chosen) + " (" + chosen.minutes + " min)";
-      els.confirmNote.textContent = "Free to cancel up to " + hoursText(info.policy.cancelHours) + " before. Your session is used when you check in, not when you book.";
+      els.confirmNote.textContent = (state.type === "duo" ? "Duo session" + (state.partner.trim() ? " with " + state.partner.trim() : "") + ". " : "") + "Free to cancel up to " + hoursText(info.policy.cancelHours) + " before. Your " + (state.type === "duo" ? "duo " : "") + "session is used when you check in, not when you book.";
 
       const locations = info.locations || [];
       show(els.locationBox, locations.length > 0);
@@ -569,6 +585,31 @@
     show(els.emailError, Boolean(text));
   }
 
+  function showPartnerError(text) {
+    els.partnerError.textContent = text;
+    show(els.partnerError, Boolean(text));
+  }
+
+  /** Can this client book what they have selected (1-on-1 or duo) right now? */
+  function canBookNow(info) {
+    return state.type === "duo" ? Boolean(info.client.duo && info.client.duo.canBook) : info.client.canBook;
+  }
+
+  /** The 1-on-1 / Duo switch and the partner's name. Only shown to a client who has duo sessions, has one booked, or can buy one. */
+  function renderType(info) {
+    const duoOn = Boolean(info.client.duoAvailable);
+    if (!duoOn) state.type = "one-on-one";
+    // Someone who can only book a duo (no 1-on-1s left) starts on Duo.
+    if (duoOn && state.type === "one-on-one" && !info.client.canBook && info.client.duo && info.client.duo.canBook && !state.typePicked) state.type = "duo";
+    show(els.typeSection, duoOn);
+    Array.from(els.typeSwitch.querySelectorAll("[data-type]")).forEach((b) => {
+      b.setAttribute("aria-pressed", b.dataset.type === state.type ? "true" : "false");
+      b.disabled = state.busy;
+    });
+    show(els.partnerBox, duoOn && state.type === "duo");
+    if (els.partnerInput.value !== state.partner) els.partnerInput.value = state.partner;
+  }
+
   function showLocationError(text) {
     els.locationError.textContent = text;
     show(els.locationError, Boolean(text));
@@ -588,6 +629,17 @@
 
     // Only sent when Max has confirmation emails switched on. A blank box is sent as blank on purpose: "not this time".
     const fields = { date: state.selectedDate, start: state.selectedStart, location: state.location };
+    if (state.type === "duo") {
+      const partner = state.partner.trim();
+      if (!partner) {
+        showPartnerError("Add the name of the person training with you.");
+        els.partnerInput.focus();
+        return;
+      }
+      fields.type = "duo";
+      fields.partner = partner;
+    }
+    showPartnerError("");
     let typedEmail = "";
     if (state.info && state.info.policy.emailClients) {
       typedEmail = state.email.trim();
@@ -612,7 +664,7 @@
     }
     if (res.status === "success") {
       const b = res.booking;
-      state.flash = "Booked. See you " + dayLabel(b.date) + " at " + clock(b.start) + ".";
+      state.flash = (b.type === "duo" ? "Duo session booked" + (b.partner ? " with " + b.partner : "") + ". See you " : "Booked. See you ") + dayLabel(b.date) + " at " + clock(b.start) + ".";
       if (res.emailedTo) state.flash += " A confirmation is on its way to " + res.emailedTo + ".";
       else if (typedEmail) state.flash += " We couldn't send the confirmation email, but your booking is saved.";
       state.selectedStart = "";
@@ -653,6 +705,24 @@
     state.error = res.message || "That didn't work. Please try again.";
     renderAll();
   }
+
+  els.typeSwitch.addEventListener("click", (event) => {
+    const b = event.target.closest("[data-type]");
+    if (!b || state.busy || b.dataset.type === state.type) return;
+    state.type = b.dataset.type;
+    state.typePicked = true;
+    state.selectedStart = "";
+    state.error = "";
+    state.flash = "";
+    showPartnerError("");
+    renderAll();
+  });
+
+  els.partnerInput.addEventListener("input", () => {
+    state.partner = els.partnerInput.value;
+    showPartnerError("");
+    if (state.selectedStart) renderAll();
+  });
 
   els.emailInput.addEventListener("input", () => {
     state.email = els.emailInput.value;

@@ -184,6 +184,8 @@ if (memberId) {
 const els = {
   groupSessions: document.getElementById("groupSessionsNum"),
   oneOnOneSessions: document.getElementById("oneOnOneSessionsNum"),
+  duoStat: document.getElementById("duoSessionsStat"),
+  duoSessions: document.getElementById("duoSessionsNum"),
   name: document.getElementById("memberName"),
   tier: document.getElementById("memberTier"),
   qr: document.getElementById("qrCode"),
@@ -460,6 +462,9 @@ async function assignedWorkoutSummary_(clientSlug) {
 async function render(data, workoutSummary) {
   els.groupSessions.textContent = data.groupSessionsRemaining;
   els.oneOnOneSessions.textContent = data.oneOnOneSessionsRemaining;
+  // Duo sessions are only shown to a client who has some, so nobody else sees a "Duo left 0".
+  els.duoStat.hidden = !(data.duoSessionsRemaining > 0);
+  els.duoSessions.textContent = data.duoSessionsRemaining || 0;
   els.name.textContent = data.memberName;
   els.tier.textContent = data.tier;
   renderQR(data.checkInUrl);
@@ -574,6 +579,7 @@ async function fetchMemberData(id) {
     tier: match[col.package] || "Member",
     groupSessionsRemaining: parseSessions(match[col.groupSessions], "N/A"),
     oneOnOneSessionsRemaining: parseSessions(match[col.oneOnOneSessions], "N/A"),
+    duoSessionsRemaining: col.duoSessions >= 0 ? parseSessions(match[col.duoSessions], 0) : 0,
     totalAttended: parseSessions(match[col.totalAttended], 0),
     nutritionPunches: col.nutritionPunches >= 0 ? parseSessions(match[col.nutritionPunches], 0) : 0,
     referralPunches: col.referralPunches >= 0 ? parseSessions(match[col.referralPunches], 0) : 0,

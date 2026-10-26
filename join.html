@@ -11,8 +11,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="card/styles.css?v=20261026b" />
-<link rel="stylesheet" href="checkin.css?v=20260913b" />
-<link rel="stylesheet" href="join.css?v=20260913b" />
+<link rel="stylesheet" href="checkin.css?v=20261027b" />
+<link rel="stylesheet" href="join.css?v=20261027b" />
 </head>
 <body>
 
@@ -37,6 +37,20 @@
       <input class="picker__input" id="joinContact" name="contact" type="text" placeholder="0400 123 456 or you@email.com" />
     </div>
     <div class="join__field">
+      <label class="card__label" for="joinInterest">What are you interested in?</label>
+      <select class="picker__input" id="joinInterest" name="interest">
+        <option value="">Not sure yet</option>
+        <option value="one-on-one">One-on-one training</option>
+        <option value="duo">Duo (train with a friend)</option>
+        <option value="group">Group classes</option>
+        <option value="online">Online coaching</option>
+      </select>
+    </div>
+    <div class="join__field" id="joinPartnerField" hidden>
+      <label class="card__label" for="joinPartner">Who will train with you?</label>
+      <input class="picker__input" id="joinPartner" name="partner" type="text" maxlength="80" autocapitalize="words" placeholder="Their name" />
+    </div>
+    <div class="join__field">
       <span class="card__label">What are you looking to achieve?</span>
       <textarea class="picker__input join__textarea" id="joinGoals" name="goals" rows="3" placeholder="e.g. lose weight, build strength, train for an event…"></textarea>
     </div>
@@ -57,7 +71,7 @@
   </div>
 </main>
 
-<script src="card/sheet.js?v=20261009b"></script>
-<script src="join.js?v=20261013a"></script>
+<script src="card/sheet.js?v=20261027b"></script>
+<script src="join.js?v=20261027b"></script>
 </body>
 </html>

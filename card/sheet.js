@@ -99,6 +99,7 @@ function fetchSheet() {
           package: findColumn(header, "Package Type"),
           groupSessions: findColumn(header, "Group Sessions Remaining"),
           oneOnOneSessions: findColumn(header, "1 on 1 Remaining"),
+          duoSessions: findColumn(header, "Duo Remaining"), // -1 until the sheet has the column
           programType: findColumn(header, "Program Type"),
           class: findColumn(header, "Class"),
           programDoc: findColumn(header, "Program Doc"),

@@ -587,3 +587,43 @@ body {
     justify-content: flex-start;
   }
 }
+
+/* ---- Duo: the 1-on-1 / Duo switch and the partner's name ---- */
+.book__type {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.book__type-btn {
+  min-height: 52px;
+  padding: 0 10px;
+  font-family: var(--font-body);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--white);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.book__type-btn[aria-pressed="true"] {
+  border-color: var(--red);
+  background: rgba(224, 0, 0, 0.16);
+}
+
+.book__type-btn:disabled {
+  opacity: 0.6;
+}
+
+.book__partner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.book__partner .book__email-input {
+  width: 100%;
+}

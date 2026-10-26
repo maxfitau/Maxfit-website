@@ -216,3 +216,22 @@
   color: var(--grey-light);
   text-decoration: underline;
 }
+
+/* ---- Duo: who trained with them ---- */
+.checkin__partner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.checkin__partner[hidden],
+.checkin__confirm[hidden],
+.checkin__partner .picker__input[hidden] {
+  display: none;
+}
+
+.checkin__hint {
+  margin: 0;
+  font-size: 14px;
+  color: var(--grey-light);
+}

@@ -74,3 +74,7 @@
 .join__success[hidden] {
   display: none;
 }
+
+.join__field[hidden] {
+  display: none;
+}

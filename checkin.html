@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="card/styles.css?v=20261026b" />
-<link rel="stylesheet" href="checkin.css?v=20260921a" />
+<link rel="stylesheet" href="checkin.css?v=20261027b" />
 </head>
 <body>
 
@@ -42,8 +42,12 @@
         <span class="card__sessions-num card__sessions-num--split" id="checkinGroupSessions">—</span>
       </div>
       <div class="card__sessions">
-        <span class="card__label card__label--red">1-on-1 Left</span>
+        <span class="card__label card__label--red">1-on-1 left</span>
         <span class="card__sessions-num card__sessions-num--split" id="checkinOneOnOneSessions">—</span>
+      </div>
+      <div class="card__sessions" id="checkinDuoStat" hidden>
+        <span class="card__label card__label--red">Duo left</span>
+        <span class="card__sessions-num card__sessions-num--split" id="checkinDuoSessions">—</span>
       </div>
     </div>
 
@@ -57,9 +61,19 @@
       <span id="checkinFreeLabel">Free Session</span>
     </label>
 
+    <div class="checkin__partner" id="checkinPartnerRow" hidden>
+      <label class="card__label" for="checkinPartner">Duo: who trained with them?</label>
+      <select class="picker__input" id="checkinPartner">
+        <option value="">Not sure / no one</option>
+      </select>
+      <input class="picker__input" id="checkinPartnerName" type="text" maxlength="60" autocomplete="off" placeholder="Their name" hidden />
+      <p class="checkin__hint" id="checkinPartnerHint">A MaxFit member gets a loyalty punch for the session.</p>
+    </div>
+
     <div class="checkin__buttons">
       <button class="checkin__confirm" id="checkinGroupButton" type="button">Check In — Group</button>
       <button class="checkin__confirm" id="checkinOneOnOneButton" type="button">Check In — 1-on-1</button>
+      <button class="checkin__confirm" id="checkinDuoButton" type="button" hidden>Check In — Duo</button>
     </div>
     <p class="checkin__error" id="checkinSubmitError" hidden></p>
   </div>
@@ -70,7 +84,7 @@
   </div>
 </main>
 
-<script src="card/sheet.js?v=20261009b"></script>
-<script src="checkin.js?v=20261001a"></script>
+<script src="card/sheet.js?v=20261027b"></script>
+<script src="checkin.js?v=20261027b"></script>
 </body>
 </html>

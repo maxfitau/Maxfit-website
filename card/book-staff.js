@@ -34,6 +34,12 @@
     locationError: $("locationError"),
     confirmBtn: $("confirmBtn"),
     confirmBack: $("confirmBack"),
+    typeSection: $("typeSection"),
+    typeSwitch: $("typeSwitch"),
+    partnerBox: $("partnerBox"),
+    partnerInput: $("partnerInput"),
+    partnerError: $("partnerError"),
+    partnerNames: $("partnerNames"),
     success: $("bookSuccess"),
     error: $("bookError"),
   };
@@ -46,6 +52,8 @@
     selectedDate: "",
     selectedStart: "",
     location: "",
+    type: "one-on-one",
+    partner: "",
     busy: false,
     flash: "",
     error: "",
@@ -141,7 +149,11 @@
         .filter(Boolean)
         .sort((a, b) => a.localeCompare(b));
       els.clientSelect.innerHTML = '<option value="">Choose a client…</option>';
+      els.partnerNames.textContent = "";
       for (const name of names) {
+        const suggestion = document.createElement("option");
+        suggestion.value = name;
+        els.partnerNames.appendChild(suggestion);
         const option = document.createElement("option");
         option.value = slugify(name);
         option.textContent = name;
@@ -157,13 +169,17 @@
   function renderAll() {
     els.message.textContent = "";
     show(els.message, false);
-    if (state.info && !state.info.client.canBook) {
-      els.message.textContent = state.info.client.message || "This client can't book right now.";
+    const who = state.info ? (state.type === "duo" ? state.info.client.duo : state.info.client) : null;
+    show(els.typeSection, Boolean(state.info));
+    Array.from(els.typeSwitch.querySelectorAll("[data-type]")).forEach((b) => b.setAttribute("aria-pressed", b.dataset.type === state.type ? "true" : "false"));
+    show(els.partnerBox, Boolean(state.info) && state.type === "duo");
+    if (who && !who.canBook) {
+      els.message.textContent = who.message || "This client can't book right now.";
       show(els.message, true);
     }
 
-    show(els.pickSection, Boolean(state.info && state.info.client.canBook && state.info.slots.length));
-    if (state.info && state.info.client.canBook) renderPicker(state.info);
+    show(els.pickSection, Boolean(who && who.canBook && state.info.slots.length));
+    if (who && who.canBook) renderPicker(state.info);
 
     els.success.textContent = state.flash;
     show(els.success, Boolean(state.flash));
@@ -334,7 +350,12 @@
     setBusy(true);
     let res;
     try {
-      res = await api("coachBookSession", { date: state.selectedDate, start: state.selectedStart, location: state.location });
+      const fields = { date: state.selectedDate, start: state.selectedStart, location: state.location };
+      if (state.type === "duo") {
+        fields.type = "duo";
+        fields.partner = state.partner.trim();
+      }
+      res = await api("coachBookSession", fields);
     } catch (err) {
       setBusy(false);
       state.error = "Couldn't reach the booking system. Check your connection, then try again. They won't be booked twice.";
@@ -344,7 +365,7 @@
     state.busy = false;
     if (res.status === "success") {
       const b = res.booking;
-      const successMsg = "Booked " + state.clientName + " for " + dayLabel(b.date) + " at " + clock(b.start) + "." + (res.emailedTo ? " A confirmation is on its way to " + res.emailedTo + "." : "");
+      const successMsg = "Booked " + state.clientName + (b.type === "duo" && b.partner ? " and " + b.partner + " (duo)" : "") + " for " + dayLabel(b.date) + " at " + clock(b.start) + "." + (res.emailedTo ? " A confirmation is on its way to " + res.emailedTo + "." : "");
       state.selectedStart = "";
       await loadForClient(); // resets state.flash internally, so it's restored below rather than passed in
       state.flash = successMsg;
@@ -384,6 +405,19 @@
       state.pin = els.pinInput.value.trim();
       loadForClient();
     }
+  });
+
+  els.typeSwitch.addEventListener("click", (event) => {
+    const b = event.target.closest("[data-type]");
+    if (!b || state.busy || b.dataset.type === state.type) return;
+    state.type = b.dataset.type;
+    state.selectedStart = "";
+    state.error = "";
+    renderAll();
+  });
+  els.partnerInput.addEventListener("input", () => {
+    state.partner = els.partnerInput.value;
+    els.partnerError.hidden = true;
   });
 
   els.clientSelect.addEventListener("change", () => {

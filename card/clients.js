@@ -25,7 +25,7 @@
 
   function sessionsText(c) {
     const part = (label, v) => (Number.isFinite(v) ? `${label} ${v}` : null);
-    return [part("Group", c.group), part("1-on-1", c.oneOnOne)].filter(Boolean).join(" · ") || "No sessions tracked";
+    return [part("Group", c.group), part("1-on-1", c.oneOnOne), c.duo > 0 ? part("Duo", c.duo) : null].filter(Boolean).join(" · ") || "No sessions tracked";
   }
 
   function renderList() {
@@ -129,7 +129,7 @@
         .map((r) => {
           const name = String(r[sheetCol.name]).trim();
           const num = (i) => { const v = i >= 0 ? parseSessions(r[i], NaN) : NaN; return typeof v === "number" ? v : NaN; };
-          return { name, slug: slugify(name), group: num(sheetCol.groupSessions), oneOnOne: num(sheetCol.oneOnOneSessions), token: sheetCol.checkInToken >= 0 ? String(r[sheetCol.checkInToken] || "").trim() : "" };
+          return { name, slug: slugify(name), group: num(sheetCol.groupSessions), oneOnOne: num(sheetCol.oneOnOneSessions), duo: num(sheetCol.duoSessions), token: sheetCol.checkInToken >= 0 ? String(r[sheetCol.checkInToken] || "").trim() : "" };
         })
         .sort((a, b) => a.name.localeCompare(b.name));
       els.listStatus.textContent = clients.length ? "" : "No clients found.";
