@@ -50,7 +50,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="styles.css?v=20261027b" />
+<link rel="stylesheet" href="styles.css?v=20261027c" />
 </head>
 <body>
 
@@ -65,8 +65,8 @@
 <ul class="nav__links">
 <li><a href="#about">About</a></li>
 <li><a href="#programs">Programs</a></li>
-<li><a href="#pricing">Pricing</a></li>
 <li><a href="#results">Results</a></li>
+<li><a href="#pricing">Pricing</a></li>
 <li><a href="#faq">FAQ</a></li>
 <li><a href="join.html" class="nav__cta btn btn--primary btn--sm" aria-label="Book your free personal training session in Inner West Sydney">Book Now</a></li>
 </ul>
@@ -568,69 +568,6 @@ Your browser can't play this video.
 </div>
 </section>
 
-<!-- Pricing: plain prices only. No usual/was prices, no sale, no packs, no activation fee
-     (Max, 27 Oct 2026; showing a "was" price that was never charged isn't allowed under
-     Australian Consumer Law). When a price changes, change it here, in the FAQ answer and
-     its JSON-LD copy, the priceRange in the LocalBusiness JSON-LD, the Duo program text, AND
-     the booking Prices tab / Stripe (see CLAUDE.md, "Changing a price"). -->
-<section class="section section--tight" id="pricing">
-<div class="container">
-<div class="section-head reveal">
-<span class="eyebrow">Pricing</span>
-<h2>Simple, transparent pricing</h2>
-</div>
-
-<ul class="price-promise reveal">
-<li><strong>Your first session is free</strong></li>
-<li><strong>No lock-in contracts</strong></li>
-<li><strong>No hidden fees</strong></li>
-</ul>
-
-<div class="price-grid">
-<article class="price-card reveal">
-<span class="price-card__tag">One person, one coach</span>
-<h3 class="price-card__title">One-on-one</h3>
-<ul class="price-card__rows">
-<li><span>30 minutes</span><strong>$70</strong></li>
-<li><span>45 minutes</span><strong>$90</strong></li>
-<li><span>60 minutes</span><strong>$110</strong></li>
-</ul>
-<p class="price-card__note">A session built around you, your goals and your pace.</p>
-</article>
-
-<article class="price-card reveal">
-<span class="price-card__tag">Train with a friend</span>
-<h3 class="price-card__title">Duo sessions</h3>
-<ul class="price-card__rows">
-<li><span>30 minutes</span><strong>$50<small> each</small></strong></li>
-<li><span>45 minutes</span><strong>$60<small> each</small></strong></li>
-<li><span>60 minutes</span><strong>$75<small> each</small></strong></li>
-</ul>
-<p class="price-card__note">Two people, one coach. The price is per person ($100, $120 or $150 for the session).</p>
-</article>
-
-<article class="price-card reveal">
-<span class="price-card__tag">In the park</span>
-<h3 class="price-card__title">Group classes</h3>
-<p class="price-card__big">$30<small> per class</small></p>
-<p class="price-card__note">Small, friendly classes at local parks, run by me.</p>
-</article>
-
-<article class="price-card reveal">
-<span class="price-card__tag">Anywhere</span>
-<h3 class="price-card__title">Online coaching</h3>
-<p class="price-card__big">$40<small> per week</small></p>
-<p class="price-card__note">A custom weekly program with regular check-ins, wherever you train.</p>
-</article>
-</div>
-
-<div class="price-foot reveal">
-<a href="join.html" class="btn btn--primary">Book your free session</a>
-<a href="join.html?interest=duo" class="btn btn--outline">Book a duo session</a>
-</div>
-</div>
-</section>
-
 <!-- Why it matters: trimmed public-health stats tied back to the program -->
 <section class="why" id="why">
 <svg class="why__goo-defs" aria-hidden="true" focusable="false">
@@ -710,63 +647,6 @@ Your browser can't play this video.
 <div class="marquee__item"><span>Look Great</span><span class="dot"></span><span>Feel Amazing</span><span class="dot"></span><span>Perform Next Level</span><span class="dot"></span></div>
 </div>
 </div>
-
-<!-- Perks: the membership card + referring a friend -->
-<section class="section section--tight perks" id="perks">
-<div class="container">
-<div class="section-head reveal">
-<span class="eyebrow">Membership, Made Easy</span>
-<h2>What sets us apart from the rest</h2>
-</div>
-
-<div class="perks-grid">
-<div class="perk-card reveal">
-<div class="perk-card__media">
-<img src="assets/images/card-checkin.jpg" width="780" height="1600" alt="The MaxFit membership card on a phone, showing a check-in QR code to scan at the session" loading="lazy" />
-</div>
-<div class="perk-card__content">
-<span class="perk-card__tag">On Your Phone</span>
-<div class="perk-card__icon" aria-hidden="true">
-<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/></svg>
-</div>
-<h3>Your Membership, Right On Your Home Screen</h3>
-<p>No app to download, no card to forget. Add your MaxFit card to your phone in seconds and everything you need for training day is right there, always live and always up to date.</p>
-<ul class="perk-list">
-<li>Your sessions left and today's workout, front and centre</li>
-<li>Book and cancel your own 1-on-1 sessions in a few taps</li>
-<li>Show your code at the session and you're checked in</li>
-<li>A loyalty punch card, with every 10th session on us</li>
-</ul>
-</div>
-</div>
-
-<div class="perk-card reveal">
-<div class="perk-card__media">
-<img src="assets/images/card-refer.jpg" width="780" height="1600" alt="The Refer a Friend screen on a phone, with a QR code a friend scans to sign up, a Share Your Link button and the punches earned from referrals" loading="lazy" />
-</div>
-<div class="perk-card__content">
-<span class="perk-card__tag">Invite &amp; Earn</span>
-<div class="perk-card__icon" aria-hidden="true">
-<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 10.5l6.8-3.9M8.6 13.5l6.8 3.9"/></svg>
-</div>
-<h3>Bring a Friend, Earn Free Sessions</h3>
-<p>Love training with us? Share the feeling. Every client's card has a Refer a Friend button with a personal QR code and share link. Send it to anyone who could use a great coach.</p>
-<ul class="perk-list">
-<li>Your friend scans your QR code, or taps your link, to sign up</li>
-<li>They get a free 1-on-1 session to try MaxFit</li>
-<li>Every session they pay for adds a punch to your loyalty card</li>
-<li>No codes to remember and no admin, it's all on your card</li>
-</ul>
-</div>
-</div>
-</div>
-
-<div class="perks-cta reveal">
-<p>You get your card as soon as you start training with Max.</p>
-<a href="join.html" class="btn btn--outline btn--sm">Book your free session</a>
-</div>
-</div>
-</section>
 
 <!-- Results -->
 <section class="section wof" id="results">
@@ -918,6 +798,69 @@ Your browser can't play this video.
 <span class="tv2-card__badge" title="Verified"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span>
 </div>
 </div>
+</div>
+</div>
+</section>
+
+<!-- Pricing: plain prices only. No usual/was prices, no sale, no packs, no activation fee
+     (Max, 27 Oct 2026; showing a "was" price that was never charged isn't allowed under
+     Australian Consumer Law). When a price changes, change it here, in the FAQ answer and
+     its JSON-LD copy, the priceRange in the LocalBusiness JSON-LD, the Duo program text, AND
+     the booking Prices tab / Stripe (see CLAUDE.md, "Changing a price"). -->
+<section class="section section--tight" id="pricing">
+<div class="container">
+<div class="section-head reveal">
+<span class="eyebrow">Pricing</span>
+<h2>Simple, transparent pricing</h2>
+</div>
+
+<ul class="price-promise reveal">
+<li><strong>Your first session is free</strong></li>
+<li><strong>No lock-in contracts</strong></li>
+<li><strong>No hidden fees</strong></li>
+</ul>
+
+<div class="price-grid">
+<article class="price-card reveal">
+<span class="price-card__tag">One person, one coach</span>
+<h3 class="price-card__title">One-on-one</h3>
+<ul class="price-card__rows">
+<li><span>30 minutes</span><strong>$70</strong></li>
+<li><span>45 minutes</span><strong>$90</strong></li>
+<li><span>60 minutes</span><strong>$110</strong></li>
+</ul>
+<p class="price-card__note">A session built around you, your goals and your pace.</p>
+</article>
+
+<article class="price-card reveal">
+<span class="price-card__tag">Train with a friend</span>
+<h3 class="price-card__title">Duo sessions</h3>
+<ul class="price-card__rows">
+<li><span>30 minutes</span><strong>$50<small> each</small></strong></li>
+<li><span>45 minutes</span><strong>$60<small> each</small></strong></li>
+<li><span>60 minutes</span><strong>$75<small> each</small></strong></li>
+</ul>
+<p class="price-card__note">Two people, one coach. The price is per person ($100, $120 or $150 for the session).</p>
+</article>
+
+<article class="price-card reveal">
+<span class="price-card__tag">In the park</span>
+<h3 class="price-card__title">Group classes</h3>
+<p class="price-card__big">$30<small> per class</small></p>
+<p class="price-card__note">Small, friendly classes at local parks, run by me.</p>
+</article>
+
+<article class="price-card reveal">
+<span class="price-card__tag">Anywhere</span>
+<h3 class="price-card__title">Online coaching</h3>
+<p class="price-card__big">$40<small> per week</small></p>
+<p class="price-card__note">A custom weekly program with regular check-ins, wherever you train.</p>
+</article>
+</div>
+
+<div class="price-foot reveal">
+<a href="join.html" class="btn btn--primary">Book your free session</a>
+<a href="join.html?interest=duo" class="btn btn--outline">Book a duo session</a>
 </div>
 </div>
 </section>
@@ -1293,8 +1236,8 @@ Or email directly
 <ul>
 <li><a href="#about">About</a></li>
 <li><a href="#programs">Programs</a></li>
-<li><a href="#pricing">Pricing</a></li>
 <li><a href="#results">Results</a></li>
+<li><a href="#pricing">Pricing</a></li>
 <li><a href="#faq">FAQ</a></li>
 <li><a href="#book">Book Now</a></li>
 </ul>
