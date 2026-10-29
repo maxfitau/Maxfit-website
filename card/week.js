@@ -685,7 +685,7 @@ const WeekCard = (function () {
       const id = String(new URLSearchParams(window.location.search).get("id") || localStorage.getItem("maxfitMemberId") || "").toLowerCase();
       if (!id || typeof MacroApi === "undefined" || !MacroApi.configured()) return;
       early = { slug: id, used: false, goal: MacroApi.call("goal", { id }).catch(() => null) };
-      if (typeof fetchLoggedSets === "function") fetchLoggedSets().catch(() => {});
+      if (typeof fetchLoggedSets === "function") fetchLoggedSets(id).catch(() => {});
     } catch (err) {
       // Nothing to prefetch: init asks as before.
     }
