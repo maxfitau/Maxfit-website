@@ -3,7 +3,7 @@
  *
  * One file, two homes: the card loads it with a <script> tag, and the
  * "MaxFit Macros" Apps Script project has an exact copy pasted in as a
- * second file (MacrosCore.gs). Both sides therefore compute targets and
+ * second file (MacrosCore.gs). Both sides therefore check targets and
  * scale portions identically — the server re-checks anything the phone
  * sends instead of trusting it. Keep it plain JS (no window/document/
  * module) so it runs unchanged in both places.
@@ -11,21 +11,20 @@
  * Unit tests: card/tests/macros-core.test.html (open it in a browser).
  */
 const MacroCore = (function () {
-  const ACTIVITY_FACTORS = {
-    sedentary: 1.2, // desk job, little exercise
-    light: 1.375, // 1–3 sessions a week
-    moderate: 1.55, // 3–5 sessions a week
-    very: 1.725, // 6–7 sessions a week
-    athlete: 1.9, // training twice a day or a physical job plus training
-  };
-
-  // Safety floors — targets never go below these without Max approving it.
-  const KCAL_FLOOR = { M: 1500, F: 1200 };
-
-  // Roughly 7,700 kcal per kg of body fat; losing faster than ~1% of
-  // bodyweight a week is the cap from Max's brief.
-  const KCAL_PER_KG = 7700;
-  const MAX_WEEKLY_LOSS_FRACTION = 0.01;
+  // Fuel stays within a personal trainer's scope of practice (2026-10-29,
+  // Max, following AUSactive / Dietitians Australia's "Nutrition advice
+  // within scope of practice"): clients set their own targets. Nothing here
+  // works out calories or macros for anyone. These are general information
+  // only, shown beside the client's own numbers.
+  //
+  // Acceptable Macronutrient Distribution Ranges for adults, % of energy:
+  // Nutrient Reference Values for Australia and New Zealand, "Summary of
+  // chronic disease", Table 2 (eatforhealth.gov.au, checked 2026-10-28).
+  const AMDR = { protein_g: [15, 25], fat_g: [20, 35], carbs_g: [45, 65] };
+  // Fuel won't save a daily target under this (Max, 2026-10-29). Below it the
+  // client is pointed to their GP or an Accredited Practising Dietitian.
+  const MIN_TARGET_KCAL = 1200;
+  const TARGET_LIMITS = { kcal: [MIN_TARGET_KCAL, 6000], protein_g: [0, 400], carbs_g: [0, 900], fat_g: [0, 300] };
 
   const MEALS = ["breakfast", "lunch", "dinner", "snack"];
 
@@ -112,123 +111,43 @@ const MacroCore = (function () {
   }
 
   /** Mifflin-St Jeor resting energy, kcal/day. */
-  function bmr(sex, weightKg, heightCm, age) {
-    const base = 10 * num_(weightKg) + 6.25 * num_(heightCm) - 5 * num_(age);
-    return sex === "F" ? base - 161 : base + 5;
-  }
-
-  function validateInputs_(i) {
+  /**
+   * The client's own daily targets, checked: whole numbers, within sensible
+   * limits, and calories at least MIN_TARGET_KCAL. { ok, targets, errors }.
+   */
+  function checkTargets(raw) {
+    const t = {};
     const errors = [];
-    if (i.sex !== "M" && i.sex !== "F") errors.push("Pick male or female (used for the energy formula).");
-    if (!(i.age >= 16 && i.age <= 90)) errors.push("Age should be between 16 and 90.");
-    if (!(i.heightCm >= 120 && i.heightCm <= 230)) errors.push("Height should be in cm, between 120 and 230.");
-    if (!(i.weightKg >= 35 && i.weightKg <= 250)) errors.push("Weight should be in kg, between 35 and 250.");
-    if (!ACTIVITY_FACTORS[i.activity]) errors.push("Pick an activity level.");
-    if (["cut", "maintain", "gain"].indexOf(i.goal) < 0) errors.push("Pick a goal.");
-    return errors;
+    const names = { kcal: "Calories", protein_g: "Protein", carbs_g: "Carbs", fat_g: "Fat" };
+    Object.keys(TARGET_LIMITS).forEach((k) => {
+      const v = Math.round(Number(String((raw || {})[k] == null ? "" : raw[k]).replace(/,/g, "")));
+      if (!isFinite(v) || String((raw || {})[k] == null ? "" : raw[k]).trim() === "") {
+        errors.push(`Enter your ${names[k].toLowerCase()}.`);
+        return;
+      }
+      const [lo, hi] = TARGET_LIMITS[k];
+      if (k === "kcal" && v < lo) errors.push(`Fuel can't save a target under ${lo.toLocaleString("en-AU")} calories. If you're aiming that low, please talk to your GP or an Accredited Practising Dietitian first.`);
+      else if (v < lo || v > hi) errors.push(`${names[k]} should be between ${lo.toLocaleString("en-AU")} and ${hi.toLocaleString("en-AU")}.`);
+      t[k] = v;
+    });
+    return { ok: !errors.length, targets: errors.length ? null : t, errors: errors };
   }
 
   /**
-   * Daily targets from the client's details.
-   *
-   * inputs: { sex: "M"|"F", age, heightCm, weightKg,
-   *           activity: key of ACTIVITY_FACTORS,
-   *           goal: "cut"|"maintain"|"gain",
-   *           adjustPct?: cut 15–20 (default 15), gain 5–10 (default 5),
-   *           proteinPerKg?: 1.6–2.2 (default 2.0 on a cut, else 1.8) }
-   *
-   * Returns { ok, errors?, kcal, protein_g, carbs_g, fat_g, bmr, tdee,
-   *           weeklyChangeKg, flags: { floorApplied, rateCapped } }.
-   * kcal always equals 4P + 4C + 9F.
+   * What the client's own numbers work out to, as a share of their daily
+   * calories (4/4/9), next to the general ranges. Information only.
    */
-  function calcTargets(raw) {
-    const i = {
-      sex: raw && raw.sex,
-      age: num_(raw && raw.age),
-      heightCm: num_(raw && raw.heightCm),
-      weightKg: num_(raw && raw.weightKg),
-      activity: raw && raw.activity,
-      goal: raw && raw.goal,
-      adjustPct: raw && raw.adjustPct != null && raw.adjustPct !== "" ? num_(raw.adjustPct) : null,
-      proteinPerKg: raw && raw.proteinPerKg != null && raw.proteinPerKg !== "" ? num_(raw.proteinPerKg) : null,
-    };
-    const errors = validateInputs_(i);
-    if (errors.length) return { ok: false, errors: errors };
-
-    const restKcal = bmr(i.sex, i.weightKg, i.heightCm, i.age);
-    const tdee = restKcal * ACTIVITY_FACTORS[i.activity];
-
-    let adjust = 0;
-    if (i.goal === "cut") adjust = -Math.min(20, Math.max(15, i.adjustPct == null ? 15 : i.adjustPct)) / 100;
-    if (i.goal === "gain") adjust = Math.min(10, Math.max(5, i.adjustPct == null ? 5 : i.adjustPct)) / 100;
-
-    let kcal = tdee * (1 + adjust);
-    const flags = { floorApplied: false, rateCapped: false };
-
-    // Cap the deficit so predicted loss is at most ~1% of bodyweight a week.
-    const maxDailyDeficit = (i.weightKg * MAX_WEEKLY_LOSS_FRACTION * KCAL_PER_KG) / 7;
-    if (tdee - kcal > maxDailyDeficit) {
-      kcal = tdee - maxDailyDeficit;
-      flags.rateCapped = true;
-    }
-
-    const floor = KCAL_FLOOR[i.sex];
-    if (kcal < floor) {
-      kcal = floor;
-      flags.floorApplied = true;
-    }
-    kcal = Math.round(kcal / 10) * 10;
-
-    const ppk = Math.min(2.2, Math.max(1.6, i.proteinPerKg == null ? (i.goal === "cut" ? 2.0 : 1.8) : i.proteinPerKg));
-    let protein = Math.round(i.weightKg * ppk);
-    let fat = Math.round(Math.max(0.6 * i.weightKg, (0.25 * kcal) / 9));
-    let carbs = Math.round((kcal - 4 * protein - 9 * fat) / 4);
-
-    // Not enough calories left for carbs: trim fat toward its 0.6 g/kg
-    // minimum, then protein toward 1.6 g/kg, before letting carbs sit at 0.
-    if (carbs < 0) {
-      fat = Math.max(Math.round(0.6 * i.weightKg), Math.round((kcal - 4 * protein) / 9));
-      carbs = Math.round((kcal - 4 * protein - 9 * fat) / 4);
-    }
-    if (carbs < 0) {
-      protein = Math.max(Math.round(1.6 * i.weightKg), Math.round((kcal - 9 * fat) / 4));
-      carbs = Math.max(0, Math.round((kcal - 4 * protein - 9 * fat) / 4));
-    }
-
-    let total = kcalFrom(protein, carbs, fat);
-    // Rounding can land a couple of kcal under the floor; top up with carbs.
-    while (total < floor) {
-      carbs += 1;
-      total = kcalFrom(protein, carbs, fat);
-    }
-
-    return {
-      ok: true,
-      kcal: total,
-      protein_g: protein,
-      carbs_g: carbs,
-      fat_g: fat,
-      bmr: Math.round(restKcal),
-      tdee: Math.round(tdee),
-      weeklyChangeKg: Math.round((((total - tdee) * 7) / KCAL_PER_KG) * 100) / 100,
-      flags: flags,
-    };
+  function macroShares(t) {
+    const kcal = num_(t && t.kcal);
+    const out = {};
+    [["protein_g", 4], ["carbs_g", 4], ["fat_g", 9]].forEach(([k, per]) => {
+      const pct = kcal > 0 ? Math.round(((num_(t[k]) * per) / kcal) * 100) : 0;
+      out[k] = { pct: pct, low: AMDR[k][0], high: AMDR[k][1], within: pct >= AMDR[k][0] && pct <= AMDR[k][1] };
+    });
+    out.macroKcal = Math.round(num_(t && t.protein_g) * 4 + num_(t && t.carbs_g) * 4 + num_(t && t.fat_g) * 9);
+    return out;
   }
 
-  /**
-   * Checks targets Max types in by hand (grams of P/C/F). kcal is derived
-   * from them, never typed. belowFloor means it needs Max's explicit approval.
-   */
-  function checkCoachTargets(protein, carbs, fat, sex) {
-    const p = Math.round(num_(protein));
-    const c = Math.round(num_(carbs));
-    const f = Math.round(num_(fat));
-    const kcal = kcalFrom(p, c, f);
-    const floor = KCAL_FLOOR[sex === "F" ? "F" : "M"];
-    return { kcal: kcal, protein_g: p, carbs_g: c, fat_g: f, floor: floor, belowFloor: kcal < floor };
-  }
-
-  /** Grams (or ml) from a label serving string like "1 bar (68 g)", "33 g (2 biscuits)" or "375ml". */
   function parseServingGrams(text) {
     const m = /(\d+(?:[.,]\d+)?)\s*(g|gr|grams?|ml|mL)\b/i.exec(String(text || ""));
     if (!m) return null;
@@ -381,144 +300,6 @@ const MacroCore = (function () {
       return { access: false, tier: "silver", kind: status ? "lapsed" : "trial_over", status: status };
     }
     return { access: false, tier: "silver", kind: "not_started" };
-  }
-
-  // ---------------------------------------------------------------------------
-  // "What to eat next": deterministic suggestions from the Foods list
-  // ---------------------------------------------------------------------------
-  //
-  // A food: { name, category, serve_g, serve_label, per100: { kcal,
-  // protein_g, carbs_g, fat_g } }. Categories: protein, carb, veg, fruit,
-  // cereal (breakfast), dairy, shake, snack, meal (takeaway), fat, drink.
-
-  // Two-item combos that make sense on a plate.
-  const PAIRS = [
-    ["protein", "carb"],
-    ["protein", "veg"],
-    ["dairy", "fruit"],
-    ["dairy", "cereal"],
-    ["dairy", "shake"],
-    ["shake", "fruit"],
-  ];
-  // Never suggested on their own: cooking oil, spreads, drinks.
-  const SKIP_CATEGORIES = { fat: true, drink: true };
-  // Over-limit mode may shrink these to fit under 150 kcal; others must fit as served.
-  const SHRINKABLE = { protein: true, dairy: true, veg: true, shake: true };
-  const OVER_MAX_KCAL = 150;
-
-  function portion_(food, grams) {
-    return {
-      name: food.name,
-      category: food.category,
-      grams: grams,
-      serve_label: grams === Number(food.serve_g) ? food.serve_label || "" : "",
-      per100: food.per100,
-    };
-  }
-
-  /** "200g chicken breast" or "Whey protein shake (1 scoop)". */
-  function portionLabel(p) {
-    return p.serve_label ? p.name + " (" + p.serve_label + ")" : Math.round(p.grams) + "g " + p.name;
-  }
-
-  function usable_(foods) {
-    return (foods || []).filter(
-      (f) => f && f.name && f.per100 && num_(f.per100.kcal) > 0 && Number(f.serve_g) > 0 && !SKIP_CATEGORIES[f.category]
-    );
-  }
-
-  /** Protein portions also come in a bigger size (150 g → 200 g). */
-  function sizesFor_(food) {
-    const g = Number(food.serve_g);
-    return food.category === "protein" ? [g, Math.round((g * 4) / 3 / 10) * 10] : [g];
-  }
-
-  /**
-   * How well a combo's totals `t` close the gap `r`: protein counts most,
-   * then carbs, then fat and using the calories left; overshooting a macro
-   * (especially fat) costs points. Higher is better.
-   */
-  function fillScore_(t, r) {
-    const share = (have, need) => (need > 0 ? Math.min(have, need) / need : 0);
-    const over = (have, need, floor) => Math.max(0, have - need) / Math.max(need, floor);
-    const proteinWeight = r.protein_g > 5 ? 3 : 0.5;
-    return (
-      proteinWeight * share(t.protein_g, r.protein_g) +
-      0.75 * share(t.carbs_g, r.carbs_g) +
-      0.5 * share(t.fat_g, r.fat_g) +
-      0.5 * (t.kcal / r.kcal) -
-      0.2 * over(t.protein_g, r.protein_g, 20) -
-      0.5 * over(t.carbs_g, r.carbs_g, 20) -
-      0.8 * over(t.fat_g, r.fat_g, 10)
-    );
-  }
-
-  /**
-   * Top foods and 2-food combos that best fill what's left today without
-   * going over the calories left. `remaining` = target minus eaten.
-   * Returns [{ items: [portion], totals, label }] — each food is used in at
-   * most one suggestion, so the list stays varied. Empty when no calories
-   * are left (use suggestOver then).
-   */
-  function suggestFill(remaining, foods, limit) {
-    const r = {
-      kcal: num_(remaining && remaining.kcal),
-      protein_g: Math.max(0, num_(remaining && remaining.protein_g)),
-      carbs_g: Math.max(0, num_(remaining && remaining.carbs_g)),
-      fat_g: Math.max(0, num_(remaining && remaining.fat_g)),
-    };
-    if (r.kcal <= 0) return [];
-    const pool = usable_(foods);
-    const candidates = [];
-    const consider = (parts) => {
-      const t = sumTotals(parts.map((p) => scale(p.per100, p.grams)));
-      if (t.kcal <= 0 || t.kcal > r.kcal) return;
-      candidates.push({ items: parts, totals: t, score: fillScore_(t, r) });
-    };
-    pool.forEach((f) => sizesFor_(f).forEach((g) => consider([portion_(f, g)])));
-    PAIRS.forEach((pair) => {
-      const firsts = pool.filter((f) => f.category === pair[0]);
-      const seconds = pool.filter((f) => f.category === pair[1]);
-      firsts.forEach((a) => seconds.forEach((b) => consider([portion_(a, Number(a.serve_g)), portion_(b, Number(b.serve_g))])));
-    });
-    candidates.sort((x, y) => y.score - x.score);
-    const picked = [];
-    const used = {};
-    for (let i = 0; i < candidates.length && picked.length < (limit || 5); i++) {
-      const c = candidates[i];
-      if (c.items.some((p) => used[p.name])) continue;
-      c.items.forEach((p) => (used[p.name] = true));
-      picked.push({ items: c.items, totals: c.totals, label: c.items.map(portionLabel).join(" + ") });
-    }
-    return picked;
-  }
-
-  /**
-   * Over the calorie target: high-protein, low-calorie options, each under
-   * 150 kcal a serve, ranked by grams of protein per 100 kcal.
-   */
-  function suggestOver(foods, limit) {
-    const out = [];
-    usable_(foods).forEach((f) => {
-      if (f.category === "meal") return;
-      const k100 = num_(f.per100.kcal);
-      let grams = Number(f.serve_g);
-      if ((k100 * grams) / 100 >= OVER_MAX_KCAL) {
-        if (!SHRINKABLE[f.category]) return;
-        grams = Math.floor(((OVER_MAX_KCAL - 1) / k100) * 10) * 10;
-      }
-      if (grams < 30) return;
-      const t = scale(f.per100, grams);
-      if (t.kcal >= OVER_MAX_KCAL) return;
-      out.push({ items: [portion_(f, grams)], totals: t, ratio: (num_(f.per100.protein_g) / k100) * 100 });
-    });
-    out.sort((a, b) => b.ratio - a.ratio);
-    return out.slice(0, limit || 5).map((c) => ({
-      items: c.items,
-      totals: c.totals,
-      label: portionLabel(c.items[0]),
-      proteinPer100kcal: round1(c.ratio),
-    }));
   }
 
   // ---------------------------------------------------------------------------
@@ -964,98 +745,95 @@ const MacroCore = (function () {
   }
 
   // ---------------------------------------------------------------------------
-  // Meal plans and the shopping list (2026-10-13, Max). The AI writes the
-  // meals (Macros.gs makeMealPlan); everything after that is plain maths
-  // here: which meal is on which day, swaps, the week's shopping and what it
-  // roughly costs. Meal plans are Diamond only; the list is Gold and Diamond.
+  // The meal planner and the shopping list (Diamond planner, Gold and Diamond
+  // list). Rebuilt 2026-10-29 for scope of practice: the CLIENT picks a meal
+  // for each slot of each day and chooses how many serves; the app only adds
+  // the day up against the client's own targets and builds the shopping.
+  // AI ideas (Macros.gs mealIdeas) are general meals at standard recipe
+  // serves, never sized to anyone.
+  //
+  // A planner: { days: { "2026-10-29": { breakfast: { meal, serves }, ... } } }
+  // where meal is { name, emoji, how_to, items: [{ name, amount_text, grams,
+  // count, unit, kcal, protein_g, carbs_g, fat_g, aisle, pantry }] } for ONE
+  // standard serve.
   // ---------------------------------------------------------------------------
 
   const MEAL_SLOTS = ["breakfast", "lunch", "snack", "dinner"];
   const AISLES = ["Fruit and veg", "Meat and fish", "Dairy and eggs", "Bakery", "Pantry", "Frozen", "Other"];
-  // How many different meals each slot gets, by the client's "How much variety?".
-  const PLAN_VARIETY = {
-    simple: { breakfast: 1, lunch: 1, snack: 1, dinner: 2 },
-    some: { breakfast: 1, lunch: 2, snack: 1, dinner: 3 },
-    lots: { breakfast: 2, lunch: 3, snack: 2, dinner: 5 },
-  };
+  const SERVE_STEPS = [0.5, 1, 1.5, 2, 2.5, 3, 4];
 
-  /** The weekly budget choices for a household, about $80 / $120 / $180 a person, to the nearest $10. */
-  function budgetBands(people) {
-    const n = Math.max(1, Math.round(Number(people) || 1));
-    const r = (x) => Math.round((x * n) / 10) * 10;
-    return [
-      { label: `Under $${r(80)}`, min: 0, max: r(80) },
-      { label: `$${r(80)} to $${r(120)}`, min: r(80), max: r(120) },
-      { label: `$${r(120)} to $${r(180)}`, min: r(120), max: r(180) },
-      { label: "No limit", min: 0, max: 0 },
-    ];
-  }
-
-  /**
-   * Roughly what this plan's own shopping should stay under: its share of
-   * the household budget. The plan covers the client's breakfast, lunch and
-   * snack, plus dinner for everyone who shares it; dinner counts 1.5 meals.
-   * Null with no limit.
-   */
-  function planBudget(prefs) {
-    const max = Number(prefs && prefs.budgetMax) || 0;
-    if (!(max > 0)) return null;
-    const people = Math.max(1, Number(prefs.people) || 1);
-    const dinners = prefs.sharedDinners ? people : 1;
-    return Math.round((max * (3 + 1.5 * dinners)) / (4.5 * people));
-  }
-
-  /** Seven days from plan.start: [{ date, day: "Mon", meals: { breakfast: index, ... } }], each slot taking turns. */
-  function planDays(plan) {
-    const days = [];
-    for (let i = 0; i < 7; i++) {
-      const date = addDays(plan.start, i);
-      const p = date.split("-").map(Number);
-      const meals = {};
-      MEAL_SLOTS.forEach((slot) => {
-        const n = ((plan.meals || {})[slot] || []).length;
-        meals[slot] = n ? i % n : -1;
-      });
-      days.push({ date: date, day: DAY_NAMES_[new Date(Date.UTC(p[0], p[1] - 1, p[2])).getUTCDay()].slice(0, 3), meals: meals });
-    }
-    return days;
-  }
-
-  /** "Every day", or the days a meal is on: "Mon, Wed, Fri". */
-  function mealDays(plan, slot, index) {
-    const on = planDays(plan).filter((d) => d.meals[slot] === index).map((d) => d.day);
-    return on.length === 7 ? "Every day" : on.join(", ");
-  }
-
-  /** One serve of a meal (the client's own portion). */
+  /** One serve of a meal. */
   function mealTotals(meal) {
     return sumTotals((meal && meal.items) || []);
   }
 
-  /** The client's own calories and protein for each of the 7 days. */
-  function planDayTotals(plan) {
-    return planDays(plan).map((d) => {
-      const meals = MEAL_SLOTS.filter((s) => d.meals[s] >= 0).map((s) => plan.meals[s][d.meals[s]]);
-      return Object.assign({ date: d.date, day: d.day }, sumTotals(meals.map(mealTotals)));
-    });
+  /** A picked meal at its chosen number of serves. */
+  function pickTotals(pick) {
+    const t = mealTotals(pick && pick.meal);
+    const n = Number(pick && pick.serves) || 1;
+    return { kcal: Math.round(t.kcal * n), protein_g: round1(t.protein_g * n), carbs_g: round1(t.carbs_g * n), fat_g: round1(t.fat_g * n) };
   }
 
-  /** How many serves each meal needs a day: dinners feed everyone who shares them. */
-  function slotPeople_(plan, slot) {
-    const prefs = plan.prefs || {};
-    return slot === "dinner" && prefs.sharedDinners ? Math.max(1, Number(prefs.people) || 1) : 1;
+  /** The day's totals from what the client picked. */
+  function plannerDayTotals(day) {
+    return sumTotals(MEAL_SLOTS.filter((s) => day && day[s]).map((s) => pickTotals(day[s])));
   }
 
-  /** Roughly what the week's shopping for this plan costs (each meal's cost a serve × serves). */
-  function planCost(plan) {
-    let total = 0;
-    planDays(plan).forEach((d) =>
-      MEAL_SLOTS.forEach((slot) => {
-        if (d.meals[slot] < 0) return;
-        total += (Number(plan.meals[slot][d.meals[slot]].cost_aud) || 0) * slotPeople_(plan, slot);
+  /** "½", "1", "1½", "2"... */
+  function servesText(n) {
+    const whole = Math.floor(n);
+    const half = n - whole >= 0.5 ? "½" : "";
+    return (whole ? String(whole) : "") + half || "0";
+  }
+
+  /** The next or previous serves step. */
+  function stepServes(n, dir) {
+    const i = SERVE_STEPS.indexOf(Number(n));
+    const at = i < 0 ? 1 : i;
+    return SERVE_STEPS[Math.max(0, Math.min(SERVE_STEPS.length - 1, at + (dir > 0 ? 1 : -1)))];
+  }
+
+  /**
+   * Rounds a shopping amount up, so there's always enough: a count of whole
+   * things ("3 eggs") when the item is bought whole, else grams or kg.
+   */
+  function shoppingAmount(totalGrams, count, unit) {
+    if (count > 0 && unit) {
+      const n = Math.ceil(count - 0.001);
+      return `${n} ${n === 1 ? unit : plural_(unit)}`;
+    }
+    if (totalGrams >= 1000) return `${Math.ceil(totalGrams / 100 - 0.001) / 10} kg`;
+    return `${Math.max(50, Math.ceil(totalGrams / 50 - 0.001) * 50)} g`;
+  }
+
+  /**
+   * The shopping for every day picked from `from` on: each ingredient added
+   * up over the meals and serves the client chose, in aisle order.
+   * [{ name, amount, aisle, pantry }]; pantry staples come back flagged.
+   */
+  function plannerShopping(planner, from) {
+    const by = {};
+    Object.keys((planner && planner.days) || {})
+      .filter((d) => !from || d >= from)
+      .forEach((d) =>
+        MEAL_SLOTS.forEach((slot) => {
+          const pick = planner.days[d][slot];
+          if (!pick || !pick.meal) return;
+          const serves = Number(pick.serves) || 1;
+          (pick.meal.items || []).forEach((it) => {
+            const key = String(it.name).toLowerCase();
+            const cur = (by[key] = by[key] || { name: it.name, grams: 0, count: 0, unit: it.unit || "", aisle: it.aisle, pantry: !!it.pantry });
+            cur.grams += (Number(it.grams) || 0) * serves;
+            if (Number(it.count) > 0 && it.unit) cur.count += Number(it.count) * serves;
+          });
+        })
+      );
+    return Object.keys(by)
+      .map((k) => {
+        const c = by[k];
+        return { name: c.name, amount: shoppingAmount(c.grams, c.count, c.unit), aisle: AISLES.indexOf(c.aisle) >= 0 ? c.aisle : "Other", pantry: c.pantry };
       })
-    );
-    return Math.round(total);
+      .sort((a, b) => AISLES.indexOf(a.aisle) - AISLES.indexOf(b.aisle) || a.name.localeCompare(b.name));
   }
 
   /** "eggs", "bananas", "loaves"... good enough for shopping units. */
@@ -1067,58 +845,11 @@ const MacroCore = (function () {
   }
 
   /** A shopping amount: "7 bananas", "1.2 kg", "450 g", rounded up. */
-  function shoppingAmount(totalGrams, count, unit) {
-    if (count > 0 && unit) {
-      const n = Math.ceil(count - 0.001);
-      return `${n} ${n === 1 ? unit : plural_(unit)}`;
-    }
-    // Rounded up, so there's always enough.
-    if (totalGrams >= 1000) return `${Math.ceil(totalGrams / 100 - 0.001) / 10} kg`;
-    return `${Math.max(50, Math.ceil(totalGrams / 50 - 0.001) * 50)} g`;
-  }
-
-  /**
-   * The week's shopping for a plan: every ingredient added up over the days
-   * it's eaten (dinners times everyone sharing them), in aisle order.
-   * [{ name, amount, aisle, pantry }]. Pantry staples (oil, soy sauce...)
-   * come back flagged, for a "probably in your pantry" list.
-   */
-  function planShopping(plan) {
-    const by = {};
-    planDays(plan).forEach((d) =>
-      MEAL_SLOTS.forEach((slot) => {
-        if (d.meals[slot] < 0) return;
-        const serves = slotPeople_(plan, slot);
-        plan.meals[slot][d.meals[slot]].items.forEach((it) => {
-          const key = String(it.name).toLowerCase();
-          const cur = (by[key] = by[key] || { name: it.name, grams: 0, count: 0, unit: it.unit || "", aisle: it.aisle, pantry: !!it.pantry });
-          cur.grams += (Number(it.grams) || 0) * serves;
-          if (Number(it.count) > 0 && it.unit) cur.count += Number(it.count) * serves;
-        });
-      })
-    );
-    return Object.keys(by)
-      .map((k) => {
-        const c = by[k];
-        return { name: c.name, amount: shoppingAmount(c.grams, c.count, c.unit), aisle: AISLES.indexOf(c.aisle) >= 0 ? c.aisle : "Other", pantry: c.pantry };
-      })
-      .sort((a, b) => AISLES.indexOf(a.aisle) - AISLES.indexOf(b.aisle) || a.name.localeCompare(b.name));
-  }
-
-  /** Swap a meal for one of its slot's alternatives; the old meal becomes an alternative, so it can come back. */
-  function swapMeal(plan, slot, index, alt) {
-    const meals = plan.meals[slot];
-    const swaps = plan.swaps[slot];
-    if (!meals || !swaps || !meals[index] || !swaps[alt]) return plan;
-    const old = meals[index];
-    meals[index] = swaps[alt];
-    swaps[alt] = old;
-    return plan;
-  }
-
   return {
-    ACTIVITY_FACTORS: ACTIVITY_FACTORS,
-    KCAL_FLOOR: KCAL_FLOOR,
+    AMDR: AMDR,
+    MIN_TARGET_KCAL: MIN_TARGET_KCAL,
+    checkTargets: checkTargets,
+    macroShares: macroShares,
     MEALS: MEALS,
     round1: round1,
     kcalFrom: kcalFrom,
@@ -1128,9 +859,6 @@ const MacroCore = (function () {
     sumTotals: sumTotals,
     sydneyDate: sydneyDate,
     mealForHour: mealForHour,
-    bmr: bmr,
-    calcTargets: calcTargets,
-    checkCoachTargets: checkCoachTargets,
     parseServingGrams: parseServingGrams,
     normaliseOffProduct: normaliseOffProduct,
     TRIAL_DAYS: TRIAL_DAYS,
@@ -1140,9 +868,6 @@ const MacroCore = (function () {
     addDays: addDays,
     daysBetween: daysBetween,
     planState: planState,
-    portionLabel: portionLabel,
-    suggestFill: suggestFill,
-    suggestOver: suggestOver,
     GREEN_DAYS_FOR_PUNCH: GREEN_DAYS_FOR_PUNCH,
     mondayOf: mondayOf,
     targetOn: targetOn,
@@ -1166,16 +891,13 @@ const MacroCore = (function () {
     weekRecap: weekRecap,
     MEAL_SLOTS: MEAL_SLOTS,
     AISLES: AISLES,
-    PLAN_VARIETY: PLAN_VARIETY,
-    budgetBands: budgetBands,
-    planBudget: planBudget,
-    planDays: planDays,
-    mealDays: mealDays,
     mealTotals: mealTotals,
-    planDayTotals: planDayTotals,
-    planCost: planCost,
+    SERVE_STEPS: SERVE_STEPS,
+    pickTotals: pickTotals,
+    plannerDayTotals: plannerDayTotals,
+    servesText: servesText,
+    stepServes: stepServes,
     shoppingAmount: shoppingAmount,
-    planShopping: planShopping,
-    swapMeal: swapMeal,
+    plannerShopping: plannerShopping,
   };
 })();

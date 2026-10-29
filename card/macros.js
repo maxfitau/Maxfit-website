@@ -3,17 +3,19 @@
  *
  * Draws everything inside #panelFuel plus the bottom sheet (#fuelSheet):
  *   home     — the rings header (day switcher, plan button, protein/
- *              carbs/fat rings, calorie bar), LOG FOOD + Ask Fuel, the
+ *              carbs/fat rings, calorie bar), LOG FOOD + Food Q&A, the
  *              four meals, and meal plan/shopping/progress/settings tiles
  *   scan     — Photo (AI), Barcode (Open Food Facts) or Label (AI)
  *   confirm  — editable grams per item, live macros, ADD TO TODAY
  *   edit     — change grams/meal/name, favourite, delete
- *   targets  — Max's targets (read-only) or the calculator
+ *   targets  — the client's own daily targets, with the general ranges
+ *              as information (scope of practice, 2026-10-29)
  *   settings — hide calories, Fuel AI plan, disclaimer
- *   suggest  — "what to eat next" from Max's Foods list (free, no AI)
+ *   snacks   — general snack ideas at standard serves (free, no AI)
  *   fridge   — What can I make? photos of the fridge/cupboard → 3 ideas
  *              that fit what's left today (Gold and Diamond, 2 AI uses)
- *   chat     — Ask Fuel, the AI copilot (Diamond only)
+ *   chat     — Food Q&A: general healthy-eating questions (Diamond only)
+ *   note     — the first-open "Before you start" note, saved as accepted
  *   upsell   — Fuel plans: Silver free, Gold $5.99 or Diamond
  *              $9.99 a month (or yearly) via Stripe
  *   progress — weight trend vs goal, calorie target steps, last 14 days
@@ -87,7 +89,7 @@
     plan: null, // { access, tier, kind, until, daysLeft, interval, links: { gold: { month, year }, … }, portalUrl, aiPerDay } from the server
     foods: [],
     moreIdeas: false,
-    chat: [], // Ask Fuel messages, this visit only: { role, content, foods? }
+    chat: [], // Food Q&A messages, this visit only: { role, content }
     awaitingUpgrade: false,
     weightTrend: null, // { kg, date, change7 } from the server
     progress: null, // the last `progress` response
@@ -182,7 +184,7 @@
     add: '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>',
     fridge:
       '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="2.5" width="14" height="19" rx="2.5"/><path d="M5 9.5h14M8.5 5.5v2M8.5 12.5v3"/></svg>',
-    // Ask Fuel on the home screen: a chat bubble with a sparkle, so it reads as the AI.
+    // Food Q&A on the home screen: a chat bubble with a sparkle, so it reads as the AI.
     askFuel:
       '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12.5a7.5 7.5 0 0 1-11.1 6.6L4 20.5l1.4-4.6A7.5 7.5 0 1 1 20 12.5z"/><path d="M12.5 8.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z" fill="currentColor" stroke="none"/></svg>',
     barcode:
@@ -327,6 +329,7 @@
       state.loadedOn = MacroCore.sydneyDate();
       render();
       if (returnedSession && state.plan && state.plan.kind === "paid") toast(`${TIER_NAMES[tier()]} is on. Welcome!`);
+      maybeFirstOpen();
     } catch (err) {
       if (err.code === "bad_key") {
         clearMeCache();
@@ -407,7 +410,7 @@
   // ---------------------------------------------------------------------------
   // Home view: the "concentric rings" layout (2026-10-13). A header panel
   // (day switcher, plan button, protein/carbs/fat rings, calorie bar), then
-  // Log Food + Ask Fuel, the four meals, and the plan-ahead tiles.
+  // Log Food + Food Q&A, the four meals, and the plan-ahead tiles.
   // ---------------------------------------------------------------------------
 
   // Ring radii in the 180-unit SVG: protein outside, fat inside.
@@ -513,7 +516,7 @@
           <div class="fx-kcal__bar" aria-hidden="true">${seg("p")}${seg("c")}${seg("f")}</div>
         </div>`;
     } else if (!g && !skeleton) {
-      below = '<button class="fx-settargets" type="button" data-act="targets">Set my daily targets</button>';
+      below = '<button class="fx-settargets" type="button" data-act="targets">Set your targets</button>';
     } else if (skeleton) {
       below = '<div class="fx-kcal" aria-hidden="true"><div class="fx-kcal__row"><span class="fx-skel fx-skel--text"></span></div><div class="fx-kcal__bar"></div></div>';
     }
@@ -569,7 +572,7 @@
     });
   }
 
-  /** ActionsRow: Log Food, Ask Fuel, and today's AI scans left. */
+  /** ActionsRow: Log Food, Food Q&A, and today's AI scans left. */
   function actionsHtml(skeleton) {
     const ai = state.aiEnabled;
     const usedUp = !skeleton && aiUsedUp();
@@ -582,7 +585,7 @@
     return `
       <div class="fx-actions">
         <button class="fx-scan${usedUp ? " is-out" : ""}" type="button" data-act="scan"${skeleton ? " disabled" : ""}>${ICONS.add}<span>Log Food</span></button>
-        ${ai || skeleton ? `<button class="fx-ask" type="button" data-act="ask" aria-label="Ask Fuel, your AI nutrition copilot"${skeleton ? " disabled" : ""}>${ICONS.askFuel}<span>Ask Fuel</span></button>` : ""}
+        ${ai || skeleton ? `<button class="fx-ask" type="button" data-act="ask" aria-label="Food Q&amp;A: general questions about healthy eating"${skeleton ? " disabled" : ""}>${ICONS.askFuel}<span>Food Q&amp;A</span></button>` : ""}
       </div>
       ${caption ? `<p class="fx-caption">${caption}</p>` : ""}`;
   }
@@ -689,6 +692,15 @@
   function mealPlanCtx() {
     return {
       hideKcal: hideKcal(),
+      // For the planner: the client's own targets (to add a day up against),
+      // and their saved meals, favourites, recent foods and Max's Foods list
+      // to pick from, besides the AI ideas.
+      targets: state.targets,
+      meals: state.meals || [],
+      favourites: state.favourites || [],
+      recent: state.recent || [],
+      foods: state.foods || [],
+      today: MacroCore.sydneyDate(),
       logMeal: (items, slot) => addItems(items, slot),
       upsell: (reason, message) => openUpsell({ reason, message }),
       onChange: (toBuy) => {
@@ -802,58 +814,48 @@
   });
 
   // ---------------------------------------------------------------------------
-  // What to eat next (free): ranked in MacroCore from Max's Foods list
+  // Snack ideas (free, no AI). Rebuilt 2026-10-29 for scope of practice:
+  // a fixed list of general healthy snacks at standard serves, in line with
+  // the Australian Dietary Guidelines. Nothing here is sized to the client's
+  // targets or to what's left today; they log a standard serve and can
+  // change the amount on the confirm screen.
   // ---------------------------------------------------------------------------
 
-  let shownIdeas = []; // the suggestions currently on screen, for their Log buttons
+  // [name, standard serve, grams, kcal, protein, carbs, fat] (FSANZ values, rounded)
+  const SNACK_IDEAS = [
+    ["Apple", "1 medium", 150, 78, 0.5, 18, 0.2],
+    ["Banana", "1 medium", 120, 107, 1.3, 24, 0.4],
+    ["Greek yoghurt, natural", "1 tub (170 g)", 170, 165, 15, 7, 8.5],
+    ["Boiled eggs", "2 eggs", 100, 140, 12.5, 0.5, 10],
+    ["Unsalted mixed nuts", "small handful (30 g)", 30, 180, 6, 4, 16],
+    ["Veggie sticks with hummus", "1 cup veg, 2 tbsp hummus", 140, 130, 3.8, 11, 7.7],
+    ["Wholegrain crackers with cheese", "4 crackers, 1 slice cheese", 40, 165, 7, 13, 9.6],
+    ["Reduced-fat milk", "1 glass (250 mL)", 250, 118, 8.5, 12.5, 3],
+    ["Wholegrain toast with peanut butter", "1 slice, 1 tbsp", 60, 220, 9, 19, 11],
+    ["Tuna in springwater", "1 small tin (95 g)", 95, 105, 24, 0, 1],
+  ];
 
-  function remainingToday() {
-    const g = state.targets;
-    const t = state.day ? state.day.totals : MacroCore.sumTotals([]);
-    return {
-      kcal: g.kcal - t.kcal,
-      protein_g: g.protein_g - t.protein_g,
-      carbs_g: g.carbs_g - t.carbs_g,
-      fat_g: g.fat_g - t.fat_g,
-    };
-  }
-
-  /** { headline, ideas } for the day on screen, or null without targets/foods. */
-  function ideasFor(limit) {
-    if (!state.targets || !state.foods.length) return null;
-    const left = remainingToday();
-    const p = Math.round(left.protein_g);
-    const k = Math.round(left.kcal);
-    if (k <= 0) {
-      return {
-        over: true,
-        headline: hideKcal()
-          ? "You're past today's target. No stress. If you're still hungry, these are high-protein, lighter options:"
-          : `You're ${int(-k)} kcal over. No stress. If you're still hungry, these are high-protein, low-calorie options:`,
-        ideas: MacroCore.suggestOver(state.foods, limit),
-      };
-    }
-    let ideas = MacroCore.suggestFill(left, state.foods, limit);
-    if (!ideas.length) ideas = MacroCore.suggestOver(state.foods, limit).filter((i) => i.totals.kcal <= k);
-    let headline;
-    if (p <= 0) headline = hideKcal() ? "Protein target hit. Nice work." : `Protein target hit. You've got ${int(k)} kcal left today.`;
-    else headline = hideKcal() ? `You've got ${p}g protein left today.` : `You've got ${p}g protein and ${int(k)} kcal left today.`;
-    return { over: false, headline: headline, ideas: ideas };
-  }
+  let shownIdeas = []; // the snack ideas currently on screen, for their Log buttons
 
   function ideaMacros(t) {
-    return `${int(t.protein_g)}g P${hideKcal() ? "" : ` · ${int(t.kcal)} kcal`}`;
+    return `${int(t.protein_g)}g protein${hideKcal() ? "" : ` · ${int(t.kcal)} kcal`}`;
   }
 
-  function suggestionsHtml(limit, withMore) {
-    const s = ideasFor(limit);
-    if (!s) return "";
-    shownIdeas = s.ideas;
+  /** Four general snack ideas, a different four each day. */
+  function suggestionsHtml(limit) {
+    const n = Math.min(limit || 4, SNACK_IDEAS.length);
+    const day = Number(String(MacroCore.sydneyDate()).replace(/-/g, "")) || 0;
+    shownIdeas = [];
+    for (let i = 0; i < n; i++) {
+      const [name, serve, grams, kcal, p, c, f] = SNACK_IDEAS[(day + i * 3) % SNACK_IDEAS.length];
+      const per100 = MacroCore.per100From({ kcal: kcal, protein_g: p, carbs_g: c, fat_g: f }, grams);
+      shownIdeas.push({ label: `${name} (${serve})`, items: [{ name: name, grams: grams, per100: per100 }], totals: { kcal, protein_g: p, carbs_g: c, fat_g: f } });
+    }
     return `
       <div class="fuel-panel fuel-ideas">
-        <span class="card__label card__label--red">What to eat next</span>
-        <p class="fuel-ideas__headline">${esc(s.headline)}</p>
-        ${s.ideas
+        <span class="card__label card__label--red">Snack ideas</span>
+        <p class="fuel-ideas__headline">General ideas at standard serves. Change the amount when you log it.</p>
+        ${shownIdeas
           .map(
             (idea, i) => `
           <div class="fuel-idea">
@@ -865,7 +867,6 @@
           </div>`
           )
           .join("")}
-        ${withMore && s.ideas.length >= 3 ? `<button class="fuel-link" type="button" data-act="more-ideas">${state.moreIdeas ? "Fewer ideas" : "More ideas"}</button>` : ""}
       </div>`;
   }
 
@@ -959,6 +960,7 @@
       sheetCleanup();
       sheetCleanup = null;
     }
+    delete els.sheet.dataset.locked;
     // A fresh element each time, so listeners from the previous sheet
     // (added in onMount) can't pile up and fire twice.
     const fresh = els.sheetBody.cloneNode(false);
@@ -971,6 +973,7 @@
   }
 
   function closeSheet() {
+    delete els.sheet.dataset.locked;
     if (sheetCleanup) {
       sheetCleanup();
       sheetCleanup = null;
@@ -981,11 +984,13 @@
     state.confirm = null;
   }
 
+  // A locked sheet (the first-open note) only closes from its own button.
   els.sheet.addEventListener("click", (e) => {
+    if (els.sheet.dataset.locked && e.target.closest(".fuel-sheet__backdrop")) return;
     if (e.target.closest("[data-close]")) closeSheet();
   });
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && !els.sheet.hidden) closeSheet();
+    if (e.key === "Escape" && !els.sheet.hidden && !els.sheet.dataset.locked) closeSheet();
   });
 
   function sheetLoading(text) {
@@ -1036,7 +1041,7 @@
     return t === "platinum" ? "diamond" : t;
   }
 
-  /** Ask Fuel is Diamond only (paying, a free month from Max, or the free week). */
+  /** Food Q&A is Diamond only (paying, a free month from Max, or the free week). */
   function askFuelOn() {
     return fuelAi() && tier() === "diamond";
   }
@@ -1378,14 +1383,14 @@
       opts.reason === "limit"
         ? opts.message || "That's all your AI uses for today."
         : opts.reason === "ask"
-        ? "Ask Fuel, your AI nutrition coach, comes with Diamond."
+        ? "Food Q&A, for general questions about healthy eating, comes with Diamond."
         : opts.reason === "plan"
-        ? "Weekly meal plans with a shopping list come with Diamond."
+        ? "The meal planner, with a shopping list, comes with Diamond."
         : opts.reason === "list"
         ? "Your shopping list comes with Gold and Diamond."
         : p.kind === "trial_over" || p.kind === "lapsed"
         ? planText() + "."
-        : "Your AI nutrition coach, in your pocket. Cancel any time.";
+        : "Track what you eat with photo scans, and plan ahead. Cancel any time.";
     const badge = (text) => `<span class="fuel-plan-card__badge">${esc(text)}</span>`;
     const days = (n) => `${n} day${n === 1 ? "" : "s"} left`;
     const portalBtn = (k, label) =>
@@ -1393,7 +1398,7 @@
 
     const DESCRIPTIONS = {
       gold: `<p><b>${perDay.gold} AI uses a day:</b> snap a meal, scan a label or Describe it. <b>Plus your shopping list.</b></p>`,
-      diamond: `<p><b>${perDay.diamond} AI uses a day, plus Ask Fuel</b>, your AI nutrition coach, <b>and a weekly meal plan</b> that fills your shopping list.</p>`,
+      diamond: `<p><b>${perDay.diamond} AI uses a day, plus Food Q&amp;A</b> for general healthy-eating questions, <b>and the meal planner</b> that fills your shopping list.</p>`,
     };
 
     function action(k, iv) {
@@ -1569,7 +1574,6 @@
   }
 
   function fridgeSetupHtml() {
-    const r = state.targets ? remainingToday() : null;
     const a = state.aiToday;
     const photos = fridge.photos
       .map(
@@ -1584,11 +1588,6 @@
       fridge.photos.length < FRIDGE_MAX_PHOTOS
         ? `<button class="fr-photo fr-photo--add" type="button" data-add><span aria-hidden="true">+</span>${fridge.photos.length ? "Add another" : "Add a photo"}</button>`
         : "";
-    const when = isToday() ? "today" : esc(dayLabel(state.viewDate).toLowerCase());
-    const p = `<b>${int(Math.max(0, r ? r.protein_g : 0))}g protein</b>`;
-    const left = r
-      ? `You've got ${p}${hideKcal() ? "" : ` and <b>${int(Math.max(0, r.kcal))} kcal</b>`} left ${when}. Ideas will fit that.`
-      : "";
     return `
       <h2 class="fuel-sheet__title" id="fuelSheetTitle">What can I make?</h2>
       <p class="fr-hint">Take photos of your fridge, freezer or cupboard, up to ${FRIDGE_MAX_PHOTOS}. Open the door wide.</p>
@@ -1604,7 +1603,7 @@
         <p class="mp-q mp-tight">Anything else?</p>
         <input class="fr-text" type="text" data-note maxlength="200" value="${esc(fridge.note)}" placeholder="e.g. I'm training in an hour" aria-label="Anything else" />
       </div>
-      ${left ? `<p class="fr-left">${left}</p>` : ""}
+      <p class="fr-left">General recipe ideas at standard serves. You choose what to make and how much.</p>
       <button class="week-btn" type="button" data-go${fridge.photos.length ? "" : " disabled"}>Find ideas</button>
       <p class="mp-cost">Uses ${FRIDGE_AI_USES} of your AI scans${a && a.limit ? ` · ${a.left} left today` : ""}</p>`;
   }
@@ -1647,13 +1646,11 @@
     if (state.busy || !fridge.photos.length) return;
     state.busy = true;
     sheetLoading(more ? "Thinking of something different" : "Looking in your fridge");
-    const r = state.targets ? remainingToday() : null;
     try {
       const data = await MacroApi.call("fridgeIdeas", {
         images: fridge.photos.map((p) => p.b64),
         purposes: [...fridge.purposes],
         note: fridge.note.trim(),
-        left: r ? { kcal: Math.round(r.kcal), protein_g: Math.round(r.protein_g) } : null,
         avoid: more ? fridge.seen : [],
       });
       fridge.result = data;
@@ -2309,7 +2306,7 @@
 
   /** Straight after logging: what's left today and what would fill it. */
   function openAfterLog(mealName, ids) {
-    const ideas = isToday() ? suggestionsHtml(3, false) : "";
+    const ideas = isToday() ? suggestionsHtml(3) : "";
     if (!ideas) {
       closeSheet();
       toast(`Added to ${MEAL_SHORT[mealName]}`, () => undoAdd(ids));
@@ -2337,39 +2334,24 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Ask Fuel (Fuel AI): the AI copilot chat
+  // Food Q&A (was Ask Fuel): general healthy-eating questions (Diamond)
   // ---------------------------------------------------------------------------
 
-  const CHAT_STARTERS = ["What should I have for dinner?", "What can I get at Guzman?", "I'm hungry but I'm over. Help!"];
-  let chatFoods = []; // loggable foods in the conversation, by index
+  const CHAT_STARTERS = ["What's a good afternoon snack?", "How do I read a food label?", "What counts as a serve of vegetables?"];
+  const GUIDANCE_LINE = "General guidance only. See a dietitian for a personalised plan.";
 
   function chatHtml() {
-    chatFoods = [];
     if (!state.chat.length) {
-      // "What to eat next" lived on the main screen until the 2026-10-02
-      // redesign moved it in here — same ideasFor()/shownIdeas plumbing,
-      // just at the top of Ask Fuel's empty state instead.
-      const ideas = isToday() ? suggestionsHtml(3, false) : "";
-      return `${ideas}
-        <p class="fuel-disclaimer">Ask anything about food and your macros today. Fuel can see what you've logged and what's left.</p>
+      return `<p class="fuel-disclaimer">Ask general questions about healthy eating: the food groups and serves, reading labels, recipe and snack ideas, cooking and shopping tips, or how to use Fuel.</p>
         <div class="fuel-serves">${CHAT_STARTERS.map((q) => `<button type="button" data-starter="${esc(q)}">${esc(q)}</button>`).join("")}</div>`;
     }
     return state.chat
       .map((m) => {
         if (m.role === "user") return `<div class="fuel-msg fuel-msg--me">${esc(m.content)}</div>`;
         if (m.pending) return `<div class="fuel-msg"><span class="fuel-typing"><i></i><i></i><i></i></span></div>`;
-        const chips = (m.foods || [])
-          .map((f) => {
-            chatFoods.push(f);
-            return `<button class="fuel-chip" type="button" data-chat-log="${chatFoods.length - 1}">
-              <span class="fuel-chip__name">+ ${esc(Math.round(f.grams))}g ${esc(f.name)}</span>
-              <span class="fuel-chip__meta">${ideaMacros(f)}</span>
-            </button>`;
-          })
-          .join("");
-        return `<div class="fuel-msg${m.error ? " fuel-msg--error" : ""}">${esc(m.content).replace(/\n/g, "<br>")}</div>${
-          chips ? `<div class="fuel-chips fuel-chips--wrap">${chips}</div>` : ""
-        }`;
+        return `<div class="fuel-msg${m.error ? " fuel-msg--error" : ""}">${esc(m.content).replace(/\n/g, "<br>")}${
+          m.error ? "" : `<span class="fuel-msg__guide">${esc(GUIDANCE_LINE)}</span>`
+        }</div>`;
       })
       .join("");
   }
@@ -2380,14 +2362,14 @@
       return;
     }
     openSheet(
-      `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Ask Fuel</h2>
+      `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Ask about healthy eating</h2>
        <p class="fuel-sheet__sub" data-chat-left>${esc(aiLeftText() || planText())}</p>
        <div class="fuel-chat" data-chat>${chatHtml()}</div>
        <form class="fuel-inline" data-chat-form autocomplete="off">
-         <input class="fuel-input" name="q" maxlength="500" placeholder="Ask about food…" aria-label="Your question" />
+         <input class="fuel-input" name="q" maxlength="500" placeholder="Ask a healthy-eating question…" aria-label="Your question" />
          <button class="fuel-btn" type="submit">Send</button>
        </form>
-       <p class="fuel-disclaimer">General guidance, not medical advice.</p>`,
+       <p class="fuel-disclaimer">General information only, based on the Australian Dietary Guidelines. For anything about a health condition, medication, pregnancy, allergies or a special diet, please see your GP or an Accredited Practising Dietitian.</p>`,
       (body) => {
         const box = body.querySelector("[data-chat]");
         const form = body.querySelector("[data-chat-form]");
@@ -2409,7 +2391,7 @@
             .map((m) => ({ role: m.role, content: m.content }));
           try {
             const data = await MacroApi.call("chat", { date: state.viewDate, messages: history }, { timeoutMs: 60000 });
-            Object.assign(pending, { pending: false, content: data.reply, foods: data.foods || [] });
+            Object.assign(pending, { pending: false, content: data.reply });
             setAiToday(data.aiToday);
             const left = body.querySelector("[data-chat-left]");
             if (left) left.textContent = aiLeftText();
@@ -2442,29 +2424,6 @@
           if (starter) {
             send(starter.dataset.starter);
             return;
-          }
-          const ideaBtn = e.target.closest('[data-act="log-idea"]');
-          if (ideaBtn) {
-            await logIdea(ideaBtn);
-            paint();
-            return;
-          }
-          const logBtn = e.target.closest("[data-chat-log]");
-          if (logBtn && !state.busy) {
-            const f = chatFoods[Number(logBtn.dataset.chatLog)];
-            if (!f) return;
-            state.busy = true;
-            logBtn.disabled = true;
-            const meal = defaultMeal();
-            try {
-              const ids = await addItems([{ name: f.name, grams: f.grams, per100: f.per100, source: "suggestion" }], meal);
-              toast(`Added to ${MEAL_SHORT[meal]}`, () => undoAdd(ids));
-            } catch (err) {
-              logBtn.disabled = false;
-              toast(err.message);
-            } finally {
-              state.busy = false;
-            }
           }
         });
         box.scrollTop = box.scrollHeight;
@@ -2975,159 +2934,156 @@
   // Targets
   // ---------------------------------------------------------------------------
 
-  const ACTIVITY_OPTIONS = [
-    ["sedentary", "Mostly sitting, little exercise"],
-    ["light", "Light: training 1–3× a week"],
-    ["moderate", "Moderate: training 3–5× a week"],
-    ["very", "Very active: training 6–7× a week"],
-    ["athlete", "Athlete: twice a day or a physical job"],
-  ];
+  const EAT_FOR_HEALTH_CALCULATOR = "https://www.eatforhealth.gov.au/nutrition-calculators/daily-energy-requirements-calculator";
 
+  /**
+   * Your targets (2026-10-29, scope of practice): the client types their own
+   * daily calories, protein, carbs and fat. Beside them, what their numbers
+   * work out to as a share of their calories, against the general adult
+   * ranges from the Nutrient Reference Values, as information only. Nothing
+   * is worked out for them. Under 1,200 kcal won't save (Max's call).
+   */
   function openTargets() {
-    const g = state.targets;
-    if (g && g.set_by === "coach") {
-      openSheet(
-        `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Your targets</h2>
-         <p class="fuel-sheet__sub">Set by Max</p>
-         <div class="fuel-result">
-           <div><b>${int(g.protein_g)}</b><span class="card__label">Protein g</span></div>
-           <div><b>${int(g.carbs_g)}</b><span class="card__label">Carbs g</span></div>
-           <div><b>${int(g.fat_g)}</b><span class="card__label">Fat g</span></div>
-           <div><b>${hideKcal() ? "—" : int(g.kcal)}</b><span class="card__label">kcal</span></div>
-         </div>
-         <p class="fuel-disclaimer">Want them changed? Have a chat with Max at your next session.</p>
-         <button class="fuel-btn fuel-btn--quiet" type="button" data-close>Close</button>`
-      );
-      return;
-    }
-
-    const prev = (g && g.calc_inputs) || {};
-    const form = {
-      sex: prev.sex || (state.member && state.member.sex) || "",
-      age: prev.age || "",
-      heightCm: prev.heightCm || "",
-      weightKg: prev.weightKg || "",
-      activity: prev.activity || "moderate",
-      goal: prev.goal || "maintain",
-      adjustPct: prev.adjustPct == null ? null : prev.adjustPct,
-      goalWeightKg: (g && g.goal_weight_kg) || "",
-    };
-
+    const g = state.targets || {};
+    const val = (k) => (g[k] > 0 ? Math.round(g[k]) : "");
+    const rows = [
+      ["kcal", "Calories", "per day", "kcal"],
+      ["protein_g", "Protein", "", "g"],
+      ["carbs_g", "Carbs", "", "g"],
+      ["fat_g", "Fat", "", "g"],
+    ];
     openSheet(
-      `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Daily targets</h2>
-       <p class="fuel-sheet__sub">A starting point. Max can fine-tune it with you.</p>
-       <div class="fuel-field">
-         <span class="card__label">Sex (for the energy formula)</span>
-         <div class="fuel-seg" data-group="sex">
-           <button type="button" data-v="F">Female</button><button type="button" data-v="M">Male</button>
-         </div>
-       </div>
-       <div class="fuel-fields3">
-         <label class="fuel-field"><span class="card__label">Age</span><input class="fuel-input" name="age" type="number" inputmode="numeric" value="${esc(form.age)}" /></label>
-         <label class="fuel-field"><span class="card__label">Height cm</span><input class="fuel-input" name="heightCm" type="number" inputmode="decimal" value="${esc(form.heightCm)}" /></label>
-         <label class="fuel-field"><span class="card__label">Weight kg</span><input class="fuel-input" name="weightKg" type="number" inputmode="decimal" value="${esc(form.weightKg)}" /></label>
-       </div>
-       <label class="fuel-field"><span class="card__label">Activity</span>
-         <select class="fuel-input" name="activity">
-           ${ACTIVITY_OPTIONS.map(([v, l]) => `<option value="${v}" ${v === form.activity ? "selected" : ""}>${l}</option>`).join("")}
-         </select>
-       </label>
-       <div class="fuel-field">
-         <span class="card__label">Goal</span>
-         <div class="fuel-seg" data-group="goal">
-           <button type="button" data-v="cut">Lose fat</button><button type="button" data-v="maintain">Maintain</button><button type="button" data-v="gain">Lean gain</button>
-         </div>
-       </div>
-       <div class="fuel-field" data-pace-wrap>
-         <span class="card__label">Pace</span>
-         <div class="fuel-seg" data-group="adjustPct"></div>
-         <label class="fuel-field" style="margin-top:6px"><span class="card__label">Goal weight kg (optional)</span><input class="fuel-input" name="goalWeightKg" type="number" inputmode="decimal" step="0.1" value="${esc(form.goalWeightKg)}" placeholder="For your progress chart" /></label>
-       </div>
-       <div data-preview></div>
-       <button class="fuel-btn" type="button" data-save-targets>Save targets</button>
+      `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Your targets</h2>
+       <p class="tg-info">Your own daily numbers. Change them any time.</p>
+       <form class="tg-form" data-targets-form autocomplete="off" novalidate>
+         ${rows
+           .map(
+             ([k, label, sub, unit]) => `
+           <div class="tg-field">
+             <label class="tg-label" for="tg-${k}">${label}<small data-share="${k}">${esc(sub)}</small></label>
+             <span class="tg-input"><input id="tg-${k}" name="${k}" type="text" inputmode="numeric" value="${esc(val(k))}" /><span>${unit}</span></span>
+           </div>
+           ${k === "kcal" ? "" : `<div class="tg-range" aria-hidden="true"><span class="tg-range__band" style="left:${MacroCore.AMDR[k][0]}%;width:${MacroCore.AMDR[k][1] - MacroCore.AMDR[k][0]}%"></span><span class="tg-range__dot" data-dot="${k}" hidden></span></div>`}`
+           )
+           .join("")}
+         <p class="tg-sum" data-sum hidden></p>
+         <p class="fuel-error" data-targets-error hidden></p>
+         <p class="tg-note"><b>General ranges for adults</b> (share of daily energy): protein ${MacroCore.AMDR.protein_g.join("–")}%, fat ${MacroCore.AMDR.fat_g.join("–")}%, carbs ${MacroCore.AMDR.carbs_g.join("–")}%. Source: Nutrient Reference Values for Australia and New Zealand (eatforhealth.gov.au). This is general information, not a recommendation for you.</p>
+         <a class="tg-link" href="${EAT_FOR_HEALTH_CALCULATOR}" target="_blank" rel="noopener">Not sure where to start? Eat for Health's energy calculator gives a general estimate <span aria-hidden="true">↗</span></a>
+         <button class="fuel-btn" type="submit" data-save-targets>Save my targets</button>
+       </form>
        <button class="fuel-btn fuel-btn--quiet" type="button" data-close>Cancel</button>`,
       (body) => {
-        const preview = body.querySelector("[data-preview]");
-        const saveBtn = body.querySelector("[data-save-targets]");
-        const paceWrap = body.querySelector("[data-pace-wrap]");
-        const paceSeg = body.querySelector('[data-group="adjustPct"]');
-
+        const form = body.querySelector("[data-targets-form]");
+        const err = body.querySelector("[data-targets-error]");
+        const read = () => {
+          const t = {};
+          rows.forEach(([k]) => (t[k] = form.elements[k].value.replace(/[^0-9]/g, "")));
+          return t;
+        };
         const paint = () => {
-          body.querySelectorAll("[data-group]").forEach((seg) => {
-            const key = seg.dataset.group;
-            seg.querySelectorAll("button").forEach((b) => b.classList.toggle("is-on", String(form[key]) === b.dataset.v));
+          const t = read();
+          const shares = MacroCore.macroShares(t);
+          ["protein_g", "carbs_g", "fat_g"].forEach((k) => {
+            const label = body.querySelector(`[data-share="${k}"]`);
+            const dot = body.querySelector(`[data-dot="${k}"]`);
+            const ok = Number(t.kcal) > 0 && t[k] !== "";
+            label.innerHTML = ok ? `<b>${shares[k].pct}%</b> of your calories` : "";
+            dot.hidden = !ok;
+            if (ok) dot.style.left = `${Math.min(100, Math.max(0, shares[k].pct))}%`;
           });
-          if (form.goal === "maintain") {
-            paceWrap.hidden = true;
-          } else {
-            paceWrap.hidden = false;
-            const opts = form.goal === "cut" ? [["15", "Steady (−15%)"], ["20", "Faster (−20%)"]] : [["5", "Slow (+5%)"], ["10", "Faster (+10%)"]];
-            if (!opts.some(([v]) => String(form.adjustPct) === v)) form.adjustPct = Number(opts[0][0]);
-            paceSeg.innerHTML = opts
-              .map(([v, l]) => `<button type="button" data-v="${v}" class="${String(form.adjustPct) === v ? "is-on" : ""}">${l}</button>`)
-              .join("");
-          }
-          const r = MacroCore.calcTargets(form);
-          if (!r.ok) {
-            preview.innerHTML = "";
-            saveBtn.disabled = true;
+          const sum = body.querySelector("[data-sum]");
+          const all = rows.every(([k]) => t[k] !== "");
+          sum.hidden = !all || Math.abs(shares.macroKcal - Number(t.kcal)) <= Number(t.kcal) * 0.05;
+          if (!sum.hidden) sum.textContent = `Your protein, carbs and fat add up to about ${int(shares.macroKcal)} kcal.`;
+        };
+        form.addEventListener("input", () => {
+          err.hidden = true;
+          paint();
+        });
+        form.addEventListener("submit", async (e) => {
+          e.preventDefault();
+          const t = read();
+          const check = MacroCore.checkTargets(t);
+          if (!check.ok) {
+            err.textContent = check.errors.join(" ");
+            err.hidden = false;
             return;
           }
-          saveBtn.disabled = false;
-          const notes = [];
-          if (r.flags.floorApplied) {
-            notes.push(
-              `We've kept this at the ${int(MacroCore.KCAL_FLOOR[form.sex])} kcal minimum. If you need to go lower, Max can set that with you.`
-            );
-          }
-          if (r.flags.rateCapped) notes.push("Capped so you lose no more than about 1% of bodyweight a week. Slower is easier to stick with.");
-          preview.innerHTML = `
-            <div class="fuel-result">
-              <div><b>${int(r.protein_g)}</b><span class="card__label">Protein g</span></div>
-              <div><b>${int(r.carbs_g)}</b><span class="card__label">Carbs g</span></div>
-              <div><b>${int(r.fat_g)}</b><span class="card__label">Fat g</span></div>
-              <div><b>${hideKcal() ? "—" : int(r.kcal)}</b><span class="card__label">kcal</span></div>
-            </div>
-            ${notes.map((n) => `<p class="fuel-disclaimer" style="margin-top:10px">${esc(n)}</p>`).join("")}`;
-        };
-
-        body.addEventListener("click", (e) => {
-          const b = e.target.closest("[data-group] button");
-          if (!b) return;
-          const key = b.closest("[data-group]").dataset.group;
-          form[key] = key === "adjustPct" ? Number(b.dataset.v) : b.dataset.v;
-          paint();
-        });
-        body.addEventListener("input", (e) => {
-          const name = e.target.name;
-          if (!name) return;
-          form[name] = name === "activity" ? e.target.value : e.target.value === "" ? "" : Number(e.target.value);
-          paint();
-        });
-        body.addEventListener("change", (e) => {
-          if (e.target.name === "activity") {
-            form.activity = e.target.value;
-            paint();
-          }
-        });
-        saveBtn.addEventListener("click", async () => {
-          saveBtn.disabled = true;
-          saveBtn.textContent = "Saving…";
+          const btn = body.querySelector("[data-save-targets]");
+          btn.disabled = true;
+          btn.textContent = "Saving…";
           try {
-            const data = await MacroApi.call("saveTargets", { inputs: form });
+            const data = await MacroApi.call("saveTargets", { targets: check.targets });
             state.targets = data.targets;
-            if (state.member) state.member.sex = form.sex;
             render();
             closeSheet();
             toast("Targets saved");
-          } catch (err) {
-            saveBtn.disabled = false;
-            saveBtn.textContent = "Save targets";
-            toast(err.message);
+          } catch (e2) {
+            btn.disabled = false;
+            btn.textContent = "Save my targets";
+            err.textContent = e2.message;
+            err.hidden = false;
           }
         });
         paint();
       }
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // "Before you start" (2026-10-29): shown the first time a client opens
+  // Fuel, saved as accepted on their Members row. Existing clients see it
+  // once too, then a note that the targets they've been using are theirs.
+  // ---------------------------------------------------------------------------
+
+  const DISCLAIMER_TEXT = [
+    "Fuel's numbers are estimates to help you keep track of what you eat. They're general information based on the Australian Dietary Guidelines, not a personalised diet or medical advice.",
+    "If you have a health condition, take regular medication, are pregnant, or want a personalised plan, please talk to your GP or an Accredited Practising Dietitian.",
+  ];
+
+  function disclaimerHtml(again) {
+    return `<div class="dc-icon" aria-hidden="true">i</div>
+      <h2 class="fuel-sheet__title dc-title" id="fuelSheetTitle">${again ? "About Fuel's numbers" : "Before you start"}</h2>
+      ${DISCLAIMER_TEXT.map((t) => `<p class="dc-text">${esc(t)}</p>`).join("")}`;
+  }
+
+  function maybeFirstOpen() {
+    if (!state.member || state.member.disclaimer_accepted) return;
+    openSheet(
+      `${disclaimerHtml(false)}
+       <button class="fuel-btn" type="button" data-understand>I understand</button>
+       <p class="dc-small">You'll find this again any time in Settings.</p>`,
+      (body) => {
+        // Not dismissable by tapping outside: the note needs an answer.
+        els.sheet.dataset.locked = "1";
+        body.querySelector("[data-understand]").addEventListener("click", async (e) => {
+          e.target.disabled = true;
+          try {
+            const data = await MacroApi.call("acceptDisclaimer", {});
+            state.member.disclaimer_accepted = data.disclaimer_accepted;
+          } catch (err) {
+            e.target.disabled = false;
+            toast(err.message);
+            return;
+          }
+          const g = state.targets;
+          if (g && g.set_by && g.set_by !== "client") showTargetsAreYours(g);
+          else closeSheet();
+        });
+      }
+    );
+  }
+
+  function showTargetsAreYours(g) {
+    const kcal = hideKcal() ? "" : `${int(g.kcal)} kcal, `;
+    openSheet(
+      `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Your targets are yours</h2>
+       <p class="dc-text">These are the numbers you've been using: ${kcal}${int(g.protein_g)} g protein, ${int(g.carbs_g)} g carbs and ${int(g.fat_g)} g fat a day.</p>
+       <p class="dc-text">They're yours now. Keep them or change them any time.</p>
+       <button class="fuel-btn" type="button" data-close>Keep these</button>
+       <button class="fuel-btn fuel-btn--ghost" type="button" data-change>Change them</button>`,
+      (body) => body.querySelector("[data-change]").addEventListener("click", openTargets)
     );
   }
 
@@ -3140,7 +3096,7 @@
       `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Fuel settings</h2>
        <label class="fuel-toggle">Hide calories, focus on protein <input type="checkbox" data-hide ${hideKcal() ? "checked" : ""} /></label>
        <label class="fuel-toggle">Hide weight <input type="checkbox" data-hide-weight ${state.member && state.member.hide_weight ? "checked" : ""} /></label>
-       <button class="fuel-btn fuel-btn--ghost" type="button" data-s="targets">Daily targets</button>
+       <button class="fuel-btn fuel-btn--ghost" type="button" data-s="targets">Your targets</button>
        <button class="fuel-btn fuel-btn--ghost" type="button" data-s="favs">Favourites &amp; saved meals</button>
        ${
          state.aiEnabled && state.plan
@@ -3158,7 +3114,8 @@
               </div>`
            : ""
        }
-       <p class="fuel-disclaimer">Not medical advice. If you have a medical condition, pregnancy or a history of disordered eating, talk to your GP or an Accredited Practising Dietitian.</p>
+       <button class="fuel-btn fuel-btn--ghost" type="button" data-s="note">About Fuel's numbers</button>
+       <p class="fuel-disclaimer">${esc(DISCLAIMER_TEXT[1])}</p>
        <button class="fuel-btn fuel-btn--quiet" type="button" data-close>Done</button>`,
       (body) => {
         body.querySelector("[data-hide]").addEventListener("change", async (e) => {
@@ -3195,6 +3152,9 @@
         const up = body.querySelector('[data-s="upgrade"]');
         if (up) up.addEventListener("click", openUpsell);
         body.querySelector('[data-s="favs"]').addEventListener("click", openFavourites);
+        body.querySelector('[data-s="note"]').addEventListener("click", () =>
+          openSheet(`${disclaimerHtml(true)}<button class="fuel-btn" type="button" data-close>Close</button>`)
+        );
       }
     );
   }

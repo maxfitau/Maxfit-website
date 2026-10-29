@@ -2893,3 +2893,181 @@ button.fx-meal {
     animation: none;
   }
 }
+
+/* ---- Scope of practice (2026-10-29): Your targets, the first-open note,
+   and the guidance line under every Food Q&A answer. ---- */
+.tg-info {
+  margin: -6px 0 0;
+  font-size: 16px;
+  color: var(--grey);
+}
+
+.tg-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tg-field {
+  display: grid;
+  grid-template-columns: 1fr 150px;
+  align-items: center;
+  gap: 12px;
+  padding-top: 8px;
+}
+
+.tg-label {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--white);
+}
+
+.tg-label small {
+  display: block;
+  margin-top: 2px;
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--grey);
+}
+
+.tg-label small b {
+  color: var(--white);
+}
+
+.tg-input {
+  display: flex;
+  align-items: center;
+  height: 56px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.tg-input:focus-within {
+  border-color: var(--white);
+}
+
+.tg-input input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--white);
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 26px;
+  text-align: right;
+}
+
+.tg-input span {
+  margin-left: 6px;
+  font-size: 16px;
+  color: var(--grey);
+}
+
+.tg-range {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--line);
+}
+
+.tg-range__band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.tg-range__dot {
+  position: absolute;
+  top: -4px;
+  width: 16px;
+  height: 16px;
+  margin-left: -8px;
+  border-radius: 50%;
+  background: var(--white);
+  border: 3px solid var(--bg-card);
+}
+
+.tg-range__dot[hidden] {
+  display: none;
+}
+
+.tg-sum {
+  margin: 0;
+  font-size: 15px;
+  color: var(--grey);
+}
+
+.tg-note {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--grey);
+}
+
+.tg-note b {
+  color: var(--white);
+}
+
+.tg-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 52px;
+  padding: 8px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  color: var(--white);
+  font-size: 16px;
+  line-height: 1.35;
+  text-decoration: none;
+}
+
+.dc-icon {
+  width: 64px;
+  height: 64px;
+  margin: 6px auto 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(224, 0, 0, 0.14);
+  color: var(--red);
+  font-family: Georgia, serif;
+  font-style: italic;
+  font-weight: 700;
+  font-size: 32px;
+}
+
+.dc-title {
+  text-align: center;
+}
+
+.dc-text {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--white);
+}
+
+.dc-small {
+  margin: 0;
+  text-align: center;
+  font-size: 14px;
+  color: var(--dim);
+}
+
+.fuel-msg__guide {
+  display: block;
+  margin-top: 8px;
+  font-size: 14px;
+  color: var(--dim);
+}
