@@ -187,33 +187,55 @@ function fetchWorkoutExercises() {
   return workoutExercisesPromise;
 }
 
-let loggedSetsPromise;
+const loggedSetsPromises = {};
 
-/** Fetches + parses the "Logged Sets" tab — full history, every set every client has ever logged. This is what the weight-prefill logic looks back through. */
-function fetchLoggedSets() {
-  if (!loggedSetsPromise) {
-    loggedSetsPromise = fetch(gvizCsvUrl_("Logged Sets"), { cache: "no-store" })
-      .then((res) => {
+/**
+ * Fetches + parses the "Logged Sets" tab — full history, every set every
+ * client has ever logged. This is what the weight-prefill logic looks back
+ * through.
+ *
+ * Pass a client's slug to get only their rows (2026-10-29): the tab grows
+ * every session, and a client page only ever uses its own client's sets, so
+ * Google filters it before sending (a query on the Client column, column A)
+ * instead of every page downloading everyone's history. If the Client
+ * column ever moves, the reply's header won't start with "Client" and this
+ * falls back to the whole tab, so nothing breaks. No slug (the coach page)
+ * still gets every client.
+ */
+function fetchLoggedSets(clientSlug) {
+  const slug = String(clientSlug || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (!loggedSetsPromises[slug]) {
+    const parse = (text) => {
+      const [header, ...rows] = parseCSV(text);
+      const col = {
+        client: findColumn(header, "Client"),
+        workoutName: findColumn(header, "Workout Name"),
+        exercise: findColumn(header, "Exercise"),
+        setNumber: findColumn(header, "Set Number"),
+        weight: findColumn(header, "Weight (kg)"),
+        reps: findColumn(header, "Reps"),
+        date: findColumn(header, "Date"),
+        timestamp: findColumn(header, "Timestamp"),
+        notes: findColumn(header, "Notes"),
+      };
+      return { header, rows, col };
+    };
+    const get = (url) =>
+      fetch(url, { cache: "no-store" }).then((res) => {
         if (!res.ok) throw new Error("logged sets fetch failed");
         return res.text();
-      })
-      .then((text) => {
-        const [header, ...rows] = parseCSV(text);
-        const col = {
-          client: findColumn(header, "Client"),
-          workoutName: findColumn(header, "Workout Name"),
-          exercise: findColumn(header, "Exercise"),
-          setNumber: findColumn(header, "Set Number"),
-          weight: findColumn(header, "Weight (kg)"),
-          reps: findColumn(header, "Reps"),
-          date: findColumn(header, "Date"),
-          timestamp: findColumn(header, "Timestamp"),
-          notes: findColumn(header, "Notes"),
-        };
-        return { rows, col };
       });
+    const all = () => get(gvizCsvUrl_("Logged Sets")).then(parse);
+    loggedSetsPromises[slug] = (
+      slug
+        ? get(gvizCsvUrl_("Logged Sets") + "&tq=" + encodeURIComponent(`select * where lower(A) = '${slug}'`))
+            .then(parse)
+            .then((r) => (String(r.header[0] || "").trim().toLowerCase() === "client" ? r : all()))
+            .catch(() => all())
+        : all()
+    ).then(({ rows, col }) => ({ rows, col }));
   }
-  return loggedSetsPromise;
+  return loggedSetsPromises[slug];
 }
 
 /**

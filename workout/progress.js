@@ -264,7 +264,7 @@ async function init() {
 
   let exercises;
   try {
-    const { rows, col } = await fetchLoggedSets();
+    const { rows, col } = await fetchLoggedSets(clientSlug);
     exercises = buildSeries_(rows, col, clientSlug);
   } catch (err) {
     showStatus("Couldn't load your workout history. Check your connection and reopen.", true);

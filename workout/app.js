@@ -1461,7 +1461,7 @@ async function init() {
   try {
     const [workout, sets, exerciseDefaults] = await Promise.all([
       fetchWorkoutExercises(),
-      fetchLoggedSets(),
+      fetchLoggedSets(clientSlug),
       fetchExercises(),
     ]);
 
