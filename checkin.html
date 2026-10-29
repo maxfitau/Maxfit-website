@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="card/styles.css?v=20261026b" />
-<link rel="stylesheet" href="checkin.css?v=20261027b" />
+<link rel="stylesheet" href="checkin.css?v=20261029a" />
 </head>
 <body>
 
@@ -34,6 +34,12 @@
     <div class="card__meta-item">
       <span class="card__label">Member</span>
       <span class="card__meta-value" id="checkinName">—</span>
+    </div>
+
+    <!-- Their booking code, for Max to read out (checkin.js, staff PIN only). -->
+    <div class="card__meta-item" id="checkinCodeRow" hidden>
+      <span class="card__label">Booking code</span>
+      <span class="card__meta-value checkin__code" id="checkinCode">—</span>
     </div>
 
     <div class="card__sessions-row">
@@ -81,10 +87,11 @@
   <div class="checkin__state" id="checkinSuccess" hidden>
     <p class="checkin__success-title" id="checkinSuccessTitle">Checked In</p>
     <p class="checkin__success-text" id="checkinSuccessText"></p>
+    <p class="checkin__success-code" id="checkinSuccessCode" hidden>Booking code: <b id="checkinSuccessCodeValue"></b></p>
   </div>
 </main>
 
 <script src="card/sheet.js?v=20261027b"></script>
-<script src="checkin.js?v=20261027b"></script>
+<script src="checkin.js?v=20261029a"></script>
 </body>
 </html>

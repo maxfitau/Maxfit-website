@@ -32,7 +32,7 @@ const GROCERY_SHEET_NAME = "Grocery Items";
 // Changes whenever this file does, and is shown when you open the deployed
 // URL in a browser (see doGet) — the quick way to tell whether a redeploy
 // actually took, instead of guessing from behaviour.
-const BACKEND_VERSION = "2026-10-27a";
+const BACKEND_VERSION = "2026-10-29a";
 
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -761,6 +761,10 @@ function doPost(e) {
   }
   if (action === "coachBookSession") {
     return withLock_(() => handleCoachBookSession_(payload));
+  }
+  // The client's booking code for the check-in screen (staff PIN, read-only).
+  if (action === "checkinBookingCode") {
+    return handleCheckinBookingCode_(payload);
   }
   if (action === "checkGroceryCode") {
     return handleCheckGroceryCode_(payload);
@@ -4798,4 +4802,207 @@ function bookingUpcomingRow_(ss, isWanted) {
     Utilities.sleep(800);
   }
   return row;
+}
+
+// ---------------------------------------------------------------------------
+// Booking code on the check-in screen (2026-10-29, Max's request)
+// ---------------------------------------------------------------------------
+
+/**
+ * When Max scans a client's QR, checkin.js asks for that client's booking
+ * code so he can tell them. Staff PIN only: the code is what lets a client
+ * book or cancel, and the Check-in Token it's looked up by sits in the
+ * public CRM. Read-only.
+ */
+function handleCheckinBookingCode_(payload) {
+  if (!checkPin_(payload.pin)) return jsonResponse_({ status: "unauthorized" });
+  const token = String(payload.token || "").trim();
+  if (!token) return jsonResponse_({ status: "error", message: "Missing token." });
+  const crm = getSheetByGid_(SESSIONS_SHEET_GID).getDataRange().getValues();
+  const nameCol = findColumn_(crm[0], "Name");
+  const tokenCol = findColumn_(crm[0], "Check-in Token");
+  if (nameCol < 0 || tokenCol < 0) return jsonResponse_({ status: "error", message: "Sessions Remaining is missing Name or Check-in Token." });
+  let slug = "";
+  for (let i = 1; i < crm.length; i++) {
+    if (String(crm[i][tokenCol] || "").trim() === token) {
+      slug = slugify_(crm[i][nameCol]);
+      break;
+    }
+  }
+  if (!slug) return jsonResponse_({ status: "not-found" });
+  const ss = bookingBook_();
+  const sheet = ss && ss.getSheetByName(BOOKING_TABS.clients);
+  if (!sheet || sheet.getLastColumn() < 1) return jsonResponse_({ status: "no-code" });
+  const table = bookingTable_(sheet);
+  const slugCol = findColumn_(table.header, "Slug");
+  const codeCol = findColumn_(table.header, "Booking Code");
+  if (slugCol < 0 || codeCol < 0) return jsonResponse_({ status: "no-code" });
+  for (let i = 0; i < table.rows.length; i++) {
+    if (slugify_(table.rows[i][slugCol]) === slug) {
+      const code = bookingNormalizeCode_(table.rows[i][codeCol]);
+      return jsonResponse_(code ? { status: "ok", code: code } : { status: "no-code" });
+    }
+  }
+  return jsonResponse_({ status: "no-code" });
+}
+
+// ---------------------------------------------------------------------------
+// Rolling up old logged sets (2026-10-29, Max's request)
+// ---------------------------------------------------------------------------
+//
+// Logged Sets grows every session, and every page reads it. Once a session
+// is more than 3 months old, its set-by-set detail is copied to a "Logged
+// Sets Archive" tab (nothing is ever lost), and Logged Sets keeps one row per
+// client, date, workout and exercise: the best set (highest estimated
+// one-rep max, or most reps for bodyweight work). Strength progress, last
+// time's weights, personal bests and the calendar all keep working from that
+// best set. Runs weekly once Max runs installSetRollup().
+
+const SET_ROLLUP_DAYS = 90;
+const LOGGED_SETS_ARCHIVE_NAME = "Logged Sets Archive";
+const ROLLUP_NOTE_PREFIX = "Best of ";
+
+/** A Date cell or "2026-09-09…" text -> "2026-09-09", or "". */
+function setRollupYmd_(v) {
+  if (v instanceof Date && !isNaN(v)) return Utilities.formatDate(v, TIMEZONE, "yyyy-MM-dd");
+  const m = String(v || "").match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  return m ? m[1] + "-" + ("0" + m[2]).slice(-2) + "-" + ("0" + m[3]).slice(-2) : "";
+}
+
+/** How good a set is: estimated one-rep max (Epley), or reps when there's no weight. */
+function setRollupScore_(kg, reps) {
+  const w = Number(kg) || 0;
+  const r = Number(reps) || 0;
+  return w > 0 ? w * (1 + r / 30) : r / 1000;
+}
+
+/**
+ * The work itself, on a Logged Sets sheet and its archive. Returns a summary.
+ * dryRun: count only, change nothing.
+ */
+function rollUpOldSets_(sheet, archiveFor, today, dryRun) {
+  const values = sheet.getDataRange().getValues();
+  if (values.length < 2) return { rolledGroups: 0, archivedRows: 0, rowsBefore: 0, rowsAfter: 0 };
+  const header = values[0].map(function (h) { return String(h).trim(); });
+  const col = {
+    client: findColumn_(header, "Client"),
+    workout: findColumn_(header, "Workout Name"),
+    exercise: findColumn_(header, "Exercise"),
+    setNumber: findColumn_(header, "Set Number"),
+    weight: findColumn_(header, "Weight (kg)"),
+    reps: findColumn_(header, "Reps"),
+    date: findColumn_(header, "Date"),
+    notes: findColumn_(header, "Notes"),
+  };
+  if (col.client < 0 || col.exercise < 0 || col.date < 0) throw new Error("Logged Sets needs Client, Exercise and Date columns.");
+  const [y, mo, d] = today.split("-").map(Number);
+  const cutoff = Utilities.formatDate(new Date(Date.UTC(y, mo - 1, d - SET_ROLLUP_DAYS, 12)), "UTC", "yyyy-MM-dd");
+
+  // Old rows, grouped; everything else stays exactly where it is.
+  const groups = {};
+  const order = [];
+  const keep = [];
+  for (let i = 1; i < values.length; i++) {
+    const row = values[i];
+    const date = setRollupYmd_(row[col.date]);
+    if (!date || date >= cutoff) {
+      keep.push({ row: row, at: i });
+      continue;
+    }
+    const key = [String(row[col.client]).trim().toLowerCase(), date, col.workout >= 0 ? String(row[col.workout]).trim() : "", String(row[col.exercise]).trim().toLowerCase()].join("|");
+    if (!groups[key]) {
+      groups[key] = [];
+      order.push(key);
+    }
+    groups[key].push({ row: row, at: i });
+  }
+
+  const archived = [];
+  let rolledGroups = 0;
+  order.forEach(function (key) {
+    const g = groups[key];
+    if (g.length < 2) {
+      keep.push(g[0]); // already one row (or rolled up before): nothing to do
+      return;
+    }
+    let best = g[0];
+    g.forEach(function (s) {
+      if (setRollupScore_(s.row[col.weight], s.row[col.reps]) > setRollupScore_(best.row[col.weight], best.row[col.reps])) best = s;
+    });
+    const merged = best.row.slice();
+    if (col.setNumber >= 0) merged[col.setNumber] = 1;
+    if (col.notes >= 0) {
+      const old = String(best.row[col.notes] || "").trim();
+      merged[col.notes] = ROLLUP_NOTE_PREFIX + g.length + " sets (rolled up; every set is in " + LOGGED_SETS_ARCHIVE_NAME + ")" + (old ? " · " + old : "");
+    }
+    keep.push({ row: merged, at: g[0].at });
+    g.forEach(function (s) { archived.push(s.row); });
+    rolledGroups++;
+  });
+
+  const summary = { rolledGroups: rolledGroups, archivedRows: archived.length, rowsBefore: values.length - 1, rowsAfter: keep.length, cutoff: cutoff };
+  if (dryRun || !rolledGroups) return summary;
+
+  // 1. Archive first, so the detail is safe before anything is removed.
+  const archive = archiveFor(header);
+  const start = archive.getLastRow() + 1;
+  archive.getRange(start, 1, archived.length, header.length).setValues(archived.map(function (r) { return r.slice(0, header.length); }));
+  if (archive.getLastRow() < start + archived.length - 1) throw new Error("The archive didn't save, so Logged Sets was left as it was.");
+
+  // 2. Rewrite Logged Sets in its original order, then clear what's left below.
+  keep.sort(function (a, b) { return a.at - b.at; });
+  const out = keep.map(function (k) { return k.row.slice(0, header.length); });
+  sheet.getRange(2, 1, out.length, header.length).setValues(out);
+  const spare = values.length - 1 - out.length;
+  if (spare > 0) sheet.getRange(2 + out.length, 1, spare, header.length).clearContent();
+  return summary;
+}
+
+function setRollupArchiveSheet_(header) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let archive = ss.getSheetByName(LOGGED_SETS_ARCHIVE_NAME);
+  if (!archive) {
+    archive = ss.insertSheet(LOGGED_SETS_ARCHIVE_NAME);
+    archive.getRange(1, 1, 1, header.length).setValues([header]).setFontWeight("bold");
+    archive.setFrozenRows(1);
+  }
+  return archive;
+}
+
+/** The weekly job (and safe to run by hand): rolls up sets older than 3 months. */
+function rollUpOldSets() {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LOGGED_SETS_SHEET_NAME);
+    if (!sheet) return "No Logged Sets tab.";
+    const today = Utilities.formatDate(new Date(), TIMEZONE, "yyyy-MM-dd");
+    const s = rollUpOldSets_(sheet, setRollupArchiveSheet_, today, false);
+    const msg = s.rolledGroups
+      ? "Rolled up " + s.archivedRows + " sets older than " + s.cutoff + " into " + s.rolledGroups + " best-set rows. Logged Sets went from " + s.rowsBefore + " to " + s.rowsAfter + " rows. Every set is kept in " + LOGGED_SETS_ARCHIVE_NAME + "."
+      : "Nothing to roll up yet: no session older than " + s.cutoff + " has more than one set per exercise.";
+    Logger.log(msg);
+    return msg;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Run from the editor to see what the next roll-up would do. Changes nothing. */
+function previewSetRollup() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LOGGED_SETS_SHEET_NAME);
+  const s = rollUpOldSets_(sheet, setRollupArchiveSheet_, Utilities.formatDate(new Date(), TIMEZONE, "yyyy-MM-dd"), true);
+  const msg = "Preview: " + s.archivedRows + " sets older than " + s.cutoff + " would become " + s.rolledGroups + " best-set rows (" + s.rowsBefore + " rows now, " + s.rowsAfter + " after).";
+  Logger.log(msg);
+  return msg;
+}
+
+/** Run ONCE from the Apps Script editor: rolls up old sets every Sunday at about 3am. */
+function installSetRollup() {
+  ScriptApp.getProjectTriggers()
+    .filter(function (t) { return t.getHandlerFunction() === "rollUpOldSets"; })
+    .forEach(function (t) { ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger("rollUpOldSets").timeBased().onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(3).create();
+  Logger.log("Old sets will be rolled up every Sunday around 3am.");
+  return "Old sets will be rolled up every Sunday around 3am.";
 }

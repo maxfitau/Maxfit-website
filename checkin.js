@@ -47,6 +47,10 @@ const els = {
   confirm: document.getElementById("checkinConfirm"),
   success: document.getElementById("checkinSuccess"),
   name: document.getElementById("checkinName"),
+  codeRow: document.getElementById("checkinCodeRow"),
+  code: document.getElementById("checkinCode"),
+  successCode: document.getElementById("checkinSuccessCode"),
+  successCodeValue: document.getElementById("checkinSuccessCodeValue"),
   groupSessions: document.getElementById("checkinGroupSessions"),
   oneOnOneSessions: document.getElementById("checkinOneOnOneSessions"),
   pinRow: document.getElementById("checkinPinRow"),
@@ -297,6 +301,7 @@ async function init() {
   }
   if (rememberedPin) {
     els.pinRow.hidden = true;
+    showBookingCode(rememberedPin);
   } else {
     els.pinInput.focus();
   }
@@ -307,6 +312,39 @@ async function init() {
   els.groupButton.addEventListener("click", () => submitCheckIn("group"));
   els.oneOnOneButton.addEventListener("click", () => submitCheckIn("one-on-one"));
   els.duoButton.addEventListener("click", () => submitCheckIn("duo"));
+}
+
+/**
+ * The client's booking code, under their name, so it can be read out to them
+ * (2026-10-29). Asked for with the staff PIN, because the code is what lets a
+ * client book or cancel. Quietly stays hidden if anything goes wrong: it's a
+ * convenience, never something check-in waits on.
+ */
+let bookingCodeAsked = false;
+async function showBookingCode(pin) {
+  if (bookingCodeAsked || !pin) return;
+  bookingCodeAsked = true;
+  try {
+    const res = await fetch(APPS_SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" }, // avoids a CORS preflight
+      body: JSON.stringify({ action: "checkinBookingCode", token, pin }),
+    });
+    const result = await res.json();
+    let text = "";
+    if (result.status === "ok") text = result.code;
+    else if (result.status === "no-code") text = "None yet (run issueBookingCodes)";
+    else {
+      if (result.status === "unauthorized") bookingCodeAsked = false;
+      return;
+    }
+    els.code.textContent = text;
+    els.successCodeValue.textContent = text;
+    els.codeRow.hidden = false;
+    els.successCode.hidden = false;
+  } catch (err) {
+    bookingCodeAsked = false; // try again after the next check-in
+  }
 }
 
 function currentPin() {
@@ -365,6 +403,7 @@ async function submitCheckIn(sessionType) {
     } catch (err) {
       // Ignore — this device just asks for the PIN again next time.
     }
+    showBookingCode(pin); // first check-in on this phone: the PIN is known now
   }
 
   if (result.status === "success") {
