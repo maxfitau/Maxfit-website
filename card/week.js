@@ -116,7 +116,7 @@ const WeekCard = (function () {
   }
 
   async function loadSets() {
-    const { rows, col } = await fetchLoggedSets(slug);
+    const { rows, col } = await fetchLoggedSets();
     sets = rows
       .filter((r) => String(r[col.client] || "").trim().toLowerCase() === slug)
       .map((r) => ({ date: ymd(r[col.date]), exercise: String(r[col.exercise] || "").trim(), kg: Number(r[col.weight]) || 0, reps: Number(r[col.reps]) || 0 }))

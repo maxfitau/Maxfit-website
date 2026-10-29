@@ -65,7 +65,7 @@ function heatDateSortKey_(raw) {
  */
 async function heatmapMuscleData(memberId, range) {
   const clientSlug = slugify(String(memberId || ""));
-  const [{ rows: setRows, col: setCol }, { rows: exRows, col: exCol }] = await Promise.all([fetchLoggedSets(clientSlug), fetchExercises()]);
+  const [{ rows: setRows, col: setCol }, { rows: exRows, col: exCol }] = await Promise.all([fetchLoggedSets(), fetchExercises()]);
   const exerciseIndex = buildExerciseIndex_(exRows, exCol);
 
   const today = heatTodayYmd_();

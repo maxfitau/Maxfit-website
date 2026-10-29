@@ -438,7 +438,7 @@ async function reloadHistory_() {
   clientSlugForEdits = clientSlug;
   byDate = {};
 
-  const { rows, col } = await fetchLoggedSets(clientSlug);
+  const { rows, col } = await fetchLoggedSets();
   for (const r of rows) {
     if (String(r[col.client] || "").trim().toLowerCase() !== clientSlug) continue;
 
