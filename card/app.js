@@ -179,6 +179,38 @@ if (memberId) {
   } catch (err) {
     // Ignore — memberId stays null, demo card shows as before.
   }
+  if (memberId) keepIdInAddress(memberId);
+}
+
+/**
+ * The card link Max texts can carry the booking code too
+ * (?id=jordansmith&b=ABC123, the Clients tab's Card Link). Phones wipe
+ * localStorage (iPhone Safari after about a week of not opening the site),
+ * so a code that only lived there had to be typed again; one in the link
+ * comes back every time the link or its home-screen icon is opened.
+ * book.js reads this same entry.
+ */
+const BOOK_CODE_STORAGE_KEY = "maxfitBookCode"; // { id, code }, shared with card/book.js
+const linkBookCode = String(params.get("b") || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+if (memberId && linkBookCode) {
+  try {
+    const id = String(memberId).toLowerCase().replace(/[^a-z0-9]/g, "");
+    localStorage.setItem(BOOK_CODE_STORAGE_KEY, JSON.stringify({ id: id, code: linkBookCode }));
+  } catch (err) {
+    // Storage unavailable — book.js still reads ?b= when it's passed along.
+  }
+}
+
+/** Puts ?id= back in the address when it came from storage, so a Safari tab, bookmark or new home-screen icon keeps it even after the phone clears storage. */
+function keepIdInAddress(id) {
+  try {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("id")) return;
+    url.searchParams.set("id", id);
+    history.replaceState(history.state, "", url.pathname + url.search + url.hash);
+  } catch (err) {
+    // Old browser — nothing lost, storage still has it.
+  }
 }
 
 const els = {
@@ -472,7 +504,7 @@ async function render(data, workoutSummary) {
 
   // Booking and referring are for real members: the demo card has no membership behind either.
   if (!data.isDemo) {
-    els.bookLink.href = `book.html?id=${encodeURIComponent(data.clientSlug)}`;
+    els.bookLink.href = `book.html?id=${encodeURIComponent(data.clientSlug)}${linkBookCode ? "&b=" + linkBookCode : ""}`;
     els.bookLink.hidden = false;
     els.referLink.href = `refer.html?id=${encodeURIComponent(data.clientSlug)}`;
     els.referLink.hidden = false;
@@ -657,6 +689,7 @@ function showPicker() {
     } catch (err) {
       // Storage unavailable — card still works for this session.
     }
+    keepIdInAddress(id);
     els.picker.hidden = true;
     els.cardLoading.hidden = false;
     loadCard(id);

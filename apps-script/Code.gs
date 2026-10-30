@@ -32,7 +32,7 @@ const GROCERY_SHEET_NAME = "Grocery Items";
 // Changes whenever this file does, and is shown when you open the deployed
 // URL in a browser (see doGet) — the quick way to tell whether a redeploy
 // actually took, instead of guessing from behaviour.
-const BACKEND_VERSION = "2026-10-29a";
+const BACKEND_VERSION = "2026-10-31a";
 
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -1173,7 +1173,7 @@ function handleSelfSignup_(payload) {
     Logger.log("Self-signup booking code provisioning failed: " + err);
   }
 
-  const cardUrl = BOOKING_SITE_URL + "/card/?id=" + encodeURIComponent(slug);
+  const cardUrl = bookingCode ? bookingCardLink_(slug, bookingCode, "") : BOOKING_SITE_URL + "/card/?id=" + encodeURIComponent(slug);
   try {
     MailApp.sendEmail({
       to: email,
@@ -1184,7 +1184,7 @@ function handleSelfSignup_(payload) {
         "You're all set. Here's your MaxFit card — open it and add it to your home screen so it's always one tap away:",
         cardUrl,
         "",
-        bookingCode ? "Your booking code (enter it once, the first time you book a 1-on-1): " + bookingCode : "",
+        bookingCode ? "This link remembers your booking code (" + bookingCode + "), so please keep it to yourself." : "",
         "",
         "See you soon,",
         "Max",
@@ -2283,7 +2283,7 @@ const BOOKING_TABS = {
 const BOOKING_AVAILABILITY_HEADER = ["On", "Day", "Start", "End", "Session Minutes", "Buffer Minutes"];
 const BOOKING_TIME_OFF_HEADER = ["From", "To", "Note"];
 const BOOKING_SETTINGS_HEADER = ["Setting", "Value", "What it does"];
-const BOOKING_CLIENTS_HEADER = ["Name", "Slug", "Booking Code", "Text to send", "Email", "Fuel Link"];
+const BOOKING_CLIENTS_HEADER = ["Name", "Slug", "Booking Code", "Text to send", "Email", "Fuel Link", "Card Link"];
 // Column 12 (Location), deliberately past the first ten the Upcoming tab's
 // formula reads by letter — same reasoning as Calendar Event Id at 11.
 // Columns 13 and 14 (Type: 1-on-1 or Duo; Partner: the second person's name for a duo).
@@ -2418,7 +2418,7 @@ function setupBooking() {
     bookingEnsureSettingRows_(settings.sheet); // settings added in a later version
   }
 
-  const clients = bookingEnsureTab_(ss, BOOKING_TABS.clients, BOOKING_CLIENTS_HEADER, [], ["Slug", "Booking Code", "Email", "Fuel Link"]);
+  const clients = bookingEnsureTab_(ss, BOOKING_TABS.clients, BOOKING_CLIENTS_HEADER, [], ["Slug", "Booking Code", "Email", "Fuel Link", "Card Link"]);
   if (clients.isNew) {
     clients.sheet.getRange(1, 3).setNote("Each client's personal booking code. Text it to them: they type it once on each phone. To give someone a new code, clear their cell and run issueBookingCodes.");
     clients.sheet.getRange(1, 5).setNote("Where this client's booking confirmations go. Copied from the CRM when it has one, or typed by the client the first time they book. Clear it to stop their emails.");
@@ -3234,12 +3234,23 @@ function bookingStoredCode_(ss, slug) {
  * macroKeysBySlug_, which needs MACRO_SHEET_ID set — see that function).
  * Same never-overwrite rule as everything else here: a blank cell gets
  * filled in, one that already has something in it is left alone.
+ *
+ * Card Link and Text to send are the exception (2026-10-31): they are worked
+ * out from the name, code and Fuel key, so they are rewritten whenever they
+ * differ. The Card Link carries the booking code (&b=) and the Fuel key, so a
+ * phone that wipes its storage (iPhone Safari does after about a week) still
+ * knows who the client is and their code. It is as private as a Fuel link.
  */
+/** A client's own card link: who they are, their booking code and (if they have one) their Fuel key, so nothing has to be typed. */
+function bookingCardLink_(slug, code, fuelKey) {
+  return BOOKING_SITE_URL + "/card/?id=" + slug + "&b=" + code + (fuelKey ? "&k=" + fuelKey : "");
+}
+
 function issueBookingCodes() {
   const ss = bookingBook_();
   if (!ss) throw new Error("Run setupBooking first.");
-  const sheet = ss.getSheetByName(BOOKING_TABS.clients) || bookingEnsureTab_(ss, BOOKING_TABS.clients, BOOKING_CLIENTS_HEADER, [], ["Slug", "Booking Code", "Email", "Fuel Link"]).sheet;
-  if (sheet.getLastColumn() > 0) ensureColumns_(sheet, ["Email", "Fuel Link"]); // a sheet set up before confirmation emails/Fuel Link existed
+  const sheet = ss.getSheetByName(BOOKING_TABS.clients) || bookingEnsureTab_(ss, BOOKING_TABS.clients, BOOKING_CLIENTS_HEADER, [], ["Slug", "Booking Code", "Email", "Fuel Link", "Card Link"]).sheet;
+  if (sheet.getLastColumn() > 0) ensureColumns_(sheet, ["Email", "Fuel Link", "Card Link"]); // a sheet set up before confirmation emails/Fuel Link/Card Link existed
   const table = bookingTable_(sheet);
   const c = {
     name: findColumn_(table.header, "Name"),
@@ -3248,6 +3259,7 @@ function issueBookingCodes() {
     text: findColumn_(table.header, "Text to send"),
     email: findColumn_(table.header, "Email"),
     fuelLink: findColumn_(table.header, "Fuel Link"),
+    cardLink: findColumn_(table.header, "Card Link"),
   };
   if (c.slug < 0 || c.code < 0) throw new Error("The Clients tab is missing its Slug or Booking Code column.");
   const fuelKeys = macroKeysBySlug_();
@@ -3270,8 +3282,9 @@ function issueBookingCodes() {
   if (nameCol < 0) throw new Error('The Sessions Remaining tab has no "Name" column.');
   const crmEmailCol = findColumn_(crm[0], "Email"); // where a client already gave one; copied here so confirmations can go to it
 
-  const textFor = function (name, code) {
-    return "Hi " + name.split(" ")[0] + ", you can now book 1-on-1 sessions from your MaxFit card. Tap Book a session and enter this code the first time: " + code + ". It only needs entering once on each phone.";
+  const textFor = function (name, slug, code) {
+    return "Hi " + name.split(" ")[0] + ", here's your own MaxFit card link: " + bookingCardLink_(slug, code, fuelKeys[slug]) +
+      " Open it on your phone and add it to your home screen (on an iPhone: open it in Safari, tap Share, then Add to Home Screen). It remembers who you are and your booking code (" + code + "), so there's nothing to type when you book. Please keep it to yourself.";
   };
   const newUniqueCode = function () {
     let code = bookingNewCode_();
@@ -3298,7 +3311,8 @@ function issueBookingCodes() {
       if (c.name >= 0) values[c.name] = cleanNote_(name, 80);
       values[c.slug] = slug;
       values[c.code] = code;
-      if (c.text >= 0) values[c.text] = textFor(name, code);
+      if (c.text >= 0) values[c.text] = textFor(name, slug, code);
+      if (c.cardLink >= 0) values[c.cardLink] = bookingCardLink_(slug, code, fuelKeys[slug]);
       if (c.email >= 0 && crmEmail) {
         values[c.email] = crmEmail;
         emails++;
@@ -3319,8 +3333,17 @@ function issueBookingCodes() {
     if (!bookingNormalizeCode_(sheet.getRange(row, c.code + 1).getDisplayValue())) {
       const code = newUniqueCode();
       sheet.getRange(row, c.code + 1).setNumberFormat("@").setValue(code);
-      if (c.text >= 0) sheet.getRange(row, c.text + 1).setValue(textFor(name, code));
       filled++;
+    }
+    // Card Link and Text to send follow the code and Fuel key, so they're rewritten when they differ (see above).
+    const rowCode = bookingNormalizeCode_(sheet.getRange(row, c.code + 1).getDisplayValue());
+    if (rowCode && c.cardLink >= 0) {
+      const link = bookingCardLink_(slug, rowCode, fuelKeys[slug]);
+      if (String(table.rows[row - 2][c.cardLink] || "").trim() !== link) sheet.getRange(row, c.cardLink + 1).setNumberFormat("@").setValue(link);
+    }
+    if (rowCode && c.text >= 0) {
+      const text = textFor(name, slug, rowCode);
+      if (String(table.rows[row - 2][c.text] || "") !== text) sheet.getRange(row, c.text + 1).setValue(text);
     }
     // A client who has an email in the CRM but none here gets it copied over. One already here is never overwritten.
     if (c.email >= 0 && crmEmail && !bookingCleanEmail_(table.rows[row - 2][c.email])) {

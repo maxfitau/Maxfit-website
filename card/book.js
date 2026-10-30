@@ -811,7 +811,8 @@
     state.slug = member.slug;
     state.name = member.name;
     state.token = member.token;
-    state.code = readStoredCode();
+    // A code in the link (?b=, from the Clients tab's Card Link) fills in for one the phone has wiped.
+    state.code = readStoredCode() || normalizeCode(params.get("b"));
     await load(false);
   }
 
