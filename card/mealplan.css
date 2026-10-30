@@ -31,7 +31,7 @@
 }
 
 .mp-chip {
-  min-height: 46px;
+  min-height: 48px;
   padding: 0 16px;
   border-radius: 999px;
   border: 1px solid var(--line);
@@ -148,8 +148,8 @@
 .mp-meal__slot {
   font-family: var(--font-head);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  text-transform: none;
+  letter-spacing: 0;
   font-size: 14px;
   color: var(--red);
 }
@@ -226,9 +226,9 @@
 
 .mp-btn--done,
 .mp-btn--done:disabled {
-  background: rgba(48, 209, 88, 0.16);
-  border-color: rgba(48, 209, 88, 0.5);
-  color: #7ee69a;
+  background: rgba(224, 0, 0, 0.16);
+  border-color: rgba(224, 0, 0, 0.5);
+  color: #ffffff;
   cursor: default;
 }
 
@@ -245,8 +245,8 @@
   margin-bottom: 4px;
   font-family: var(--font-head);
   font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  text-transform: none;
+  letter-spacing: 0;
   font-size: 18px;
   color: var(--white);
 }
@@ -304,7 +304,7 @@
 }
 
 .mp-snack__add {
-  min-height: 44px;
+  min-height: 48px;
   padding: 0 12px;
   font-size: 14px;
   flex-shrink: 0;
@@ -361,8 +361,8 @@
 }
 
 .mp-item.is-done .mp-box {
-  background: #30d158;
-  border-color: #30d158;
+  background: #e00000;
+  border-color: #e00000;
 }
 
 .mp-item__name {
@@ -521,8 +521,8 @@
   margin: 10px 0 0;
   padding: 10px 12px;
   border-radius: 10px;
-  background: rgba(48, 209, 88, 0.1);
-  color: #a6ebb8;
+  background: rgba(224, 0, 0, 0.1);
+  color: #ffffff;
   font-size: 16px;
   line-height: 1.35;
 }
@@ -538,7 +538,7 @@
 }
 
 .fr-need b {
-  color: #ffc24b;
+  color: #ffffff;
   font-weight: 600;
 }
 
@@ -553,4 +553,209 @@
 .fr-log {
   width: 100%;
   margin-top: 14px;
+}
+
+/* ---- The meal planner (mealplan.js, rebuilt 2026-10-29): the client picks
+   every meal and its serves; totals are against their own targets. */
+.pl-days {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.pl-day {
+  flex: 0 0 auto;
+  min-width: 54px;
+  min-height: 58px;
+  padding: 4px 8px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--grey);
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.1;
+  cursor: pointer;
+}
+
+.pl-day small {
+  display: block;
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 14px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.pl-day.is-on {
+  border-color: var(--red);
+  background: rgba(224, 0, 0, 0.14);
+  color: var(--white);
+}
+
+.pl-total {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pl-total__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 16px;
+  color: var(--grey);
+}
+
+.pl-total__row b {
+  color: var(--white);
+}
+
+/* Plain grey bars: the day is information, never "over" or "failed". */
+.pl-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.pl-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.75);
+}
+
+.pl-slots {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.pl-slot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+
+.pl-slot:first-child {
+  border-top: 0;
+}
+
+.pl-slot__label {
+  width: 100%;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--grey);
+}
+
+.pl-slot__meal {
+  flex: 1;
+  min-width: 0;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--white);
+}
+
+.pl-slot__meal small {
+  display: block;
+  margin-top: 2px;
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--grey);
+}
+
+.pl-slot__add {
+  flex: 1;
+  min-height: 48px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px dashed var(--line);
+  background: transparent;
+  color: var(--grey);
+  font: inherit;
+  font-size: 16px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pl-serves {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pl-serves button {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--white);
+  font-size: 22px;
+  cursor: pointer;
+}
+
+.pl-serves b {
+  min-width: 34px;
+  text-align: center;
+  font-family: var(--font-head);
+  font-size: 20px;
+  color: var(--white);
+}
+
+.pl-slot__acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+}
+
+.pl-slot__acts .mp-btn {
+  min-height: 44px;
+  padding: 0 14px;
+}
+
+.pl-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding: 4px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.pl-tabs button {
+  min-height: 46px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--grey);
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.pl-tabs button.is-on {
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--white);
+}
+
+.pl-foot {
+  margin: 0;
+  text-align: center;
+  font-size: 14px;
+  color: var(--dim);
 }

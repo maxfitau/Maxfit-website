@@ -54,7 +54,7 @@ function libEsc(text) {
 }
 
 let libExercises = []; // [{ name, movement, bodyPart, primaryMuscles, secondaryMuscles, bestView }]
-let libHeatRange = "today";
+let libHeatRange = "week";
 
 // Per-group expanded/collapsed state for the heat breakdown's collapsible
 // sections (2026-10-09) — try/catch per Max's own spec wording, since
@@ -464,5 +464,5 @@ async function initLibrary() {
 // the markup) — loads independently of the exercise list below, which
 // only matters once someone taps into Browse or a deep link asks for one
 // exercise's own detail screen.
-loadHeat("today");
+loadHeat("week");
 initLibrary();

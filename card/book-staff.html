@@ -12,9 +12,9 @@
 <link rel="preconnect" href="https://docs.google.com" />
 <link rel="preconnect" href="https://script.google.com" />
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="styles.css?v=20261026a" />
-<link rel="stylesheet" href="../checkin.css?v=20260917a" />
-<link rel="stylesheet" href="book.css?v=20261025a" />
+<link rel="stylesheet" href="styles.css?v=20261026b" />
+<link rel="stylesheet" href="../checkin.css?v=20261027b" />
+<link rel="stylesheet" href="book.css?v=20261027b" />
 </head>
 <body>
 
@@ -47,6 +47,21 @@
   <div class="book__content" id="bookContent" hidden>
     <p class="book__message" id="bookMessage" role="status" hidden></p>
 
+    <section class="book__section" id="typeSection" aria-labelledby="typeLabel" hidden>
+      <span class="card__label card__label--red" id="typeLabel">What are you booking?</span>
+      <div class="book__type" id="typeSwitch" role="group" aria-labelledby="typeLabel">
+        <button class="book__type-btn" type="button" data-type="one-on-one" aria-pressed="true">1-on-1</button>
+        <button class="book__type-btn" type="button" data-type="duo" aria-pressed="false">Duo (two people)</button>
+      </div>
+      <div class="book__partner" id="partnerBox" hidden>
+        <label class="card__label" for="partnerInput">Who's training with them?</label>
+        <input class="book__email-input" id="partnerInput" type="text" list="partnerNames" autocomplete="off" autocapitalize="words" maxlength="80" placeholder="Their name" />
+        <datalist id="partnerNames"></datalist>
+        <p class="book__hint">Comes off the client's duo sessions. Pick a member from the list or type any name.</p>
+        <p class="book__error book__error--left" id="partnerError" role="alert" hidden></p>
+      </div>
+    </section>
+
     <section class="book__section" id="pickSection" aria-labelledby="pickLabel" hidden>
       <span class="card__label card__label--red" id="pickLabel">Pick a day</span>
       <div class="book__weekdays" aria-hidden="true"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span></div>
@@ -74,7 +89,7 @@
   </div>
 </main>
 
-<script src="sheet.js?v=20261009b" defer></script>
-<script src="book-staff.js?v=20261025a" defer></script>
+<script src="sheet.js?v=20261027b" defer></script>
+<script src="book-staff.js?v=20261027b" defer></script>
 </body>
 </html>

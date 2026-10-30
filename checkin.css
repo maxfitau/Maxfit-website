@@ -216,3 +216,44 @@
   color: var(--grey-light);
   text-decoration: underline;
 }
+
+/* ---- Duo: who trained with them ---- */
+.checkin__partner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.checkin__partner[hidden],
+.checkin__confirm[hidden],
+.checkin__partner .picker__input[hidden] {
+  display: none;
+}
+
+.checkin__hint {
+  margin: 0;
+  font-size: 14px;
+  color: var(--grey-light);
+}
+
+/* The client's booking code (checkin.js, 2026-10-29): big and easy to read out. */
+.checkin__code {
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 28px;
+  letter-spacing: 0.12em;
+}
+
+.checkin__success-code {
+  margin: 14px 0 0;
+  font-size: 18px;
+  color: var(--grey);
+}
+
+.checkin__success-code b {
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 24px;
+  letter-spacing: 0.12em;
+  color: var(--white);
+}

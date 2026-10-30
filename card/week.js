@@ -76,13 +76,13 @@ const WeekCard = (function () {
   const TIP_START = "2026-01-05"; // a Monday: tip 1's week
 
   const TYPES = {
-    weight: { emoji: "⚖️", name: "Lose weight", sub: "Using your Fuel weigh-ins", q: "How much by the end of the month?",
+    weight: { emoji: "scale", name: "Lose weight", sub: "Using your Fuel weigh-ins", q: "How much by the end of the month?",
       how: ["Hit my protein most days", "Walk 20 minutes after dinner", "Log every meal in Fuel", "Keep alcohol to the weekend"] },
-    strength: { emoji: "🏋️", name: "Get stronger", sub: "Using the weights you log", q: "How heavy?",
+    strength: { emoji: "dumbbell", name: "Get stronger", sub: "Using the weights you log", q: "How heavy?",
       how: ["Do this lift twice a week", "Add a little weight when I hit the top of my reps", "Sleep 7 hours or more", "Eat my protein"] },
-    sessions: { emoji: "📅", name: "Train more often", sub: "Using the workouts you log", q: "How many workouts a week?",
+    sessions: { emoji: "calendar", name: "Train more often", sub: "Using the workouts you log", q: "How many workouts a week?",
       how: ["Book my sessions on Sunday", "Train before work", "Have a short plan for busy days"] },
-    green: { emoji: "🥗", name: "Eat better", sub: "Using your Fuel green days", q: "How many green days a week?",
+    green: { emoji: "leaf", name: "Eat better", sub: "Using your Fuel green days", q: "How many green days a week?",
       how: ["Plan tomorrow's meals tonight", "Have protein at every meal", "Log meals as I eat them"] },
   };
   const WHY_IDEAS = ["keep up with my grandkids", "feel better in my clothes", "stay independent", "sleep better"];
@@ -99,6 +99,7 @@ const WeekCard = (function () {
   let goal = null;
   let ready = false;
   let toBuy = 0; // shopping list items not yet ticked (Gold and Diamond only)
+  let early = null; // the goal request started at page load, before the card has even drawn (see the end of this file)
 
   const esc = (t) => String(t == null ? "" : t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many || one + "s"}`;
@@ -116,7 +117,7 @@ const WeekCard = (function () {
   }
 
   async function loadSets() {
-    const { rows, col } = await fetchLoggedSets();
+    const { rows, col } = await fetchLoggedSets(slug);
     sets = rows
       .filter((r) => String(r[col.client] || "").trim().toLowerCase() === slug)
       .map((r) => ({ date: ymd(r[col.date]), exercise: String(r[col.exercise] || "").trim(), kg: Number(r[col.weight]) || 0, reps: Number(r[col.reps]) || 0 }))
@@ -125,7 +126,12 @@ const WeekCard = (function () {
 
   async function loadGoal() {
     if (typeof MacroApi === "undefined" || !MacroApi.configured()) return;
-    const data = await MacroApi.call("goal", { id: slug });
+    let data = null;
+    if (early && early.slug === slug && !early.used) {
+      early.used = true;
+      data = await early.goal; // already on its way since the page loaded
+    }
+    if (!data) data = await MacroApi.call("goal", { id: slug });
     lastGoalReply = { goal: data.goal || null, fuel: data.fuel || null, shoppingToBuy: data.shoppingToBuy, today: data.today };
     applyGoal(lastGoalReply);
   }
@@ -169,7 +175,7 @@ const WeekCard = (function () {
       const sub = [cmp ? cmp.text.charAt(0).toUpperCase() + cmp.text.slice(1) : plural(r.workouts, "workout")];
       if (r.bests.length) sub.push(plural(r.bests.length, "new best"));
       html +=
-        `<button class="week-tile" type="button" data-open="recap"><span class="week-tile__emoji" aria-hidden="true">${cmp ? cmp.emoji : "💪"}</span>` +
+        `<button class="week-tile" type="button" data-open="recap"><span class="week-tile__emoji" aria-hidden="true">${MaxIcon("dumbbell")}</span>` +
         `<span class="week-tile__text"><span class="week-tile__label">Last week · ${esc(weekRange(r))}</span>` +
         `<span class="week-tile__big">${MacroCore.thousands(r.totalKg)} kg moved</span>` +
         `<span class="week-tile__sub">${esc(sub.join(" · "))}</span></span>${chevron}</button>`;
@@ -178,26 +184,26 @@ const WeekCard = (function () {
     if (g) {
       const p = MacroCore.goalProgress(g, progressData(), today);
       html +=
-        `<button class="week-tile week-tile--goal" type="button" data-open="goal"><span class="week-tile__emoji" aria-hidden="true">${p.status === "done" ? "🏆" : "🎯"}</span>` +
+        `<button class="week-tile week-tile--goal" type="button" data-open="goal"><span class="week-tile__emoji" aria-hidden="true">${MaxIcon(p.status === "done" ? "trophy" : "target")}</span>` +
         `<span class="week-tile__text"><span class="week-tile__label">Your goal · until ${esc(MacroCore.shortDate(g.end_date))}</span>` +
         `<span class="week-tile__big week-tile__big--goal">${esc(MacroCore.goalTitle(g))}</span>` +
         `<span class="week-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${p.pct}"><span style="width:${p.pct}%"></span></span>` +
         `<span class="week-tile__sub">${esc(p.statusText)}</span></span>${chevron}</button>`;
     } else if (goal && goal.locked) {
       html +=
-        '<div class="week-tile week-tile--quiet"><span class="week-tile__emoji" aria-hidden="true">🎯</span><span class="week-tile__text">' +
+        '<div class="week-tile week-tile--quiet"><span class="week-tile__emoji" aria-hidden="true">' + MaxIcon("target") + '</span><span class="week-tile__text">' +
         '<span class="week-tile__label">Your goal</span><span class="week-tile__sub">Your goal uses Fuel. Open your card from the personal link Max sent you to see it.</span></span></div>';
     } else if (ready) {
       const last = goal ? MacroCore.goalProgress(goal, progressData(), today) : null;
       html +=
-        `<button class="week-tile week-tile--goal" type="button" data-open="setup"><span class="week-tile__emoji" aria-hidden="true">🎯</span>` +
+        `<button class="week-tile week-tile--goal" type="button" data-open="setup"><span class="week-tile__emoji" aria-hidden="true">${MaxIcon("target")}</span>` +
         `<span class="week-tile__text"><span class="week-tile__label">${goal ? "New month" : "Your goal"}</span>` +
         `<span class="week-tile__big week-tile__big--goal">Set this month's goal</span>` +
         `<span class="week-tile__sub">${esc(last ? `Last month: ${last.statusText.replace(/^[^:]+: /, "")}` : "Pick one thing to work on. It takes a minute.")}</span></span>${chevron}</button>`;
     }
     if (toBuy > 0 && typeof MealPlan !== "undefined") {
       html +=
-        `<button class="week-tile" type="button" data-open="shopping"><span class="week-tile__emoji" aria-hidden="true">🛒</span>` +
+        `<button class="week-tile" type="button" data-open="shopping"><span class="week-tile__emoji" aria-hidden="true">${MaxIcon("cart")}</span>` +
         `<span class="week-tile__text"><span class="week-tile__label">Shopping list</span>` +
         `<span class="week-tile__big week-tile__big--goal">${plural(toBuy, "thing")} to buy</span>` +
         `<span class="week-tile__sub">Tap to tick things off in the shop</span></span>${chevron}</button>`;
@@ -256,7 +262,7 @@ const WeekCard = (function () {
 
     let html =
       `<p class="week-dates">${esc(MacroCore.longDate(r.weekStart))} to ${esc(MacroCore.longDate(r.weekEnd))}</p>` +
-      `<div class="week-card week-hero">${cmp ? `<div class="week-hero__emoji" aria-hidden="true">${cmp.emoji}</div>` : ""}` +
+      `<div class="week-card week-hero">${cmp ? `<div class="week-hero__emoji" aria-hidden="true">${MaxIcon("dumbbell")}</div>` : ""}` +
       `<div class="week-hero__num">${MacroCore.thousands(r.totalKg)}<small>kg</small></div><div class="week-hero__label">moved last week</div>` +
       (cmp ? `<div class="week-hero__fact">That's ${esc(cmp.text)}.</div>` : "") +
       (up ? `<span class="week-chip">▲ ${up}% more than the week before</span>` : "") +
@@ -264,15 +270,15 @@ const WeekCard = (function () {
     if (g) {
       const p = MacroCore.goalProgress(g, progressData(), today);
       html +=
-        `<button class="week-card week-card--button" type="button" data-open="goal"><h3 class="week-h">🎯 Your goal</h3>` +
+        `<button class="week-card week-card--button" type="button" data-open="goal"><h3 class="week-h">${MaxIcon("target")}Your goal</h3>` +
         `<p class="week-text">${esc(MacroCore.goalTitle(g))} by ${esc(MacroCore.shortDate(g.end_date))}</p>` +
         `<span class="week-bar"><span style="width:${p.pct}%"></span></span><span class="week-chip">${esc(p.statusText)}</span>` +
         `<p class="week-note"><b>To get there quicker:</b> ${esc(p.quicker[0])}</p></button>`;
     }
-    html += '<div class="week-card"><h3 class="week-h">💪 Where it went</h3><div data-sections><p class="week-note">Adding it up…</p></div></div>';
+    html += '<div class="week-card"><h3 class="week-h">'+MaxIcon("dumbbell")+'Where it went</h3><div data-sections><p class="week-note">Adding it up…</p></div></div>';
     if (r.bests.length) {
       html +=
-        '<div class="week-card"><h3 class="week-h">🏆 New personal bests</h3>' +
+        '<div class="week-card"><h3 class="week-h">'+MaxIcon("trophy")+'New personal bests</h3>' +
         r.bests
           .slice(0, 3)
           .map((b) => `<div class="week-pb"><span class="week-pb__name">${esc(b.exercise)}</span><span class="week-pb__val">${esc(b.kg)} kg × ${esc(b.reps)}</span></div>`)
@@ -281,12 +287,12 @@ const WeekCard = (function () {
         "</div>";
     }
     html +=
-      `<div class="week-card"><h3 class="week-h">✅ You showed up</h3><div class="week-stats${green ? "" : " week-stats--two"}">` +
+      `<div class="week-card"><h3 class="week-h">${MaxIcon("check")}You showed up</h3><div class="week-stats${green ? "" : " week-stats--two"}">` +
       `<div><div class="week-stat__num">${r.workouts}</div><div class="week-stat__label">${r.workouts === 1 ? "workout" : "workouts"}</div></div>` +
       `<div><div class="week-stat__num">${r.sets}</div><div class="week-stat__label">sets</div></div>` +
       (green ? `<div><div class="week-stat__num">${green.greenDays}</div><div class="week-stat__label">green ${green.greenDays === 1 ? "day" : "days"}</div></div>` : "") +
       "</div></div>" +
-      `<div class="week-card"><h3 class="week-h">💡 Tip of the week</h3><p class="week-text">${esc(TIPS[tipIndex])}</p></div>`;
+      `<div class="week-card"><h3 class="week-h">${MaxIcon("bulb")}Tip of the week</h3><p class="week-text">${esc(TIPS[tipIndex])}</p></div>`;
 
     const body = openSheet("Your week", html);
     body.querySelectorAll("[data-open='goal']").forEach((b) => b.addEventListener("click", openGoal));
@@ -332,7 +338,7 @@ const WeekCard = (function () {
         rowsOut
           .map(([area, kg]) => `<div class="week-row"><span class="week-row__name">${esc(area)}</span><span class="week-row__track"><span style="width:${Math.max(3, (kg / max) * 100)}%"></span></span><span class="week-row__num">${MacroCore.thousands(kg)} kg</span></div>`)
           .join("") +
-        (topCmp && rowsOut.length > 1 ? `<p class="week-note">Your ${SECTION_WORD[top[0]]} alone moved ${esc(topCmp.text)} ${topCmp.emoji}</p>` : "");
+        (topCmp && rowsOut.length > 1 ? `<p class="week-note">Your ${SECTION_WORD[top[0]]} alone moved ${esc(topCmp.text)}</p>` : "");
     } catch (err) {
       box.innerHTML = '<p class="week-note">Couldn\'t add this up right now.</p>';
     }
@@ -354,8 +360,8 @@ const WeekCard = (function () {
       `<span class="week-chip">${esc(p.statusText)}</span>` +
       (p.ended ? "" : `<p class="week-note">${plural(p.daysLeft, "day")} to go.</p>`) +
       "</div>" +
-      `<div class="week-card"><h3 class="week-h">⚡ Get there quicker</h3><ul class="week-list">${p.quicker.map((q) => `<li>${esc(q)}</li>`).join("")}</ul></div>` +
-      `<div class="week-card"><h3 class="week-h">➡️ ${p.status === "done" || p.ended ? "Next goal" : "When you get there"}</h3><p class="week-text">${esc(p.next)}</p></div>` +
+      `<div class="week-card"><h3 class="week-h">${MaxIcon("bolt")}Get there quicker</h3><ul class="week-list">${p.quicker.map((q) => `<li>${esc(q)}</li>`).join("")}</ul></div>` +
+      `<div class="week-card"><h3 class="week-h">${MaxIcon("arrow")}${p.status === "done" || p.ended ? "Next goal" : "When you get there"}</h3><p class="week-text">${esc(p.next)}</p></div>` +
       `<button class="week-btn" type="button" data-change>${p.ended ? "Set next month's goal" : "Change my goal"}</button>`;
     const body = openSheet("Your goal", html);
     body.querySelector("[data-change]").addEventListener("click", () => openSetup(p.ended ? null : g));
@@ -430,7 +436,7 @@ const WeekCard = (function () {
         html +=
           `<p class="week-q">${goal && !editing ? "New month! What do you want to work on?" : "What do you want to work on this month?"}</p>` +
           '<p class="week-help">Pick one. You can change it any time.</p>' +
-          types.map((k) => `<button class="week-opt${draft.type === k ? " is-on" : ""}" type="button" data-type="${k}"><span class="week-opt__emoji" aria-hidden="true">${TYPES[k].emoji}</span><span class="week-opt__text"><span class="week-opt__main">${TYPES[k].name}</span><span class="week-opt__sub">${TYPES[k].sub}</span></span></button>`).join("");
+          types.map((k) => `<button class="week-opt${draft.type === k ? " is-on" : ""}" type="button" data-type="${k}"><span class="week-opt__emoji" aria-hidden="true">${MaxIcon(TYPES[k].emoji)}</span><span class="week-opt__text"><span class="week-opt__main">${TYPES[k].name}</span><span class="week-opt__sub">${TYPES[k].sub}</span></span></button>`).join("");
         canNext = !!draft.type;
       } else if (name === "lift") {
         html +=
@@ -670,6 +676,20 @@ const WeekCard = (function () {
       // Full or blocked storage: the tiles just load the slow way.
     }
   }
+
+  // Start asking for the goal (and warm the workout sets) the moment this script
+  // loads, using the id the card already remembers, so the answer is usually back
+  // by the time the card has drawn instead of starting only then.
+  (function prefetch() {
+    try {
+      const id = String(new URLSearchParams(window.location.search).get("id") || localStorage.getItem("maxfitMemberId") || "").toLowerCase();
+      if (!id || typeof MacroApi === "undefined" || !MacroApi.configured()) return;
+      early = { slug: id, used: false, goal: MacroApi.call("goal", { id }).catch(() => null) };
+      if (typeof fetchLoggedSets === "function") fetchLoggedSets(id).catch(() => {});
+    } catch (err) {
+      // Nothing to prefetch: init asks as before.
+    }
+  })();
 
   return { init };
 })();

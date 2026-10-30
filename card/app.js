@@ -184,6 +184,8 @@ if (memberId) {
 const els = {
   groupSessions: document.getElementById("groupSessionsNum"),
   oneOnOneSessions: document.getElementById("oneOnOneSessionsNum"),
+  duoStat: document.getElementById("duoSessionsStat"),
+  duoSessions: document.getElementById("duoSessionsNum"),
   name: document.getElementById("memberName"),
   tier: document.getElementById("memberTier"),
   qr: document.getElementById("qrCode"),
@@ -195,6 +197,7 @@ const els = {
   upcomingLink: document.getElementById("upcomingLink"),
   bookLink: document.getElementById("bookLink"),
   referLink: document.getElementById("referLink"),
+  progressLink: document.getElementById("progressLink"),
   replayTourLink: document.getElementById("replayTourLink"),
   checkinTile: document.getElementById("checkinTile"),
   qrModal: document.getElementById("qrModal"),
@@ -459,6 +462,9 @@ async function assignedWorkoutSummary_(clientSlug) {
 async function render(data, workoutSummary) {
   els.groupSessions.textContent = data.groupSessionsRemaining;
   els.oneOnOneSessions.textContent = data.oneOnOneSessionsRemaining;
+  // Duo sessions are only shown to a client who has some, so nobody else sees a "Duo left 0".
+  els.duoStat.hidden = !(data.duoSessionsRemaining > 0);
+  els.duoSessions.textContent = data.duoSessionsRemaining || 0;
   els.name.textContent = data.memberName;
   els.tier.textContent = data.tier;
   renderQR(data.checkInUrl);
@@ -470,6 +476,8 @@ async function render(data, workoutSummary) {
     els.bookLink.hidden = false;
     els.referLink.href = `refer.html?id=${encodeURIComponent(data.clientSlug)}`;
     els.referLink.hidden = false;
+    els.progressLink.href = `../workout/progress.html?id=${encodeURIComponent(data.clientSlug)}`;
+    els.progressLink.hidden = false;
     els.replayTourLink.hidden = false;
     // Last week's recap and this month's goal (week.js, 2026-10-13). A
     // first-time client sees the welcome tour first — it's also a
@@ -485,7 +493,10 @@ async function render(data, workoutSummary) {
       startWeekCard();
     }
     // "Coach Tools" (2026-10-13) — Max's own card only, never a client's.
-    if (data.clientSlug === "maxfrench") els.coachToolsTile.hidden = false;
+    if (data.clientSlug === "maxfrench") {
+      els.coachToolsTile.hidden = false;
+      document.getElementById("clientsTile").hidden = false;
+    }
   }
 
   // Everything that matters at a glance is on screen now — don't make the
@@ -568,6 +579,7 @@ async function fetchMemberData(id) {
     tier: match[col.package] || "Member",
     groupSessionsRemaining: parseSessions(match[col.groupSessions], "N/A"),
     oneOnOneSessionsRemaining: parseSessions(match[col.oneOnOneSessions], "N/A"),
+    duoSessionsRemaining: col.duoSessions >= 0 ? parseSessions(match[col.duoSessions], 0) : 0,
     totalAttended: parseSessions(match[col.totalAttended], 0),
     nutritionPunches: col.nutritionPunches >= 0 ? parseSessions(match[col.nutritionPunches], 0) : 0,
     referralPunches: col.referralPunches >= 0 ? parseSessions(match[col.referralPunches], 0) : 0,

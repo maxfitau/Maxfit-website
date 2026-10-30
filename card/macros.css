@@ -42,8 +42,8 @@
 }
 
 .fuel__day-btn {
-  width: 30px;
-  height: 30px;
+  width: 48px;
+  height: 48px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -63,9 +63,9 @@
 .fuel__day-label {
   font-family: var(--font-head);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  font-size: 13px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
   color: var(--white);
   min-width: 92px;
   text-align: center;
@@ -131,12 +131,12 @@
 }
 
 .fuel-row__unit {
-  font-size: 0.5em;
+  font-size: 14px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
   color: var(--dim);
   margin-left: 3px;
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 .fuel-row__note {
@@ -216,7 +216,7 @@
   color: var(--white);
   font-family: var(--font-body);
   font-weight: 600;
-  font-size: 13px;
+  font-size: 14px;
   text-align: left;
   cursor: pointer;
 }
@@ -234,7 +234,7 @@
 
 .fuel-chip__meta {
   font-weight: 500;
-  font-size: 11px;
+  font-size: 14px;
   color: var(--dim);
 }
 
@@ -258,7 +258,7 @@
 .fuel-meal__sum {
   font-family: var(--font-head);
   font-weight: 700;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--dim);
   letter-spacing: 0.04em;
 }
@@ -291,7 +291,7 @@
 
 .fuel-entry__meta {
   font-family: var(--font-body);
-  font-size: 12px;
+  font-size: 14px;
   color: var(--dim);
   display: block;
   margin-top: 2px;
@@ -305,7 +305,7 @@
 }
 
 .fuel-entry__p small {
-  font-size: 11px;
+  font-size: 14px;
   color: var(--dim);
   margin-left: 2px;
 }
@@ -346,9 +346,9 @@
 .fuel-link {
   font-family: var(--font-head);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  font-size: 11px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
   color: var(--grey);
   background: none;
   border: none;
@@ -361,7 +361,7 @@
 
 .fuel-footnote {
   font-family: var(--font-body);
-  font-size: 11px;
+  font-size: 14px;
   color: var(--dim);
   text-align: center;
   margin: 0;
@@ -413,7 +413,7 @@
   background: transparent;
   border: none;
   padding: 10px;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .fuel-btn--quiet:active {
@@ -481,9 +481,9 @@ select.fuel-input {
   flex: 1;
   font-family: var(--font-head);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
   color: var(--dim);
   background: transparent;
   border: 1px solid transparent;
@@ -659,7 +659,7 @@ select.fuel-input {
 
 .fuel-sheet__sub {
   font-family: var(--font-body);
-  font-size: 13px;
+  font-size: 14px;
   color: var(--dim);
   margin: -10px 0 0;
 }
@@ -701,9 +701,9 @@ select.fuel-input {
   cursor: pointer;
   font-family: var(--font-head);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  font-size: 13px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
 }
 
 .fuel-mode svg {
@@ -715,7 +715,7 @@ select.fuel-input {
   font-weight: 500;
   text-transform: none;
   letter-spacing: 0;
-  font-size: 11px;
+  font-size: 14px;
   color: var(--dim);
   text-align: center;
 }
@@ -820,7 +820,7 @@ select.fuel-input {
 .fuel-item__gin span {
   font-family: var(--font-head);
   font-weight: 700;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--dim);
 }
 
@@ -839,7 +839,7 @@ select.fuel-input {
 
 .fuel-item__note {
   font-family: var(--font-body);
-  font-size: 12px;
+  font-size: 14px;
   color: var(--dim);
   margin: 0;
 }
@@ -848,9 +848,9 @@ select.fuel-input {
   display: inline-block;
   font-family: var(--font-head);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  font-size: 10px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
   color: var(--grey);
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -873,7 +873,7 @@ select.fuel-input {
   font-family: var(--font-head);
   font-weight: 700;
   letter-spacing: 0.04em;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--grey);
   background: transparent;
   border: 1px solid var(--line);
@@ -906,7 +906,7 @@ select.fuel-input {
 
 .fuel-disclaimer {
   font-family: var(--font-body);
-  font-size: 12px;
+  font-size: 14px;
   color: var(--dim);
   margin: 0;
   line-height: 1.45;
@@ -1043,9 +1043,9 @@ select.fuel-input {
 .fuel-loading__text {
   font-family: var(--font-head);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  font-size: 13px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
   color: var(--grey);
 }
 
@@ -1272,9 +1272,9 @@ a.fuel-btn {
   flex-shrink: 0;
   font-family: var(--font-head);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
   color: var(--white);
   background: transparent;
   border: 1px solid var(--red);
@@ -1498,7 +1498,7 @@ a.fuel-btn {
 .fuel-wk {
   --wk-h: 180px; /* bar height when it touches the top */
   --wk-day: 34px; /* the day name under each bar */
-  --wk-green: #30d158;
+  --wk-green: #e00000;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -1799,9 +1799,9 @@ a.fuel-btn {
 .fuel-tier {
   font-family: var(--font-head);
   font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
   line-height: 1;
   padding: 5px 9px;
   border-radius: 999px;
@@ -1845,7 +1845,7 @@ a.fuel-btn {
 .fuel-tier--diamond::after {
   content: "✦";
   position: absolute;
-  font-size: 9px;
+  font-size: 14px;
   line-height: 1;
   color: #ffffff;
   text-shadow: 0 0 6px rgba(190, 225, 255, 0.95);
@@ -1862,12 +1862,12 @@ a.fuel-btn {
 .fuel-tier--diamond::after {
   bottom: -4px;
   left: -2px;
-  font-size: 7px;
+  font-size: 14px;
   animation-delay: 1.3s;
 }
 
 .fuel-tier--sm {
-  font-size: 10px;
+  font-size: 14px;
   padding: 4px 7px;
   letter-spacing: 0.08em;
 }
@@ -2031,9 +2031,9 @@ a.fuel-btn {
 .fuel-plan-card p.fuel-plan-card__save {
   font-family: var(--font-head);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
   color: var(--white);
   margin-top: -4px;
 }
@@ -2052,7 +2052,7 @@ a.fuel-btn {
 
 .fuel-plans > p.fuel-plan-card__note {
   font-family: var(--font-body);
-  font-size: 12px;
+  font-size: 14px;
   color: var(--dim);
   margin: 0;
   line-height: 1.45;
@@ -2075,12 +2075,12 @@ a.fuel-btn {
   align-items: center;
   justify-content: center;
   gap: 2px;
-  min-height: 44px;
+  min-height: 48px;
   font-family: var(--font-head);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  font-size: 13px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
   color: var(--dim);
   background: transparent;
   border: none;
@@ -2090,7 +2090,7 @@ a.fuel-btn {
 }
 
 .fuel-interval button small {
-  font-size: 10px;
+  font-size: 14px;
   letter-spacing: 0.08em;
   color: var(--red);
 }
@@ -2121,7 +2121,7 @@ a.fuel-btn {
 
 .fuel-plan-card__price {
   font-family: var(--font-body);
-  font-size: 13px;
+  font-size: 14px;
   color: var(--dim);
 }
 
@@ -2135,14 +2135,14 @@ a.fuel-btn {
   align-self: flex-start;
   font-family: var(--font-head);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
   color: var(--grey);
 }
 
 .fuel-plan-card p.fuel-plan-card__note {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--dim);
 }
 
@@ -2202,35 +2202,24 @@ a.fuel-btn {
   --text-2: #b9bcc4;
   --muted: #9a9da6;
   --brand: var(--red);
-  --protein: #ff6b57;
-  --protein-text: #ff8574;
-  --carbs: #ffc24b;
-  --fat: #4fc3e8;
-  --diamond: #c9d6f5;
+  --protein: #e00000;
+  --protein-text: #e00000;
+  --carbs: #ffffff;
+  --fat: #999999;
+  --diamond: #cccccc;
 }
 
-/* app/macros.js puts .is-fuel on <body> while the Macros tab shows. */
-body.is-fuel {
-  padding: 0;
-}
-
-body.is-fuel::before,
-body.is-fuel .card::before,
+/* app/macros.js puts .is-fuel on <body> while the Macros tab shows. Fuel now sits in the
+   same glass card as the other tabs (same width, background and corners); only the
+   membership header is hidden, because Fuel has its own. */
 body.is-fuel .card__top {
   display: none;
 }
 
 body.is-fuel .card {
-  max-width: 480px;
-  margin: 0 auto;
-  padding: 0;
   gap: 0;
-  background: none;
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+  /* the Fuel blocks carry their own 20px side padding */
+  padding: 12px 0 26px;
 }
 
 /* Unlock, error and Stripe-return screens still use the old panel. */
@@ -2263,10 +2252,12 @@ body.is-fuel #panelFuel > .fuel-loading {
 
 /* ---- MacroHeader ---- */
 .fx-head {
-  padding: calc(24px + env(safe-area-inset-top)) 20px 22px;
+  /* inside the shared glass card, so it is a rounded panel with the card's own corner size */
+  margin: 0 12px;
+  padding: 20px 14px 22px;
   background: var(--surface);
-  border-radius: 0 0 32px 32px;
-  border-bottom: 1px solid var(--line);
+  border-radius: var(--radius-glass-lg, 18px);
+  border: 1px solid var(--line);
 }
 
 .fx-head__top {
@@ -2284,8 +2275,8 @@ body.is-fuel #panelFuel > .fuel-loading {
 }
 
 .fx-day__btn {
-  width: 44px;
-  height: 44px;
+  width: 48px;
+  height: 48px;
   display: grid;
   place-items: center;
   padding: 0;
@@ -2338,7 +2329,7 @@ body.is-fuel #panelFuel > .fuel-loading {
   padding: 0;
   border-radius: 50%;
   background: var(--surface-2);
-  border: 1px solid rgba(201, 214, 245, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.35);
   color: var(--diamond);
   cursor: pointer;
 }
@@ -2438,8 +2429,8 @@ body.is-fuel #panelFuel > .fuel-loading {
   font-weight: 700;
   font-size: 14px;
   line-height: 1.1;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--text-2);
 }
 
@@ -2457,8 +2448,8 @@ body.is-fuel #panelFuel > .fuel-loading {
   font-family: var(--font-head);
   font-weight: 700;
   font-size: 14px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--muted);
 }
 
@@ -2614,8 +2605,8 @@ body.is-fuel #panelFuel > .fuel-loading {
   gap: 8px;
   padding: 0 16px;
   border-radius: 18px;
-  background: linear-gradient(140deg, rgba(201, 214, 245, 0.22), rgba(201, 214, 245, 0.08));
-  border: 1px solid rgba(201, 214, 245, 0.55);
+  background: linear-gradient(140deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.08));
+  border: 1px solid rgba(255, 255, 255, 0.55);
   box-shadow: 0 0 18px rgba(170, 200, 255, 0.18);
   color: var(--diamond);
   cursor: pointer;
@@ -2741,17 +2732,17 @@ button.fx-meal {
 
 .fx-chip--p {
   color: var(--protein-text);
-  background: rgba(255, 107, 87, 0.14);
+  background: rgba(224, 0, 0, 0.18);
 }
 
 .fx-chip--c {
   color: var(--carbs);
-  background: rgba(255, 194, 75, 0.14);
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .fx-chip--f {
   color: var(--fat);
-  background: rgba(79, 195, 232, 0.14);
+  background: rgba(153, 153, 153, 0.2);
 }
 
 .fx-meal__kcal {
@@ -2771,8 +2762,8 @@ button.fx-meal {
 }
 
 .fx-add {
-  width: 44px;
-  height: 44px;
+  width: 48px;
+  height: 48px;
   flex-shrink: 0;
   display: grid;
   place-items: center;
@@ -2852,8 +2843,8 @@ button.fx-meal {
   font-family: var(--font-head);
   font-weight: 800;
   font-size: 17px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .fx-tile__sub {
@@ -2901,4 +2892,182 @@ button.fx-meal {
   .fx-skel {
     animation: none;
   }
+}
+
+/* ---- Scope of practice (2026-10-29): Your targets, the first-open note,
+   and the guidance line under every Food Q&A answer. ---- */
+.tg-info {
+  margin: -6px 0 0;
+  font-size: 16px;
+  color: var(--grey);
+}
+
+.tg-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tg-field {
+  display: grid;
+  grid-template-columns: 1fr 150px;
+  align-items: center;
+  gap: 12px;
+  padding-top: 8px;
+}
+
+.tg-label {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--white);
+}
+
+.tg-label small {
+  display: block;
+  margin-top: 2px;
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--grey);
+}
+
+.tg-label small b {
+  color: var(--white);
+}
+
+.tg-input {
+  display: flex;
+  align-items: center;
+  height: 56px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.tg-input:focus-within {
+  border-color: var(--white);
+}
+
+.tg-input input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--white);
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 26px;
+  text-align: right;
+}
+
+.tg-input span {
+  margin-left: 6px;
+  font-size: 16px;
+  color: var(--grey);
+}
+
+.tg-range {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--line);
+}
+
+.tg-range__band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.tg-range__dot {
+  position: absolute;
+  top: -4px;
+  width: 16px;
+  height: 16px;
+  margin-left: -8px;
+  border-radius: 50%;
+  background: var(--white);
+  border: 3px solid var(--bg-card);
+}
+
+.tg-range__dot[hidden] {
+  display: none;
+}
+
+.tg-sum {
+  margin: 0;
+  font-size: 15px;
+  color: var(--grey);
+}
+
+.tg-note {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--grey);
+}
+
+.tg-note b {
+  color: var(--white);
+}
+
+.tg-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 52px;
+  padding: 8px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  color: var(--white);
+  font-size: 16px;
+  line-height: 1.35;
+  text-decoration: none;
+}
+
+.dc-icon {
+  width: 64px;
+  height: 64px;
+  margin: 6px auto 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(224, 0, 0, 0.14);
+  color: var(--red);
+  font-family: Georgia, serif;
+  font-style: italic;
+  font-weight: 700;
+  font-size: 32px;
+}
+
+.dc-title {
+  text-align: center;
+}
+
+.dc-text {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--white);
+}
+
+.dc-small {
+  margin: 0;
+  text-align: center;
+  font-size: 14px;
+  color: var(--dim);
+}
+
+.fuel-msg__guide {
+  display: block;
+  margin-top: 8px;
+  font-size: 14px;
+  color: var(--dim);
 }

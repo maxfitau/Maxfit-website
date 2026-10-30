@@ -156,9 +156,9 @@
 .tour__eyebrow {
   font-family: var(--font-head);
   font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  font-size: 13px;
+  letter-spacing: 0;
+  text-transform: none;
+  font-size: 14px;
   color: var(--red);
   margin: 0;
 }
@@ -239,13 +239,14 @@
 .card__replay-tour {
   display: block;
   text-align: center;
-  font-size: 14px;
-  color: var(--dim);
+  font-family: var(--font-body);
+  font-size: 16px;
+  color: var(--grey);
   text-decoration: underline;
   background: none;
   border: none;
   cursor: pointer;
   padding: 12px 8px;
   margin: 0 auto;
-  min-height: 44px;
+  min-height: 48px;
 }

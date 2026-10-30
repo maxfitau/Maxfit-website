@@ -1,31 +1,25 @@
 /*
- * Fuel's weekly meal plan and shopping list (2026-10-13, Max).
+ * Fuel's meal planner and shopping list. Rebuilt 2026-10-29 so Fuel stays
+ * within a personal trainer's scope of practice: the client drives it.
  *
- *   - Plan my week (Diamond only): variety, what they don't eat, how many
- *     people they shop for (and whether they share dinners), and a weekly
- *     budget for the whole shop. One AI call (counts as 3 AI uses) writes a
- *     few meals per slot plus two alternatives each, so Swap is free.
- *   - The plan: Today (each meal with Log it and Swap) or the whole week,
- *     high-protein snack ideas (a fixed list, free), and one tap to put it
- *     all on the shopping list.
+ *   - My week (Diamond only): the next 7 days, each with breakfast, lunch,
+ *     snack and dinner. The client picks every meal (AI ideas, their own
+ *     saved meals and favourites, or a search of Max's Foods list) and
+ *     chooses the serves. Each day adds up against the client's OWN
+ *     targets. AI ideas (Macros.gs mealIdeas, 3 AI uses a set) are general
+ *     meals at standard recipe serves, never sized to anyone.
+ *   - High-protein snack ideas (a fixed list, free) that go on the list.
  *   - The shopping list (Gold and Diamond): grouped by aisle, big tick boxes
  *     for the shop, the client's own items and snack ideas too.
  *
- * Which meal is on which day, amounts and costs are MacroCore maths
- * (planDays, planShopping, planCost...). The backend is Macros.gs
- * (mealPlan, makeMealPlan, swapMeal, shopping*). Opened from Fuel's rows
- * (macros.js) and the card's shopping tile (week.js), each passing a ctx:
- *   { hideKcal, logMeal(items, slot), upsell(reason, message), onChange(toBuy), onAi(aiToday) }
+ * The maths is MacroCore (plannerDayTotals, plannerShopping, stepServes...).
+ * The backend is Macros.gs (mealPlan, mealIdeas, savePlanner, shopping*).
+ * Opened from Fuel's tiles (macros.js) and the card's shopping tile
+ * (week.js), each passing a ctx (see macros.js mealPlanCtx()).
  * Big text throughout: many clients are older.
  */
 const MealPlan = (function () {
   const SLOT_NAMES = { breakfast: "Breakfast", lunch: "Lunch", snack: "Snack", dinner: "Dinner" };
-  const VARIETY = [
-    ["simple", "Keep it simple", "2 dinners. Cook once, eat twice."],
-    ["some", "Some variety", "3 dinners, 2 lunches"],
-    ["lots", "Lots", "A different dinner most nights"],
-  ];
-  const AVOID = ["Fish", "Pork", "Red meat", "Dairy", "Gluten", "Nuts", "Vegetarian"];
   // High-protein snacks: a fixed list, so it's free and the numbers stay put.
   // [emoji, name, serve, kcal, protein, what goes on the list, aisle]
   const SNACKS = [
@@ -41,9 +35,7 @@ const MealPlan = (function () {
 
   let sheet = null;
   let ctx = {};
-  let plan = null;
   let list = null;
-  let view = "today";
   const logged = new Set(); // "date slot" logged this visit
 
   const esc = (t) => String(t == null ? "" : t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -79,7 +71,7 @@ const MealPlan = (function () {
   }
 
   function loading(title, text) {
-    show(title, `<div class="mp-loading"><div class="mp-loading__emoji" aria-hidden="true">🍳</div>${esc(text)}</div>`);
+    show(title, `<div class="mp-loading"><div class="mp-loading__emoji" aria-hidden="true">${MaxIcon("utensils")}</div>${esc(text)}</div>`);
   }
 
   /** Server errors: "diamond"/"gold" open the plans, anything else is shown in place. */
@@ -89,7 +81,7 @@ const MealPlan = (function () {
       ctx.upsell(err.code === "diamond" ? "plan" : "list", err.message);
       return;
     }
-    const body = show("Meal plan", `<div class="week-card"><p class="week-text">${esc(err.message || "Something went wrong. Try again.")}</p></div><button class="week-btn" type="button" data-retry>Try again</button>`);
+    const body = show("Meal planner", `<div class="week-card"><p class="week-text">${esc(err.message || "Something went wrong. Try again.")}</p></div><button class="week-btn" type="button" data-retry>Try again</button>`);
     body.querySelector("[data-retry]").addEventListener("click", retry);
   }
 
@@ -99,263 +91,320 @@ const MealPlan = (function () {
   }
 
   // ---------------------------------------------------------------------------
-  // Plan my week
+  // The meal planner (Diamond, rebuilt 2026-10-29 for scope of practice):
+  // the client picks a meal for each slot of the next 7 days and chooses the
+  // serves; the day adds up against THEIR targets and builds the shopping.
   // ---------------------------------------------------------------------------
 
-  /** opts: { hideKcal, logMeal, upsell, onChange }. Shows this week's plan, or Plan my week. */
+  const GUIDE = "General guidance only. See a dietitian for a personalised plan.";
+  let planner = null;
+  let pickDay = null; // the day on screen
+  let aiLeft = null;
+  let chooseTab = "ideas";
+  let saveTimer = null;
+
+  const dayName = (ymd, style) => {
+    const p = ymd.split("-").map(Number);
+    return new Date(Date.UTC(p[0], p[1] - 1, p[2])).toLocaleDateString("en-AU", { weekday: style || "long", timeZone: "UTC" });
+  };
+  const weekDays = () => Array.from({ length: 7 }, (_, i) => MacroCore.addDays(today(), i));
+  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+  function normalise(p) {
+    const out = p && p.version === 2 ? p : { version: 2, days: {}, ideas: {}, likes: "" };
+    out.days = out.days || {};
+    out.ideas = out.ideas || {};
+    MacroCore.MEAL_SLOTS.forEach((s) => (out.ideas[s] = out.ideas[s] || []));
+    return out;
+  }
+
+  /** opts: the ctx from macros.js mealPlanCtx(). Opens the planner on today. */
   async function open(opts) {
     ctx = opts || {};
-    loading("Meal plan", "Opening your plan…");
+    loading("Meal planner", "Opening your planner…");
     try {
       const data = await MacroApi.call("mealPlan", {});
-      plan = data.plan;
-      const live = plan && MacroCore.daysBetween(plan.start, today()) <= 6 && today() >= plan.start;
-      if (live) showPlan();
-      else showSetup(plan ? plan.prefs : null, data.aiToday);
+      planner = normalise(data.planner);
+      aiLeft = data.aiToday || null;
+      if (!pickDay || pickDay < today() || pickDay > MacroCore.addDays(today(), 6)) pickDay = today();
+      showWeek();
     } catch (err) {
       handleError(err, () => open(ctx));
     }
   }
 
-  function showSetup(prev, aiToday) {
-    const p = Object.assign({ variety: "some", avoid: [], avoidText: "", people: 1, sharedDinners: true, band: 1 }, prev || {});
-    const pick = { variety: p.variety, avoid: new Set(p.avoid), avoidText: p.avoidText, people: p.people, shared: p.sharedDinners !== false, band: 1 };
-    if (prev && prev.budgetLabel) {
-      const i = MacroCore.budgetBands(pick.people).findIndex((b) => b.label === prev.budgetLabel);
-      if (i >= 0) pick.band = i;
-    }
-
-    function render() {
-      const bands = MacroCore.budgetBands(pick.people);
-      const left = aiToday && aiToday.limit ? `Uses 3 of your ${aiToday.left} AI uses left today.` : "Uses 3 of today's AI uses.";
-      const body = show(
-        "Plan my week",
-        '<p class="week-help">A simple week of meals that hits your numbers, using foods you already log. Then one tap puts it all on your shopping list.</p>' +
-          '<div class="week-card"><p class="mp-q">How much variety?</p><div class="mp-stack">' +
-          VARIETY.map(([k, name, sub]) => `<button class="week-opt${pick.variety === k ? " is-on" : ""}" type="button" data-variety="${k}"><span class="week-opt__text"><span class="week-opt__main">${name}</span><span class="week-opt__sub">${sub}</span></span>${k === "some" ? '<span class="week-opt__tag">Recommended</span>' : ""}</button>`).join("") +
-          "</div></div>" +
-          `<div class="week-card"><p class="mp-q">Anything you don't eat?</p><div class="mp-chips">${AVOID.map((a) => `<button class="mp-chip${pick.avoid.has(a) ? " is-on" : ""}" type="button" data-avoid="${a}" aria-pressed="${pick.avoid.has(a)}">${a}</button>`).join("")}</div>` +
-          `<input class="week-input mp-gap" type="text" maxlength="120" placeholder="Anything else? (e.g. no mushrooms)" value="${esc(pick.avoidText)}" data-avoidtext /></div>` +
-          '<div class="week-card"><p class="mp-q">How many people do you shop for?</p><p class="week-note mp-tight">Including you.</p>' +
-          `<div class="mp-stepper"><button class="mp-step" type="button" data-people="-1" aria-label="One fewer">−</button><span class="mp-step__num" aria-live="polite">${pick.people}</span><button class="mp-step" type="button" data-people="1" aria-label="One more">+</button></div>` +
-          (pick.people > 1
-            ? `<p class="mp-q mp-gap">Do they eat your dinners too?</p><div class="mp-chips"><button class="mp-chip${pick.shared ? " is-on" : ""}" type="button" data-shared="1">Yes, I cook for everyone</button><button class="mp-chip${pick.shared ? "" : " is-on"}" type="button" data-shared="0">No, just me</button></div>`
-            : "") +
-          "</div>" +
-          `<div class="week-card"><p class="mp-q">Your weekly food budget${pick.people > 1 ? ` for all ${pick.people}` : ""}?</p><div class="mp-chips">` +
-          bands.map((b, i) => `<button class="mp-chip${pick.band === i ? " is-on" : ""}" type="button" data-band="${i}">${b.label}</button>`).join("") +
-          `</div><p class="week-note">${pick.people > 1 ? "Your whole shop. Your plan takes its share, and the rest is there for everyone else's food." : "Fuel picks foods that fit, and your list shows roughly what it'll cost."}</p></div>` +
-          `<button class="week-btn" type="button" data-make>Make my plan</button><p class="mp-cost">${esc(left)}</p>`
-      );
-      body.querySelector("[data-avoidtext]").addEventListener("input", (e) => (pick.avoidText = e.target.value));
-      body.addEventListener("click", (e) => {
-        const b = e.target.closest("button");
-        if (!b) return;
-        const keep = sheet.scrollTop;
-        if (b.dataset.variety) pick.variety = b.dataset.variety;
-        else if (b.dataset.avoid) pick.avoid.has(b.dataset.avoid) ? pick.avoid.delete(b.dataset.avoid) : pick.avoid.add(b.dataset.avoid);
-        else if (b.dataset.people) pick.people = Math.max(1, Math.min(8, pick.people + Number(b.dataset.people)));
-        else if (b.dataset.shared) pick.shared = b.dataset.shared === "1";
-        else if (b.dataset.band) pick.band = Number(b.dataset.band);
-        else if (b.dataset.make !== undefined) return make();
-        else return;
-        render();
-        sheet.scrollTop = keep;
-      });
-    }
-
-    async function make() {
-      const band = MacroCore.budgetBands(pick.people)[pick.band];
-      const prefs = {
-        variety: pick.variety,
-        avoid: [...pick.avoid],
-        avoidText: pick.avoidText,
-        people: pick.people,
-        sharedDinners: pick.people > 1 && pick.shared,
-        budgetMax: band.max,
-        budgetLabel: band.label,
-      };
-      loading("Plan my week", "Writing your plan… this takes about half a minute.");
+  /** Saves the client's picks a moment after the last change. */
+  function queueSave() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(async () => {
       try {
-        const data = await MacroApi.call("makeMealPlan", { prefs }, { timeoutMs: 180000 });
-        plan = data.plan;
-        if (ctx.onAi && data.aiToday) ctx.onAi(data.aiToday);
-        view = "today";
-        showPlan();
+        const data = await MacroApi.call("savePlanner", { days: planner.days });
+        if (data.list) setList(data.list);
       } catch (err) {
-        handleError(err, render);
+        window.alert(err.message || "Couldn't save your planner. Check your connection.");
       }
+    }, 700);
+  }
+
+  function totalsCard(t) {
+    const g = ctx.targets;
+    if (!g || !(g.kcal > 0)) {
+      return `<div class="week-card"><p class="week-text">${ctx.hideKcal ? "" : `<b>${MacroCore.thousands(t.kcal)}</b> calories · `}<b>${Math.round(t.protein_g)} g</b> protein picked so far.</p><p class="week-note">Set your targets in Fuel to see each day next to them.</p></div>`;
     }
-
-    render();
+    const row = (have, want, unit, label) => {
+      const pct = want > 0 ? Math.round((have / want) * 100) : 0;
+      return `<div class="pl-total__row"><span><b>${MacroCore.thousands(Math.round(have))}${unit}</b> of your ${MacroCore.thousands(Math.round(want))}${unit} ${label}</span><span>${pct}%</span></div>` +
+        `<div class="pl-bar"><span style="width:${Math.min(100, pct)}%"></span></div>`;
+    };
+    return `<div class="week-card pl-total">${ctx.hideKcal ? "" : row(t.kcal, g.kcal, "", "kcal")}${row(t.protein_g, g.protein_g, "g", "protein")}</div>`;
   }
 
-  // ---------------------------------------------------------------------------
-  // The plan
-  // ---------------------------------------------------------------------------
-
-  function dayIndex() {
-    return Math.max(0, Math.min(6, MacroCore.daysBetween(plan.start, today())));
-  }
-
-  function mealCard(slot, index, date) {
-    const meal = plan.meals[slot][index];
-    const t = MacroCore.mealTotals(meal);
-    const key = `${date} ${slot}`;
-    const done = logged.has(key);
-    return (
-      `<div class="week-card"><div class="mp-meal__top"><span class="mp-meal__emoji" aria-hidden="true">${esc(meal.emoji || "🍽️")}</span><div>` +
-      `<div class="mp-meal__slot">${SLOT_NAMES[slot]}</div><div class="mp-meal__name">${esc(meal.name)}</div><div class="mp-meal__days">${esc(MacroCore.mealDays(plan, slot, index))}</div></div></div>` +
-      `<ul class="mp-items">${meal.items.map((it) => `<li><span>${esc(it.name)}</span><span>${esc(it.amount_text || `${it.grams} g`)}</span></li>`).join("")}</ul>` +
-      (meal.how_to ? `<p class="week-note">${esc(meal.how_to)}</p>` : "") +
-      `<div class="mp-macros">${kcalText(t.kcal)}<b>${Math.round(t.protein_g)} g</b> protein</div>` +
-      `<div class="mp-actions"><button class="mp-btn ${done ? "mp-btn--done" : "mp-btn--red"}" type="button" data-log="${slot}" data-index="${index}" ${done ? "disabled" : ""}>${done ? "✓ Logged" : "Log it"}</button>` +
-      ((plan.swaps[slot] || []).length ? `<button class="mp-btn" type="button" data-swap="${slot}" data-index="${index}">Swap</button>` : "") +
-      "</div></div>"
-    );
-  }
-
-  function snacksCard() {
-    const adding = new Set(((list || []).filter((i) => !i.done)).map((i) => i.name.toLowerCase()));
-    return (
-      '<div class="week-card"><h3 class="week-h">💪 High-protein snack ideas</h3><p class="week-note mp-tight">Good any time you\'re peckish. Tap to add one to your shopping list.</p>' +
-      SNACKS.map(([emoji, name, serve, kcal, protein, item], i) => {
-        const on = adding.has(item.toLowerCase());
-        return `<div class="mp-snack"><span class="mp-snack__emoji" aria-hidden="true">${emoji}</span><span class="mp-snack__text"><span class="mp-snack__name">${esc(name)}</span><span class="mp-snack__sub">${esc(serve)} · ${ctx.hideKcal ? "" : `${kcal} cal · `}<b>${protein} g protein</b></span></span>` +
-          `<button class="mp-btn mp-snack__add${on ? " mp-btn--done" : ""}" type="button" data-snack="${i}" ${on ? "disabled" : ""}>${on ? "✓ On list" : "+ List"}</button></div>`;
-      }).join("") +
-      "</div>"
-    );
-  }
-
-  function showPlan() {
-    const totals = MacroCore.planDayTotals(plan);
-    const avgKcal = Math.round(totals.reduce((t, d) => t + d.kcal, 0) / 7);
-    const avgProtein = Math.round(totals.reduce((t, d) => t + d.protein_g, 0) / 7);
-    const cost = MacroCore.planCost(plan);
-    const prefs = plan.prefs || {};
-    let money = "";
-    if (cost > 0) {
-      money = prefs.people > 1 && prefs.budgetMax > 0
-        ? `Your plan's shopping comes to about <b>$${cost}</b>${prefs.sharedDinners ? `, with dinners for all ${prefs.people}` : ""}. That leaves about $${Math.max(0, prefs.budgetMax - cost)} of your budget for everyone else's food.`
-        : `Shopping comes to about <b>$${cost}</b> for the week${prefs.budgetLabel && prefs.budgetMax > 0 ? `, for your ${esc(prefs.budgetLabel)} budget` : ""}.`;
+  function slotRow(slot, pick) {
+    if (!pick) {
+      return `<div class="pl-slot"><span class="pl-slot__label">${SLOT_NAMES[slot]}</span><button class="pl-slot__add" type="button" data-choose="${slot}">+ Choose ${slot === "snack" ? "a snack" : "a meal"}</button></div>`;
     }
-    const end = MacroCore.addDays(plan.start, 6);
-    let html =
-      `<p class="week-dates">${esc(MacroCore.longDate(plan.start))} to ${esc(MacroCore.longDate(end))}</p>` +
-      `<div class="week-card"><p class="week-text">Each day comes to about ${ctx.hideKcal ? "" : `<b>${MacroCore.thousands(avgKcal)} calories</b> and `}<b>${avgProtein} g protein</b>.</p>` +
-      (money ? `<p class="week-note">${money}</p>` : "") +
-      "</div>" +
-      `<div class="mp-seg" role="tablist"><button type="button" role="tab" aria-selected="${view === "today"}" class="${view === "today" ? "is-on" : ""}" data-view="today">Today</button><button type="button" role="tab" aria-selected="${view === "week"}" class="${view === "week" ? "is-on" : ""}" data-view="week">Whole week</button></div>`;
-    const days = MacroCore.planDays(plan);
-    if (view === "today") {
-      const d = days[dayIndex()];
-      html += MacroCore.MEAL_SLOTS.filter((s) => d.meals[s] >= 0).map((s) => mealCard(s, d.meals[s], d.date)).join("");
-      html += snacksCard();
-    } else {
-      html +=
-        '<div class="week-card">' +
-        days
-          .map((d) => {
-            const p = d.date.split("-").map(Number);
-            return `<div class="mp-day"><div class="mp-day__name">${d.day} ${p[2]}</div>` +
-              MacroCore.MEAL_SLOTS.filter((s) => d.meals[s] >= 0).map((s) => `<div class="mp-day__row">${SLOT_NAMES[s]}: <b>${esc(plan.meals[s][d.meals[s]].name)}</b></div>`).join("") +
-              "</div>";
-          })
-          .join("") +
-        "</div>";
-    }
-    html += '<button class="week-btn" type="button" data-tolist>🛒 Put it all on my shopping list</button><button class="week-link" type="button" data-newplan>Make a new plan</button>';
-    const body = show("Your meal plan", html);
-    body.addEventListener("click", onPlanClick);
+    const t = MacroCore.pickTotals(pick);
+    const canLog = pickDay === today() && ctx.logMeal;
+    const done = logged.has(`${pickDay} ${slot}`);
+    return `<div class="pl-slot">
+      <span class="pl-slot__label">${SLOT_NAMES[slot]}</span>
+      <span class="pl-slot__meal">${esc(pick.meal.name)}<small>${MacroCore.servesText(pick.serves)} serve${pick.serves > 1 ? "s" : ""} · ${ctx.hideKcal ? "" : `${MacroCore.thousands(t.kcal)} kcal · `}${Math.round(t.protein_g)} g protein</small></span>
+      <span class="pl-serves" role="group" aria-label="Serves of ${esc(pick.meal.name)}">
+        <button type="button" data-serves="${slot}" data-dir="-1" aria-label="Fewer serves">−</button><b>${MacroCore.servesText(pick.serves)}</b><button type="button" data-serves="${slot}" data-dir="1" aria-label="More serves">+</button>
+      </span>
+      <span class="pl-slot__acts">
+        ${canLog ? `<button class="mp-btn ${done ? "mp-btn--done" : "mp-btn--red"}" type="button" data-log="${slot}" ${done ? "disabled" : ""}>${done ? "✓ Logged" : "Log it"}</button>` : ""}
+        <button class="mp-btn" type="button" data-choose="${slot}">Change</button>
+        <button class="mp-btn" type="button" data-remove="${slot}">Remove</button>
+      </span>
+    </div>`;
   }
 
-  async function onPlanClick(e) {
+  function showWeek() {
+    const day = planner.days[pickDay] || {};
+    const chips = weekDays()
+      .map((d) => {
+        const n = MacroCore.MEAL_SLOTS.filter((s) => (planner.days[d] || {})[s]).length;
+        return `<button class="pl-day${d === pickDay ? " is-on" : ""}" type="button" data-day="${d}" aria-pressed="${d === pickDay}">${d === today() ? "Today" : dayName(d, "short")}<small>${n ? plural(n, "meal") : "–"}</small></button>`;
+      })
+      .join("");
+    const html =
+      `<div class="pl-days">${chips}</div>` +
+      `<p class="week-dates">${esc(dayName(pickDay))} ${esc(MacroCore.shortDate(pickDay))}</p>` +
+      totalsCard(MacroCore.plannerDayTotals(day)) +
+      `<div class="week-card pl-slots">${MacroCore.MEAL_SLOTS.map((s) => slotRow(s, day[s])).join("")}</div>` +
+      `<button class="week-btn" type="button" data-tolist>${MaxIcon("cart")} Build my shopping list</button>` +
+      snacksCard() +
+      `<p class="pl-foot">${esc(GUIDE)}</p>`;
+    const body = show("My week", html);
+    body.addEventListener("click", onWeekClick);
+  }
+
+  async function onWeekClick(e) {
     const b = e.target.closest("button");
     if (!b || b.disabled) return;
-    if (b.dataset.view) {
-      view = b.dataset.view;
-      showPlan();
+    const day = (planner.days[pickDay] = planner.days[pickDay] || {});
+    if (b.dataset.day) {
+      pickDay = b.dataset.day;
+      showWeek();
+    } else if (b.dataset.choose) {
+      chooseTab = planner.ideas[b.dataset.choose].length ? "ideas" : ctx.meals && ctx.meals.length ? "mine" : "ideas";
+      showChoose(b.dataset.choose);
+    } else if (b.dataset.serves) {
+      const pick = day[b.dataset.serves];
+      if (!pick) return;
+      pick.serves = MacroCore.stepServes(pick.serves, Number(b.dataset.dir));
+      queueSave();
+      showWeek();
+    } else if (b.dataset.remove) {
+      delete day[b.dataset.remove];
+      if (!Object.keys(day).length) delete planner.days[pickDay];
+      queueSave();
+      showWeek();
     } else if (b.dataset.log) {
       const slot = b.dataset.log;
-      const meal = plan.meals[slot][Number(b.dataset.index)];
+      const pick = day[slot];
       b.disabled = true;
       b.textContent = "Logging…";
       try {
         await ctx.logMeal(
-          meal.items.map((it) => ({ name: it.name, grams: it.grams, per100: MacroCore.per100From(it, it.grams), source: "plan" })),
+          pick.meal.items.map((it) => ({ name: it.name, grams: Math.round(it.grams * pick.serves), per100: MacroCore.per100From(it, it.grams), source: "plan" })),
           slot
         );
-        logged.add(`${today()} ${slot}`);
-        b.textContent = "✓ Logged";
-        b.classList.remove("mp-btn--red");
-        b.classList.add("mp-btn--done");
+        logged.add(`${pickDay} ${slot}`);
+        showWeek();
       } catch (err) {
         b.disabled = false;
         b.textContent = "Log it";
         window.alert(err.message || "Couldn't log that. Try again.");
       }
-    } else if (b.dataset.swap) {
-      showSwap(b.dataset.swap, Number(b.dataset.index));
     } else if (b.dataset.snack !== undefined) {
-      const s = SNACKS[Number(b.dataset.snack)];
-      b.disabled = true;
-      try {
-        const data = await MacroApi.call("shoppingAdd", { name: s[5], aisle: s[6], source: "snack" });
-        setList(data.list);
-        b.textContent = "✓ On list";
-        b.classList.add("mp-btn--done");
-      } catch (err) {
-        b.disabled = false;
-        if (err.code === "gold" && ctx.upsell) {
-          close();
-          ctx.upsell("list", err.message);
-        } else window.alert(err.message || "Couldn't add that. Try again.");
-      }
+      addSnackToList(b);
     } else if (b.dataset.tolist !== undefined) {
       b.disabled = true;
       b.textContent = "Adding it up…";
+      clearTimeout(saveTimer);
       try {
+        await MacroApi.call("savePlanner", { days: planner.days });
         const data = await MacroApi.call("shoppingFromPlan", {});
         setList(data.list);
         showList();
       } catch (err) {
-        handleError(err, showPlan);
+        handleError(err, showWeek);
       }
-    } else if (b.dataset.newplan !== undefined) {
-      showSetup(plan.prefs, null);
     }
   }
 
-  function showSwap(slot, index) {
-    const body = show(
-      `Swap ${SLOT_NAMES[slot].toLowerCase()}`,
-      '<p class="week-help">About the same calories and protein. Swaps are free.</p>' +
-        plan.swaps[slot]
-          .map((m, i) => {
-            const t = MacroCore.mealTotals(m);
-            return `<button class="week-opt" type="button" data-alt="${i}"><span class="week-opt__emoji" aria-hidden="true">${esc(m.emoji || "🍽️")}</span><span class="week-opt__text"><span class="week-opt__main">${esc(m.name)}</span><span class="week-opt__sub">${ctx.hideKcal ? "" : `${MacroCore.thousands(t.kcal)} calories · `}${Math.round(t.protein_g)} g protein</span></span></button>`;
-          })
-          .join("") +
-        '<button class="week-link" type="button" data-back>Keep what I have</button>'
-    );
+  async function addSnackToList(b) {
+    const s = SNACKS[Number(b.dataset.snack)];
+    b.disabled = true;
+    try {
+      const data = await MacroApi.call("shoppingAdd", { name: s[5], aisle: s[6], source: "snack" });
+      setList(data.list);
+      b.textContent = "✓ On list";
+      b.classList.add("mp-btn--done");
+    } catch (err) {
+      b.disabled = false;
+      if (err.code === "gold" && ctx.upsell) {
+        close();
+        ctx.upsell("list", err.message);
+      } else window.alert(err.message || "Couldn't add that. Try again.");
+    }
+  }
+
+  /** One standard serve of a single food, as a planner meal. */
+  function foodAsMeal(name, grams, per100, amountText) {
+    const m = MacroCore.scale(per100, grams);
+    return {
+      name: name,
+      emoji: "",
+      how_to: "",
+      items: [{ name: name, amount_text: amountText || `${Math.round(grams)} g`, grams: Math.round(grams), count: 0, unit: "", kcal: m.kcal, protein_g: m.protein_g, carbs_g: m.carbs_g, fat_g: m.fat_g, aisle: "Other", pantry: false }],
+    };
+  }
+
+  /** A saved meal (Fuel's Saved Meals) as a planner meal, at the amounts it was saved with. */
+  function savedAsMeal(saved) {
+    return {
+      name: saved.name,
+      emoji: "",
+      how_to: "",
+      items: (saved.items || []).map((it) => {
+        const m = MacroCore.scale(it.per100, it.grams);
+        return { name: it.name, amount_text: `${Math.round(it.grams)} g`, grams: Math.round(it.grams), count: 0, unit: "", kcal: m.kcal, protein_g: m.protein_g, carbs_g: m.carbs_g, fat_g: m.fat_g, aisle: "Other", pantry: false };
+      }),
+    };
+  }
+
+  function mealOption(meal, i, open) {
+    const t = MacroCore.mealTotals(meal);
+    const items = (meal.items || []).map((it) => `<li><span>${esc(it.name)}</span><span>${esc(it.amount_text || `${Math.round(it.grams)} g`)}</span></li>`).join("");
+    return `<div class="week-card">
+      <div class="mp-meal__top">${meal.emoji ? `<span class="mp-meal__emoji" aria-hidden="true">${esc(meal.emoji)}</span>` : ""}<div><div class="mp-meal__name">${esc(meal.name)}</div><div class="fr-meta">One standard serve${meal.how_to ? ` · ${esc(meal.how_to)}` : ""}</div></div></div>
+      <div class="mp-macros">${ctx.hideKcal ? "" : `<b>${MacroCore.thousands(t.kcal)}</b> kcal · `}<b>${Math.round(t.protein_g)} g</b> protein per serve</div>
+      ${open ? `<ul class="mp-items">${items}</ul>` : ""}
+      <div class="mp-actions"><button class="mp-btn mp-btn--red" type="button" data-pick="${i}">Add to ${esc(pickDay === today() ? "today" : dayName(pickDay))}</button><button class="mp-btn" type="button" data-items="${i}">${open ? "Hide ingredients" : "Ingredients"}</button></div>
+    </div>`;
+  }
+
+  function showChoose(slot, openIndex, query) {
+    const tab = (id, label) => `<button type="button" class="${chooseTab === id ? "is-on" : ""}" data-tab="${id}" aria-pressed="${chooseTab === id}">${label}</button>`;
+    let options = [];
+    let html = `<div class="pl-tabs">${tab("ideas", "Ideas")}${tab("mine", "My meals")}${tab("search", "Search")}</div>`;
+    if (chooseTab === "ideas") {
+      options = planner.ideas[slot] || [];
+      html += options.length
+        ? options.map((m, i) => mealOption(m, i, i === openIndex)).join("")
+        : `<div class="week-card"><p class="week-text">No ideas yet. Tell Fuel what you like below, then tap Get new ideas.</p></div>`;
+      const left = aiLeft && aiLeft.limit ? ` · ${aiLeft.left} left today` : "";
+      html +=
+        `<div><p class="mp-q mp-tight">Foods you like or don't like</p><input class="fr-text" type="text" data-likes maxlength="200" value="${esc(planner.likes || "")}" placeholder="e.g. love eggs, not a fan of fish" aria-label="Foods you like or don't like" /></div>` +
+        `<button class="week-btn week-btn--ghost" type="button" data-ideas>Get new ideas</button>` +
+        `<p class="mp-cost">A set of ideas uses 3 AI scans${left}</p>`;
+    } else if (chooseTab === "mine") {
+      options = (ctx.meals || []).map(savedAsMeal).concat((ctx.favourites || []).map((f) => foodAsMeal(f.name, f.grams, f.per100)));
+      html += options.length
+        ? options.map((m, i) => mealOption(m, i, i === openIndex)).join("")
+        : `<div class="week-card"><p class="week-text">Your saved meals and favourites show here. Save a meal when you log it, or star a food.</p></div>`;
+    } else {
+      const q = String(query || "").trim().toLowerCase();
+      const pool = (ctx.foods || []).map((f) => foodAsMeal(f.name, f.serve_g, f.per100, f.serve_label || ""))
+        .concat((ctx.recent || []).map((r) => foodAsMeal(r.name, r.grams, r.per100)));
+      const seen = new Set();
+      options = pool.filter((m) => {
+        const k = m.name.toLowerCase();
+        if (seen.has(k) || (q && !k.includes(q))) return false;
+        seen.add(k);
+        return true;
+      }).slice(0, 12);
+      html += `<input class="fr-text" type="search" data-search value="${esc(query || "")}" placeholder="Search foods" aria-label="Search foods" />` +
+        (options.length ? options.map((m, i) => mealOption(m, i, i === openIndex)).join("") : `<div class="week-card"><p class="week-text">Nothing found. Try another word.</p></div>`);
+    }
+    html += `<button class="week-link" type="button" data-back>Back to my week</button><p class="pl-foot">${esc(GUIDE)}</p>`;
+    const body = show(`${pickDay === today() ? "Today" : dayName(pickDay)}: ${SLOT_NAMES[slot].toLowerCase()}`, html);
+    const search = body.querySelector("[data-search]");
+    if (search) {
+      search.addEventListener("input", () => {
+        const v = search.value;
+        const at = search.selectionStart;
+        showChoose(slot, -1, v);
+        const again = sheet.querySelector("[data-search]");
+        again.focus();
+        again.setSelectionRange(at, at);
+      });
+    }
     body.addEventListener("click", async (e) => {
       const b = e.target.closest("button");
-      if (!b) return;
-      if (b.dataset.back !== undefined) return showPlan();
-      if (b.dataset.alt === undefined) return;
-      loading(`Swap ${SLOT_NAMES[slot].toLowerCase()}`, "Swapping…");
-      try {
-        const data = await MacroApi.call("swapMeal", { planId: plan.id, slot, index, alt: Number(b.dataset.alt) });
-        plan = data.plan;
-        if (data.list) setList(data.list);
-        showPlan();
-      } catch (err) {
-        handleError(err, showPlan);
+      if (!b || b.disabled) return;
+      if (b.dataset.tab) {
+        chooseTab = b.dataset.tab;
+        showChoose(slot);
+      } else if (b.dataset.back !== undefined) {
+        showWeek();
+      } else if (b.dataset.items !== undefined) {
+        const i = Number(b.dataset.items);
+        showChoose(slot, i === openIndex ? -1 : i, query);
+      } else if (b.dataset.pick !== undefined) {
+        const meal = options[Number(b.dataset.pick)];
+        if (!meal) return;
+        const day = (planner.days[pickDay] = planner.days[pickDay] || {});
+        day[slot] = { meal: JSON.parse(JSON.stringify(meal)), serves: 1 };
+        queueSave();
+        showWeek();
+      } else if (b.dataset.ideas !== undefined) {
+        const likes = body.querySelector("[data-likes]").value.trim();
+        loading("Meal ideas", "Thinking up some ideas…");
+        try {
+          clearTimeout(saveTimer);
+          await MacroApi.call("savePlanner", { days: planner.days });
+          const data = await MacroApi.call("mealIdeas", { likes }, { timeoutMs: 90000 });
+          planner = normalise(data.planner);
+          aiLeft = data.aiToday || aiLeft;
+          if (ctx.onAi && data.aiToday) ctx.onAi(data.aiToday);
+          chooseTab = "ideas";
+          showChoose(slot);
+        } catch (err) {
+          if (err.code === "limit" && ctx.upsell) {
+            close();
+            ctx.upsell("limit", err.message);
+          } else handleError(err, () => showChoose(slot));
+        }
       }
     });
   }
 
+  function snacksCard() {
+    const adding = new Set(((list || []).filter((i) => !i.done)).map((i) => i.name.toLowerCase()));
+    return (
+      '<div class="week-card"><h3 class="week-h">'+MaxIcon("dumbbell")+'High-protein snack ideas</h3><p class="week-note mp-tight">Good any time you\'re peckish. Tap to add one to your shopping list.</p>' +
+      SNACKS.map(([emoji, name, serve, kcal, protein, item], i) => {
+        const on = adding.has(item.toLowerCase());
+        return `<div class="mp-snack"><span class="mp-snack__emoji" aria-hidden="true">${MaxIcon("utensils")}</span><span class="mp-snack__text"><span class="mp-snack__name">${esc(name)}</span><span class="mp-snack__sub">${esc(serve)} · ${ctx.hideKcal ? "" : `${kcal} cal · `}<b>${protein} g protein</b></span></span>` +
+          `<button class="mp-btn mp-snack__add${on ? " mp-btn--done" : ""}" type="button" data-snack="${i}" ${on ? "disabled" : ""}>${on ? "✓ On list" : "+ List"}</button></div>`;
+      }).join("") +
+      "</div>"
+    );
+  }
   // ---------------------------------------------------------------------------
   // Shopping list
   // ---------------------------------------------------------------------------
@@ -385,12 +434,10 @@ const MealPlan = (function () {
   function showList() {
     const toBuy = list.filter((i) => !i.done).length;
     const ticked = list.length - toBuy;
-    const fromPlan = plan && list.some((i) => i.source === "plan");
-    const pantry = fromPlan ? MacroCore.planShopping(plan).filter((i) => i.pantry) : [];
+    const fromPlan = planner && list.some((i) => i.source === "plan");
+    const pantry = fromPlan ? MacroCore.plannerShopping(planner, today()).filter((i) => i.pantry) : [];
     let html = `<p class="week-dates">${toBuy ? `${toBuy} to buy` : list.length ? "All done!" : "Nothing on it yet"}</p>`;
-    if (fromPlan && MacroCore.planCost(plan) > 0) {
-      html += `<div class="week-card"><p class="week-text">Your plan's shopping: about <b>$${MacroCore.planCost(plan)}</b> at Coles or Woolworths.</p><p class="week-note">A rough estimate. Specials and brands change it.</p></div>`;
-    }
+
     MacroCore.AISLES.forEach((aisle) => {
       const items = list.filter((i) => i.aisle === aisle);
       if (!items.length) return;

@@ -32,7 +32,7 @@ const GROCERY_SHEET_NAME = "Grocery Items";
 // Changes whenever this file does, and is shown when you open the deployed
 // URL in a browser (see doGet) — the quick way to tell whether a redeploy
 // actually took, instead of guessing from behaviour.
-const BACKEND_VERSION = "2026-10-26b";
+const BACKEND_VERSION = "2026-10-29a";
 
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -675,10 +675,12 @@ function doGet(e) {
 const SESSION_TYPE_COLUMNS = {
   "group": "Group Sessions Remaining",
   "one-on-one": "1 on 1 Remaining",
+  "duo": "Duo Remaining", // two people, one coach; its own balance, bought and booked separately from 1-on-1s
 };
 const SESSION_TYPE_NOTES = {
   "group": "Group",
   "one-on-one": "1-on-1",
+  "duo": "Duo",
 };
 
 /**
@@ -759,6 +761,10 @@ function doPost(e) {
   }
   if (action === "coachBookSession") {
     return withLock_(() => handleCoachBookSession_(payload));
+  }
+  // The client's booking code for the check-in screen (staff PIN, read-only).
+  if (action === "checkinBookingCode") {
+    return handleCheckinBookingCode_(payload);
   }
   if (action === "checkGroceryCode") {
     return handleCheckGroceryCode_(payload);
@@ -908,6 +914,25 @@ function handleCheckIn_(payload) {
     sheet.getRange(rowIndex + 1, col.totalAttended + 1).setValue(totalAttended);
   }
 
+  // Duo: who trained with them. A member (picked by slug) also gets a loyalty
+  // punch on their own card; someone who isn't a member is just named in the note.
+  let partnerName = "";
+  let partnerRowIndex = -1;
+  if (sessionType === "duo") {
+    const partnerSlug = String(payload.partner || "").trim().toLowerCase();
+    const ownSlug = slugify_(row[col.name]);
+    if (partnerSlug && partnerSlug !== ownSlug) {
+      for (let i = 1; i < data.length; i++) {
+        if (slugify_(data[i][col.name]) === partnerSlug) {
+          partnerRowIndex = i;
+          partnerName = String(data[i][col.name]).trim();
+          break;
+        }
+      }
+    }
+    if (!partnerName) partnerName = cleanNote_(String(payload.partnerName || "").trim(), 60);
+  }
+
   const attendanceSheet = getSheetByGid_(ATTENDANCE_SHEET_GID);
   const attendanceHeader = attendanceSheet.getDataRange().getValues()[0];
   const aCol = {
@@ -924,7 +949,7 @@ function handleCheckIn_(payload) {
   if (aCol.clientName >= 0) newRow[aCol.clientName] = row[col.name];
   if (aCol.attended >= 0) newRow[aCol.attended] = "Y";
   if (aCol.notes >= 0) {
-    newRow[aCol.notes] = SESSION_TYPE_NOTES[sessionType] + (freeSession ? " — Free Session" : "");
+    newRow[aCol.notes] = SESSION_TYPE_NOTES[sessionType] + (partnerName ? " with " + partnerName : "") + (freeSession ? " — Free Session" : "");
   }
   attendanceSheet.appendRow(newRow);
 
@@ -942,11 +967,23 @@ function handleCheckIn_(payload) {
     markReferralCounted_(sheet, rowIndex + 1, paidSessionsCount);
   }
 
+  let partnerPunched = false;
+  if (partnerRowIndex >= 0) {
+    try {
+      const partnerHeader = ensureColumns_(sheet, [MANUAL_PUNCHES_COLUMN, "Free Session Owed"]);
+      addManualSessionPunch_(sheet, sessionsReferralColumns_(partnerHeader), partnerRowIndex + 1);
+      partnerPunched = true;
+    } catch (err) {
+      Logger.log("Duo partner punch failed: " + err); // the check-in itself is done
+    }
+  }
+
   return jsonResponse_({
     status: "success",
     sessionsRemaining: newSessions,
     totalAttended: totalAttended,
     freeSession: freeSession,
+    partnerPunched: partnerPunched,
   });
 }
 
@@ -973,6 +1010,8 @@ function handleSignup_(payload) {
   const email = String(payload.email || "").trim();
   const goals = String(payload.goals || "").trim();
   const referralCode = String(payload.referralCode || "").trim();
+  const interest = LEAD_INTERESTS[String(payload.interest || "").trim()] || "";
+  const partnerName = cleanNote_(String(payload.partnerName || "").trim(), 80);
   // join.js also says which tagged link (?src=) and which site the visitor
   // came from; the wording for Max is worked out below, after the referrer
   // has been looked up.
@@ -1023,11 +1062,13 @@ function handleSignup_(payload) {
   // ever fails the sign-up still goes through, just without the column.
   let header = leadsHeader;
   try {
-    header = ensureColumns_(leadsSheet, [LEADS_SOURCE_COLUMN]);
+    header = ensureColumns_(leadsSheet, [LEADS_SOURCE_COLUMN, LEADS_INTEREST_COLUMN, LEADS_PARTNER_COLUMN]);
   } catch (err) {
     header = leadsHeader;
   }
   col.source = findColumn_(header, LEADS_SOURCE_COLUMN);
+  col.interest = findColumn_(header, LEADS_INTEREST_COLUMN);
+  col.partner = findColumn_(header, LEADS_PARTNER_COLUMN);
 
   const today = Utilities.formatDate(new Date(), TIMEZONE, "yyyy-MM-dd");
   const newRow = new Array(header.length).fill("");
@@ -1038,9 +1079,11 @@ function handleSignup_(payload) {
   if (col.referredBy >= 0) newRow[col.referredBy] = referrerName;
   if (col.goals >= 0) newRow[col.goals] = goals;
   if (col.source >= 0) newRow[col.source] = source.label;
+  if (col.interest >= 0) newRow[col.interest] = interest;
+  if (col.partner >= 0) newRow[col.partner] = interest === LEAD_INTERESTS.duo ? partnerName : "";
   leadsSheet.appendRow(newRow);
 
-  notifyNewLead_({ name, phone, email, goals, referrerName, source });
+  notifyNewLead_({ name, phone, email, goals, referrerName, source, interest, partnerName: interest === LEAD_INTERESTS.duo ? partnerName : "" });
 
   return jsonResponse_({ status: "success", referrerName: referrerName });
 }
@@ -1171,6 +1214,15 @@ function handleSelfSignup_(payload) {
 
 // Header of the Leads column that records where each sign-up came from.
 const LEADS_SOURCE_COLUMN = "Source";
+// What the visitor said they are after (join.html), and for a duo the second person's name.
+const LEADS_INTEREST_COLUMN = "Interested In";
+const LEADS_PARTNER_COLUMN = "Duo Partner";
+const LEAD_INTERESTS = {
+  "one-on-one": "One-on-one",
+  "duo": "Duo",
+  "group": "Group classes",
+  "online": "Online coaching",
+};
 
 // ?src=<tag> on a link Max shares himself (join.html?src=instagram) shows up
 // in the lead email under the name here. A tag that isn't listed still works:
@@ -1288,6 +1340,8 @@ function notifyNewLead_(lead) {
     if (lead.phone) lines.push("Phone: " + lead.phone);
     if (lead.email) lines.push("Email: " + lead.email);
     if (lead.referrerName) lines.push("Referred by: " + lead.referrerName);
+    if (lead.interest) lines.push("Interested in: " + lead.interest);
+    if (lead.partnerName) lines.push("Duo partner: " + lead.partnerName);
     if (lead.goals) lines.push("Goals: " + lead.goals);
 
     // The "New MaxFit lead: <name>" start is unchanged, so anything matching
@@ -2232,12 +2286,18 @@ const BOOKING_SETTINGS_HEADER = ["Setting", "Value", "What it does"];
 const BOOKING_CLIENTS_HEADER = ["Name", "Slug", "Booking Code", "Text to send", "Email", "Fuel Link"];
 // Column 12 (Location), deliberately past the first ten the Upcoming tab's
 // formula reads by letter — same reasoning as Calendar Event Id at 11.
-const BOOKINGS_HEADER = ["Booking ID", "Date", "Start", "End", "Minutes", "Client", "Client Slug", "Status", "Booked At", "Cancelled At", "Calendar Event Id", "Location"];
+// Columns 13 and 14 (Type: 1-on-1 or Duo; Partner: the second person's name for a duo).
+const BOOKINGS_HEADER = ["Booking ID", "Date", "Start", "End", "Minutes", "Client", "Client Slug", "Status", "Booked At", "Cancelled At", "Calendar Event Id", "Location", "Type", "Partner"];
 // Empty by default — unlike Prices, there's no sensible generic starting
 // row here, Max adds his own real places. A client only sees a location
 // step at all once at least one row here is On.
 const BOOKING_LOCATIONS_HEADER = ["On", "Name", "Address"];
-const BOOKING_PRICES_HEADER = ["On", "Name", "Sessions", "Price", "Stripe lookup key", "Pay link"];
+// Adds to: "1-on-1" (the default, blank means this) or "Duo". Only for / Replaces
+// are for a client on a special rate (Bec and Sean): a row with Only for set is
+// shown ONLY to the clients listed there (card ids, comma separated), and the
+// row named in Replaces (a lookup key) is hidden from them, so they see their own
+// price instead of the standard one.
+const BOOKING_PRICES_HEADER = ["On", "Name", "Sessions", "Price", "Stripe lookup key", "Pay link", "Adds to", "Only for", "Replaces"];
 const BOOKING_PAYMENTS_HEADER = ["Stripe Session", "Paid At", "Client", "Slug", "Item", "Sessions", "Amount", "Before", "After", "Status", "Note"];
 
 // Online payments (Stripe). The key is a Script Property, never in this file.
@@ -2267,12 +2327,19 @@ const BOOKING_SETTING_DEFAULTS = [
 ];
 
 // The Prices tab starts with these rows. The Price is only what the button says: Stripe charges what the Pay link says.
+// Prices from 27 Oct 2026 (Max's decision): one-on-one $70 / $90 / $110, duo $50 / $60 / $75 each,
+// no packs. Bec and Sean stay on $50 for 45 minutes for good. A row with no Pay link isn't shown to clients.
 const BOOKING_PRICE_DEFAULTS = [
-  ["Yes", "Single session, 30 min", 1, "$39", "pt_single_30", ""],
-  ["Yes", "Single session, 45 min", 1, "$49", "pt_single_45", ""],
-  ["Yes", "6-pack, 30 min sessions", 6, "$199", "pt_pack6_30", ""],
-  ["Yes", "6-pack, 45 min sessions", 6, "$249", "pt_pack6_45", ""],
+  ["Yes", "1-on-1 session, 30 min", 1, "$70", "pt_single_30", "", "1-on-1", "", ""],
+  ["Yes", "1-on-1 session, 45 min", 1, "$90", "pt_single_45", "", "1-on-1", "", ""],
+  ["Yes", "1-on-1 session, 60 min", 1, "$110", "pt_single_60", "", "1-on-1", "", ""],
+  ["Yes", "Duo session, 30 min", 1, "$100 for two", "pt_duo_30", "", "Duo", "", ""],
+  ["Yes", "Duo session, 45 min", 1, "$120 for two", "pt_duo_45", "", "Duo", "", ""],
+  ["Yes", "Duo session, 60 min", 1, "$150 for two", "pt_duo_60", "", "Duo", "", ""],
+  ["Yes", "1-on-1 session, 45 min (your rate)", 1, "$50", "pt_single_45_founding", "", "1-on-1", "beccampbell,seancampbell", "pt_single_45"],
 ];
+// Rows from the old price list that stop being offered (anyone who already holds 6-pack sessions keeps them).
+const BOOKING_RETIRED_PRICE_KEYS = ["pt_pack6_30", "pt_pack6_45"];
 
 // Set only by bookingSelfTest(), and only for that one run: every run of the
 // script starts with a fresh copy of this file's globals, so the self-test
@@ -2752,6 +2819,8 @@ function bookingRows_(ss) {
       active: status.toLowerCase() === "booked",
       calendarEventId: c.calendarEventId >= 0 ? String(r[c.calendarEventId] || "").trim() : "",
       location: c.location >= 0 ? String(r[c.location] || "").trim() : "",
+      type: c.type >= 0 && /duo/i.test(String(r[c.type] || "")) ? "duo" : "one-on-one",
+      partner: c.partner >= 0 ? String(r[c.partner] || "").trim() : "",
     });
   });
   return out;
@@ -2782,6 +2851,9 @@ function bookingColumns_(header) {
   c.calendarEventId = findColumn_(header, "Calendar Event Id");
   // Same "added later, not required" treatment (2026-10-25, Locations).
   c.location = findColumn_(header, "Location");
+  // Duo (2026-10-27): same treatment, a sheet without them is all 1-on-1s.
+  c.type = findColumn_(header, "Type");
+  c.partner = findColumn_(header, "Partner");
   return c;
 }
 
@@ -2986,24 +3058,40 @@ function bookingMine_(rows, member, settings, now) {
         minutes: x.b.minutes,
         canCancel: (x.ms - now.ms) / 3600000 >= settings.cancelNoticeHours,
         location: x.b.location,
+        type: x.b.type,
+        partner: x.b.partner,
       };
     });
 }
 
 /** Whether this client may hold another booking right now, and if not, a friendly reason. */
-function bookingEligibility_(member, settings, upcomingCount) {
-  if (settings.requireSession && !member.unlimited) {
-    if (member.sessionsLeft === null || member.sessionsLeft <= 0) {
-      return { canBook: false, code: "no-sessions", message: "You don't have any 1-on-1 sessions left. Message Max to top up." };
+function bookingEligibility_(member, settings, mine, type) {
+  const isDuo = type === "duo";
+  const label = isDuo ? "duo" : "1-on-1";
+  const left = isDuo ? member.duoLeft : member.sessionsLeft;
+  const unlimited = !isDuo && member.unlimited; // an unlimited plan covers 1-on-1s, not duo sessions
+  const upcomingOfType = mine.filter(function (b) { return (b.type === "duo") === isDuo; }).length;
+  if (settings.requireSession && !unlimited) {
+    if (left === null || left === undefined || left <= 0) {
+      return { canBook: false, code: isDuo ? "no-duo-sessions" : "no-sessions", message: "You don't have any " + label + " sessions left. Message Max to top up." };
     }
-    if (upcomingCount >= member.sessionsLeft) {
-      return { canBook: false, code: "all-booked", message: "All of your remaining 1-on-1 sessions are already booked." };
+    if (upcomingOfType >= left) {
+      return { canBook: false, code: "all-booked", message: "All of your remaining " + label + " sessions are already booked." };
     }
   }
-  if (upcomingCount >= settings.maxActive) {
-    return { canBook: false, code: "too-many", message: "You already have " + upcomingCount + " sessions booked. Once one is done you can book another." };
+  if (mine.length >= settings.maxActive) {
+    return { canBook: false, code: "too-many", message: "You already have " + mine.length + " sessions booked. Once one is done you can book another." };
   }
   return { canBook: true, code: "", message: "" };
+}
+
+const DUO_COLUMN = "Duo Remaining";
+
+/** A Duo Remaining cell as a number of sessions: a blank or missing column is 0 (they have none), never an error. */
+function duoLeftOf_(raw) {
+  const text = String(raw == null ? "" : raw).trim();
+  const n = Number(text);
+  return text !== "" && isFinite(n) ? n : 0;
 }
 
 /** A client's row in Sessions Remaining: name, Check-in Token, 1-on-1 sessions left and plan, or null if there's no such client. */
@@ -3016,6 +3104,7 @@ function bookingCrmMember_(slug) {
     token: findColumn_(header, "Check-in Token"),
     package: findColumn_(header, "Package Type"),
     oneOnOne: findColumn_(header, "1 on 1 Remaining"),
+    duo: findColumn_(header, DUO_COLUMN),
   };
   if (col.name < 0) return null;
   for (let i = 1; i < data.length; i++) {
@@ -3029,10 +3118,67 @@ function bookingCrmMember_(slug) {
       slug: slug,
       rowToken: col.token >= 0 ? String(data[i][col.token] || "").trim() : "",
       sessionsLeft: raw !== "" && isFinite(n) ? n : null,
+      duoLeft: duoLeftOf_(col.duo >= 0 ? data[i][col.duo] : ""),
       unlimited: packageType.indexOf("unlimited") >= 0,
     };
   }
   return null;
+}
+
+/**
+ * Run ONCE from the editor (Run button) after pasting this code and deploying (safe to run again).
+ * Sets up duo sessions and the 27 Oct 2026 price list:
+ *  - adds a "Duo Remaining" column to Sessions Remaining
+ *  - runs setupBooking() so the Bookings tab gets Type and Partner and the Prices tab gets
+ *    Adds to, Only for and Replaces
+ *  - stops offering the 6-packs (anyone who already holds 6-pack sessions keeps them)
+ *  - adds the new price rows (1-on-1 30/45/60, duo 30/45/60, and the $50 rate for Bec and Sean)
+ *    with NO pay links, so nothing is shown to clients until you paste each new Stripe link
+ *  - clears the pay link on the two old single-session rows, because those links charge the old
+ *    $39 and $49. Paste the new link on each, then set On to Yes.
+ * It never touches a Stripe setting and never changes anyone's session balance.
+ */
+function setupDuoAndPricing() {
+  ensureColumns_(getSheetByGid_(SESSIONS_SHEET_GID), [DUO_COLUMN]);
+  setupBooking();
+  const ss = bookingBook_();
+  const sheet = ss.getSheetByName(BOOKING_TABS.prices);
+  const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const col = {};
+  BOOKING_PRICES_HEADER.forEach(function (h) { col[h] = findColumn_(header, h); });
+  const lookups = sheet.getLastRow() > 1 ? sheet.getRange(2, col["Stripe lookup key"] + 1, sheet.getLastRow() - 1, 1).getValues() : [];
+  const rowOf = {};
+  lookups.forEach(function (r, i) { const k = String(r[0] || "").trim().toLowerCase(); if (k) rowOf[k] = i + 2; });
+  const log = [];
+
+  // 1. retire the packs
+  BOOKING_RETIRED_PRICE_KEYS.forEach(function (k) {
+    if (rowOf[k]) { sheet.getRange(rowOf[k], col["On"] + 1).setValue("No"); log.push("Switched off " + k); }
+  });
+  // 2. new rows, and tidy the two old single rows
+  BOOKING_PRICE_DEFAULTS.forEach(function (d) {
+    const key = d[4];
+    const values = {};
+    BOOKING_PRICES_HEADER.forEach(function (h, i) { values[h] = d[i]; });
+    if (rowOf[key]) {
+      const r = rowOf[key];
+      ["Name", "Price", "Adds to", "Only for", "Replaces"].forEach(function (h) { sheet.getRange(r, col[h] + 1).setNumberFormat("@").setValue(values[h]); });
+      if (key === "pt_single_30" || key === "pt_single_45") {
+        sheet.getRange(r, col["Pay link"] + 1).setValue("");
+        sheet.getRange(r, col["On"] + 1).setValue("Yes");
+        log.push("Cleared the old pay link on " + key + ": paste the NEW link, which must charge " + values["Price"]);
+      }
+    } else {
+      const target = sheet.getRange(sheet.getLastRow() + 1, 1, 1, header.length);
+      const row = header.map(function (h) { return values[h] === undefined ? "" : values[h]; });
+      target.setNumberFormat("@");
+      target.setValues([row]);
+      log.push("Added " + key + " (" + values["Price"] + "), no pay link yet");
+    }
+  });
+  SpreadsheetApp.flush();
+  Logger.log(log.join("\n"));
+  return log;
 }
 
 // ---- Personal booking codes -----------------------------------------------
@@ -3382,7 +3528,7 @@ function bookingIcs_(booking, settings, nowMs) {
     "DTSTAMP:" + bookingIcsStamp_(nowMs),
     "DTSTART:" + bookingIcsStamp_(startMs),
     "DTEND:" + bookingIcsStamp_(endMs),
-    "SUMMARY:MaxFit 1-on-1 session",
+    "SUMMARY:" + (booking.duo ? "MaxFit duo session" : "MaxFit 1-on-1 session"),
   ];
   if (settings.meetingPlace) lines.push("LOCATION:" + esc(settings.meetingPlace));
   lines.push("STATUS:CONFIRMED", "END:VEVENT", "END:VCALENDAR");
@@ -3396,7 +3542,7 @@ function bookingConfirmationEmail_(booking, member, settings, nowMs) {
   const lines = [
     "Hi " + first + ",",
     "",
-    "You're booked in for a " + booking.minutes + "-minute 1-on-1 session.",
+    "You're booked in for a " + booking.minutes + "-minute " + (booking.duo ? "duo session" + (booking.partner ? " with " + booking.partner : "") : "1-on-1 session") + ".",
     "",
     "When: " + when + " to " + bookingClock12_(booking.endMin),
   ];
@@ -3431,7 +3577,7 @@ function bookingCancellationEmail_(booking, member) {
     body: [
       "Hi " + first + ",",
       "",
-      "Your 1-on-1 session on " + when + " to " + bookingClock12_(booking.endMin) + " is cancelled, and that time is open again.",
+      "Your " + (booking.type === "duo" ? "duo" : "1-on-1") + " session on " + when + " to " + bookingClock12_(booking.endMin) + " is cancelled, and that time is open again.",
       "",
       "Want another time? You can book one from your card:",
       bookingPageUrl_(member.slug),
@@ -3609,6 +3755,9 @@ function bookingPrices_(ss) {
     price: findColumn_(table.header, "Price"),
     lookup: findColumn_(table.header, "Stripe lookup key"),
     link: findColumn_(table.header, "Pay link"),
+    kind: findColumn_(table.header, "Adds to"),
+    onlyFor: findColumn_(table.header, "Only for"),
+    replaces: findColumn_(table.header, "Replaces"),
   };
   if (c.name < 0 || c.sessions < 0 || c.lookup < 0) return [];
   return table.rows
@@ -3620,6 +3769,10 @@ function bookingPrices_(ss) {
         price: c.price < 0 ? "" : bookingOneLine_(r[c.price], 20),
         lookup: bookingOneLine_(r[c.lookup], 80),
         link: c.link < 0 ? "" : String(r[c.link] || "").trim(),
+        kind: c.kind >= 0 && /duo/i.test(String(r[c.kind] || "")) ? "duo" : "one-on-one",
+        // card ids (e.g. beccampbell), comma separated; empty = everyone
+        onlyFor: c.onlyFor < 0 ? [] : String(r[c.onlyFor] || "").split(",").map(function (t) { return slugify_(t); }).filter(Boolean),
+        replaces: c.replaces < 0 ? "" : String(r[c.replaces] || "").trim().toLowerCase(),
       };
     })
     .filter(function (p) { return p.name && p.lookup; });
@@ -3654,13 +3807,20 @@ function bookingLocations_(ss) {
 
 /** What a client with no sessions left can buy: [{ name, sessions, price, url }], only rows that are on, add a session and have a Stripe Pay link. */
 function bookingBuyOptions_(ss, member, email) {
-  return bookingPrices_(ss)
+  const offered = bookingPrices_(ss)
     .filter(function (p) { return p.on && p.sessions >= 1 && bookingSafePayLink_(p.link); })
+    // a row with "Only for" set is only for the clients listed there
+    .filter(function (p) { return !p.onlyFor.length || p.onlyFor.indexOf(member.slug) >= 0; });
+  // ...and it replaces the standard row named in "Replaces", so a client on their own rate never sees both
+  const replaced = {};
+  offered.forEach(function (p) { if (p.onlyFor.length && p.replaces) replaced[p.replaces] = true; });
+  return offered
+    .filter(function (p) { return p.onlyFor.length || !replaced[p.lookup.toLowerCase()]; })
     .map(function (p) {
       const link = bookingSafePayLink_(p.link);
       const extra = ["client_reference_id=" + encodeURIComponent(BOOKING_PAY_REF_PREFIX + member.slug)];
       if (email) extra.push("prefilled_email=" + encodeURIComponent(email));
-      return { name: p.name, sessions: p.sessions, price: p.price, url: link + (link.indexOf("?") >= 0 ? "&" : "?") + extra.join("&") };
+      return { name: p.name, sessions: p.sessions, price: p.price, kind: p.kind, url: link + (link.indexOf("?") >= 0 ? "&" : "?") + extra.join("&") };
     });
 }
 
@@ -3674,33 +3834,38 @@ function bookingIsOurs_(session) {
 function bookingPurchaseOf_(session, lines, prices) {
   const slug = String(session.client_reference_id || "").slice(BOOKING_PAY_REF_PREFIX.length);
   let sessions = 0;
+  let kind = "";
   const names = [];
   for (let i = 0; i < lines.length; i++) {
     const lookup = String((lines[i].price && lines[i].price.lookup_key) || "").trim().toLowerCase();
     const row = lookup ? prices.filter(function (p) { return p.lookup.toLowerCase() === lookup; })[0] : null;
     if (!row) return { slug: slug, problem: "an item on it isn't on the Prices tab (" + bookingOneLine_(lookup || lines[i].description || "no lookup key", 60) + ")" };
     if (row.sessions < 1) return { slug: slug, problem: "the Prices tab row \"" + row.name + "\" has no number of sessions" };
+    if (kind && kind !== row.kind) return { slug: slug, problem: "it mixes 1-on-1 and duo sessions, which are counted separately" };
+    kind = row.kind;
     const qty = Math.max(1, Math.floor(Number(lines[i].quantity) || 1));
     sessions += row.sessions * qty;
     names.push((qty > 1 ? qty + " x " : "") + row.name);
   }
   if (!sessions) return { slug: slug, problem: "it has no items" };
-  return { slug: slug, sessions: sessions, item: names.join(", ") };
+  return { slug: slug, sessions: sessions, kind: kind || "one-on-one", item: names.join(", ") };
 }
 
 /** A client's row in Sessions Remaining, with what they have left: { sheet, row, col, name, current }, or null if there's no such client. Throws if the balance can't be read. */
-function bookingCrmRow_(slug) {
+function bookingCrmRow_(slug, kind) {
   const sheet = getSheetByGid_(SESSIONS_SHEET_GID);
+  const columnName = kind === "duo" ? DUO_COLUMN : "1 on 1 Remaining";
+  if (kind === "duo") ensureColumns_(sheet, [DUO_COLUMN]); // the first duo purchase adds the column if setup hasn't
   const data = sheet.getDataRange().getValues();
   const header = data[0];
   const nameCol = findColumn_(header, "Name");
-  const col = findColumn_(header, "1 on 1 Remaining");
-  if (nameCol < 0 || col < 0) throw new Error("The Sessions Remaining tab has no Name or \"1 on 1 Remaining\" column");
+  const col = findColumn_(header, columnName);
+  if (nameCol < 0 || col < 0) throw new Error("The Sessions Remaining tab has no Name or \"" + columnName + "\" column");
   for (let i = 1; i < data.length; i++) {
     if (slugify_(data[i][nameCol]) !== slug) continue;
     const raw = String(data[i][col] == null ? "" : data[i][col]).trim();
     const n = raw === "" ? 0 : Number(raw);
-    if (!isFinite(n)) throw new Error("the 1 on 1 Remaining cell for " + slug + " isn't a number (it says \"" + bookingOneLine_(raw, 30) + "\")");
+    if (!isFinite(n)) throw new Error("the " + columnName + " cell for " + slug + " isn't a number (it says \"" + bookingOneLine_(raw, 30) + "\")");
     return { sheet: sheet, row: i + 1, col: col, name: String(data[i][nameCol]).trim(), current: n };
   }
   return null;
@@ -3810,7 +3975,7 @@ function bookingRecordPayment_(ss, session, purchase) {
   let problem = purchase.problem || "";
   if (!problem) {
     try {
-      crm = bookingCrmRow_(purchase.slug);
+      crm = bookingCrmRow_(purchase.slug, purchase.kind);
       if (!crm) problem = "there is no client called " + purchase.slug;
     } catch (err) {
       problem = bookingScrub_(err && err.message ? err.message : err);
@@ -3846,7 +4011,7 @@ function bookingRecordPayment_(ss, session, purchase) {
   SpreadsheetApp.flush();
   bookingLedgerUpdate_(led, ledgerRow, { after: String(after), status: "Credited", note: "" });
   SpreadsheetApp.flush();
-  return { state: "credited", slug: purchase.slug, sessions: purchase.sessions, after: after, name: crm.name, fresh: true };
+  return { state: "credited", slug: purchase.slug, sessions: purchase.sessions, after: after, name: crm.name, kind: purchase.kind, fresh: true };
 }
 
 /**
@@ -3894,7 +4059,7 @@ function bookingAnnouncePayment_(ss, session, purchase, result) {
     bookingNotify_(settings, tag + "Payment: " + result.name + " bought " + result.sessions + " session" + (result.sessions === 1 ? "" : "s"), [
       result.name + " paid " + amount + " for " + purchase.item + ".",
       "",
-      result.sessions + " added to their 1 on 1 Remaining. They now have " + result.after + ".",
+      result.sessions + " added to their " + (purchase.kind === "duo" ? DUO_COLUMN : "1 on 1 Remaining") + ". They now have " + result.after + ".",
       "Stripe session: " + session.id,
       "",
       "Nothing else was changed: Paid sessions and referral rewards happen at check-in, as usual.",
@@ -3919,7 +4084,7 @@ function bookingAnnouncePayment_(ss, session, purchase, result) {
           "Hi " + first + ",",
           "",
           "Thanks, your payment of " + amount + " went through and " + result.sessions + " session" + (result.sessions === 1 ? " was" : "s were") + " added to your account (" + purchase.item + ").",
-          "You now have " + result.after + " 1-on-1 session" + (result.after === 1 ? "" : "s") + " left.",
+          "You now have " + result.after + (purchase.kind === "duo" ? " duo" : " 1-on-1") + " session" + (result.after === 1 ? "" : "s") + " left.",
           "",
           "Pick a time here:",
           bookingPageUrl_(purchase.slug),
@@ -4116,7 +4281,8 @@ function bookingInfoCore_(ctx) {
   try {
     const rows = bookingRows_(ctx.ss);
     const mine = bookingMine_(rows, ctx.member, ctx.settings, ctx.now);
-    const eligibility = bookingEligibility_(ctx.member, ctx.settings, mine.length);
+    const eligibility = bookingEligibility_(ctx.member, ctx.settings, mine, "one-on-one");
+    const duoEligibility = bookingEligibility_(ctx.member, ctx.settings, mine, "duo");
 
     // Buying is never gated on the client's current balance (2026-10-26, Max's
     // call) — someone can top up whether they're out, running low, or just
@@ -4127,8 +4293,11 @@ function bookingInfoCore_(ctx) {
       buy = bookingBuyOptions_(ctx.ss, ctx.member, bookingClientEmail_(ctx.ss, ctx.member.slug));
     }
 
+    // The Duo choice is offered to a client who has duo sessions, has one booked, or can buy one.
+    const duoAvailable = ctx.member.duoLeft > 0 || mine.some(function (b) { return b.type === "duo"; }) || buy.some(function (o) { return o.kind === "duo"; });
+
     let slots = [];
-    if (eligibility.canBook) {
+    if (eligibility.canBook || duoEligibility.canBook) {
       const active = rows.filter(function (b) { return b.active && b.date >= ctx.now.dateKey; });
       const candidates = bookingCandidates_(bookingWindows_(ctx.ss), bookingTimeOff_(ctx.ss), active, ctx.settings, ctx.now);
       slots = bookingApplyCalendarBusy_(candidates)
@@ -4144,6 +4313,10 @@ function bookingInfoCore_(ctx) {
         canBook: eligibility.canBook,
         reason: eligibility.code,
         message: eligibility.message,
+        // Duo sessions are counted separately from 1-on-1s.
+        duoLeft: ctx.member.duoLeft,
+        duoAvailable: duoAvailable,
+        duo: { canBook: duoEligibility.canBook, reason: duoEligibility.code, message: duoEligibility.message },
         // Their own address, so the page can fill in the email box. Only given to someone who has proved who they are.
         email: ctx.settings.emailClients ? bookingClientEmail_(ctx.ss, ctx.member.slug) : "",
       },
@@ -4192,7 +4365,11 @@ function bookSessionCore_(ctx, payload) {
     const existing = mine.filter(function (b) { return b.date === date && b.start === startText; })[0];
     if (existing) return jsonResponse_({ status: "success", booking: existing, already: true });
 
-    const eligibility = bookingEligibility_(ctx.member, ctx.settings, mine.length);
+    // A duo is two people, one coach: it comes off the booker's own duo balance.
+    const type = String(payload.type || "") === "duo" ? "duo" : "one-on-one";
+    const partner = type === "duo" ? cleanNote_(String(payload.partner || "").trim(), 80) : "";
+    if (type === "duo" && !partner) return bookingFail_("bad-request", "Add the name of the person training with you.");
+    const eligibility = bookingEligibility_(ctx.member, ctx.settings, mine, type);
     if (!eligibility.canBook) return bookingFail_(eligibility.code, eligibility.message);
 
     // A location must be chosen once any are configured (Locations tab has
@@ -4233,6 +4410,9 @@ function bookSessionCore_(ctx, payload) {
     row[c.slug] = ctx.member.slug;
     row[c.status] = "Booked";
     row[c.bookedAt] = ctx.now.stamp;
+    if (type === "duo" && c.type < 0) return bookingFail_("bad-request", "Duo sessions aren't set up yet. Please message Max.");
+    if (c.type >= 0) row[c.type] = type === "duo" ? "Duo" : "1-on-1";
+    if (c.partner >= 0) row[c.partner] = partner;
     if (c.location >= 0 && location) row[c.location] = location.name;
     const target = sheet.getRange(sheet.getLastRow() + 1, 1, 1, row.length);
     target.setNumberFormat("@");
@@ -4248,19 +4428,21 @@ function bookSessionCore_(ctx, payload) {
     const emailedTo = bookingConfirmClient_(
       Object.assign({}, ctx, { settings: effectiveSettings }),
       payload.email,
-      { id: id, date: date, startMin: startMin, endMin: candidate.endMin, minutes: candidate.minutes }
+      { id: id, date: date, startMin: startMin, endMin: candidate.endMin, minutes: candidate.minutes, duo: type === "duo", partner: partner }
     );
     if (c.calendarEventId >= 0) {
-      const eventId = bookingSyncCalendarCreate_(ctx.member.name, date, startMin, candidate.endMin, place);
+      const eventId = bookingSyncCalendarCreate_(type === "duo" ? ctx.member.name + " + " + partner + " (duo)" : ctx.member.name, date, startMin, candidate.endMin, place);
       if (eventId) sheet.getRange(target.getRow(), c.calendarEventId + 1).setNumberFormat("@").setValue(eventId);
     }
 
     const when = bookingLabel_(date, candidate.startMin);
     bookingNotify_(ctx.settings, "New booking: " + ctx.member.name + " — " + when, [
-      ctx.member.name + " booked a 1-on-1 session.",
+      ctx.member.name + (type === "duo" ? " booked a duo session with " + partner + "." : " booked a 1-on-1 session."),
       "",
       "When: " + when + " to " + bookingClock12_(candidate.endMin) + " (" + candidate.minutes + " min)",
-      ctx.member.unlimited ? "Plan: unlimited" : "1-on-1 sessions left: " + (ctx.member.sessionsLeft === null ? "not set" : ctx.member.sessionsLeft),
+      type === "duo"
+        ? "Duo sessions left: " + ctx.member.duoLeft
+        : (ctx.member.unlimited ? "Plan: unlimited" : "1-on-1 sessions left: " + (ctx.member.sessionsLeft === null ? "not set" : ctx.member.sessionsLeft)),
     ].concat(location ? ["Location: " + location.name] : [], bookingEmailedLine_(ctx.settings, emailedTo), [
       "",
       "To cancel it yourself, change its Status to Cancelled in the Bookings tab:",
@@ -4276,6 +4458,8 @@ function bookSessionCore_(ctx, payload) {
         end: endText,
         minutes: candidate.minutes,
         canCancel: (bookingStartMs_(date, startMin) - ctx.now.ms) / 3600000 >= ctx.settings.cancelNoticeHours,
+        type: type,
+        partner: partner,
       },
       emailedTo: emailedTo,
     });
@@ -4314,7 +4498,7 @@ function handleCancelBooking_(payload) {
 
     const when = bookingLabel_(target.date, target.startMin);
     bookingNotify_(ctx.settings, "Cancelled: " + ctx.member.name + " — " + when, [
-      ctx.member.name + " cancelled their 1-on-1 session.",
+      ctx.member.name + " cancelled their " + (target.type === "duo" ? "duo" : "1-on-1") + " session.",
       "",
       "Was: " + when + " to " + bookingClock12_(target.endMin) + " (" + target.minutes + " min)",
       "That time is open again.",
@@ -4618,4 +4802,207 @@ function bookingUpcomingRow_(ss, isWanted) {
     Utilities.sleep(800);
   }
   return row;
+}
+
+// ---------------------------------------------------------------------------
+// Booking code on the check-in screen (2026-10-29, Max's request)
+// ---------------------------------------------------------------------------
+
+/**
+ * When Max scans a client's QR, checkin.js asks for that client's booking
+ * code so he can tell them. Staff PIN only: the code is what lets a client
+ * book or cancel, and the Check-in Token it's looked up by sits in the
+ * public CRM. Read-only.
+ */
+function handleCheckinBookingCode_(payload) {
+  if (!checkPin_(payload.pin)) return jsonResponse_({ status: "unauthorized" });
+  const token = String(payload.token || "").trim();
+  if (!token) return jsonResponse_({ status: "error", message: "Missing token." });
+  const crm = getSheetByGid_(SESSIONS_SHEET_GID).getDataRange().getValues();
+  const nameCol = findColumn_(crm[0], "Name");
+  const tokenCol = findColumn_(crm[0], "Check-in Token");
+  if (nameCol < 0 || tokenCol < 0) return jsonResponse_({ status: "error", message: "Sessions Remaining is missing Name or Check-in Token." });
+  let slug = "";
+  for (let i = 1; i < crm.length; i++) {
+    if (String(crm[i][tokenCol] || "").trim() === token) {
+      slug = slugify_(crm[i][nameCol]);
+      break;
+    }
+  }
+  if (!slug) return jsonResponse_({ status: "not-found" });
+  const ss = bookingBook_();
+  const sheet = ss && ss.getSheetByName(BOOKING_TABS.clients);
+  if (!sheet || sheet.getLastColumn() < 1) return jsonResponse_({ status: "no-code" });
+  const table = bookingTable_(sheet);
+  const slugCol = findColumn_(table.header, "Slug");
+  const codeCol = findColumn_(table.header, "Booking Code");
+  if (slugCol < 0 || codeCol < 0) return jsonResponse_({ status: "no-code" });
+  for (let i = 0; i < table.rows.length; i++) {
+    if (slugify_(table.rows[i][slugCol]) === slug) {
+      const code = bookingNormalizeCode_(table.rows[i][codeCol]);
+      return jsonResponse_(code ? { status: "ok", code: code } : { status: "no-code" });
+    }
+  }
+  return jsonResponse_({ status: "no-code" });
+}
+
+// ---------------------------------------------------------------------------
+// Rolling up old logged sets (2026-10-29, Max's request)
+// ---------------------------------------------------------------------------
+//
+// Logged Sets grows every session, and every page reads it. Once a session
+// is more than 3 months old, its set-by-set detail is copied to a "Logged
+// Sets Archive" tab (nothing is ever lost), and Logged Sets keeps one row per
+// client, date, workout and exercise: the best set (highest estimated
+// one-rep max, or most reps for bodyweight work). Strength progress, last
+// time's weights, personal bests and the calendar all keep working from that
+// best set. Runs weekly once Max runs installSetRollup().
+
+const SET_ROLLUP_DAYS = 90;
+const LOGGED_SETS_ARCHIVE_NAME = "Logged Sets Archive";
+const ROLLUP_NOTE_PREFIX = "Best of ";
+
+/** A Date cell or "2026-09-09…" text -> "2026-09-09", or "". */
+function setRollupYmd_(v) {
+  if (v instanceof Date && !isNaN(v)) return Utilities.formatDate(v, TIMEZONE, "yyyy-MM-dd");
+  const m = String(v || "").match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  return m ? m[1] + "-" + ("0" + m[2]).slice(-2) + "-" + ("0" + m[3]).slice(-2) : "";
+}
+
+/** How good a set is: estimated one-rep max (Epley), or reps when there's no weight. */
+function setRollupScore_(kg, reps) {
+  const w = Number(kg) || 0;
+  const r = Number(reps) || 0;
+  return w > 0 ? w * (1 + r / 30) : r / 1000;
+}
+
+/**
+ * The work itself, on a Logged Sets sheet and its archive. Returns a summary.
+ * dryRun: count only, change nothing.
+ */
+function rollUpOldSets_(sheet, archiveFor, today, dryRun) {
+  const values = sheet.getDataRange().getValues();
+  if (values.length < 2) return { rolledGroups: 0, archivedRows: 0, rowsBefore: 0, rowsAfter: 0 };
+  const header = values[0].map(function (h) { return String(h).trim(); });
+  const col = {
+    client: findColumn_(header, "Client"),
+    workout: findColumn_(header, "Workout Name"),
+    exercise: findColumn_(header, "Exercise"),
+    setNumber: findColumn_(header, "Set Number"),
+    weight: findColumn_(header, "Weight (kg)"),
+    reps: findColumn_(header, "Reps"),
+    date: findColumn_(header, "Date"),
+    notes: findColumn_(header, "Notes"),
+  };
+  if (col.client < 0 || col.exercise < 0 || col.date < 0) throw new Error("Logged Sets needs Client, Exercise and Date columns.");
+  const [y, mo, d] = today.split("-").map(Number);
+  const cutoff = Utilities.formatDate(new Date(Date.UTC(y, mo - 1, d - SET_ROLLUP_DAYS, 12)), "UTC", "yyyy-MM-dd");
+
+  // Old rows, grouped; everything else stays exactly where it is.
+  const groups = {};
+  const order = [];
+  const keep = [];
+  for (let i = 1; i < values.length; i++) {
+    const row = values[i];
+    const date = setRollupYmd_(row[col.date]);
+    if (!date || date >= cutoff) {
+      keep.push({ row: row, at: i });
+      continue;
+    }
+    const key = [String(row[col.client]).trim().toLowerCase(), date, col.workout >= 0 ? String(row[col.workout]).trim() : "", String(row[col.exercise]).trim().toLowerCase()].join("|");
+    if (!groups[key]) {
+      groups[key] = [];
+      order.push(key);
+    }
+    groups[key].push({ row: row, at: i });
+  }
+
+  const archived = [];
+  let rolledGroups = 0;
+  order.forEach(function (key) {
+    const g = groups[key];
+    if (g.length < 2) {
+      keep.push(g[0]); // already one row (or rolled up before): nothing to do
+      return;
+    }
+    let best = g[0];
+    g.forEach(function (s) {
+      if (setRollupScore_(s.row[col.weight], s.row[col.reps]) > setRollupScore_(best.row[col.weight], best.row[col.reps])) best = s;
+    });
+    const merged = best.row.slice();
+    if (col.setNumber >= 0) merged[col.setNumber] = 1;
+    if (col.notes >= 0) {
+      const old = String(best.row[col.notes] || "").trim();
+      merged[col.notes] = ROLLUP_NOTE_PREFIX + g.length + " sets (rolled up; every set is in " + LOGGED_SETS_ARCHIVE_NAME + ")" + (old ? " · " + old : "");
+    }
+    keep.push({ row: merged, at: g[0].at });
+    g.forEach(function (s) { archived.push(s.row); });
+    rolledGroups++;
+  });
+
+  const summary = { rolledGroups: rolledGroups, archivedRows: archived.length, rowsBefore: values.length - 1, rowsAfter: keep.length, cutoff: cutoff };
+  if (dryRun || !rolledGroups) return summary;
+
+  // 1. Archive first, so the detail is safe before anything is removed.
+  const archive = archiveFor(header);
+  const start = archive.getLastRow() + 1;
+  archive.getRange(start, 1, archived.length, header.length).setValues(archived.map(function (r) { return r.slice(0, header.length); }));
+  if (archive.getLastRow() < start + archived.length - 1) throw new Error("The archive didn't save, so Logged Sets was left as it was.");
+
+  // 2. Rewrite Logged Sets in its original order, then clear what's left below.
+  keep.sort(function (a, b) { return a.at - b.at; });
+  const out = keep.map(function (k) { return k.row.slice(0, header.length); });
+  sheet.getRange(2, 1, out.length, header.length).setValues(out);
+  const spare = values.length - 1 - out.length;
+  if (spare > 0) sheet.getRange(2 + out.length, 1, spare, header.length).clearContent();
+  return summary;
+}
+
+function setRollupArchiveSheet_(header) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let archive = ss.getSheetByName(LOGGED_SETS_ARCHIVE_NAME);
+  if (!archive) {
+    archive = ss.insertSheet(LOGGED_SETS_ARCHIVE_NAME);
+    archive.getRange(1, 1, 1, header.length).setValues([header]).setFontWeight("bold");
+    archive.setFrozenRows(1);
+  }
+  return archive;
+}
+
+/** The weekly job (and safe to run by hand): rolls up sets older than 3 months. */
+function rollUpOldSets() {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LOGGED_SETS_SHEET_NAME);
+    if (!sheet) return "No Logged Sets tab.";
+    const today = Utilities.formatDate(new Date(), TIMEZONE, "yyyy-MM-dd");
+    const s = rollUpOldSets_(sheet, setRollupArchiveSheet_, today, false);
+    const msg = s.rolledGroups
+      ? "Rolled up " + s.archivedRows + " sets older than " + s.cutoff + " into " + s.rolledGroups + " best-set rows. Logged Sets went from " + s.rowsBefore + " to " + s.rowsAfter + " rows. Every set is kept in " + LOGGED_SETS_ARCHIVE_NAME + "."
+      : "Nothing to roll up yet: no session older than " + s.cutoff + " has more than one set per exercise.";
+    Logger.log(msg);
+    return msg;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Run from the editor to see what the next roll-up would do. Changes nothing. */
+function previewSetRollup() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LOGGED_SETS_SHEET_NAME);
+  const s = rollUpOldSets_(sheet, setRollupArchiveSheet_, Utilities.formatDate(new Date(), TIMEZONE, "yyyy-MM-dd"), true);
+  const msg = "Preview: " + s.archivedRows + " sets older than " + s.cutoff + " would become " + s.rolledGroups + " best-set rows (" + s.rowsBefore + " rows now, " + s.rowsAfter + " after).";
+  Logger.log(msg);
+  return msg;
+}
+
+/** Run ONCE from the Apps Script editor: rolls up old sets every Sunday at about 3am. */
+function installSetRollup() {
+  ScriptApp.getProjectTriggers()
+    .filter(function (t) { return t.getHandlerFunction() === "rollUpOldSets"; })
+    .forEach(function (t) { ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger("rollUpOldSets").timeBased().onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(3).create();
+  Logger.log("Old sets will be rolled up every Sunday around 3am.");
+  return "Old sets will be rolled up every Sunday around 3am.";
 }

@@ -47,6 +47,10 @@ const els = {
   confirm: document.getElementById("checkinConfirm"),
   success: document.getElementById("checkinSuccess"),
   name: document.getElementById("checkinName"),
+  codeRow: document.getElementById("checkinCodeRow"),
+  code: document.getElementById("checkinCode"),
+  successCode: document.getElementById("checkinSuccessCode"),
+  successCodeValue: document.getElementById("checkinSuccessCodeValue"),
   groupSessions: document.getElementById("checkinGroupSessions"),
   oneOnOneSessions: document.getElementById("checkinOneOnOneSessions"),
   pinRow: document.getElementById("checkinPinRow"),
@@ -56,6 +60,12 @@ const els = {
   freeLabel: document.getElementById("checkinFreeLabel"),
   groupButton: document.getElementById("checkinGroupButton"),
   oneOnOneButton: document.getElementById("checkinOneOnOneButton"),
+  duoButton: document.getElementById("checkinDuoButton"),
+  duoStat: document.getElementById("checkinDuoStat"),
+  duoSessions: document.getElementById("checkinDuoSessions"),
+  partnerRow: document.getElementById("checkinPartnerRow"),
+  partnerSelect: document.getElementById("checkinPartner"),
+  partnerName: document.getElementById("checkinPartnerName"),
   submitError: document.getElementById("checkinSubmitError"),
   successTitle: document.getElementById("checkinSuccessTitle"),
   successText: document.getElementById("checkinSuccessText"),
@@ -64,7 +74,9 @@ const els = {
 const BUTTON_LABELS = {
   group: "Check In — Group",
   "one-on-one": "Check In — 1-on-1",
+  duo: "Check In — Duo",
 };
+const NOT_A_MEMBER = "__other__"; // the partner picker's "someone who isn't a member" choice
 
 const DAY_ABBR = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -196,9 +208,11 @@ async function init() {
 
   let match;
   let col;
+  let allRows = []; // every client's row, for the duo partner picker
   try {
     const sheet = await fetchSheet();
     col = sheet.col;
+    allRows = sheet.rows;
     if (col.checkInToken < 0) {
       // "Check-in Token" column doesn't exist in the sheet yet.
       showState(els.invalid);
@@ -225,6 +239,31 @@ async function init() {
   // have tracked at all — disable that button rather than let it fire.
   els.groupButton.disabled = groupSessions === "N/A";
   els.oneOnOneButton.disabled = oneOnOneSessions === "N/A";
+
+  // Duo only shows once the sheet has a "Duo Remaining" column (setupDuoAndPricing in Code.gs adds it).
+  if (col.duoSessions >= 0) {
+    const duoSessions = parseSessions(match[col.duoSessions], 0);
+    els.duoSessions.textContent = duoSessions;
+    els.duoStat.hidden = false;
+    els.duoButton.hidden = false;
+    els.partnerRow.hidden = false;
+    for (const r of allRows) {
+      const name = String(r[col.name] || "").trim();
+      if (!name || slugify(name) === slugify(match[col.name])) continue;
+      const option = document.createElement("option");
+      option.value = slugify(name);
+      option.textContent = name;
+      els.partnerSelect.appendChild(option);
+    }
+    const other = document.createElement("option");
+    other.value = NOT_A_MEMBER;
+    other.textContent = "Someone who isn't a member…";
+    els.partnerSelect.appendChild(other);
+    els.partnerSelect.addEventListener("change", () => {
+      els.partnerName.hidden = els.partnerSelect.value !== NOT_A_MEMBER;
+      if (!els.partnerName.hidden) els.partnerName.focus();
+    });
+  }
 
   // Loyalty punchcard: every 10th visit (their 10th, 20th, 30th...) is free,
   // and so is their very first ever visit. Pre-tick the box either way —
@@ -262,6 +301,7 @@ async function init() {
   }
   if (rememberedPin) {
     els.pinRow.hidden = true;
+    showBookingCode(rememberedPin);
   } else {
     els.pinInput.focus();
   }
@@ -271,6 +311,40 @@ async function init() {
 
   els.groupButton.addEventListener("click", () => submitCheckIn("group"));
   els.oneOnOneButton.addEventListener("click", () => submitCheckIn("one-on-one"));
+  els.duoButton.addEventListener("click", () => submitCheckIn("duo"));
+}
+
+/**
+ * The client's booking code, under their name, so it can be read out to them
+ * (2026-10-29). Asked for with the staff PIN, because the code is what lets a
+ * client book or cancel. Quietly stays hidden if anything goes wrong: it's a
+ * convenience, never something check-in waits on.
+ */
+let bookingCodeAsked = false;
+async function showBookingCode(pin) {
+  if (bookingCodeAsked || !pin) return;
+  bookingCodeAsked = true;
+  try {
+    const res = await fetch(APPS_SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" }, // avoids a CORS preflight
+      body: JSON.stringify({ action: "checkinBookingCode", token, pin }),
+    });
+    const result = await res.json();
+    let text = "";
+    if (result.status === "ok") text = result.code;
+    else if (result.status === "no-code") text = "None yet (run issueBookingCodes)";
+    else {
+      if (result.status === "unauthorized") bookingCodeAsked = false;
+      return;
+    }
+    els.code.textContent = text;
+    els.successCodeValue.textContent = text;
+    els.codeRow.hidden = false;
+    els.successCode.hidden = false;
+  } catch (err) {
+    bookingCodeAsked = false; // try again after the next check-in
+  }
 }
 
 function currentPin() {
@@ -287,7 +361,8 @@ async function submitCheckIn(sessionType) {
   // Disable both — a tap on either should block the other, not just itself.
   els.groupButton.disabled = true;
   els.oneOnOneButton.disabled = true;
-  const tappedButton = sessionType === "group" ? els.groupButton : els.oneOnOneButton;
+  els.duoButton.disabled = true;
+  const tappedButton = sessionType === "group" ? els.groupButton : sessionType === "duo" ? els.duoButton : els.oneOnOneButton;
   tappedButton.textContent = "Checking In…";
   els.submitError.hidden = true;
 
@@ -299,7 +374,7 @@ async function submitCheckIn(sessionType) {
     const res = await fetch(APPS_SCRIPT_URL, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" }, // avoids a CORS preflight
-      body: JSON.stringify({ token, sessionType, pin, freeSession }),
+      body: JSON.stringify(Object.assign({ token, sessionType, pin, freeSession }, duoPartnerFields())),
     });
     result = await res.json();
   } catch (err) {
@@ -328,6 +403,7 @@ async function submitCheckIn(sessionType) {
     } catch (err) {
       // Ignore — this device just asks for the PIN again next time.
     }
+    showBookingCode(pin); // first check-in on this phone: the PIN is known now
   }
 
   if (result.status === "success") {
@@ -335,8 +411,9 @@ async function submitCheckIn(sessionType) {
     els.successText.textContent = result.freeSession
       ? "On the house. Enjoy!"
       : Number.isFinite(result.sessionsRemaining)
-        ? `${result.sessionsRemaining} session${result.sessionsRemaining === 1 ? "" : "s"} left.`
+        ? `${result.sessionsRemaining} ${sessionType === "duo" ? "duo " : ""}session${result.sessionsRemaining === 1 ? "" : "s"} left.`
         : "Enjoy your session.";
+    if (result.partnerPunched) els.successText.textContent += " Their partner got a loyalty punch too.";
     showState(els.success);
     return;
   }
@@ -363,7 +440,15 @@ function showRetry(button, sessionType, message) {
   els.submitError.hidden = false;
   els.groupButton.disabled = els.groupSessions.textContent === "N/A";
   els.oneOnOneButton.disabled = els.oneOnOneSessions.textContent === "N/A";
+  els.duoButton.disabled = false;
   button.textContent = BUTTON_LABELS[sessionType];
+}
+
+/** The duo partner picked on screen: a member's card id, or a typed name for someone who isn't a member. Nothing for any other session type. */
+function duoPartnerFields() {
+  const value = els.partnerSelect.value;
+  if (value === NOT_A_MEMBER) return { partner: "", partnerName: els.partnerName.value.trim() };
+  return { partner: value, partnerName: "" };
 }
 
 init();

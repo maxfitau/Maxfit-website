@@ -83,7 +83,7 @@
 .progress__headline-delta {
   font-family: var(--font-body);
   font-weight: 600;
-  font-size: 13.5px;
+  font-size: 14px;
   color: var(--grey);
 }
 
@@ -117,7 +117,7 @@
 .progress__single-hint,
 .progress__note {
   font-family: var(--font-body);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
   color: var(--dim);
   text-align: center;

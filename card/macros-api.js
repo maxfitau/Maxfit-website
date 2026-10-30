@@ -133,8 +133,8 @@ const MacroApi = (function () {
   }
 
   /** A coach request: PIN instead of a member key. */
-  function coach(action, pin, fields) {
-    return post(Object.assign({ action: action, pin: pin }, fields || {}));
+  function coach(action, pin, fields, options) {
+    return post(Object.assign({ action: action, pin: pin }, fields || {}), options);
   }
 
   return { configured: configured, identity: identity, saveLink: saveLink, call: call, coach: coach };

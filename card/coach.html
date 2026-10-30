@@ -11,9 +11,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="preconnect" href="https://script.google.com" />
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="styles.css?v=20261026a" />
-<link rel="stylesheet" href="macros.css?v=20261026a" />
-<link rel="stylesheet" href="week.css?v=20261013a" />
+<link rel="stylesheet" href="styles.css?v=20261026b" />
+<link rel="stylesheet" href="macros.css?v=20261029a" />
+<link rel="stylesheet" href="week.css?v=20261026b" />
 <style>
   html, body { height: auto; }
   .coach [hidden] { display: none !important; }
@@ -29,6 +29,11 @@
   .coach-actions .fuel-btn { width: auto; padding: 10px 14px; font-size: 13px; border-radius: 10px; }
   .coach-form { display: flex; flex-direction: column; gap: 10px; }
   .coach-check { display: flex; gap: 8px; align-items: center; font-family: var(--font-body); font-size: 13px; color: var(--grey); }
+  /* Food Q&A safety test answers (2026-10-29) */
+  .coach-safety { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+  .coach-qa { display: flex; flex-direction: column; gap: 6px; }
+  .coach-qa__q { margin: 0; font-family: var(--font-body); font-weight: 600; font-size: 16px; color: var(--white); }
+  .coach-qa__a { margin: 0; font-family: var(--font-body); font-size: 16px; line-height: 1.45; color: var(--grey); }
 </style>
 </head>
 <body>
@@ -43,9 +48,9 @@
 
 <div class="fuel-toast" id="fuelToast" role="status" aria-live="polite" hidden></div>
 
-<script src="sheet.js?v=20261009b" defer></script>
-<script src="macros-core.js?v=20261013b" defer></script>
-<script src="macros-api.js?v=20260925a" defer></script>
-<script src="coach.js?v=20261022a" defer></script>
+<script src="sheet.js?v=20261029a" defer></script>
+<script src="macros-core.js?v=20261029a" defer></script>
+<script src="macros-api.js?v=20261029a" defer></script>
+<script src="coach.js?v=20261029a" defer></script>
 </body>
 </html>
