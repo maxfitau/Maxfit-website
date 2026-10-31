@@ -60,7 +60,7 @@
  * or change rows carrying their own id.
  */
 
-const MACROS_VERSION = "2026-10-31a";
+const MACROS_VERSION = "2026-10-31b";
 const TIMEZONE = "Australia/Sydney";
 const MAIN_SESSIONS_GID = 1169726169; // "Sessions Remaining" in the CRM sheet
 const CARD_URL = "https://maxfit.now/card/";
@@ -3212,4 +3212,51 @@ function actionCoachSafetyTest_() {
     }
   });
   return { results: results };
+}
+
+/**
+ * Lays out a spreadsheet's tabs: the ones Max reads on the left in MaxFit red,
+ * the ones only the app reads on the right in grey, anything else (his own
+ * tabs) in between, untouched. Order and colour never change how anything
+ * works: every tab is found by its name or gid. Names are matched ignoring
+ * case; a name that isn't there is skipped.
+ */
+function arrangeTabs_(ss, yours, app) {
+  const sheets = ss.getSheets();
+  const byName = {};
+  sheets.forEach(function (s) { byName[s.getName().toLowerCase()] = s; });
+  const pick = function (names) { return names.map(function (n) { return byName[n.toLowerCase()]; }).filter(Boolean); };
+  const first = pick(yours);
+  const last = pick(app);
+  const placed = first.concat(last);
+  const middle = sheets.filter(function (s) { return placed.indexOf(s) < 0; });
+  const order = first.concat(middle, last);
+  order.forEach(function (s, i) {
+    ss.setActiveSheet(s);
+    ss.moveActiveSheet(i + 1);
+  });
+  first.forEach(function (s) { s.setTabColor("#E00000"); });
+  last.forEach(function (s) { s.setTabColor("#555555"); });
+  if (order.length) ss.setActiveSheet(order[0]);
+  return order.map(function (s) { return s.getName(); });
+}
+
+/**
+ * Run from the editor (2026-10-31): tidies the MaxFit Macros sheet's tabs.
+ * Members, Foods and AI Usage (the ones Max checks) go left in red; the rest
+ * only the app reads, so they go right in grey. Also deletes the old Scan
+ * Credits tab, unused since the per-scan credits were dropped on 2026-09-23
+ * (nothing creates or reads it). Safe to run again.
+ */
+function arrangeSheetTabs() {
+  const ss = macroSheet_();
+  const old = ss.getSheetByName("Scan Credits");
+  if (old) ss.deleteSheet(old);
+  const order = arrangeTabs_(ss,
+    [TABS.members.name, TABS.foods.name, TABS.usage.name],
+    Object.keys(TABS).map(function (k) { return TABS[k].name; }).filter(function (n) {
+      return [TABS.members.name, TABS.foods.name, TABS.usage.name].indexOf(n) < 0;
+    }));
+  Logger.log("Macros: " + order.join(", ") + (old ? "\nDeleted the old Scan Credits tab." : ""));
+  return order;
 }

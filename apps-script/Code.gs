@@ -32,7 +32,7 @@ const GROCERY_SHEET_NAME = "Grocery Items";
 // Changes whenever this file does, and is shown when you open the deployed
 // URL in a browser (see doGet) — the quick way to tell whether a redeploy
 // actually took, instead of guessing from behaviour.
-const BACKEND_VERSION = "2026-10-31a";
+const BACKEND_VERSION = "2026-10-31b";
 
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -5028,4 +5028,48 @@ function installSetRollup() {
   ScriptApp.newTrigger("rollUpOldSets").timeBased().onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(3).create();
   Logger.log("Old sets will be rolled up every Sunday around 3am.");
   return "Old sets will be rolled up every Sunday around 3am.";
+}
+
+/**
+ * Lays out a spreadsheet's tabs: the ones Max reads on the left in MaxFit red,
+ * the ones only the app reads on the right in grey, anything else (his own
+ * tabs) in between, untouched. Order and colour never change how anything
+ * works: every tab is found by its name or gid. Names are matched ignoring
+ * case; a name that isn't there is skipped.
+ */
+function arrangeTabs_(ss, yours, app) {
+  const sheets = ss.getSheets();
+  const byName = {};
+  sheets.forEach(function (s) { byName[s.getName().toLowerCase()] = s; });
+  const pick = function (names) { return names.map(function (n) { return byName[n.toLowerCase()]; }).filter(Boolean); };
+  const first = pick(yours);
+  const last = pick(app);
+  const placed = first.concat(last);
+  const middle = sheets.filter(function (s) { return placed.indexOf(s) < 0; });
+  const order = first.concat(middle, last);
+  order.forEach(function (s, i) {
+    ss.setActiveSheet(s);
+    ss.moveActiveSheet(i + 1);
+  });
+  first.forEach(function (s) { s.setTabColor("#E00000"); });
+  last.forEach(function (s) { s.setTabColor("#555555"); });
+  if (order.length) ss.setActiveSheet(order[0]);
+  return order.map(function (s) { return s.getName(); });
+}
+
+/**
+ * Run from the editor (2026-10-31): tidies the CRM's and the MaxFit Bookings
+ * sheet's tabs. In the CRM, what Max checks goes left in red and what only the
+ * app reads goes right in grey. Every Bookings tab is one he uses, so they're
+ * all red, most-checked first. Safe to run again.
+ */
+function arrangeSheetTabs() {
+  const crm = arrangeTabs_(SpreadsheetApp.getActiveSpreadsheet(),
+    ["Client cards", "Sessions Remaining", "Leads", "Attendance Log", "Client Details", "Instructions"],
+    ["Exercises", "Workout Exercises", "Logged Sets", LOGGED_SETS_ARCHIVE_NAME, "Grocery Items", "Refferals"]);
+  const book = bookingBook_();
+  const bookings = book ? arrangeTabs_(book,
+    ["Upcoming", "Bookings", "Clients", "Availability", "Time Off", "Prices", "Payments", "Settings"], []) : [];
+  Logger.log("CRM: " + crm.join(", ") + "\nBookings: " + bookings.join(", "));
+  return { crm: crm, bookings: bookings };
 }
