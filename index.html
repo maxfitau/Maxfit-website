@@ -50,7 +50,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="styles.css?v=20261027c" />
+<link rel="stylesheet" href="styles.css?v=20261101a" />
 </head>
 <body>
 
@@ -334,6 +334,12 @@ Your browser can't play this video.
 </div>
 <figcaption><strong>Fuel</strong><span>Log your food, hit your protein and see your macros at a glance.</span></figcaption>
 </figure>
+</div>
+<!-- Try it: the real card in a demo frame, with a made-up member. Nothing it
+     does reaches Max's sheets (demo/demo-mode.js). -->
+<div class="showcase__try reveal">
+<button class="btn btn--primary" id="demoOpen" type="button" aria-haspopup="dialog">Try the card yourself</button>
+<p>Tap around a made-up member's card. Nothing you do is saved.</p>
 </div>
 </div>
 </section>
@@ -1266,7 +1272,16 @@ Or email directly
 </div>
 </div>
 
-<script src="script.js?v=2026101601"></script>
+<!-- Card demo: script.js puts a fresh /card/?demo=1 frame in here each time it opens. -->
+<div class="demo" id="demo" role="dialog" aria-modal="true" aria-labelledby="demoLabel" hidden>
+<div class="demo__bar">
+<p class="demo__label" id="demoLabel"><strong>Demo card</strong><span>Made-up member. Nothing is saved.</span></p>
+<button class="demo__close" id="demoClose" type="button">Back to site</button>
+</div>
+<div class="demo__phone" id="demoPhone"></div>
+</div>
+
+<script src="script.js?v=20261101a"></script>
 
 <!-- Redesign: GSAP + Lenis from CDN, pinned versions. No build step —
      plain <script> tags, same pattern as the Google Fonts <link> above. -->

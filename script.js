@@ -690,4 +690,44 @@ document.addEventListener("DOMContentLoaded", function () {
       }, { threshold: 0 }).observe(showcaseVideo);
     }
   }
+
+  /* ---------- Card demo ----------
+     A brand-new frame each time it opens, so every visitor starts from the
+     same made-up member: the demo keeps its state in the frame itself
+     (demo/demo-mode.js) and nothing it does is saved anywhere. */
+  var demo = document.getElementById("demo");
+  var demoOpen = document.getElementById("demoOpen");
+  var demoClose = document.getElementById("demoClose");
+  var demoPhone = document.getElementById("demoPhone");
+  if (demo && demoOpen && demoClose && demoPhone) {
+    var demoLastFocused = null;
+    var openDemo = function () {
+      var frame = document.createElement("iframe");
+      frame.title = "MaxFit card demo";
+      frame.allow = "camera";
+      frame.src = "card/?demo=1";
+      demoPhone.innerHTML = "";
+      demoPhone.appendChild(frame);
+      demo.hidden = false;
+      document.body.classList.add("demo-open");
+      if (window.MaxFitAnim && window.MaxFitAnim.lenis) window.MaxFitAnim.lenis.stop();
+      demoLastFocused = document.activeElement;
+      demoClose.focus();
+    };
+    var closeDemo = function () {
+      demo.hidden = true;
+      demoPhone.innerHTML = "";
+      document.body.classList.remove("demo-open");
+      if (window.MaxFitAnim && window.MaxFitAnim.lenis) window.MaxFitAnim.lenis.start();
+      if (demoLastFocused && typeof demoLastFocused.focus === "function") demoLastFocused.focus();
+    };
+    demoOpen.addEventListener("click", openDemo);
+    demoClose.addEventListener("click", closeDemo);
+    demo.addEventListener("click", function (e) {
+      if (e.target === demo) closeDemo();
+    });
+    window.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && !demo.hidden) closeDemo();
+    });
+  }
 });
