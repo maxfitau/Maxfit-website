@@ -18,7 +18,7 @@
   "use strict";
 
   const MARK = "maxfitdemo:";
-  const VERSION = "20261101a";
+  const VERSION = "20261101b";
   const BASE = "/demo/";
   const FUEL_DEPLOYMENT = "AKfycbw5B8tpkFA1wEC8b3F9IKeiuWDjtVoW5IdXRE71D4FHvtc96RVYzLYlQPoQzfrjplNe";
   // Pages a visitor can move between. Everything else is Max's side, or leaves the demo.
@@ -181,7 +181,7 @@
     toastEl.textContent = text;
     toastEl.style.opacity = "1";
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { toastEl.style.opacity = "0"; }, 2600);
+    toastTimer = setTimeout(() => { toastEl.style.opacity = "0"; }, Math.max(2600, text.length * 60));
   }
   window.__maxfitDemoToast = toast;
 
@@ -207,7 +207,7 @@
       }
       e.preventDefault();
       if (/^(sms|tel|mailto):/i.test(url.protocol)) toast("In the real app this opens your messages. The demo keeps it here.");
-      else if (/stripe\.com$/.test(url.hostname)) toast("Payments are switched off in the demo.");
+      else if (/stripe\.com$/.test(url.hostname)) toast("On your real card this opens Stripe's secure checkout, and the session is added to your card once it's paid. The demo doesn't charge anything.");
       else if (url.origin === location.origin && /^\/(card\/(coach|clients|book-staff)|workout\/builder)/.test(url.pathname)) toast("That's Max's side of the app.");
       else toast("That opens outside the card, so it's switched off in the demo.");
     },

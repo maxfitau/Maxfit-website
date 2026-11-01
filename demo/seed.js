@@ -127,7 +127,17 @@ const DemoSeed = {
     };
     put("Notify email", "");
     put("Email clients", "No");
-    put("Online payments", "No");
+    // Buy buttons show as on a real card; demo-mode.js stops the click before it reaches Stripe.
+    put("Online payments", "Yes");
+    PropertiesService.getScriptProperties().setProperty(BOOKING_STRIPE_KEY_PROPERTY, "demo-placeholder");
+    const prices = book.getSheetByName(BOOKING_TABS.prices);
+    const ph = prices.getRange(1, 1, 1, prices.getLastColumn()).getValues()[0].map(String);
+    const pv = prices.getDataRange().getValues();
+    for (let r = 1; r < pv.length; r++) {
+      const onlyFor = String(pv[r][ph.indexOf("Only for")] || "").trim();
+      const on = String(pv[r][ph.indexOf("On")]).trim() === "Yes";
+      if (on && !onlyFor) prices.getRange(r + 1, ph.indexOf("Pay link") + 1).setValue("https://buy.stripe.com/demo");
+    }
     put("Contact link", "");
     put("Meeting place", "the park (the demo doesn't really book)");
     const avail = book.getSheetByName(BOOKING_TABS.availability);
