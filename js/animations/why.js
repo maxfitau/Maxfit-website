@@ -1,6 +1,6 @@
 /* 03 · Why it matters: public-health stats, each its own pinned
    beat. The number counts up, then blurs/melts (SVG goo filter) into
-   the next one. Only after the last stat has melted away does "Max Fit
+   the next one. Only after the last stat has melted away does "MaxFit
    is built to keep you on the right side of these numbers" appear,
    along with the sources footnote list.
 
