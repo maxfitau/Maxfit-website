@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="../card/styles.css?v=20261026b" />
-<link rel="stylesheet" href="styles.css?v=20261026b" />
+<link rel="stylesheet" href="styles.css?v=20261102a" />
 </head>
 <body>
 
@@ -53,11 +53,24 @@
   </a>
 </main>
 
+<div class="workout__rest" id="restTimer" hidden>
+  <svg class="workout__rest-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5h4M12 2.5v3"/><circle cx="12" cy="14" r="8.5"/><path d="M12 14V9.5M12 14l3.5 2"/></svg>
+  <div class="workout__rest-mid">
+    <span class="workout__rest-label" id="restLabel">Rest</span>
+    <span class="workout__rest-value" id="restValue">1:30</span>
+  </div>
+  <button class="workout__rest-btn" id="restMinus" type="button" aria-label="15 seconds less rest">&minus;15</button>
+  <button class="workout__rest-btn" id="restPlus" type="button" aria-label="15 seconds more rest">+15</button>
+  <button class="workout__rest-btn workout__rest-btn--close" id="restClose" type="button" aria-label="Dismiss rest timer">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5l14 14M19 5L5 19"/></svg>
+  </button>
+</div>
+
 <div class="status" id="status" hidden></div>
 
 <script src="../card/sheet.js?v=20261029a"></script>
 <script src="../card/muscle-map.js?v=20261026b"></script>
 <script src="../card/bottom-nav.js?v=20261003a"></script>
-<script src="app.js?v=20261029a"></script>
+<script src="app.js?v=20261102a"></script>
 </body>
 </html>

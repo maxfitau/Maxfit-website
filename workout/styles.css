@@ -261,6 +261,96 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+.workout__rest {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 90px; /* replaced at runtime once the bottom nav's real height is known */
+  width: calc(100% - 32px);
+  max-width: 400px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px 10px 10px 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  transition: transform 0.2s var(--ease, ease), opacity 0.2s var(--ease, ease);
+}
+
+.workout__rest[hidden] {
+  display: none;
+}
+
+.workout__rest--done .workout__rest-value,
+.workout__rest--done .workout__rest-label {
+  color: var(--red);
+}
+
+.workout__rest-icon {
+  flex-shrink: 0;
+  color: var(--dim);
+}
+
+.workout__rest-mid {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.workout__rest-label {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
+  color: var(--dim);
+}
+
+.workout__rest-value {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 22px;
+  color: var(--white);
+  font-variant-numeric: tabular-nums;
+}
+
+.workout__rest-btn {
+  flex-shrink: 0;
+  min-width: 48px;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--grey-light);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  transition: background 0.15s var(--ease, ease);
+}
+
+.workout__rest-btn:active {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.workout__rest-btn--close {
+  color: var(--dim);
+  background: transparent;
+  border-color: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workout__rest {
+    transition: none;
+  }
+}
+
 .workout__picker {
   display: flex;
   flex-direction: column;

@@ -110,6 +110,12 @@ const els = {
   backLink: document.getElementById("backLink"),
   historyLink: document.getElementById("historyLink"),
   progressLink: document.getElementById("progressLink"),
+  restTimer: document.getElementById("restTimer"),
+  restValue: document.getElementById("restValue"),
+  restLabel: document.getElementById("restLabel"),
+  restMinus: document.getElementById("restMinus"),
+  restPlus: document.getElementById("restPlus"),
+  restClose: document.getElementById("restClose"),
 };
 
 function showStatus(message, isError) {
@@ -211,6 +217,86 @@ function stopWorkoutTimer() {
   }
   return workoutTimerStart ? Date.now() - workoutTimerStart : 0;
 }
+
+/**
+ * Rest-between-sets countdown — separate from the workout-length timer
+ * above. Starts fresh at the client's own last-chosen length (default 90s)
+ * on every successful set save, rather than extending a running one, since
+ * a clean rest after each set is the simplest mental model. Skipped
+ * entirely in coach mode: same reasoning as the workout timer, a session
+ * logged after the fact has no real rest to time.
+ */
+let restDuration = 90;
+let restRemaining = 0;
+let restInterval = null;
+let restDoneTimeout = null;
+
+function formatRest(totalSeconds) {
+  const s = Math.max(0, totalSeconds);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+/** Keeps the floating bar clear of the bottom-nav pill, measured rather than guessed — the pill's real height and safe-area offset vary by device, same approach bottom-nav.js uses for its own spacer. */
+function positionRestTimer() {
+  const nav = document.querySelector(".bottom-nav");
+  if (!nav) return;
+  els.restTimer.style.bottom = `${window.innerHeight - nav.getBoundingClientRect().top + 10}px`;
+}
+
+function startRestTimer() {
+  if (coachMode) return;
+  clearInterval(restInterval);
+  clearTimeout(restDoneTimeout);
+  els.restTimer.classList.remove("workout__rest--done");
+  els.restLabel.textContent = "Rest";
+  restRemaining = restDuration;
+  els.restValue.textContent = formatRest(restRemaining);
+  positionRestTimer();
+  els.restTimer.hidden = false;
+  restInterval = setInterval(() => {
+    restRemaining -= 1;
+    if (restRemaining <= 0) {
+      clearInterval(restInterval);
+      restInterval = null;
+      restRemaining = 0;
+      els.restValue.textContent = formatRest(0);
+      els.restLabel.textContent = "Rest's up — go!";
+      els.restTimer.classList.add("workout__rest--done");
+      if (navigator.vibrate) navigator.vibrate([150, 100, 150]);
+      restDoneTimeout = setTimeout(() => {
+        els.restTimer.hidden = true;
+      }, 4000);
+      return;
+    }
+    els.restValue.textContent = formatRest(restRemaining);
+  }, 1000);
+}
+
+function stopRestTimer() {
+  clearInterval(restInterval);
+  clearTimeout(restDoneTimeout);
+  restInterval = null;
+  els.restTimer.hidden = true;
+}
+
+els.restMinus.addEventListener("click", () => {
+  restDuration = Math.max(15, restDuration - 15);
+  if (restInterval) {
+    restRemaining = Math.max(1, restRemaining - 15);
+    els.restValue.textContent = formatRest(restRemaining);
+  }
+});
+els.restPlus.addEventListener("click", () => {
+  restDuration = Math.min(600, restDuration + 15);
+  if (restInterval) {
+    restRemaining += 15;
+    els.restValue.textContent = formatRest(restRemaining);
+  }
+});
+els.restClose.addEventListener("click", stopRestTimer);
+window.addEventListener("resize", () => {
+  if (!els.restTimer.hidden) positionRestTimer();
+});
 
 function formatWeight(n) {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
@@ -1196,6 +1282,7 @@ function renderWorkout(shared, workoutName, exercises) {
     const after = ctx.persist();
     if (!before || !after || after.rev !== before.rev) els.done.hidden = true; // changed since it was logged — needs logging again
     ctx.updateSummary();
+    startRestTimer();
   };
 
   els.list.appendChild(buildMuscleLoadSection(ctx));
@@ -1400,6 +1487,7 @@ function showPicker(shared, workoutGroups, workoutNames) {
   els.done.hidden = true;
   stopWorkoutTimer();
   els.timer.hidden = true;
+  stopRestTimer();
   els.pageTag.textContent = coachMode ? "Choose Workout" : "Choose Your Workout";
   els.picker.hidden = false;
   els.pickerList.innerHTML = "";

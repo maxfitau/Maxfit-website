@@ -17,6 +17,7 @@
     arrow: '<path d="M4 12h15M13 6l6 6-6 6"/>',
     cart: '<circle cx="9" cy="20" r="1.3"/><circle cx="17" cy="20" r="1.3"/><path d="M3 4h2.5l2.2 10.5h10l2-7.5H6.5"/>',
     utensils: '<path d="M7 3v8M4.5 3v5a2.5 2.5 0 0 0 5 0V3M7 11v10M17 3c-2 1.5-3 4-3 7h3v11"/>',
+    timer: '<path d="M10 2.5h4M12 2.5v3"/><circle cx="12" cy="14" r="8.5"/><path d="M12 14V9.5M12 14l3.5 2"/>',
   };
   window.MaxIcon = function (name) {
     const d = PATHS[name] || PATHS.dumbbell;
