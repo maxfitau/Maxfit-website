@@ -316,7 +316,14 @@ const MealPlan = (function () {
       html += options.length
         ? options.map((m, i) => mealOption(m, i, i === openIndex)).join("")
         : `<div class="week-card"><p class="week-text">No ideas yet. Tell Fuel what you like below, then tap Get new ideas.</p></div>`;
-      const left = aiLeft && aiLeft.limit ? ` · ${aiLeft.left} left today` : "";
+      // Off Diamond, ideas come out of pay-as-you-go uses rather than the daily ones.
+      const left = !aiLeft
+        ? ""
+        : aiLeft.credits && aiLeft.tier !== "diamond"
+        ? ` · ${aiLeft.credits} pay-as-you-go left`
+        : aiLeft.limit
+        ? ` · ${aiLeft.left} left today`
+        : "";
       html +=
         `<div><p class="mp-q mp-tight">Foods you like or don't like</p><input class="fr-text" type="text" data-likes maxlength="200" value="${esc(planner.likes || "")}" placeholder="e.g. love eggs, not a fan of fish" aria-label="Foods you like or don't like" /></div>` +
         `<button class="week-btn week-btn--ghost" type="button" data-ideas>Get new ideas</button>` +

@@ -106,6 +106,8 @@ Stripe moves its menus around. If you can't find something, type its name ("Paym
 | `STRIPE_DIAMOND_LINK` | the Diamond monthly link |
 | `STRIPE_DIAMOND_YEAR_LINK` | the Diamond yearly link |
 | `STRIPE_PORTAL_LINK` | the portal login link from step 5 |
+| `STRIPE_CREDITS_45_LINK` | pay as you go: the $5 (45 AI uses) link, price lookup key `fuel_credits_45` |
+| `STRIPE_CREDITS_100_LINK` | pay as you go: the $10 (100 AI uses) link, price lookup key `fuel_credits_100` |
 
 A plan whose link isn't set simply has no buy button, and the Monthly / Yearly switch only appears once at least one yearly link is set.
 

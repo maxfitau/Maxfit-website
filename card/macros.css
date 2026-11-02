@@ -2027,6 +2027,54 @@ a.fuel-btn {
   color: var(--diamond-text);
 }
 
+/* Pay as you go (2026-11-02): one-off top-ups. No medal, so it wears the
+   card's own red, the only accent. */
+.fuel-tier--payg {
+  color: var(--white);
+  background: transparent;
+  border-color: var(--red);
+}
+
+.fuel-plan-card--payg {
+  border-color: rgba(224, 0, 0, 0.45);
+  background: linear-gradient(180deg, rgba(224, 0, 0, 0.08), transparent 60%), var(--bg);
+}
+
+.fuel-plan-card--payg.is-current {
+  border-color: var(--red);
+}
+
+.fuel-plan-card--payg .fuel-plan-card__badge {
+  color: var(--white);
+}
+
+.fuel-packs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.fuel-btn.fuel-pack {
+  flex-direction: column;
+  gap: 2px;
+  min-height: 56px;
+  padding: 10px 8px;
+  text-decoration: none;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.fuel-pack b {
+  font-size: 20px;
+  line-height: 1.1;
+}
+
+.fuel-pack span {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 14px;
+}
+
 /* "Save $17.89 · 3 months free", on Yearly. */
 .fuel-plan-card p.fuel-plan-card__save {
   font-family: var(--font-head);

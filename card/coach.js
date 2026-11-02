@@ -126,7 +126,7 @@
           <span class="coach-client__meta">${c.lastLog ? `Last log ${esc(c.lastLog)}` : "Never logged"}</span>
         </div>
         <span class="coach-client__meta">${esc(targetsText(c))}</span>
-        ${c.hasKey && aiEnabled ? `<span class="coach-client__meta">${esc(planText(c.plan))}</span>` : ""}
+        ${c.hasKey && aiEnabled ? `<span class="coach-client__meta">${esc(planText(c.plan))}${c.credits ? ` · ${esc(c.credits)} pay-as-you-go AI uses` : ""}</span>` : ""}
         ${c.hasKey ? `<span class="coach-client__meta">${esc(progressText(c))}</span>` : ""}
         ${goalHtml(c)}
         ${c.link ? `<div class="coach-link">${esc(c.link)}</div>` : ""}
@@ -139,6 +139,7 @@
                   .join("")
               : ""
           }
+          ${c.hasKey && aiEnabled ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="credits">Add AI uses</button>' : ""}
           ${c.hasKey ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="weight">Log weight</button>' : ""}
           ${c.hasKey && c.targets ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="goal">Set goal</button>' : ""}
           ${c.link ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="rotate">New link</button>' : ""}
@@ -151,6 +152,18 @@
                   <label class="fuel-field"><span class="card__label">Date</span><input class="fuel-input" name="date" type="date" value="${esc(MacroCore.sydneyDate())}" /></label>
                 </div>
                 <div class="coach-actions"><button class="fuel-btn" type="button" data-a="saveWeight">Save weight</button></div>
+              </div>`
+            : ""
+        }
+        ${
+          form === "credits"
+            ? `<div class="coach-form">
+                <div class="fuel-fields2">
+                  <label class="fuel-field"><span class="card__label">AI uses</span><input class="fuel-input" name="uses" type="number" inputmode="numeric" step="1" placeholder="45" /></label>
+                  <label class="fuel-field"><span class="card__label">Note (optional)</span><input class="fuel-input" name="note" type="text" maxlength="80" placeholder="Cash, refund…" /></label>
+                </div>
+                <span class="coach-client__meta">Pay as you go: $5 = 45, $10 = 100. Stripe top-ups are added by themselves. Type a minus number to take some back (e.g. -45 after a refund).</span>
+                <div class="coach-actions"><button class="fuel-btn" type="button" data-a="saveCredits">Save</button></div>
               </div>`
             : ""
         }
@@ -324,7 +337,7 @@
       try {
         const data = await MacroApi.coach("coachSyncStripe", pin);
         await load();
-        toast(`Stripe checked: ${data.sync.linked} new, ${data.sync.updated} updated`);
+        toast(`Stripe checked: ${data.sync.linked} new, ${data.sync.updated} updated${data.sync.credited ? `, ${data.sync.credited} AI uses added` : ""}`);
       } catch (err) {
         btn.disabled = false;
         btn.textContent = "Check Stripe now";
@@ -345,7 +358,7 @@
       }
       return;
     }
-    if (a === "issue" || a === "rotate" || a === "weight" || a === "goal") {
+    if (a === "issue" || a === "rotate" || a === "weight" || a === "goal" || a === "credits") {
       open[slug] = open[slug] === a ? null : a;
       render();
       return;
@@ -389,6 +402,14 @@
         open[slug] = null;
         render();
         toast(`Saved ${c.name}'s goal`);
+      } else if (a === "saveCredits") {
+        const el = formFor(slug);
+        const uses = Number(el.querySelector('[name="uses"]').value);
+        const data = await MacroApi.coach("coachAddCredits", pin, { slug: slug, uses: uses, note: el.querySelector('[name="note"]').value });
+        c.credits = data.credits;
+        open[slug] = null;
+        render();
+        toast(`${c.name} has ${data.credits} pay-as-you-go AI uses`);
       } else if (a === "giveMonth") {
         const data = await MacroApi.coach("coachGiveMonth", pin, { slug: slug, tier: btn.dataset.tier, days: Number(btn.dataset.days) || 30 });
         c.plan = data.plan;

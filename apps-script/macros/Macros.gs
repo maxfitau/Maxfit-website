@@ -25,6 +25,8 @@
  *     STRIPE_DIAMOND_LINK / STRIPE_DIAMOND_YEAR_LINK   Diamond $9.99 / $89.99
  *   STRIPE_PORTAL_LINK — Stripe customer-portal login link (manage, switch
  *                        plan or monthly ↔ yearly, cancel)
+ *   STRIPE_CREDITS_45_LINK / STRIPE_CREDITS_100_LINK
+ *                      — pay-as-you-go top-ups, $5 = 45 / $10 = 100 AI uses
  *
  * Plans: Silver is free (barcodes, search, saved meals, typed-in numbers,
  * targets, totals, suggestions, progress). Gold and Diamond add Fuel AI:
@@ -37,6 +39,15 @@
  * "platinum" in it is Diamond, anything else Gold; the period comes from
  * the price. (Platinum was retired on 10 Oct 2026: its Stripe product was
  * renamed Fuel Diamond and kept its fuel_platinum lookup keys.)
+ *
+ * Pay as you go (2026-11-02): prepaid AI uses that never run out, bought
+ * as one-off top-ups ($5 = 45, $10 = 100; the number is in the Stripe
+ * price's lookup key, fuel_credits_45). They unlock everything Diamond has
+ * while any are left. A subscriber's daily uses go first and credits take
+ * over when they run out; Diamond-only features (Food Q&A, meal ideas) use
+ * credits on Silver and Gold. Priced so every use keeps at least Diamond's
+ * typical 75% even if it's a photo scan, the dearest kind. Bought uses are
+ * rows in the Credits tab; spent ones are AI Usage rows with credit = Y.
  *
  * Stripe is never called by webhook (Apps Script can't read webhook
  * headers to verify them). Instead syncStripe() asks Stripe's API: every
@@ -60,7 +71,7 @@
  * or change rows carrying their own id.
  */
 
-const MACROS_VERSION = "2026-10-31b";
+const MACROS_VERSION = "2026-11-02a";
 const TIMEZONE = "Australia/Sydney";
 const MAIN_SESSIONS_GID = 1169726169; // "Sessions Remaining" in the CRM sheet
 const CARD_URL = "https://maxfit.now/card/";
@@ -145,8 +156,16 @@ const TABS = {
     headers: [
       "timestamp", "log_date", "slug", "kind", "model", "input_tokens", "output_tokens",
       "cache_write", "cache_read", "est_cost_usd", "ok",
+      // Y = paid for with a pay-as-you-go credit, not the plan's daily uses (2026-11-02).
+      "credit",
     ],
     text: ["log_date", "slug"],
+  },
+  // Pay-as-you-go uses added: Stripe top-ups (once per checkout session) and Max's own from the coach page.
+  credits: {
+    name: "Credits",
+    headers: ["id", "slug", "uses", "amount_aud", "source", "stripe_session", "note", "created_at"],
+    text: ["id", "slug", "stripe_session"],
   },
   weights: {
     name: "Weights",
@@ -251,6 +270,7 @@ const COACH_ACTIONS = {
   coachSetTargets: actionCoachSetTargets_,
   issueKey: actionIssueKey_,
   coachGiveMonth: actionCoachGiveMonth_,
+  coachAddCredits: actionCoachAddCredits_,
   coachSyncStripe: actionCoachSyncStripe_,
   coachLogWeight: actionCoachLogWeight_,
   coachSetGoal: actionCoachSetGoal_,
@@ -607,21 +627,44 @@ function dailyAiFor_(tier) {
   return n > 0 ? Math.round(n) : DEFAULT_DAILY_AI[tier];
 }
 
-/** Today's AI uses, leaving out calls that failed before Claude billed anything. */
-function aiUsedToday_(slug) {
-  const today = todaySydney_();
-  return readRows_("usage").filter((u) => {
-    const ok = String(u.ok);
-    return String(u.slug) === slug && String(u.log_date) === today && ok !== "error" && ok.indexOf("http_") !== 0;
-  }).length;
+/** False for a call that failed before Claude billed anything: it never counts. */
+function usageCounts_(u) {
+  const ok = String(u.ok);
+  return ok !== "error" && ok.indexOf("http_") !== 0;
 }
 
-/** { tier, used, limit, left } for the meter on the card. */
+/** Today's AI uses from the plan's daily pool (credit-paid ones are separate). */
+function aiUsedToday_(slug, usageRows) {
+  const today = todaySydney_();
+  return (usageRows || readRows_("usage")).filter(
+    (u) => String(u.slug) === slug && String(u.log_date) === today && String(u.credit) !== "Y" && usageCounts_(u)
+  ).length;
+}
+
+/** Pay-as-you-go uses left: everything added in Credits, minus credit-paid AI uses. */
+function creditsLeft_(slug, usageRows, creditRows) {
+  const added = (creditRows || readRows_("credits"))
+    .filter((r) => String(r.slug) === slug)
+    .reduce((sum, r) => sum + (Number(r.uses) || 0), 0);
+  const spent = (usageRows || readRows_("usage")).filter((u) => String(u.slug) === slug && String(u.credit) === "Y" && usageCounts_(u)).length;
+  return Math.max(0, added - spent);
+}
+
+/** { tier, used, limit, left, credits } for the meter on the card. */
 function aiToday_(member) {
+  const slug = String(member.slug);
   const plan = planFor_(member);
   const limit = plan.access ? dailyAiFor_(plan.tier) : 0;
-  const used = aiUsedToday_(String(member.slug));
-  return { tier: plan.tier, used: used, limit: limit, left: Math.max(0, limit - used) };
+  const rows = readRows_("usage");
+  const used = aiUsedToday_(slug, rows);
+  return { tier: plan.tier, used: used, limit: limit, left: Math.max(0, limit - used), credits: creditsLeft_(slug, rows) };
+}
+
+/** Diamond's features (Food Q&A, the meal planner): on Diamond, or while they have pay-as-you-go credits. */
+function hasDiamondFeatures_(member) {
+  const plan = planFor_(member);
+  if (plan.access && MacroCore.tierRank(plan.tier) >= MacroCore.tierRank("diamond")) return true;
+  return creditsLeft_(String(member.slug)) > 0;
 }
 
 /** Photo scanning and Food Q&A need a Claude API key on the server. */
@@ -647,16 +690,20 @@ function planFor_(member) {
 /** Stops a Fuel AI action (photo/label scan, Describe it) unless this member has the plan. */
 function requireFuelAi_(member) {
   if (!aiOn_()) throw userError_("ai_off", "Fuel AI isn't switched on yet. Barcodes still work.");
-  if (!planFor_(member).access) {
-    throw userError_("no_plan", "That's part of Fuel Gold. Barcodes, search and saved meals stay free.");
-  }
+  if (planFor_(member).access) return;
+  const slug = String(member.slug);
+  const creditRows = readRows_("credits");
+  if (creditsLeft_(slug, null, creditRows) > 0) return;
+  // Bought uses before and spent them all: say so, rather than "that's Gold".
+  if (creditRows.some((r) => String(r.slug) === slug)) throw aiLimitError_({ limit: 0, credits: 0 }, 0, 1);
+  throw userError_("no_plan", "That's part of Fuel Gold, or pay as you go. Barcodes, search and saved meals stay free.");
 }
 
-/** Food Q&A is Diamond only (paying, a free month from Max, or the free week). */
+/** Food Q&A: Diamond (paying, a free month from Max, or the free week) or pay-as-you-go credits. */
 function requireAskFuel_(member) {
   requireFuelAi_(member);
-  if (MacroCore.tierRank(planFor_(member).tier) < MacroCore.tierRank("diamond")) {
-    throw userError_("diamond", "Food Q&A comes with Fuel Diamond. Photo scans, labels and Describe it stay on Gold.");
+  if (!hasDiamondFeatures_(member)) {
+    throw userError_("diamond", "Food Q&A comes with Fuel Diamond, or pay as you go. Photo scans, labels and Describe it stay on Gold.");
   }
 }
 
@@ -688,8 +735,18 @@ function planPayload_(member) {
     links: links,
     portalUrl: prop_("STRIPE_PORTAL_LINK") || "",
     aiPerDay: aiPerDay,
+    credits: creditsLeft_(slug),
+    packs: CREDIT_PACKS.map((pack) => ({ uses: pack.uses, price: pack.price, url: upgradeUrl_(slug, pack.prop) })).filter((pack) => pack.url),
   });
 }
+
+// Pay-as-you-go top-ups (2026-11-02, Max). Each keeps at least 75% after
+// Stripe (2.4% + 30c) even if every use is a photo scan (about 1.8c). The
+// Stripe price's lookup key is fuel_credits_<uses>, which is what's added.
+const CREDIT_PACKS = [
+  { uses: 45, price: "$5", prop: "STRIPE_CREDITS_45_LINK" },
+  { uses: 100, price: "$10", prop: "STRIPE_CREDITS_100_LINK" },
+];
 
 function actionMe_(payload, member) {
   const slug = String(member.slug);
@@ -1194,27 +1251,57 @@ const MODE_PROMPTS = {
  * Reserves one of today's AI calls under a lock, so two quick taps can't
  * both slip past the daily limit. kind is "meal" / "label" (photo scans)
  * or "chat". Returns the AI Usage row number, filled in by recordUsage_.
+ * opts.diamond: a Diamond-only feature, which Silver and Gold pay for with
+ * credits rather than their daily uses.
  */
-function reserveAi_(member, kind, model) {
+function reserveAi_(member, kind, model, opts) {
+  return reserveAiUses_(member, [kind], model, opts)[0];
+}
+
+/**
+ * Reserves one AI Usage row per entry in kinds (a set of meal ideas is 3).
+ * The plan's daily uses go first, then pay-as-you-go credits. The first
+ * row is "pending" until recordUsage_; the rest are "Y". Returns the row
+ * numbers. opts.what names a multi-use feature in the "not enough" message.
+ */
+function reserveAiUses_(member, kinds, model, opts) {
+  opts = opts || {};
   const slug = String(member.slug);
   return withLock_(() => {
     const today = aiToday_(member);
-    if (today.left <= 0) {
-      const next = today.tier === "gold" ? "Diamond gives you " + dailyAiFor_("diamond") + " a day, plus Food Q&A." : "";
-      throw userError_(
-        "limit",
-        ("That's all " + today.limit + " AI uses for today. They reset at midnight, and barcodes, search and saved meals still work. " + next).trim()
-      );
-    }
-    return appendRow_("usage", {
-      timestamp: nowStamp_(),
-      log_date: todaySydney_(),
-      slug: slug,
-      kind: kind,
-      model: model,
-      ok: "pending",
-    });
+    const fromPlan = opts.diamond && MacroCore.tierRank(today.tier) < MacroCore.tierRank("diamond") ? 0 : today.left;
+    const n = kinds.length;
+    if (fromPlan + today.credits < n) throw aiLimitError_(today, fromPlan, n, opts.what);
+    return kinds.map((kind, i) =>
+      appendRow_("usage", {
+        timestamp: nowStamp_(),
+        log_date: todaySydney_(),
+        slug: slug,
+        kind: kind,
+        model: model,
+        ok: i === 0 ? "pending" : "Y",
+        credit: i >= fromPlan ? "Y" : "",
+      })
+    );
   });
+}
+
+function aiLimitError_(today, fromPlan, n, what) {
+  const topUp = "Top up with pay as you go to keep going.";
+  const plural = (k, word) => k + " " + word + (k === 1 ? "" : "s");
+  if (n > 1) {
+    const have = [fromPlan ? plural(fromPlan, "AI use") + " left today" : "", today.credits ? plural(today.credits, "credit") : ""].filter(Boolean);
+    return userError_("limit", what + " uses " + n + " AI uses, and you have " + (have.join(" and ") || "none left") + ". " + topUp);
+  }
+  if (!today.limit) {
+    return userError_("limit", "You've used all your pay-as-you-go AI uses. " + topUp + " Barcodes, search and saved meals still work.");
+  }
+  const next = today.tier === "gold" ? " Or Diamond gives you " + dailyAiFor_("diamond") + " a day, plus Food Q&A." : "";
+  return userError_(
+    "limit",
+    "That's all " + today.limit + " AI uses for today. They reset at midnight, or top up with pay as you go to keep going." + next +
+      " Barcodes, search and saved meals still work."
+  );
 }
 
 function recordUsage_(rowNumber, usage, ok, model) {
@@ -1495,6 +1582,11 @@ function actionCoachList_() {
       weekly_rate_kg: Number(t.weekly_rate_kg) || null,
     };
   });
+  const usageRows = readRows_("usage");
+  const creditRows = readRows_("credits");
+  Object.keys(bySlug).forEach((s) => {
+    if (bySlug[s].hasKey) bySlug[s].credits = creditsLeft_(s, usageRows, creditRows);
+  });
   const weightRows = readRows_("weights");
   const crm = crmIndex_();
   const history = readRows_("targetHistory");
@@ -1547,18 +1639,18 @@ const MEAL_PLAN_AI_USES = 3;
 /** Shopping list: Gold and up (paying, a free month or the free week). */
 function hasShopping_(member) {
   const plan = planFor_(member);
-  return !!plan.access && MacroCore.tierRank(plan.tier) >= MacroCore.tierRank("gold");
+  return (!!plan.access && MacroCore.tierRank(plan.tier) >= MacroCore.tierRank("gold")) || creditsLeft_(String(member.slug)) > 0;
 }
 
 function requireShopping_(member) {
   if (!hasShopping_(member)) throw userError_("gold", "Your shopping list comes with Fuel Gold and Diamond.");
 }
 
-/** Meal plans: Diamond only, and the AI key must be set. */
+/** Meal plans: Diamond or pay-as-you-go credits, and the AI key must be set. */
 function requireMealPlan_(member) {
   requireFuelAi_(member);
-  if (MacroCore.tierRank(planFor_(member).tier) < MacroCore.tierRank("diamond")) {
-    throw userError_("diamond", "The meal planner comes with Fuel Diamond.");
+  if (!hasDiamondFeatures_(member)) {
+    throw userError_("diamond", "The meal planner comes with Fuel Diamond, or pay as you go.");
   }
 }
 
@@ -1769,14 +1861,12 @@ function actionMealIdeas_(payload, member) {
     "Foods they already log (to lean towards familiar food): " + (recent.join(", ") || "none yet") + ".",
   ].join("\n");
 
-  const fresh = aiToday_(member);
-  if (fresh.left < MEAL_PLAN_AI_USES) {
-    throw userError_("limit", "A set of meal ideas uses " + MEAL_PLAN_AI_USES + " AI scans, and you have " + fresh.left + " left today. They reset at midnight.");
-  }
-  const usageRow = reserveAi_(member, "ideas", TEXT_MODEL);
-  const extraRows = withLock_(() =>
-    [1, 2].map(() => appendRow_("usage", { timestamp: nowStamp_(), log_date: todaySydney_(), slug: slug, kind: "ideas (counts 3)", model: TEXT_MODEL, ok: "Y" }))
-  );
+  const rows = reserveAiUses_(member, ["ideas", "ideas (counts 3)", "ideas (counts 3)"], TEXT_MODEL, {
+    diamond: true,
+    what: "A set of meal ideas",
+  });
+  const usageRow = rows[0];
+  const extraRows = rows.slice(1);
   // A failed request never counts against the client: all three rows are marked "error".
   const fail = (reason, usage) => {
     console.error("Meal ideas failed: " + reason);
@@ -1963,15 +2053,10 @@ function actionFridgeIdeas_(payload, member) {
     .filter(Boolean)
     .join("\n");
 
-  const fresh = aiToday_(member);
-  if (fresh.left < FRIDGE_AI_USES) {
-    throw userError_("limit", "What can I make? uses " + FRIDGE_AI_USES + " AI scans, and you have " + fresh.left + " left today. They reset at midnight.");
-  }
-  const usageRow = reserveAi_(member, "fridge", VISION_MODEL);
-  // The second use it counts as, so the daily pool reflects it.
-  const extraRow = withLock_(() =>
-    appendRow_("usage", { timestamp: nowStamp_(), log_date: todaySydney_(), slug: slug, kind: "fridge (counts 2)", model: VISION_MODEL, ok: "Y" })
-  );
+  // Two rows: the second is the extra use it counts as, so the daily pool reflects it.
+  const rows = reserveAiUses_(member, ["fridge", "fridge (counts 2)"], VISION_MODEL, { what: "What can I make?" });
+  const usageRow = rows[0];
+  const extraRow = rows[1];
   // A failed request never counts against the client: both rows are marked
   // "error" (the first still records what Claude charged).
   const fail = (reason, usage, message) => {
@@ -2369,6 +2454,30 @@ function actionCoachGiveMonth_(payload) {
   return { slug: slug, plan: plan };
 }
 
+/** Max adds (or, negative, takes back) pay-as-you-go uses, e.g. paid in cash or a refund. */
+function actionCoachAddCredits_(payload) {
+  const slug = slugify_(payload.slug);
+  const uses = Math.round(Number(payload.uses));
+  if (!uses || Math.abs(uses) > 1000) throw userError_("bad_uses", "Type how many AI uses to add, for example 45.");
+  return withLock_(() => {
+    const member = readRows_("members").find((m) => String(m.slug) === slug);
+    if (!member) throw userError_("no_member", "Create this client's Fuel link first.");
+    const left = creditsLeft_(slug);
+    if (uses < 0 && -uses > left) throw userError_("bad_uses", "They only have " + left + " left to take back.");
+    appendRow_("credits", {
+      id: Utilities.getUuid(),
+      slug: slug,
+      uses: uses,
+      amount_aud: "",
+      source: "coach",
+      stripe_session: "",
+      note: cleanText_(payload.note, 80),
+      created_at: nowStamp_(),
+    });
+    return { slug: slug, credits: left + uses };
+  });
+}
+
 function actionCoachSyncStripe_() {
   if (!prop_("STRIPE_SECRET_KEY")) throw userError_("no_stripe", "Add STRIPE_SECRET_KEY in Script Properties first.");
   return { sync: syncStripe_() };
@@ -2416,11 +2525,56 @@ function stripeList_(path, params, maxPages) {
   return out;
 }
 
-/** "fuel-jordansmith" → the Members row for jordansmith, or null. */
-function memberForSession_(session, members) {
+/** "fuel-jordansmith" → "jordansmith", or "" when it isn't a Fuel checkout. */
+function sessionSlug_(session) {
   const m = /^fuel-([a-z0-9]+)$/.exec(String(session.client_reference_id || ""));
-  if (!m || session.status !== "complete" || !session.subscription) return null;
-  return members.find((x) => String(x.slug) === m[1]) || null;
+  return m ? m[1] : "";
+}
+
+/** A finished subscription checkout's Members row, or null. */
+function memberForSession_(session, members) {
+  const slug = sessionSlug_(session);
+  if (!slug || session.status !== "complete" || !session.subscription) return null;
+  return members.find((x) => String(x.slug) === slug) || null;
+}
+
+/** AI uses bought in a one-off checkout: the number in each price's lookup key (fuel_credits_45) × quantity. */
+function creditsInSession_(session) {
+  const items = stripeGet_("checkout/sessions/" + session.id + "/line_items", { limit: 10 });
+  return (items.data || []).reduce((sum, li) => {
+    const m = /^fuel_credits_(\d+)$/.exec(String((li.price && li.price.lookup_key) || ""));
+    return sum + (m ? Number(m[1]) * (Number(li.quantity) || 1) : 0);
+  }, 0);
+}
+
+/**
+ * Adds a paid pay-as-you-go checkout to the Credits tab, exactly once (the
+ * session id is kept on the row). The caller holds the lock. Returns the
+ * uses added: 0 when it isn't a top-up, isn't paid, or was already added.
+ */
+function applyCreditSession_(session, members, creditRows) {
+  if (session.mode !== "payment" || session.status !== "complete" || session.payment_status !== "paid") return 0;
+  const slug = sessionSlug_(session);
+  if (!slug) return 0;
+  if (creditRows.some((r) => String(r.stripe_session) === session.id)) return 0;
+  if (!members.some((m) => String(m.slug) === slug)) {
+    console.error("Pay-as-you-go payment for an unknown client: " + slug + " " + session.id);
+    return 0;
+  }
+  const uses = creditsInSession_(session);
+  if (!uses) return 0;
+  appendRow_("credits", {
+    id: Utilities.getUuid(),
+    slug: slug,
+    uses: uses,
+    amount_aud: Math.round(Number(session.amount_total) || 0) / 100,
+    source: "stripe",
+    stripe_session: session.id,
+    note: "",
+    created_at: nowStamp_(),
+  });
+  creditRows.push({ slug: slug, uses: uses, stripe_session: session.id });
+  return uses;
 }
 
 function linkSubscription_(member, session) {
@@ -2473,12 +2627,15 @@ function syncStripe_() {
     const members = readRows_("members");
     let linked = 0;
     let updated = 0;
+    let credited = 0;
+    const creditRows = readRows_("credits");
 
     // An hour of overlap, so a checkout finishing mid-sync is never missed.
     const sessions = stripeList_("checkout/sessions", { status: "complete", "created[gte]": Math.max(0, since - 3600) });
     sessions.forEach((session) => {
       const member = memberForSession_(session, members);
       if (member && linkSubscription_(member, session)) linked++;
+      credited += applyCreditSession_(session, members, creditRows);
     });
 
     if (members.some((m) => m.stripe_subscription)) {
@@ -2491,7 +2648,7 @@ function syncStripe_() {
     }
     props.setProperty("STRIPE_SYNCED_TO", String(startedAt));
     props.setProperty("STRIPE_LAST_SYNC_AT", nowStamp_());
-    return { linked: linked, updated: updated };
+    return { linked: linked, updated: updated, credited: credited };
   });
 }
 
@@ -2524,6 +2681,12 @@ function actionStripeReturn_(payload) {
     session = stripeGet_("checkout/sessions/" + id, {});
   } catch (err) {
     return { linked: false }; // not a real session (or Stripe hiccup): the 15-minute sync is the backstop
+  }
+  // A pay-as-you-go top-up: add its uses (once, however many times this is called).
+  if (session.mode === "payment") {
+    const paid = session.status === "complete" && session.payment_status === "paid" && !!sessionSlug_(session);
+    const credited = paid ? withLock_(() => applyCreditSession_(session, readRows_("members"), readRows_("credits"))) : 0;
+    return { linked: false, topUp: paid, credited: credited };
   }
   let linked = false;
   withLock_(() => {
@@ -2756,7 +2919,7 @@ function actionChat_(payload, member) {
   requireAskFuel_(member);
   const history = cleanHistory_(payload.messages);
   const context = chatContext_(member, validDate_(payload.date));
-  const usageRow = reserveAi_(member, "chat", TEXT_MODEL);
+  const usageRow = reserveAi_(member, "chat", TEXT_MODEL, { diamond: true });
 
   let res;
   try {

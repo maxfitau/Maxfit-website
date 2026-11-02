@@ -78,7 +78,7 @@
     recent: [],
     favourites: [],
     meals: [], // saved meals: { id, name, items }
-    aiToday: null, // { tier, used, limit, left } from the server
+    aiToday: null, // { tier, used, limit, left, credits } from the server
     toBuy: null, // shopping list items not yet ticked (week.js and mealplan.js tell us)
     addMeal: null, // the meal whose + was tapped, until that food is logged
     busy: false,
@@ -328,7 +328,8 @@
       state.loaded = true;
       state.loadedOn = MacroCore.sydneyDate();
       render();
-      if (returnedSession && state.plan && state.plan.kind === "paid") toast(`${TIER_NAMES[tier()]} is on. Welcome!`);
+      if (returnedSession && returnedTopUp) toast(`Thanks! You have ${credits()} pay-as-you-go AI uses`);
+      else if (returnedSession && state.plan && state.plan.kind === "paid") toast(`${TIER_NAMES[tier()]} is on. Welcome!`);
       maybeFirstOpen();
     } catch (err) {
       if (err.code === "bad_key") {
@@ -382,9 +383,11 @@
   }
 
   /** Tells the server which Stripe checkout just finished, so it can link it straight away. */
+  let returnedTopUp = false; // the checkout was a pay-as-you-go top-up, not a plan
   async function confirmStripeReturn() {
     try {
-      await MacroApi.call("stripeReturn", { session_id: returnedSession });
+      const res = await MacroApi.call("stripeReturn", { session_id: returnedSession });
+      returnedTopUp = !!(res && res.topUp);
     } catch (err) {
       // The 15-minute sync will pick it up anyway.
     }
@@ -579,8 +582,8 @@
     let caption = "";
     if (skeleton) caption = "&nbsp;";
     else if (ai && !fuelAi()) caption = "Barcode and search are free · AI scans come with Gold";
-    else if (usedUp) caption = "Out of AI scans · resets at midnight";
-    else if (ai && state.aiToday && state.aiToday.limit) caption = `${state.aiToday.left} of ${state.aiToday.limit} AI scans left today`;
+    else if (usedUp) caption = state.aiToday && state.aiToday.limit ? "Out of AI uses · resets at midnight, or top up" : "Out of AI uses · top up to keep going";
+    else if (ai) caption = [paygOnly() ? planText() : "", aiLeftText()].filter(Boolean).join(" · ");
     // Out of AI scans still opens the chooser: barcode and search are free.
     return `
       <div class="fx-actions">
@@ -645,8 +648,8 @@
     let html = "";
     if (state.aiEnabled && typeof MealPlan !== "undefined") {
       const t = tier();
-      const planOn = fuelAi() && t === "diamond";
-      const listOn = fuelAi() && MacroCore.tierRank(t) >= MacroCore.tierRank("gold");
+      const planOn = diamondOn();
+      const listOn = goldOn();
       const n = state.toBuy;
       const listSub = !listOn ? "Gold plan" : n == null ? "Your list" : n ? `${n} item${n === 1 ? "" : "s"}` : "Empty";
       html += `
@@ -801,10 +804,10 @@
     else if (act === "meal-open") openMealView(btn.dataset.meal);
     else if (act === "ask") openChat();
     else if (act === "mealplan") {
-      if (fuelAi() && tier() === "diamond") MealPlan.open(mealPlanCtx());
+      if (diamondOn()) MealPlan.open(mealPlanCtx());
       else openUpsell({ reason: "plan" });
     } else if (act === "shopping") {
-      if (fuelAi() && MacroCore.tierRank(tier()) >= MacroCore.tierRank("gold")) MealPlan.openList(mealPlanCtx());
+      if (goldOn()) MealPlan.openList(mealPlanCtx());
       else openUpsell({ reason: "list" });
     }
     else if (act === "progress") openProgress();
@@ -1021,9 +1024,31 @@
   // Scan chooser + photos
   // ---------------------------------------------------------------------------
 
-  /** Fuel AI (scans, Describe it): API key on the server AND Gold or Diamond (paid, free month or trial). */
+  /** Fuel AI (scans, Describe it): API key on the server AND Gold or Diamond (paid, free month or trial), or pay-as-you-go uses. */
   function fuelAi() {
-    return state.aiEnabled && !!(state.plan && state.plan.access);
+    return state.aiEnabled && (!!(state.plan && state.plan.access) || credits() > 0);
+  }
+
+  /** Pay-as-you-go AI uses left (2026-11-02). They never run out by date. */
+  function credits() {
+    const a = state.aiToday;
+    if (a && a.credits != null) return Number(a.credits) || 0;
+    return (state.plan && Number(state.plan.credits)) || 0;
+  }
+
+  /** Diamond's features (Food Q&A, the meal planner): Diamond, or while they have pay-as-you-go uses. */
+  function diamondOn() {
+    return fuelAi() && (tier() === "diamond" || credits() > 0);
+  }
+
+  /** No plan of their own, just pay-as-you-go uses. */
+  function paygOnly() {
+    return credits() > 0 && !(state.plan && state.plan.access);
+  }
+
+  /** The shopping list: Gold and up, or pay-as-you-go uses. */
+  function goldOn() {
+    return fuelAi() && (MacroCore.tierRank(tier()) >= MacroCore.tierRank("gold") || credits() > 0);
   }
 
   const TIER_NAMES = { silver: "Silver", gold: "Gold", diamond: "Diamond" };
@@ -1041,14 +1066,14 @@
     return t === "platinum" ? "diamond" : t;
   }
 
-  /** Food Q&A is Diamond only (paying, a free month from Max, or the free week). */
+  /** Food Q&A is Diamond (paying, a free month from Max, or the free week) or pay as you go. */
   function askFuelOn() {
-    return fuelAi() && tier() === "diamond";
+    return diamondOn();
   }
 
-  /** Any paid plan with none of today's AI uses left. */
+  /** None of today's plan uses left and no pay-as-you-go uses either. */
   function aiUsedUp() {
-    return fuelAi() && !!state.aiToday && state.aiToday.left <= 0;
+    return fuelAi() && !!state.aiToday && state.aiToday.left <= 0 && credits() <= 0;
   }
 
   /** After any AI call: the server's fresh count, onto the meter. */
@@ -1059,11 +1084,14 @@
     render();
   }
 
-  /** "3 of 5 AI uses left today". */
+  /** "3 of 5 AI uses left today", plus any pay-as-you-go uses. */
   function aiLeftText() {
     const a = state.aiToday;
-    if (!a || !a.limit) return "";
-    return a.left > 0 ? `${a.left} of ${a.limit} AI uses left today` : `All ${a.limit} AI uses used today · back at midnight`;
+    const n = credits();
+    const payg = n ? `${n} pay-as-you-go use${n === 1 ? "" : "s"}` : "";
+    if (!a || !a.limit) return n ? `${n} AI use${n === 1 ? "" : "s"} left` : "";
+    const daily = a.left > 0 ? `${a.left} of ${a.limit} AI uses left today` : `All ${a.limit} AI uses used today`;
+    return payg ? `${daily} · ${payg}` : a.left > 0 ? daily : daily + " · back at midnight";
   }
 
   /** "23 Oct", or "23 Oct 2027" when it isn't this year (yearly plans). */
@@ -1086,6 +1114,7 @@
     }
     if (p.kind === "comp") return `${name} · free until ${fmtDate(p.until)} (from Max)`;
     if (p.kind === "trial") return `${name} free trial · ${p.daysLeft} day${p.daysLeft === 1 ? "" : "s"} left`;
+    if (credits() > 0) return "Pay as you go";
     if (p.kind === "lapsed") return "Your subscription has ended, so you're on Silver";
     if (p.kind === "trial_over") return "Your free week has finished, so you're on Silver";
     return "Silver";
@@ -1100,7 +1129,7 @@
     const sub = !ai
       ? "Scan a barcode, or search for it and set the amount."
       : locked
-      ? "Barcodes, search and saved meals are free. Photo, label and Describe it come with Gold."
+      ? "Barcodes, search and saved meals are free. Photo, label and Describe it come with Gold, or pay as you go."
       : [planText(), aiLeftText()].filter(Boolean).join(" · ");
     const aiTag = (label) => (locked ? "Gold" : usedUp ? "None left today" : label);
     const aiClass = locked || usedUp ? " is-locked" : "";
@@ -1383,11 +1412,11 @@
       opts.reason === "limit"
         ? opts.message || "That's all your AI uses for today."
         : opts.reason === "ask"
-        ? "Food Q&A, for general questions about healthy eating, comes with Diamond."
+        ? "Food Q&A, for general questions about healthy eating, comes with Diamond or pay as you go."
         : opts.reason === "plan"
-        ? "The meal planner, with a shopping list, comes with Diamond."
+        ? "The meal planner, with a shopping list, comes with Diamond or pay as you go."
         : opts.reason === "list"
-        ? "Your shopping list comes with Gold and Diamond."
+        ? "Your shopping list comes with Gold, Diamond or pay as you go."
         : p.kind === "trial_over" || p.kind === "lapsed"
         ? planText() + "."
         : "Track what you eat with photo scans, and plan ahead. Cancel any time.";
@@ -1430,6 +1459,33 @@
         </div>`;
     }
 
+    // Pay as you go (2026-11-02): one-off top-ups, for anyone, on any plan.
+    function paygHtml() {
+      const packs = p.packs || [];
+      const n = credits();
+      if (!packs.length && !n) return "";
+      const lead = paying || p.kind === "comp" || p.kind === "trial"
+        ? `<p><b>Run out of today's uses? Keep going.</b> Your plan's daily uses go first, then these.</p>`
+        : `<p><b>No subscription.</b> Everything Diamond has, including Food Q&amp;A and the meal planner. Each AI use takes one.</p>`;
+      return `
+        <div class="fuel-plan-card fuel-plan-card--payg${n ? " is-current" : ""}">
+          <div class="fuel-plan-card__head"><span class="fuel-tier fuel-tier--payg">Pay as you go</span><span class="fuel-plan-card__price">One-off</span></div>
+          ${lead}
+          <p>Your uses don't expire. A meal idea set takes 3 and What can I make? takes 2.</p>
+          ${n ? badge(`You have ${n} AI use${n === 1 ? "" : "s"}`) : ""}
+          ${
+            packs.length
+              ? `<div class="fuel-packs">${packs
+                  .map(
+                    (pk) =>
+                      `<a class="fuel-btn fuel-pack" href="${esc(pk.url)}" target="_blank" rel="noopener" data-upgrade><b>${esc(pk.price)}</b><span>${esc(pk.uses)} AI uses</span></a>`
+                  )
+                  .join("")}</div>`
+              : ""
+          }
+        </div>`;
+    }
+
     function plansHtml(iv) {
       const anyLink = PAID_TIERS.some((k) => links[k] && links[k][iv]);
       return `
@@ -1439,7 +1495,8 @@
           ${t === "silver" ? badge("Your plan") : ""}
         </div>
         ${PAID_TIERS.map((k) => cardHtml(k, iv)).join("")}
-        ${!anyLink && !paying ? '<p class="fuel-error">Sign-ups open soon. Ask Max about it at your next session.</p>' : ""}
+        ${paygHtml()}
+        ${!anyLink && !paying && !(p.packs || []).length ? '<p class="fuel-error">Sign-ups open soon. Ask Max about it at your next session.</p>' : ""}
         ${
           paying && p.portalUrl
             ? '<p class="fuel-plan-card__note">Switching opens Stripe\'s billing page: choose Update plan. Stripe adjusts your bill for the rest of the period.</p>'
@@ -1486,12 +1543,17 @@
       btn.textContent = "Checking…";
     }
     try {
+      const before = credits();
+      const wasPaid = !!(state.plan && state.plan.kind === "paid");
       const data = await MacroApi.call("me", { date: state.viewDate, sync: true });
       applyMe(data);
       render();
-      if (state.plan && state.plan.kind === "paid") {
+      if (credits() > before) {
         closeSheet();
-        toast(`${TIER_NAMES[tier()]} is on`);
+        toast(`You have ${credits()} pay-as-you-go AI uses`);
+      } else if (state.plan && state.plan.kind === "paid") {
+        closeSheet();
+        if (!wasPaid || btn) toast(`${TIER_NAMES[tier()]} is on`);
       } else if (btn) {
         btn.disabled = false;
         btn.textContent = "Not showing yet. Tap to check again";
@@ -1705,7 +1767,7 @@
 
   function showFridgeIdeas() {
     const res = fridge.result;
-    const listOn = MacroCore.tierRank(tier()) >= MacroCore.tierRank("gold");
+    const listOn = goldOn();
     const shownSpotted = res.spotted.slice(0, 12);
     const moreSpotted = res.spotted.length - shownSpotted.length;
     openSheet(
@@ -3102,8 +3164,12 @@
          state.aiEnabled && state.plan
            ? `<div class="fuel-panel fuel-plan">
                 <span class="card__label card__label--red">Your plan</span>
-                <span class="fuel-tier fuel-tier--${tier()}">${TIER_NAMES[tier()]}</span>
-                <span class="fuel-plan__text">${esc(planText())}</span>
+                ${
+                  paygOnly()
+                    ? '<span class="fuel-tier fuel-tier--payg">Pay as you go</span>'
+                    : `<span class="fuel-tier fuel-tier--${tier()}">${TIER_NAMES[tier()]}</span>
+                <span class="fuel-plan__text">${esc(planText())}</span>`
+                }
                 ${fuelAi() ? `<span class="fuel-plan__text">${esc(aiLeftText())}</span>` : ""}
                 ${
                   state.plan.kind === "paid" && state.plan.portalUrl
@@ -3183,5 +3249,6 @@
   // nav's Profile vs Macros link) — never a remembered last tab, which used
   // to mean tapping Profile could land back on Fuel. No in-page Card/Fuel
   // switcher any more either (2026-10-02): the bottom nav already does that.
-  showTab(window.location.hash === "#fuel" ? "fuel" : "card");
+  // Back from a Fuel checkout (?paid=, booking payments return to book.html) opens Fuel, so the payment is picked up straight away.
+  showTab(window.location.hash === "#fuel" || returnedSession ? "fuel" : "card");
 })();
