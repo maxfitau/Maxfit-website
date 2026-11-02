@@ -2807,6 +2807,22 @@ body.vt-lightbox-open { overflow: hidden; }
   .plan__step { border-right: none; }
 }
 
+/* ---------- Set up your card ---------- */
+
+.setup .plan__desc { color: var(--text, #fff); opacity: 0.85; font-size: 1rem; max-width: 360px; }
+.setup .plan__desc strong { color: #fff; }
+
+.setup__cta {
+  margin-top: clamp(28px, 4vw, 44px);
+  text-align: center;
+}
+
+.setup__cta p {
+  margin-top: 14px;
+  color: var(--dim);
+  font-size: 1rem;
+}
+
 /* ---------- Reviews ---------- */
 
 .sr-only {
