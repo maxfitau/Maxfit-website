@@ -233,6 +233,14 @@ const DemoSeed = {
       appendRow_("weights", { id: Utilities.getUuid(), slug: slug, date: d, kg: kg, by: "client", created_at: stamp(d, "07:00:00") });
     });
 
+    // Two EVOLT scans a month apart, so Progress has a body-scan line to show.
+    [[-49, 82.6, 24.1, 19.9, 34.8], [-21, 81.9, 23.2, 19.0, 35.2]].forEach(([n, kg, pct, fat, muscle]) => {
+      appendRow_("bodyScans", {
+        id: Utilities.getUuid(), slug: slug, scan_date: day(n), weight_kg: kg, body_fat_pct: pct, fat_mass_kg: fat,
+        muscle_mass_kg: muscle, by: "coach", confidence: "high", created_at: stamp(day(n), "10:00:00"),
+      });
+    });
+
     appendRow_("goals", {
       id: Utilities.getUuid(), slug: slug, type: "strength", exercise: "Back Squat", target: 80, target_reps: 6,
       start_value: 70, start_reps: 6, start_date: day(-12), end_date: day(16),

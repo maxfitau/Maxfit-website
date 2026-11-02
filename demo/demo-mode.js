@@ -18,7 +18,7 @@
   "use strict";
 
   const MARK = "maxfitdemo:";
-  const VERSION = "20261101b";
+  const VERSION = "20261103a";
   const BASE = "/demo/";
   const FUEL_DEPLOYMENT = "AKfycbw5B8tpkFA1wEC8b3F9IKeiuWDjtVoW5IdXRE71D4FHvtc96RVYzLYlQPoQzfrjplNe";
   // Pages a visitor can move between. Everything else is Max's side, or leaves the demo.

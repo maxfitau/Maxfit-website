@@ -165,7 +165,10 @@ self.__demoUrlFetch = function (url, opts) {
     try { body = JSON.parse(opts.payload || "{}"); } catch (err) { body = {}; }
     const schema = body.output_config && body.output_config.format && body.output_config.format.schema;
     let out;
-    if (schema && schema.properties && schema.properties.per100) {
+    if (schema && schema.properties && schema.properties.skeletal_muscle_mass) {
+      // An EVOLT report photo: the same sample reading whatever the photo shows.
+      out = { is_body_scan: true, scan_date: "", unit: "kg", weight: 81.2, body_fat_pct: 22.6, fat_mass: 18.4, skeletal_muscle_mass: 35.5, confidence: "high" };
+    } else if (schema && schema.properties && schema.properties.per100) {
       out = { name: "Greek yoghurt (sample label)", brand: "Sample brand", per100: { kcal: 73, protein_g: 9.5, carbs_g: 4, fat_g: 2 }, per100_unit: "g", serving_g: 170, confidence: "high", notes: "Sample answer: the demo doesn't read your photo." };
     } else {
       const msgs = body.messages || [];

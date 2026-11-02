@@ -1013,6 +1013,7 @@
             const kind = b.dataset.retry;
             if (kind === "barcode") openBarcode();
             else if (kind === "describe") openDescribe(lastDescribed);
+            else if (kind === "scantype") openScanForm(null);
             else pickPhoto(kind, true);
           })
         );
@@ -1579,6 +1580,7 @@
     if (mode === "barcodeImage") decodeBarcodePhoto(file);
     else if (mode === "meal") openPhotoNote(file);
     else if (mode === "fridge") addFridgePhoto(file);
+    else if (mode === "bodyscan") readBodyScan(file);
     else analysePhoto(file, mode);
   }
   els.photoInput.addEventListener("change", onPhotoChosen);
@@ -2757,8 +2759,10 @@
                 <p class="fuel-legend"><span class="fuel-key fuel-key--line"></span>7-day average <span class="fuel-key fuel-key--dot"></span>weigh-ins ${p.goal && p.goal.weekly_rate_kg ? '<span class="fuel-key fuel-key--pace"></span>goal pace' : ""}</p>
               </div>`
        }
+       ${scanPanelHtml(p)}
        <button class="fuel-btn fuel-btn--quiet" type="button" data-close>Done</button>`,
       (body) => {
+        wireScanPanel(body);
         const wBox = body.querySelector("[data-weight-chart]");
         if (wBox) drawWeightChart(wBox, body.querySelector("[data-weight-readout]"));
         drawWeek(body.querySelector("[data-week-chart]"));
@@ -2797,6 +2801,274 @@
             }
           });
         }
+      }
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Body scans (EVOLT, 2026-11-03): free on every plan. A photo of the report
+  // → weight, body fat %, fat mass and muscle mass, which the client checks
+  // before saving, then graphed in Progress. Fuel only records the numbers;
+  // it never says what they mean (scope of practice).
+  // ---------------------------------------------------------------------------
+
+  // "weight" ones are hidden with Hide weight, since fat mass gives weight away.
+  const SCAN_METRICS = [
+    { key: "body_fat_pct", label: "Body fat", unit: "%", weight: false },
+    { key: "muscle_mass_kg", label: "Muscle", unit: "kg", weight: false },
+    { key: "fat_mass_kg", label: "Fat mass", unit: "kg", weight: true },
+    { key: "weight_kg", label: "Weight", unit: "kg", weight: true },
+  ];
+  let scanMetric = "body_fat_pct";
+
+  function scanMetrics() {
+    const hide = state.progress && state.progress.hideWeight;
+    return SCAN_METRICS.filter((m) => !(hide && m.weight));
+  }
+
+  function scanDate(ymd) {
+    const [y, m, d] = ymd.split("-").map(Number);
+    const opts = { day: "numeric", month: "short", timeZone: "UTC" };
+    if (String(y) !== MacroCore.sydneyDate().slice(0, 4)) opts.year = "numeric";
+    return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-AU", opts);
+  }
+
+  /** "▼ 0.8 since 3 Oct": the change from the scan before, with no judgement either way. */
+  function scanChange(scans, key) {
+    const have = scans.filter((s) => s[key] != null);
+    if (have.length < 2) return "";
+    const last = have[have.length - 1];
+    const prev = have[have.length - 2];
+    const diff = Math.round((last[key] - prev[key]) * 10) / 10;
+    if (!diff) return `Same as ${scanDate(prev.date)}`;
+    return `${diff < 0 ? "▼" : "▲"} ${kgText(Math.abs(diff))} since ${scanDate(prev.date)}`;
+  }
+
+  function scanPanelHtml(p) {
+    const scans = p.bodyScans || [];
+    const last = scans[scans.length - 1];
+    const ai = state.aiEnabled;
+    const metrics = scanMetrics();
+    if (!metrics.some((m) => m.key === scanMetric)) scanMetric = metrics[0].key;
+    const stats = last
+      ? `<div class="fuel-scan-stats">${metrics
+          .map((m) => {
+            const v = last[m.key];
+            return `<div class="fuel-scan-stat">
+                <span class="fuel-scan-stat__label">${m.label}</span>
+                <span class="fuel-scan-stat__value">${v != null ? kgText(v) : "–"}<small>${m.unit}</small></span>
+                <span class="fuel-scan-stat__change">${esc(scanChange(scans, m.key))}</span>
+              </div>`;
+          })
+          .join("")}</div>`
+      : "";
+    const chart = scans.length
+      ? `<div class="fuel-seg fuel-seg--big" data-scan-metric>${metrics
+          .map((m) => `<button type="button" data-key="${m.key}" class="${m.key === scanMetric ? "is-on" : ""}">${m.label}</button>`)
+          .join("")}</div>
+         <div class="fuel-chart" data-scan-chart></div>
+         <p class="fuel-readout" data-scan-readout>Tap a dot for the details.</p>`
+      : "";
+    return `
+      <div class="fuel-panel fuel-chartcard">
+        <span class="card__label card__label--red">Body scans</span>
+        <div class="fuel-chartcard__head">
+          <span class="fuel-row__note">${last ? `Last EVOLT scan ${esc(scanDate(last.date))}` : "Had an EVOLT body scan? Snap the report and Fuel reads your numbers, so you can see them change from scan to scan."}</span>
+        </div>
+        ${stats}
+        ${chart}
+        ${
+          ai
+            ? `<div class="fuel-sheet__row">
+                 <button class="fuel-btn" type="button" data-scan="camera">${ICONS.camera}Snap my scan</button>
+                 <button class="fuel-btn fuel-btn--ghost" type="button" data-scan="library">From photos</button>
+               </div>`
+            : ""
+        }
+        <div class="fuel-sheet__row">
+          <button class="fuel-btn fuel-btn--quiet" type="button" data-scan="type">Type it in</button>
+          ${scans.length ? '<button class="fuel-btn fuel-btn--quiet" type="button" data-scan="list">All scans</button>' : ""}
+        </div>
+        <p class="fuel-disclaimer">Fuel keeps a copy of the numbers on your report, nothing more. For what they mean for your health, talk to your GP.</p>
+      </div>`;
+  }
+
+  function wireScanPanel(body) {
+    const box = body.querySelector("[data-scan-chart]");
+    const readout = body.querySelector("[data-scan-readout]");
+    if (box) drawScanChart(box, readout);
+    const seg = body.querySelector("[data-scan-metric]");
+    if (seg) {
+      seg.addEventListener("click", (e) => {
+        const b = e.target.closest("[data-key]");
+        if (!b) return;
+        scanMetric = b.dataset.key;
+        seg.querySelectorAll("button").forEach((x) => x.classList.toggle("is-on", x === b));
+        box.innerHTML = "";
+        readout.textContent = "Tap a dot for the details.";
+        drawScanChart(box, readout);
+      });
+    }
+    body.querySelectorAll("[data-scan]").forEach((b) =>
+      b.addEventListener("click", () => {
+        const how = b.dataset.scan;
+        // input.click() has to happen inside this tap handler, or iOS Safari won't open the camera.
+        if (how === "camera" || how === "library") pickPhoto("bodyscan", how === "camera");
+        else if (how === "type") openScanForm(null);
+        else openScanList();
+      })
+    );
+  }
+
+  function drawScanChart(box, readout) {
+    const scans = (state.progress.bodyScans || []).filter((s) => s[scanMetric] != null);
+    const metric = SCAN_METRICS.find((m) => m.key === scanMetric);
+    if (!scans.length) {
+      box.innerHTML = `<p class="fuel-empty">No ${metric.label.toLowerCase()} on your scans yet.</p>`;
+      return;
+    }
+    const vals = scans.map((s) => s[scanMetric]);
+    const pad = Math.max(0.5, (Math.max.apply(null, vals) - Math.min.apply(null, vals)) * 0.15);
+    const lo = Math.floor(Math.min.apply(null, vals) - pad);
+    const hi = Math.ceil(Math.max.apply(null, vals) + pad);
+    const H = 170, L = 42, R = W - 12, T = 14, B = H - 32;
+    const x0 = scans[0].date;
+    const x1 = scans[scans.length - 1].date;
+    const span = MacroCore.daysBetween(x0, x1);
+    const x = (d) => (span ? L + ((R - L) * MacroCore.daysBetween(x0, d)) / span : (L + R) / 2);
+    const y = (v) => T + ((B - T) * (hi - v)) / (hi - lo || 1);
+    const root = svg(box, "svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img", "aria-label": metric.label + " over your scans" });
+    ticks(lo, hi, 3).forEach((v) => {
+      svg(root, "line", { x1: L, x2: R, y1: y(v), y2: y(v), class: "fuel-grid" });
+      svg(root, "text", { x: L - 6, y: y(v) + 4, "text-anchor": "end", class: "fuel-axis" }, kgText(v).replace(/\.0$/, ""));
+    });
+    svg(root, "text", { x: L, y: H - 8, class: "fuel-axis" }, scanDate(x0));
+    if (span) svg(root, "text", { x: R, y: H - 8, "text-anchor": "end", class: "fuel-axis" }, scanDate(x1));
+    if (scans.length > 1) {
+      svg(root, "polyline", { points: scans.map((s) => `${x(s.date)},${y(s[scanMetric])}`).join(" "), class: "fuel-line" });
+    }
+    scans.forEach((s) => {
+      const dot = svg(root, "circle", { cx: x(s.date), cy: y(s[scanMetric]), r: 6, class: "fuel-scan-dot" });
+      // A bigger invisible circle on top, so the dot is easy to tap.
+      const hit = svg(root, "circle", { cx: x(s.date), cy: y(s[scanMetric]), r: 18, class: "fuel-hit", tabindex: "0", role: "button", "aria-label": shortDate(s.date) });
+      const show = () => {
+        root.querySelectorAll(".fuel-scan-dot").forEach((d) => d.classList.toggle("is-on", d === dot));
+        readout.textContent = `${shortDate(s.date)}: ${kgText(s[scanMetric])}${metric.unit === "%" ? "%" : " kg"} ${metric.label.toLowerCase()}`;
+      };
+      hit.addEventListener("click", show);
+      hit.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") show();
+      });
+    });
+    if (scans.length === 1) readout.textContent = "One scan so far. Your line starts at the next one.";
+  }
+
+  async function readBodyScan(file) {
+    sheetLoading("Reading your scan");
+    let data;
+    try {
+      // Reports have small print, so this goes up bigger than a meal photo.
+      const image = await resizeImage(file, 1600, 0.85);
+      data = await MacroApi.call("analyseBodyScan", { image: image }, { timeoutMs: 90000 });
+    } catch (err) {
+      sheetError(
+        "Couldn't read it",
+        err.message,
+        (err.code === "scan_limit" ? "" : '<button class="fuel-btn" type="button" data-retry="bodyscan">Try another photo</button>') +
+          '<button class="fuel-btn fuel-btn--ghost" type="button" data-retry="scantype">Type the numbers in</button>'
+      );
+      return;
+    }
+    openScanForm(data.scan);
+  }
+
+  /** Check (or type) a scan's numbers, then save. read = what the AI read, or null to type them in. */
+  function openScanForm(read) {
+    const v = read || {};
+    const field = (key, label, step) =>
+      `<label class="fuel-field"><span class="card__label">${label}</span><input class="fuel-input" name="${key}" type="number" inputmode="decimal" step="${step}" value="${v[key] != null ? esc(v[key]) : ""}" placeholder="–" /></label>`;
+    openSheet(
+      `<h2 class="fuel-sheet__title" id="fuelSheetTitle">${read ? "Check your scan" : "Add a scan"}</h2>
+       <p class="fuel-sheet__sub">${read ? "Make sure these match your report, and fix anything that doesn't." : "Copy these from your EVOLT report. Leave any you don't have blank."}</p>
+       ${v.warning ? `<p class="fuel-error">${esc(v.warning)}</p>` : ""}
+       <form class="fuel-scan-form" data-scan-form autocomplete="off">
+         <label class="fuel-field"><span class="card__label">Scan date${read && !v.dateFound ? " (not on the photo, so check it)" : ""}</span><input class="fuel-input" name="date" type="date" max="${MacroCore.sydneyDate()}" value="${esc(v.date || MacroCore.sydneyDate())}" required /></label>
+         <div class="fuel-fields2">
+           ${field("weight_kg", "Weight (kg)", "0.1")}
+           ${field("body_fat_pct", "Body fat (%)", "0.1")}
+           ${field("muscle_mass_kg", "Skeletal muscle (kg)", "0.1")}
+           ${field("fat_mass_kg", "Fat mass (kg)", "0.1")}
+         </div>
+         <button class="fuel-btn" type="submit">Save scan</button>
+       </form>
+       <button class="fuel-btn fuel-btn--quiet" type="button" data-back>Back to progress</button>`,
+      (body) => {
+        const form = body.querySelector("[data-scan-form]");
+        body.querySelector("[data-back]").addEventListener("click", () => renderProgress());
+        form.addEventListener("submit", async (e) => {
+          e.preventDefault();
+          const btn = form.querySelector("button[type=submit]");
+          btn.disabled = true;
+          const fields = { date: form.date.value, confidence: v.confidence || "" };
+          ["weight_kg", "body_fat_pct", "muscle_mass_kg", "fat_mass_kg"].forEach((k) => (fields[k] = form[k].value));
+          try {
+            const data = await MacroApi.call("saveBodyScan", fields);
+            state.progress.bodyScans = data.bodyScans;
+            if (!state.progress.hideWeight) state.progress.weights = data.weights;
+            state.weightTrend = data.weightTrend;
+            render();
+            renderProgress();
+            toast("Scan saved");
+          } catch (err) {
+            btn.disabled = false;
+            toast(err.message);
+          }
+        });
+      }
+    );
+  }
+
+  function openScanList() {
+    const scans = (state.progress.bodyScans || []).slice().reverse();
+    const metrics = scanMetrics();
+    openSheet(
+      `<h2 class="fuel-sheet__title" id="fuelSheetTitle">All scans</h2>
+       <div class="fuel-scan-list">${scans
+         .map(
+           (s) => `<div class="fuel-panel fuel-scan-row" data-id="${esc(s.id)}">
+              <div class="fuel-scan-row__head"><b>${esc(shortDate(s.date))}</b>${s.by === "coach" ? '<span class="fuel-row__note">Added by Max</span>' : ""}</div>
+              <p class="fuel-row__note">${metrics
+                .filter((m) => s[m.key] != null)
+                .map((m) => `${m.label} ${kgText(s[m.key])}${m.unit === "%" ? "%" : " kg"}`)
+                .join(" · ")}</p>
+              <button class="fuel-btn fuel-btn--quiet" type="button" data-del>Delete</button>
+            </div>`
+         )
+         .join("")}</div>
+       <button class="fuel-btn fuel-btn--quiet" type="button" data-back>Back to progress</button>`,
+      (body) => {
+        body.querySelector("[data-back]").addEventListener("click", () => renderProgress());
+        body.querySelectorAll("[data-del]").forEach((b) =>
+          b.addEventListener("click", async () => {
+            // Two taps, so a stray one can't lose a scan.
+            if (!b.dataset.armed) {
+              b.dataset.armed = "1";
+              b.textContent = "Tap again to delete";
+              return;
+            }
+            b.disabled = true;
+            try {
+              const data = await MacroApi.call("deleteBodyScan", { scanId: b.closest("[data-id]").dataset.id });
+              state.progress.bodyScans = data.bodyScans;
+              toast("Scan deleted");
+              if (data.bodyScans.length) openScanList();
+              else renderProgress();
+            } catch (err) {
+              b.disabled = false;
+              toast(err.message);
+            }
+          })
+        );
       }
     );
   }

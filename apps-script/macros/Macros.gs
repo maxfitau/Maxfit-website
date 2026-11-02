@@ -49,6 +49,14 @@
  * typical 75% even if it's a photo scan, the dearest kind. Bought uses are
  * rows in the Credits tab; spent ones are AI Usage rows with credit = Y.
  *
+ * Body scans (2026-11-03): a photo of an EVOLT 360 report, from the client
+ * in Fuel's Progress or from Max on the coach page. The AI only copies four
+ * printed numbers (weight, body fat %, fat mass, skeletal muscle mass); the
+ * client checks them, and they're kept in the Body Scans tab and graphed.
+ * Free on every plan and never one of the daily AI uses, 2 a day per client.
+ * The scan's weight becomes that day's weigh-in unless there already is one.
+ * Fuel never says what the numbers mean (scope of practice).
+ *
  * Stripe is never called by webhook (Apps Script can't read webhook
  * headers to verify them). Instead syncStripe() asks Stripe's API: every
  * 15 minutes on a trigger (installStripeSync), when a client lands back
@@ -71,7 +79,7 @@
  * or change rows carrying their own id.
  */
 
-const MACROS_VERSION = "2026-11-02a";
+const MACROS_VERSION = "2026-11-03a";
 const TIMEZONE = "Australia/Sydney";
 const MAIN_SESSIONS_GID = 1169726169; // "Sessions Remaining" in the CRM sheet
 const CARD_URL = "https://maxfit.now/card/";
@@ -177,6 +185,12 @@ const TABS = {
     headers: ["slug", "effective_date", "kcal", "protein_g", "carbs_g", "fat_g", "set_by", "created_at"],
     text: ["slug", "effective_date"],
   },
+  // EVOLT body scans (2026-11-03): one row per client per scan date. by: client | coach.
+  bodyScans: {
+    name: "Body Scans",
+    headers: ["id", "slug", "scan_date", "weight_kg", "body_fat_pct", "fat_mass_kg", "muscle_mass_kg", "by", "confidence", "created_at"],
+    text: ["id", "slug", "scan_date"],
+  },
   punches: {
     name: "Punch Awards",
     headers: ["slug", "week_start", "green_days", "awarded_at"],
@@ -263,6 +277,9 @@ const MEMBER_ACTIONS = {
   shoppingClear: actionShoppingClear_,
   shoppingFromPlan: actionShoppingFromPlan_,
   deleteWeight: actionDeleteWeight_,
+  analyseBodyScan: actionAnalyseBodyScan_,
+  saveBodyScan: actionSaveBodyScan_,
+  deleteBodyScan: actionDeleteBodyScan_,
 };
 
 const COACH_ACTIONS = {
@@ -275,6 +292,8 @@ const COACH_ACTIONS = {
   coachLogWeight: actionCoachLogWeight_,
   coachSetGoal: actionCoachSetGoal_,
   coachSafetyTest: actionCoachSafetyTest_,
+  coachAnalyseBodyScan: actionCoachAnalyseBodyScan_,
+  coachSaveBodyScan: actionCoachSaveBodyScan_,
 };
 
 // No key or PIN: only safe, idempotent things. stripeReturn looks up a
@@ -637,7 +656,8 @@ function usageCounts_(u) {
 function aiUsedToday_(slug, usageRows) {
   const today = todaySydney_();
   return (usageRows || readRows_("usage")).filter(
-    (u) => String(u.slug) === slug && String(u.log_date) === today && String(u.credit) !== "Y" && usageCounts_(u)
+    (u) =>
+      String(u.slug) === slug && String(u.log_date) === today && String(u.credit) !== "Y" && String(u.kind) !== BODY_SCAN_KIND && usageCounts_(u)
   ).length;
 }
 
@@ -1586,6 +1606,11 @@ function actionCoachList_() {
   const creditRows = readRows_("credits");
   Object.keys(bySlug).forEach((s) => {
     if (bySlug[s].hasKey) bySlug[s].credits = creditsLeft_(s, usageRows, creditRows);
+  });
+  const scanRows = readRows_("bodyScans");
+  Object.keys(bySlug).forEach((s) => {
+    const mine = bodyScansFor_(s, scanRows);
+    if (mine.length) bySlug[s].lastScan = Object.assign({ count: mine.length }, mine[mine.length - 1]);
   });
   const weightRows = readRows_("weights");
   const crm = crmIndex_();
@@ -3158,6 +3183,7 @@ function actionProgress_(payload, member) {
       today: today,
       hideWeight: hideWeight,
       weights: hideWeight ? [] : weightsFor_(slug),
+      bodyScans: bodyScansFor_(slug),
       history: history,
       days: days,
       thisWeek: slim(MacroCore.weekSummary(dayTotals, history, thisMonday)),
@@ -3223,6 +3249,239 @@ function actionCoachLogWeight_(payload) {
 }
 
 /** Max sets a goal weight and a pace in kg/week; the direction follows the goal. */
+// ---------------------------------------------------------------------------
+// Body scans (2026-11-03, Max): EVOLT 360 report photo → four numbers, tracked
+// over time. Free for everyone (one Sonnet read, about 2-3c), never one of
+// the daily AI uses, 2 reads a day per client. The AI only copies what's
+// printed; the client (or Max) checks the numbers before they're saved.
+// ---------------------------------------------------------------------------
+
+const BODY_SCAN_KIND = "bodyscan";
+const BODY_SCAN_DAILY = 2;
+// What a believable reading looks like; anything outside is left blank for the client to type.
+const BODY_SCAN_RANGES = {
+  weight_kg: [25, 350],
+  body_fat_pct: [2, 75],
+  fat_mass_kg: [0.5, 250],
+  muscle_mass_kg: [5, 120],
+};
+const BODY_SCAN_FIELDS = Object.keys(BODY_SCAN_RANGES);
+
+const BODY_SCAN_SCHEMA = {
+  type: "object",
+  properties: {
+    is_body_scan: { type: "boolean" },
+    scan_date: { type: "string" },
+    unit: { type: "string", enum: ["kg", "lb"] },
+    weight: { type: "number" },
+    body_fat_pct: { type: "number" },
+    fat_mass: { type: "number" },
+    skeletal_muscle_mass: { type: "number" },
+    confidence: { type: "string", enum: ["high", "medium", "low"] },
+  },
+  required: ["is_body_scan", "scan_date", "unit", "weight", "body_fat_pct", "fat_mass", "skeletal_muscle_mass", "confidence"],
+  additionalProperties: false,
+};
+
+const BODY_SCAN_PROMPT = [
+  "This should be a photo of an EVOLT 360 body composition report: printed, on the scanner's screen, or in the EVOLT Active app.",
+  "Copy these four numbers exactly as printed: total body weight; body fat percentage (may be labelled PBF or Body Fat %); body fat mass; skeletal muscle mass (SMM).",
+  "Skeletal muscle mass is NOT lean body mass, fat-free mass or soft lean mass: only use the number labelled skeletal muscle mass.",
+  "Use 0 for any of the four you can't read clearly. Never estimate, calculate one from another, or use a target or 'ideal' value instead of the measured one.",
+  "unit is the weight unit printed (kg or lb). scan_date is the date of the scan printed on the report as YYYY-MM-DD (Australian reports write the day first), or an empty string if none is visible.",
+  "is_body_scan is false if the photo isn't a body composition report at all. confidence is how sure you are the four numbers are right.",
+].join("\n");
+
+/** One client's scans, oldest first. */
+function bodyScansFor_(slug, rows) {
+  const num = (v) => (v === "" || v == null || !(Number(v) > 0) ? null : Number(v));
+  return (rows || readRows_("bodyScans"))
+    .filter((r) => String(r.slug) === slug && /^\d{4}-\d{2}-\d{2}$/.test(String(r.scan_date)))
+    .map((r) => ({
+      id: String(r.id),
+      date: String(r.scan_date),
+      weight_kg: num(r.weight_kg),
+      body_fat_pct: num(r.body_fat_pct),
+      fat_mass_kg: num(r.fat_mass_kg),
+      muscle_mass_kg: num(r.muscle_mass_kg),
+      by: String(r.by || ""),
+    }))
+    .sort((a, b) => (a.date < b.date ? -1 : 1));
+}
+
+/** A number for one field, rounded to 0.1, or null when it's missing or unbelievable. */
+function bodyScanValue_(field, value) {
+  const n = Math.round(Number(value) * 10) / 10;
+  const range = BODY_SCAN_RANGES[field];
+  return n >= range[0] && n <= range[1] ? n : null;
+}
+
+/** The AI's reading as the card's form values: kg, today's date if none printed, plus a note when the numbers don't agree. */
+function cleanBodyScan_(raw) {
+  const lb = raw.unit === "lb" ? 0.45359237 : 1;
+  const out = {
+    weight_kg: bodyScanValue_("weight_kg", Number(raw.weight) * lb),
+    body_fat_pct: bodyScanValue_("body_fat_pct", raw.body_fat_pct),
+    fat_mass_kg: bodyScanValue_("fat_mass_kg", Number(raw.fat_mass) * lb),
+    muscle_mass_kg: bodyScanValue_("muscle_mass_kg", Number(raw.skeletal_muscle_mass) * lb),
+    confidence: ["high", "medium", "low"].indexOf(raw.confidence) >= 0 ? raw.confidence : "low",
+  };
+  const today = todaySydney_();
+  const date = String(raw.scan_date || "");
+  out.date = /^\d{4}-\d{2}-\d{2}$/.test(date) && date <= today && date >= MacroCore.addDays(today, -1100) ? date : today;
+  out.dateFound = out.date === date;
+  // Fat mass is weight × body fat %: a big gap means one of them was misread.
+  if (out.weight_kg && out.body_fat_pct && out.fat_mass_kg && Math.abs((out.weight_kg * out.body_fat_pct) / 100 - out.fat_mass_kg) > 1.5) {
+    out.warning = "Body fat % and fat mass don't quite add up, so check those two against your report.";
+  }
+  return out;
+}
+
+function readBodyScanPhoto_(slug, payload) {
+  const image = String(payload.image || "").replace(/^data:image\/\w+;base64,/, "");
+  if (!image) throw userError_("no_image", "No photo came through. Try again.");
+  if (image.length > 2000000) throw userError_("too_big", "That photo is too large. Try again.");
+  const apiKey = prop_("ANTHROPIC_API_KEY");
+  if (!apiKey) throw userError_("ai_off", "Reading scans isn't switched on yet. You can type the numbers in instead.");
+
+  const usageRow = withLock_(() => {
+    const today = todaySydney_();
+    const done = readRows_("usage").filter(
+      (u) => String(u.slug) === slug && String(u.log_date) === today && String(u.kind) === BODY_SCAN_KIND && usageCounts_(u)
+    ).length;
+    if (done >= BODY_SCAN_DAILY) {
+      throw userError_("scan_limit", "That's " + BODY_SCAN_DAILY + " scan photos today. Type the numbers in instead, or try again tomorrow.");
+    }
+    return appendRow_("usage", { timestamp: nowStamp_(), log_date: today, slug: slug, kind: BODY_SCAN_KIND, model: VISION_MODEL, ok: "pending" });
+  });
+  const fail = (usage, message) => {
+    recordUsage_(usageRow, usage, "error", VISION_MODEL);
+    return userError_("ai_failed", message);
+  };
+  let res;
+  try {
+    res = UrlFetchApp.fetch("https://api.anthropic.com/v1/messages", {
+      method: "post",
+      contentType: "application/json",
+      headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+      payload: JSON.stringify({
+        model: VISION_MODEL,
+        max_tokens: 1000,
+        system: [{ type: "text", text: "You read numbers off body composition reports, exactly as printed. You never interpret them or give health advice." }],
+        output_config: { effort: "low", format: { type: "json_schema", schema: BODY_SCAN_SCHEMA } },
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "image", source: { type: "base64", media_type: "image/jpeg", data: image } },
+              { type: "text", text: BODY_SCAN_PROMPT },
+            ],
+          },
+        ],
+      }),
+      muteHttpExceptions: true,
+    });
+  } catch (err) {
+    throw fail(null, "Couldn't read that photo just now. Try again in a moment.");
+  }
+  let data = {};
+  try {
+    data = JSON.parse(res.getContentText());
+  } catch (err) {
+    data = {};
+  }
+  if (res.getResponseCode() !== 200 || data.stop_reason === "refusal" || data.stop_reason === "max_tokens") {
+    console.error("Body scan error", res.getResponseCode(), JSON.stringify(data).slice(0, 300));
+    throw fail(data.usage, "Couldn't read that photo just now. Try again in a moment.");
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse((data.content || []).find((b) => b.type === "text").text);
+  } catch (err) {
+    throw fail(data.usage, "Couldn't make sense of that photo. Try again.");
+  }
+  // Not a report at all: doesn't count towards today's 2.
+  if (!parsed.is_body_scan) {
+    throw fail(data.usage, "That doesn't look like an EVOLT report. Try a straight-on photo of the whole page, in good light.");
+  }
+  recordUsage_(usageRow, data.usage, "Y", VISION_MODEL);
+  const scan = cleanBodyScan_(parsed);
+  if (!BODY_SCAN_FIELDS.some((f) => scan[f])) {
+    throw userError_("ai_failed", "Couldn't make out the numbers. Try a closer, sharper photo, or type them in.");
+  }
+  return scan;
+}
+
+/** Saves (or replaces, for the same date) one scan, and makes its weight that day's weigh-in if there isn't one. */
+function saveBodyScan_(slug, payload, by) {
+  const today = todaySydney_();
+  const date = String(payload.date || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw userError_("bad_date", "Pick the date of the scan.");
+  if (date > today) throw userError_("bad_date", "That date's in the future.");
+  if (date < MacroCore.addDays(today, -1100)) throw userError_("bad_date", "That's more than 3 years ago.");
+  const row = { scan_date: date, by: by, confidence: ["high", "medium", "low"].indexOf(payload.confidence) >= 0 ? payload.confidence : "" };
+  BODY_SCAN_FIELDS.forEach((f) => {
+    const raw = payload[f];
+    if (raw === "" || raw == null) {
+      row[f] = "";
+      return;
+    }
+    const v = bodyScanValue_(f, raw);
+    if (v == null) {
+      const r = BODY_SCAN_RANGES[f];
+      throw userError_("bad_value", "One of the numbers looks off. It should be between " + r[0] + " and " + r[1] + ".");
+    }
+    row[f] = v;
+  });
+  if (!BODY_SCAN_FIELDS.some((f) => row[f] !== "")) throw userError_("bad_value", "Fill in at least one number from the scan.");
+  withLock_(() => {
+    const existing = readRows_("bodyScans").find((r) => String(r.slug) === slug && String(r.scan_date) === date);
+    if (existing) updateRow_("bodyScans", existing._row, Object.assign(row, { created_at: nowStamp_() }));
+    else appendRow_("bodyScans", Object.assign({ id: Utilities.getUuid(), slug: slug, created_at: nowStamp_() }, row));
+  });
+  // The scan's weight is that day's weigh-in, unless they already logged one.
+  if (row.weight_kg !== "" && row.weight_kg >= 30 && row.weight_kg <= 300) {
+    const hasOne = readRows_("weights").some((w) => String(w.slug) === slug && String(w.date) === date);
+    if (!hasOne) upsertWeight_(slug, date, row.weight_kg, by === "coach" ? "coach" : "scan");
+  }
+  return { bodyScans: bodyScansFor_(slug), weights: weightsFor_(slug), weightTrend: weightTrend_(slug) };
+}
+
+function actionAnalyseBodyScan_(payload, member) {
+  return { scan: readBodyScanPhoto_(String(member.slug), payload) };
+}
+
+function actionSaveBodyScan_(payload, member) {
+  return saveBodyScan_(String(member.slug), payload, "client");
+}
+
+function actionDeleteBodyScan_(payload, member) {
+  const slug = String(member.slug);
+  withLock_(() => {
+    const row = readRows_("bodyScans").find((r) => String(r.slug) === slug && String(r.id) === String(payload.scanId || ""));
+    if (!row) throw userError_("not_found", "That scan's already gone.");
+    tab_("bodyScans").deleteRow(row._row);
+  });
+  return { bodyScans: bodyScansFor_(slug) };
+}
+
+function coachScanMember_(payload) {
+  const slug = slugify_(payload.slug);
+  if (!readRows_("members").some((m) => String(m.slug) === slug)) throw userError_("no_member", "Create this client's Fuel link first.");
+  return slug;
+}
+
+function actionCoachAnalyseBodyScan_(payload) {
+  return { scan: readBodyScanPhoto_(coachScanMember_(payload), payload) };
+}
+
+function actionCoachSaveBodyScan_(payload) {
+  const slug = coachScanMember_(payload);
+  const out = saveBodyScan_(slug, payload, "coach");
+  const scans = out.bodyScans;
+  return { slug: slug, lastScan: scans.length ? Object.assign({ count: scans.length }, scans[scans.length - 1]) : null };
+}
+
 function actionCoachSetGoal_(payload) {
   const slug = slugify_(payload.slug);
   const row = readRows_("targets").find((t) => String(t.slug) === slug);

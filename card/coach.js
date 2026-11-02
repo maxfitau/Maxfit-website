@@ -13,6 +13,8 @@
  *     backend to check Stripe now
  *   - log a client's weight after a session, set their goal weight and
  *     pace, and see this week's green days and their nutrition punches
+ *   - add a client's EVOLT body scan from a photo of the report (or typed),
+ *     and see their latest one (2026-11-03)
  */
 (function () {
   const body = document.getElementById("coachBody");
@@ -128,6 +130,7 @@
         <span class="coach-client__meta">${esc(targetsText(c))}</span>
         ${c.hasKey && aiEnabled ? `<span class="coach-client__meta">${esc(planText(c.plan))}${c.credits ? ` · ${esc(c.credits)} pay-as-you-go AI uses` : ""}</span>` : ""}
         ${c.hasKey ? `<span class="coach-client__meta">${esc(progressText(c))}</span>` : ""}
+        ${c.lastScan ? `<span class="coach-client__meta">${esc(scanText(c.lastScan))}</span>` : ""}
         ${goalHtml(c)}
         ${c.link ? `<div class="coach-link">${esc(c.link)}</div>` : ""}
         <div class="coach-actions">
@@ -141,6 +144,7 @@
           }
           ${c.hasKey && aiEnabled ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="credits">Add AI uses</button>' : ""}
           ${c.hasKey ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="weight">Log weight</button>' : ""}
+          ${c.hasKey ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="scan">Add EVOLT scan</button>' : ""}
           ${c.hasKey && c.targets ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="goal">Set goal</button>' : ""}
           ${c.link ? '<button class="fuel-btn fuel-btn--ghost" type="button" data-a="rotate">New link</button>' : ""}
         </div>
@@ -152,6 +156,26 @@
                   <label class="fuel-field"><span class="card__label">Date</span><input class="fuel-input" name="date" type="date" value="${esc(MacroCore.sydneyDate())}" /></label>
                 </div>
                 <div class="coach-actions"><button class="fuel-btn" type="button" data-a="saveWeight">Save weight</button></div>
+              </div>`
+            : ""
+        }
+        ${
+          form === "scan"
+            ? `<div class="coach-form" data-scan-form>
+                ${
+                  aiEnabled
+                    ? `<label class="fuel-btn" style="cursor:pointer">Read a photo of the report<input type="file" accept="image/*" data-scanfile hidden /></label>
+                       <span class="coach-client__meta" data-scan-status>Or type the numbers in below. Check them against the report before saving.</span>`
+                    : '<span class="coach-client__meta">Type the numbers from the report.</span>'
+                }
+                <label class="fuel-field"><span class="card__label">Scan date</span><input class="fuel-input" name="date" type="date" value="${esc(MacroCore.sydneyDate())}" max="${esc(MacroCore.sydneyDate())}" /></label>
+                <div class="fuel-fields2">
+                  <label class="fuel-field"><span class="card__label">Weight (kg)</span><input class="fuel-input" name="weight_kg" type="number" inputmode="decimal" step="0.1" /></label>
+                  <label class="fuel-field"><span class="card__label">Body fat (%)</span><input class="fuel-input" name="body_fat_pct" type="number" inputmode="decimal" step="0.1" /></label>
+                  <label class="fuel-field"><span class="card__label">Skeletal muscle (kg)</span><input class="fuel-input" name="muscle_mass_kg" type="number" inputmode="decimal" step="0.1" /></label>
+                  <label class="fuel-field"><span class="card__label">Fat mass (kg)</span><input class="fuel-input" name="fat_mass_kg" type="number" inputmode="decimal" step="0.1" /></label>
+                </div>
+                <div class="coach-actions"><button class="fuel-btn" type="button" data-a="saveScan">Save scan</button></div>
               </div>`
             : ""
         }
@@ -230,6 +254,62 @@
   }
 
   /** Weight, this week's green days and nutrition punches, in one line. */
+  /** "EVOLT 3 Nov: 82.1 kg · 21.4% body fat · 36.2 kg muscle (4 scans)". */
+  function scanText(s) {
+    const bits = [];
+    if (s.weight_kg) bits.push(`${s.weight_kg} kg`);
+    if (s.body_fat_pct) bits.push(`${s.body_fat_pct}% body fat`);
+    if (s.muscle_mass_kg) bits.push(`${s.muscle_mass_kg} kg muscle`);
+    return `EVOLT ${s.date.slice(8)}/${s.date.slice(5, 7)}: ${bits.join(" · ")}${s.count > 1 ? ` (${s.count} scans)` : ""}`;
+  }
+
+  /** A photo shrunk in the browser (reports have small print, so 1600px). */
+  function resizePhoto(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+        canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+        canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(url);
+        resolve(canvas.toDataURL("image/jpeg", 0.85).split(",")[1]);
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error("Couldn't open that photo."));
+      };
+      img.src = url;
+    });
+  }
+
+  // A photo of the report: the AI reads it, and the numbers land in the form to check.
+  body.addEventListener("change", async (e) => {
+    const input = e.target.closest("[data-scanfile]");
+    if (!input || !input.files || !input.files[0]) return;
+    const form = input.closest("[data-scan-form]");
+    const slug = input.closest("[data-slug]").dataset.slug;
+    const status = form.querySelector("[data-scan-status]");
+    status.textContent = "Reading the report…";
+    try {
+      const image = await resizePhoto(input.files[0]);
+      const data = await MacroApi.coach("coachAnalyseBodyScan", pin, { slug: slug, image: image }, { timeoutMs: 90000 });
+      const scan = data.scan;
+      form.querySelector('[name="date"]').value = scan.date;
+      ["weight_kg", "body_fat_pct", "muscle_mass_kg", "fat_mass_kg"].forEach((k) => {
+        form.querySelector(`[name="${k}"]`).value = scan[k] != null ? scan[k] : "";
+      });
+      status.textContent = [scan.dateFound ? "" : "No date on the photo, so it's set to today.", scan.warning || "", "Check these against the report, then Save."]
+        .filter(Boolean)
+        .join(" ");
+    } catch (err) {
+      status.textContent = err.message;
+    }
+    input.value = "";
+  });
+
   function progressText(c) {
     const bits = [];
     if (c.lastWeight) bits.push(`Weight ${c.lastWeight.kg} kg (${c.lastWeight.date.slice(8)}/${c.lastWeight.date.slice(5, 7)})`);
@@ -358,7 +438,7 @@
       }
       return;
     }
-    if (a === "issue" || a === "rotate" || a === "weight" || a === "goal" || a === "credits") {
+    if (a === "issue" || a === "rotate" || a === "weight" || a === "goal" || a === "credits" || a === "scan") {
       open[slug] = open[slug] === a ? null : a;
       render();
       return;
@@ -402,6 +482,15 @@
         open[slug] = null;
         render();
         toast(`Saved ${c.name}'s goal`);
+      } else if (a === "saveScan") {
+        const el = formFor(slug);
+        const fields = { slug: slug, date: el.querySelector('[name="date"]').value };
+        ["weight_kg", "body_fat_pct", "muscle_mass_kg", "fat_mass_kg"].forEach((k) => (fields[k] = el.querySelector(`[name="${k}"]`).value));
+        const data = await MacroApi.coach("coachSaveBodyScan", pin, fields);
+        c.lastScan = data.lastScan;
+        open[slug] = null;
+        render();
+        toast(`Saved ${c.name}'s scan`);
       } else if (a === "saveCredits") {
         const el = formFor(slug);
         const uses = Number(el.querySelector('[name="uses"]').value);

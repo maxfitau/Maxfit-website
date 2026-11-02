@@ -102,6 +102,14 @@ In Fuel's tiles: **Meal plan** (the planner, Diamond only) and **Shopping** (Gol
 - **Shopping:** `shoppingFromPlan` → `MacroCore.plannerShopping(planner, today)`: picks × serves from today on, rounded up, aisle order, pantry flagged and left off. Shopping list actions as before (`shoppingList`, `shoppingAdd`, `shoppingToggle` with `itemId`, `shoppingClear`).
 - **Testing:** scratchpad `harness/scope-harness.html` runs the real Macros.gs on fake sheets (38 checks). Don't commit the harness.
 
+## Body scans (EVOLT, built 2026-11-03)
+
+- Max's choices: clients add them in Fuel's **Progress** (Body scans panel: Snap my scan, From photos, Type it in, All scans) and Max adds them on the coach page (**Add EVOLT scan**, read a photo or type). Free on every plan, never one of the daily AI uses (`BODY_SCAN_KIND` is left out of `aiUsedToday_`), 2 photo reads a day per client (`BODY_SCAN_DAILY`; a photo that isn't a report or a failed call doesn't count).
+- Saves four numbers only: weight, body fat %, fat mass and skeletal muscle mass (`BODY_SCAN_FIELDS`, sane ranges in `BODY_SCAN_RANGES`), in the private **Body Scans** tab, one row per client per scan date (same date replaces). The scan's weight becomes that day's weigh-in (`by` scan or coach) unless one is already logged.
+- Backend (`Macros.gs` `2026-11-03a`): `analyseBodyScan` / `coachAnalyseBodyScan` (Sonnet vision, `BODY_SCAN_SCHEMA`, `BODY_SCAN_PROMPT`: copy printed values only, skeletal muscle mass not lean mass, 0 when unreadable, pounds converted, the printed date or today) return the numbers for the client to check, with a warning when fat mass doesn't match weight × body fat %. `saveBodyScan` / `coachSaveBodyScan` validate and save; `deleteBodyScan` takes `scanId` (not `id`, which is the member's id in every request). `progress` returns `bodyScans`; `coachList` adds `lastScan`.
+- Scope of practice: Fuel only records and graphs the numbers; it never says what they mean or suggests anything from them. The panel says to ask their GP. Hide weight also hides weight and fat mass in the panel.
+- The card reads report photos at 1600px (small print), meal photos stay 1024px. Tested with a scratchpad page running the real `Macros.gs` on `demo/gas-fake.js` (34 checks); the demo answers scan photos with a sample reading and seeds Sam with two scans.
+
 ## What can I make? (fridge scanner, built 2026-10-15)
 
 - In Fuel's Log Food chooser (`card/macros.js`, `openFridge`). Gold and Diamond; Silver sees it locked like the other AI modes.
