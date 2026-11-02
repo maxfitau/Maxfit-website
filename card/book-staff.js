@@ -22,6 +22,8 @@
     loading: $("bookLoading"),
     content: $("bookContent"),
     message: $("bookMessage"),
+    payDayRow: $("payDayRow"),
+    payDayCheckbox: $("payDayCheckbox"),
     pickSection: $("pickSection"),
     dayGrid: $("dayGrid"),
     timesWrap: $("timesWrap"),
@@ -54,6 +56,7 @@
     location: "",
     type: "one-on-one",
     partner: "",
+    payOnDay: false,
     busy: false,
     flash: "",
     error: "",
@@ -178,8 +181,18 @@
       show(els.message, true);
     }
 
-    show(els.pickSection, Boolean(who && who.canBook && state.info.slots.length));
-    if (who && who.canBook) renderPicker(state.info);
+    // Staff-only escape hatch: an empty balance is the one reason Max can
+    // book through anyway, by ticking "pay on the day" — anything else
+    // (too many active bookings, etc.) still blocks him, same as a client.
+    const noSessions = Boolean(who && (who.reason === "no-sessions" || who.reason === "no-duo-sessions"));
+    show(els.payDayRow, noSessions);
+    if (!noSessions) state.payOnDay = false; // don't leave it silently ticked for a different client, type or reason
+    els.payDayCheckbox.checked = state.payOnDay;
+    els.payDayCheckbox.disabled = state.busy;
+
+    const canProceed = Boolean(who && (who.canBook || (noSessions && state.payOnDay)));
+    show(els.pickSection, Boolean(canProceed && state.info.slots.length));
+    if (canProceed) renderPicker(state.info);
 
     els.success.textContent = state.flash;
     show(els.success, Boolean(state.flash));
@@ -297,6 +310,7 @@
     state.selectedDate = "";
     state.selectedStart = "";
     state.location = "";
+    state.payOnDay = false;
     state.flash = "";
     state.error = "";
     if (!state.pin || !state.clientSlug) {
@@ -355,6 +369,7 @@
         fields.type = "duo";
         fields.partner = state.partner.trim();
       }
+      if (state.payOnDay) fields.payOnDay = true;
       res = await api("coachBookSession", fields);
     } catch (err) {
       setBusy(false);
@@ -365,7 +380,7 @@
     state.busy = false;
     if (res.status === "success") {
       const b = res.booking;
-      const successMsg = "Booked " + state.clientName + (b.type === "duo" && b.partner ? " and " + b.partner + " (duo)" : "") + " for " + dayLabel(b.date) + " at " + clock(b.start) + "." + (res.emailedTo ? " A confirmation is on its way to " + res.emailedTo + "." : "");
+      const successMsg = "Booked " + state.clientName + (b.type === "duo" && b.partner ? " and " + b.partner + " (duo)" : "") + " for " + dayLabel(b.date) + " at " + clock(b.start) + "." + (res.emailedTo ? " A confirmation is on its way to " + res.emailedTo + "." : "") + (state.payOnDay ? " Noted: pay on the day." : "");
       state.selectedStart = "";
       await loadForClient(); // resets state.flash internally, so it's restored below rather than passed in
       state.flash = successMsg;
@@ -412,7 +427,14 @@
     if (!b || state.busy || b.dataset.type === state.type) return;
     state.type = b.dataset.type;
     state.selectedStart = "";
+    state.payOnDay = false;
     state.error = "";
+    renderAll();
+  });
+
+  els.payDayCheckbox.addEventListener("change", () => {
+    state.payOnDay = els.payDayCheckbox.checked;
+    state.selectedStart = "";
     renderAll();
   });
   els.partnerInput.addEventListener("input", () => {

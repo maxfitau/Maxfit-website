@@ -14,7 +14,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="styles.css?v=20261026b" />
 <link rel="stylesheet" href="../checkin.css?v=20261027b" />
-<link rel="stylesheet" href="book.css?v=20261027b" />
+<link rel="stylesheet" href="book.css?v=20261102a" />
 </head>
 <body>
 
@@ -46,6 +46,11 @@
 
   <div class="book__content" id="bookContent" hidden>
     <p class="book__message" id="bookMessage" role="status" hidden></p>
+
+    <label class="book__payday" id="payDayRow" hidden>
+      <input type="checkbox" id="payDayCheckbox" />
+      <span>Book them in anyway — pay on the day</span>
+    </label>
 
     <section class="book__section" id="typeSection" aria-labelledby="typeLabel" hidden>
       <span class="card__label card__label--red" id="typeLabel">What are you booking?</span>
@@ -90,6 +95,6 @@
 </main>
 
 <script src="sheet.js?v=20261027b" defer></script>
-<script src="book-staff.js?v=20261027b" defer></script>
+<script src="book-staff.js?v=20261102a" defer></script>
 </body>
 </html>

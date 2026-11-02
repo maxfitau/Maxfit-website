@@ -32,7 +32,7 @@ const GROCERY_SHEET_NAME = "Grocery Items";
 // Changes whenever this file does, and is shown when you open the deployed
 // URL in a browser (see doGet) — the quick way to tell whether a redeploy
 // actually took, instead of guessing from behaviour.
-const BACKEND_VERSION = "2026-10-31b";
+const BACKEND_VERSION = "2026-11-02a";
 
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -2287,7 +2287,7 @@ const BOOKING_CLIENTS_HEADER = ["Name", "Slug", "Booking Code", "Text to send", 
 // Column 12 (Location), deliberately past the first ten the Upcoming tab's
 // formula reads by letter — same reasoning as Calendar Event Id at 11.
 // Columns 13 and 14 (Type: 1-on-1 or Duo; Partner: the second person's name for a duo).
-const BOOKINGS_HEADER = ["Booking ID", "Date", "Start", "End", "Minutes", "Client", "Client Slug", "Status", "Booked At", "Cancelled At", "Calendar Event Id", "Location", "Type", "Partner"];
+const BOOKINGS_HEADER = ["Booking ID", "Date", "Start", "End", "Minutes", "Client", "Client Slug", "Status", "Booked At", "Cancelled At", "Calendar Event Id", "Location", "Type", "Partner", "Notes"];
 // Empty by default — unlike Prices, there's no sensible generic starting
 // row here, Max adds his own real places. A client only sees a location
 // step at all once at least one row here is On.
@@ -2854,7 +2854,15 @@ function bookingColumns_(header) {
   // Duo (2026-10-27): same treatment, a sheet without them is all 1-on-1s.
   c.type = findColumn_(header, "Type");
   c.partner = findColumn_(header, "Partner");
+  // "Pay on the day" note (2026-11-02): self-healed via ensureBookingsColumns_
+  // right before this is called at the one write site, so it's always there.
+  c.notes = findColumn_(header, "Notes");
   return c;
+}
+
+/** Adds the Bookings tab's "Notes" column if an existing sheet predates it — same on-demand migration as ensureLoggedSetsColumns_ above, so there's no manual step to remember. */
+function ensureBookingsColumns_(sheet) {
+  return ensureColumns_(sheet, ["Notes"]);
 }
 
 // ---- Working out which times to offer -------------------------------------
@@ -3083,6 +3091,20 @@ function bookingEligibility_(member, settings, mine, type) {
     return { canBook: false, code: "too-many", message: "You already have " + mine.length + " sessions booked. Once one is done you can book another." };
   }
   return { canBook: true, code: "", message: "" };
+}
+
+/**
+ * Whether this booking attempt should be let through anyway on "pay on the
+ * day" (2026-11-02). Pure, like bookingEligibility_ above — true only when
+ * ALL of: it's genuinely a staff request (ctx.isStaff, which only
+ * bookingStaffContext_ ever sets — a self-service payload can claim
+ * payOnDay all it wants and this still returns false), Max actually ticked
+ * the box (payload.payOnDay), and the only reason they can't book is an
+ * empty balance. Any other reason (too-many, all-booked) still blocks him,
+ * same as a client booking themselves.
+ */
+function bookingPayOnDay_(ctx, payload, eligibility) {
+  return Boolean(ctx.isStaff && payload.payOnDay && (eligibility.code === "no-sessions" || eligibility.code === "no-duo-sessions"));
 }
 
 const DUO_COLUMN = "Duo Remaining";
@@ -3426,12 +3448,15 @@ function bookingContext_(payload) {
  * than a client self-identifying (2026-10-25, "I create it, it notifies
  * them" — the staff-mode side of card/book.html). STAFF_PIN instead of a
  * booking code, and any client picked straight off the CRM by slug rather
- * than whoever the card link belongs to. Deliberately NOT exempt from
- * anything else — same eligibility rules (sessions left, max active
- * bookings), same slot/calendar-busy checks as self-service, so Max can't
- * accidentally double-book himself or hand out a session that isn't really
- * owed. If that turns out too strict for how he actually wants to use it,
- * loosen it then, not pre-emptively.
+ * than whoever the card link belongs to. Same eligibility rules (sessions
+ * left, max active bookings), same slot/calendar-busy checks as
+ * self-service, so Max can't accidentally double-book himself — with one
+ * deliberate exception (2026-11-02): isStaff lets bookingInfoCore_ and
+ * bookSessionCore_ offer and accept a "pay on the day" override when the
+ * only problem is an empty session balance, so Max can pre-book a client in
+ * before they've paid. See bookingEligibility_'s call sites for the exact,
+ * narrow carve-out — everything else (too-soon, taken, calendar-busy,
+ * max-active) still blocks him exactly like a client booking themselves.
  */
 function bookingStaffContext_(payload) {
   if (!checkPin_(payload.pin)) {
@@ -3446,7 +3471,7 @@ function bookingStaffContext_(payload) {
   if (!member) {
     return { error: { status: "error", code: "unknown-member", message: "No client with that name on Sessions Remaining." } };
   }
-  return { ss: ss, member: member, settings: bookingSettings_(ss), now: bookingNow_() };
+  return { ss: ss, member: member, settings: bookingSettings_(ss), now: bookingNow_(), isStaff: true };
 }
 
 function bookingFail_(code, message) {
@@ -4320,7 +4345,12 @@ function bookingInfoCore_(ctx) {
     const duoAvailable = ctx.member.duoLeft > 0 || mine.some(function (b) { return b.type === "duo"; }) || buy.some(function (o) { return o.kind === "duo"; });
 
     let slots = [];
-    if (eligibility.canBook || duoEligibility.canBook) {
+    // Staff always sees slots, even for a client who can't book themselves
+    // right now (no sessions left) — Max is the one deciding whether to
+    // pre-book them in with "pay on the day"; a self-service client with
+    // nothing to book never reaches this branch, since ctx.isStaff is only
+    // ever set by bookingStaffContext_.
+    if (ctx.isStaff || eligibility.canBook || duoEligibility.canBook) {
       const active = rows.filter(function (b) { return b.active && b.date >= ctx.now.dateKey; });
       const candidates = bookingCandidates_(bookingWindows_(ctx.ss), bookingTimeOff_(ctx.ss), active, ctx.settings, ctx.now);
       slots = bookingApplyCalendarBusy_(candidates)
@@ -4393,7 +4423,13 @@ function bookSessionCore_(ctx, payload) {
     const partner = type === "duo" ? cleanNote_(String(payload.partner || "").trim(), 80) : "";
     if (type === "duo" && !partner) return bookingFail_("bad-request", "Add the name of the person training with you.");
     const eligibility = bookingEligibility_(ctx.member, ctx.settings, mine, type);
-    if (!eligibility.canBook) return bookingFail_(eligibility.code, eligibility.message);
+    // The one narrow override (2026-11-02): staff, explicitly asking, and
+    // the ONLY reason they can't book is an empty balance — not too-many,
+    // not all-booked, which stay blocked exactly like self-service. A
+    // self-service client can never reach this: payOnDay only does anything
+    // when ctx.isStaff, which only bookingStaffContext_ ever sets.
+    const payOnDay = bookingPayOnDay_(ctx, payload, eligibility);
+    if (!eligibility.canBook && !payOnDay) return bookingFail_(eligibility.code, eligibility.message);
 
     // A location must be chosen once any are configured (Locations tab has
     // at least one On row) — the client page always sends one then. With
@@ -4419,6 +4455,7 @@ function bookSessionCore_(ctx, payload) {
     if (candidate.calendarBusy) return bookingFail_("unavailable", "That time isn't available any more. Please pick another.");
 
     const sheet = ctx.ss.getSheetByName(BOOKING_TABS.bookings);
+    ensureBookingsColumns_(sheet); // adds "Notes" to an existing tab that predates it
     const table = bookingTable_(sheet);
     const c = bookingColumns_(table.header);
     const id = "B" + Utilities.getUuid().replace(/-/g, "").slice(0, 8).toUpperCase();
@@ -4433,6 +4470,7 @@ function bookSessionCore_(ctx, payload) {
     row[c.slug] = ctx.member.slug;
     row[c.status] = "Booked";
     row[c.bookedAt] = ctx.now.stamp;
+    if (payOnDay && c.notes >= 0) row[c.notes] = "Pay on the day";
     if (type === "duo" && c.type < 0) return bookingFail_("bad-request", "Duo sessions aren't set up yet. Please message Max.");
     if (c.type >= 0) row[c.type] = type === "duo" ? "Duo" : "1-on-1";
     if (c.partner >= 0) row[c.partner] = partner;
@@ -4466,7 +4504,7 @@ function bookSessionCore_(ctx, payload) {
       type === "duo"
         ? "Duo sessions left: " + ctx.member.duoLeft
         : (ctx.member.unlimited ? "Plan: unlimited" : "1-on-1 sessions left: " + (ctx.member.sessionsLeft === null ? "not set" : ctx.member.sessionsLeft)),
-    ].concat(location ? ["Location: " + location.name] : [], bookingEmailedLine_(ctx.settings, emailedTo), [
+    ].concat(payOnDay ? ["Note: Pay on the day — they had no sessions left when you booked this in."] : [], location ? ["Location: " + location.name] : [], bookingEmailedLine_(ctx.settings, emailedTo), [
       "",
       "To cancel it yourself, change its Status to Cancelled in the Bookings tab:",
       ctx.ss.getUrl(),
@@ -4693,6 +4731,33 @@ function bookingSelfTest() {
       step("The Upcoming tab empties again", function () {
         const row = bookingUpcomingRow_(scratch, function (r) { return r[0] === "Nothing booked yet"; });
         expect(row[0] === "Nothing booked yet", "Upcoming shows " + JSON.stringify(row));
+      });
+
+      step("Pay on the day only overrides for staff, only when ticked, and only for an empty balance", function () {
+        const noSessions = { canBook: false, code: "no-sessions", message: "" };
+        const allBooked = { canBook: false, code: "all-booked", message: "" };
+        expect(bookingPayOnDay_({ isStaff: true }, { payOnDay: true }, noSessions) === true, "staff + ticked + no-sessions should override");
+        expect(bookingPayOnDay_({ isStaff: true }, { payOnDay: true }, allBooked) === false, "all-booked must never be overridden");
+        expect(bookingPayOnDay_({ isStaff: true }, { payOnDay: false }, noSessions) === false, "unticked must not override");
+        expect(bookingPayOnDay_({}, { payOnDay: true }, noSessions) === false, "a self-service payload (no isStaff) must never override, however it's phrased");
+        const zeroBalance = bookingEligibility_({ sessionsLeft: 0, duoLeft: 0, unlimited: false }, { requireSession: true, maxActive: 6 }, [], "one-on-one");
+        expect(zeroBalance.code === "no-sessions", "a zero-balance member should get reason no-sessions, got " + zeroBalance.code);
+      });
+
+      step("The Bookings tab grows a Notes column on demand, and a pay-on-the-day note is stored as plain text", function () {
+        const sheet = scratch.getSheetByName(BOOKING_TABS.bookings);
+        const before = bookingTable_(sheet).header;
+        expect(findColumn_(before, "Notes") < 0, "the scratch Bookings tab already has Notes — this check needs a sheet without it");
+        ensureBookingsColumns_(sheet);
+        const after = bookingTable_(sheet).header;
+        const notesCol = findColumn_(after, "Notes");
+        expect(notesCol >= 0, "ensureBookingsColumns_ didn't add Notes");
+        sheet.appendRow(after.map(function (name) { return name === "Notes" ? "Pay on the day" : ""; }));
+        const cell = sheet.getRange(sheet.getLastRow(), notesCol + 1);
+        expect(typeof cell.getValue() === "string" && cell.getValue() === "Pay on the day", "the note came back as " + typeof cell.getValue() + " " + cell.getValue());
+        sheet.deleteRow(sheet.getLastRow()); // tidy up: it's only a test row
+        ensureBookingsColumns_(sheet); // a second run must change nothing further
+        expect(bookingTable_(sheet).header.length === after.length, "re-running ensureBookingsColumns_ added another column");
       });
 
       step("The Message Max link is passed on, and only if it's safe", function () {
