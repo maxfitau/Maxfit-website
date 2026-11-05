@@ -1,0 +1,132 @@
+/* ==========================================================================
+   MaxFit coach shell — a left sidebar for every coach-only page on a laptop
+   (>=1024px). Loaded only by coach pages: card/clients.html, card/members.html,
+   card/coach.html, card/book-staff.html, workout/builder.html, checkin.html.
+   Never loaded by a client-facing page, so .card's phone sizing elsewhere
+   on the site is completely untouched.
+
+   Markup every coach page wraps around its existing <main class="card ...">:
+     <div class="coach-shell">
+       <nav class="coach-sidebar">...</nav>
+       <main class="card ...">  <!-- unchanged -->
+     </div>
+
+   On a phone (<1024px) .coach-sidebar is hidden and .coach-shell is a plain
+   block, so .card falls back to its normal 400px phone sizing from
+   card/styles.css — pixel-identical to today. Above 1024px, .coach-shell
+   becomes a row and .coach-shell .card is let out of its 400px cap (only
+   inside the shell — card/styles.css's own rule is never edited).
+   ========================================================================== */
+
+.coach-shell {
+  width: 100%;
+}
+
+.coach-sidebar {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  body:has(.coach-shell) {
+    align-items: stretch; /* card/styles.css centers .card with align-items: center on body; the shell manages its own vertical layout instead */
+  }
+
+  .coach-shell {
+    display: flex;
+    align-items: flex-start;
+    gap: 32px;
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 32px 24px;
+  }
+
+  .coach-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 0 0 232px;
+    position: sticky;
+    top: 32px;
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 16px 12px;
+  }
+
+  .coach-sidebar__brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 10px 16px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .coach-sidebar__brand img {
+    width: 28px;
+    height: auto;
+  }
+
+  .coach-sidebar__brand span {
+    font-family: var(--font-head);
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-size: 15px;
+    color: var(--white);
+  }
+
+  .coach-sidebar__link {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 48px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-body);
+    font-weight: 600;
+    font-size: 16px;
+    color: var(--grey);
+    text-decoration: none;
+  }
+
+  .coach-sidebar__link svg {
+    flex: none;
+    width: 20px;
+    height: 20px;
+    color: var(--dim);
+  }
+
+  .coach-sidebar__link:hover {
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .coach-sidebar__link.is-active {
+    background: var(--red);
+    color: var(--on-red);
+  }
+
+  .coach-sidebar__link.is-active svg {
+    color: var(--on-red);
+  }
+
+  .coach-sidebar__divider {
+    height: 1px;
+    background: var(--line);
+    margin: 8px 4px;
+  }
+
+  .coach-sidebar__link--external span.coach-sidebar__hint {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--dim);
+  }
+
+  .coach-shell .card {
+    max-width: none;
+    width: 100%;
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+  }
+}

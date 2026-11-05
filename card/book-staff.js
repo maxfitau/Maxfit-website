@@ -11,7 +11,7 @@
  */
 (function () {
   const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbya8dm8g5eC4ldAbNYmMCccDCZ6K7encj_q4IzXtKMOpd007RMYhnR3_PJ2eL2gjVDQ/exec";
-  const STAFF_PIN_STORAGE_KEY = "maxfitStaffPin"; // shared with checkin.js / workout/builder.js
+  const STAFF_PIN_STORAGE_KEY = "maxfitStaffPin"; // shared with checkin.js / workout/builder.js / coach.js / people.js
   const REQUEST_TIMEOUT_MS = 25000;
 
   const $ = (id) => document.getElementById(id);

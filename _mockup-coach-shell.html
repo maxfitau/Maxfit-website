@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>MOCKUP — Coach desktop shell</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="card/styles.css" />
+<link rel="stylesheet" href="card/clients.css" />
+<link rel="stylesheet" href="card/macros.css" />
+<link rel="stylesheet" href="card/week.css" />
+<link rel="stylesheet" href="checkin.css" />
+<link rel="stylesheet" href="card/book.css" />
+<link rel="stylesheet" href="workout/builder.css" />
+<link rel="stylesheet" href="workout/exercise-picker.css" />
+<link rel="stylesheet" href="card/coach-shell.css" />
+<style>
+  /* ---- Mockup-only chrome: the banner and page switcher below are NOT part
+     of the real build. In the real build each of these 6 sections becomes
+     its own actual page (clients.html, members.html, coach.html,
+     book-staff.html, builder.html, checkin.html), each already wrapped in
+     exactly this same .coach-shell + .coach-sidebar markup. This one file
+     just lets you flip between all 6 without opening 6 tabs. ---- */
+  .mock-banner { position: sticky; top: 0; z-index: 50; background: #3a1a00; border-bottom: 1px solid #a85a00; color: #ffd9a0; font-family: var(--font-body); font-size: 14px; padding: 10px 16px; text-align: center; }
+  .mock-switch { position: sticky; top: 37px; z-index: 50; display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 16px; background: var(--bg); border-bottom: 1px solid var(--line); }
+  .mock-switch button { font-family: var(--font-head); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; font-size: 14px; padding: 10px 14px; min-height: 44px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg-card); color: var(--grey); cursor: pointer; }
+  .mock-switch button.on { background: var(--red); border-color: var(--red); color: #fff; }
+  .mock-page { display: none; }
+  .mock-page.on { display: block; }
+
+  /* ---- New, proposed-only styles for the two pages with no desktop table/
+     grid pattern today (Coach Fuel, Book a client in). Everything else below
+     reuses real classes from the real stylesheets linked above. ---- */
+  .coach-table-wrap { display: none; }
+  @media (min-width: 1024px) {
+    .coach-table-wrap { display: block; background: var(--bg-card); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+    .coach-table { width: 100%; border-collapse: collapse; font-family: var(--font-body); }
+    .coach-table th { text-align: left; font-family: var(--font-head); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; font-size: 13px; color: var(--dim); padding: 12px 16px; border-bottom: 1px solid var(--line); cursor: pointer; }
+    .coach-table th span { margin-left: 4px; color: var(--dim); }
+    .coach-table td { padding: 14px 16px; border-bottom: 1px solid var(--line); font-size: 16px; color: var(--grey); }
+    .coach-table tr:last-child td { border-bottom: 0; }
+    .coach-table tr:hover td { background: rgba(255, 255, 255, 0.04); cursor: pointer; }
+    .coach-table tr.is-selected td { background: rgba(224, 0, 0, 0.1); }
+    .coach-table b { color: var(--white); font-weight: 600; }
+    .coach-table .tag { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+    .coach-table .tag--diamond { background: linear-gradient(135deg, #b9f2ff, #6ad1e3); color: #04323b; }
+    .coach-table .tag--gold { background: linear-gradient(135deg, #ffe08a, #d9a441); color: #3a2900; }
+    .coach-table .tag--free { background: var(--line); color: var(--grey); }
+    .coach-desktop-layout { display: none; }
+    .coach-desktop-layout.on-wide { display: flex; gap: 20px; align-items: flex-start; }
+    .coach-table-wrap { flex: 1 1 56%; min-width: 0; }
+    .coach-detail-panel { flex: 1 1 44%; min-width: 0; background: var(--bg-card); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; }
+  }
+
+  .book-week-wrap { display: none; }
+  @media (min-width: 1024px) {
+    .book-week-wrap { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; }
+    .book-week-day { background: var(--bg-card); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px; display: flex; flex-direction: column; gap: 6px; min-height: 240px; }
+    .book-week-day h4 { margin: 0 0 4px; font-family: var(--font-head); font-weight: 700; font-size: 14px; text-transform: uppercase; color: var(--dim); text-align: center; }
+    .book-week-slot { min-height: 40px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--grey); font-size: 14px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+    .book-week-slot:hover { border-color: var(--red); color: var(--white); }
+    .book-week-slot.is-taken { background: rgba(224, 0, 0, 0.12); border-color: rgba(224, 0, 0, 0.4); color: var(--white); font-weight: 600; cursor: default; }
+    .book-stack-mobile { display: block; }
+    @media (min-width: 1024px) { .book-stack-mobile { display: none; } }
+  }
+
+  .checkin-manual { display: none; }
+  @media (min-width: 1024px) {
+    .checkin-manual { display: block; margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--line); }
+    .checkin-manual h3 { margin: 0 0 10px; font-family: var(--font-head); font-weight: 700; text-transform: uppercase; font-size: 16px; color: var(--dim); }
+  }
+</style>
+</head>
+<body style="display: block;">
+<!-- display:block overrides card/styles.css's body{display:flex}, which
+     expects exactly one top-level child (.card) to center — this one mockup
+     file stacks 6 mock pages as siblings, which a real page never does, so
+     this override is mockup-only and not part of the real coach-shell.css. -->
+
+<div class="mock-banner">MOCKUP — fake data, nothing on this page is wired up or saved anywhere. For review only.</div>
+<div class="mock-switch" id="mockSwitch">
+  <button data-page="clients" class="on">My clients</button>
+  <button data-page="members">App members</button>
+  <button data-page="fuel">Coach Fuel</button>
+  <button data-page="book">Book a client in</button>
+  <button data-page="builder">Workout builder</button>
+  <button data-page="checkin">Check-in</button>
+</div>
+
+<!-- Shared sidebar markup, repeated per section below with a different .is-active link each time, exactly as each real page will do. -->
+
+<!-- ============ MY CLIENTS ============ -->
+<div class="mock-page on" id="page-clients">
+<div class="coach-shell">
+  <nav class="coach-sidebar">
+    <div class="coach-sidebar__brand"><img src="assets/images/maxfit-logo.png" alt="" /><span>Coach Tools</span></div>
+    <a class="coach-sidebar__link is-active" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.6 2.7-6 6-6s6 2.4 6 6"/><circle cx="17" cy="9" r="2.6"/><path d="M15 20c0-2.6 1.8-4.6 4-4.9"/></svg>My clients</a>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.6 2.7-6 6-6s6 2.4 6 6"/><path d="M18 8v6M15 11h6"/></svg>App members</a>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c-1 3-5 5-5 10a5 5 0 0 0 10 0c0-2-1-3-2-2 .5 2-1 3-2 2-1.5-1-1-5-1-10z"/></svg>Coach Fuel</a>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>Book a client in</a>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16M4 9v6M8 7v10M16 7v10M20 9v6"/></svg>Workout builder</a>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7"/><rect x="13" y="4" width="7" height="7"/><rect x="4" y="13" width="7" height="7"/><path d="M14 14h2.5v2.5M19.5 14v6M14 19.5h6"/></svg>Check-in</a>
+    <div class="coach-sidebar__divider"></div>
+    <a class="coach-sidebar__link coach-sidebar__link--external" href="#" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3h7v7M21 3l-9 9M5 5h5M5 5v14h14v-5"/></svg>CRM sheet<span class="coach-sidebar__hint">↗</span></a>
+    <a class="coach-sidebar__link coach-sidebar__link--external" href="#" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3h7v7M21 3l-9 9M5 5h5M5 5v14h14v-5"/></svg>Handbook<span class="coach-sidebar__hint">↗</span></a>
+    <div class="coach-sidebar__divider"></div>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>Back to my card</a>
+  </nav>
+
+  <main class="card clients" id="clients" style="padding:22px;">
+    <div class="card__top"><a class="clients__back" href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></a><span class="card__tag">My clients</span></div>
+    <div class="coach-desktop-layout on-wide">
+      <div style="flex:1 1 40%;min-width:0;">
+        <input class="picker__input" placeholder="Search clients…" style="margin-bottom:12px;width:100%;" />
+        <div class="clients__list">
+          <div class="clients__row" style="border-color:var(--red);"><b>Bec Campbell</b><small>3 left · last Tue</small></div>
+          <div class="clients__row"><b>Sean Campbell</b><small>1 left · last Mon</small></div>
+        </div>
+      </div>
+      <div class="clients__detail-view" style="flex:1 1 60%;min-width:0;border-left:1px solid var(--line);padding-left:20px;">
+        <h1 class="clients__name">Bec Campbell</h1>
+        <p class="clients__meta">3 1-on-1 left · last check-in Tue 3 Nov · this month: Train 4x a week (on track)</p>
+        <div class="clients__workouts" style="margin-top:14px;">
+          <div class="clients__workout clients__workout--today"><b>Push Day</b><span>Scheduled today — tap to log</span></div>
+          <div class="clients__workout"><b>Pull Day</b></div>
+        </div>
+        <div class="clients__actions" style="margin-top:14px;">
+          <a class="clients__workout" href="#">Check in (no scan needed)</a>
+          <a class="clients__workout" href="#">Strength progress</a>
+          <a class="clients__workout" href="#">Book them in</a>
+          <a class="clients__workout" href="#">Open workout builder for Bec</a>
+        </div>
+      </div>
+    </div>
+    <p style="font-size:13px;color:var(--dim);margin-top:16px;">↑ click a row on a 1024px+ window to see it switch, no page reload. Below 1024px this is identical to the clients.html you have today.</p>
+  </main>
+</div>
+</div>
+
+<!-- ============ APP MEMBERS ============ -->
+<div class="mock-page" id="page-members">
+<div class="coach-shell">
+  <nav class="coach-sidebar">
+    <div class="coach-sidebar__brand"><img src="assets/images/maxfit-logo.png" alt="" /><span>Coach Tools</span></div>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.6 2.7-6 6-6s6 2.4 6 6"/><circle cx="17" cy="9" r="2.6"/><path d="M15 20c0-2.6 1.8-4.6 4-4.9"/></svg>My clients</a>
+    <a class="coach-sidebar__link is-active" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.6 2.7-6 6-6s6 2.4 6 6"/><path d="M18 8v6M15 11h6"/></svg>App members</a>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c-1 3-5 5-5 10a5 5 0 0 0 10 0c0-2-1-3-2-2 .5 2-1 3-2 2-1.5-1-1-5-1-10z"/></svg>Coach Fuel</a>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>Book a client in</a>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16M4 9v6M8 7v10M16 7v10M20 9v6"/></svg>Workout builder</a>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7"/><rect x="13" y="4" width="7" height="7"/><rect x="4" y="13" width="7" height="7"/><path d="M14 14h2.5v2.5M19.5 14v6M14 19.5h6"/></svg>Check-in</a>
+    <div class="coach-sidebar__divider"></div>
+    <a class="coach-sidebar__link coach-sidebar__link--external" href="#" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3h7v7M21 3l-9 9M5 5h5M5 5v14h14v-5"/></svg>CRM sheet<span class="coach-sidebar__hint">↗</span></a>
+    <a class="coach-sidebar__link coach-sidebar__link--external" href="#" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3h7v7M21 3l-9 9M5 5h5M5 5v14h14v-5"/></svg>Handbook<span class="coach-sidebar__hint">↗</span></a>
+    <div class="coach-sidebar__divider"></div>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>Back to my card</a>
+  </nav>
+
+  <main class="card clients" id="members" style="padding:22px;">
+    <div class="card__top"><a class="clients__back" href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></a><span class="card__tag">App members</span></div>
+    <div class="coach-desktop-layout on-wide">
+      <div style="flex:1 1 44%;min-width:0;display:flex;flex-direction:column;gap:10px;">
+        <p class="clients__status">42 of 50 Free spots used</p>
+        <div class="pcard pcard--ask">
+          <div class="pcard__head"><p class="pcard__name">James Hackett</p><span class="pcard__chip">Asked to join</span></div>
+          <p style="font-size:14px;color:var(--grey-light);">Tapped "Become a member" 2 Nov</p>
+        </div>
+        <div class="pcard">
+          <div class="pcard__head"><p class="pcard__name">Sarah Dabro</p><span class="pcard__chip pcard__chip--quiet">Gold</span></div>
+          <p style="font-size:14px;color:var(--grey-light);">Joined 12 Oct · referred by Bec Campbell · last active 2 days ago</p>
+        </div>
+        <div class="pcard">
+          <div class="pcard__head"><p class="pcard__name">Luca French</p><span class="pcard__chip pcard__chip--quiet">Free</span></div>
+          <p style="font-size:14px;color:var(--grey-light);">Joined 3 Nov · added by you · last active today</p>
+        </div>
+      </div>
+      <div class="coach-detail-panel" style="flex:1 1 56%;">
+        <h2 class="clients__name" style="font-size:24px;">James Hackett</h2>
+        <p class="clients__meta">Free plan · joined via Referred By Bec Campbell · asked to join 2 Nov</p>
+        <div class="prow" style="margin-top:16px;">
+          <button class="pbtn">Make client</button>
+          <button class="pbtn pbtn--ghost">Free, coach's choice</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</div>
+
+<!-- ============ COACH FUEL ============ -->
+<div class="mock-page" id="page-fuel">
+<div class="coach-shell">
+  <nav class="coach-sidebar">
+    <div class="coach-sidebar__brand"><img src="assets/images/maxfit-logo.png" alt="" /><span>Coach Tools</span></div>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.6 2.7-6 6-6s6 2.4 6 6"/><circle cx="17" cy="9" r="2.6"/><path d="M15 20c0-2.6 1.8-4.6 4-4.9"/></svg>My clients</a>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.6 2.7-6 6-6s6 2.4 6 6"/><path d="M18 8v6M15 11h6"/></svg>App members</a>
+    <a class="coach-sidebar__link is-active" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c-1 3-5 5-5 10a5 5 0 0 0 10 0c0-2-1-3-2-2 .5 2-1 3-2 2-1.5-1-1-5-1-10z"/></svg>Coach Fuel</a>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>Book a client in</a>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16M4 9v6M8 7v10M16 7v10M20 9v6"/></svg>Workout builder</a>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7"/><rect x="13" y="4" width="7" height="7"/><rect x="4" y="13" width="7" height="7"/><path d="M14 14h2.5v2.5M19.5 14v6M14 19.5h6"/></svg>Check-in</a>
+    <div class="coach-sidebar__divider"></div>
+    <a class="coach-sidebar__link coach-sidebar__link--external" href="#" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3h7v7M21 3l-9 9M5 5h5M5 5v14h14v-5"/></svg>CRM sheet<span class="coach-sidebar__hint">↗</span></a>
+    <a class="coach-sidebar__link coach-sidebar__link--external" href="#" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3h7v7M21 3l-9 9M5 5h5M5 5v14h14v-5"/></svg>Handbook<span class="coach-sidebar__hint">↗</span></a>
+    <div class="coach-sidebar__divider"></div>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>Back to my card</a>
+  </nav>
+
+  <main class="card coach" id="coach" style="padding:22px;">
+    <div class="card__top"><span class="card__tag">Coach Fuel</span></div>
+    <div class="coach-desktop-layout on-wide">
+      <div class="coach-table-wrap">
+        <table class="coach-table">
+          <thead><tr><th>Name<span>↕</span></th><th>Plan<span>↕</span></th><th>Last logged<span>↕</span></th><th>Goal</th></tr></thead>
+          <tbody>
+            <tr class="is-selected"><td><b>Bec Campbell</b></td><td><span class="tag tag--diamond">Diamond</span></td><td>Today</td><td>Train 4x/week</td></tr>
+            <tr><td><b>Sean Campbell</b></td><td><span class="tag tag--diamond">Diamond</span></td><td>Yesterday</td><td>Lose 2kg</td></tr>
+            <tr><td><b>Sarah Dabro</b></td><td><span class="tag tag--gold">Gold</span></td><td>3 days ago</td><td>—</td></tr>
+            <tr><td><b>Luca French</b></td><td><span class="tag tag--free">Free</span></td><td>Never</td><td>—</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="coach-detail-panel">
+        <h2 style="font-family:var(--font-head);font-weight:800;text-transform:uppercase;font-size:22px;margin:0 0 6px;">Bec Campbell</h2>
+        <p style="color:var(--grey-light);font-size:15px;margin:0 0 16px;">Diamond · included free (client) · last weigh-in 62.4kg</p>
+        <div class="prow"><button class="pbtn pbtn--ghost">Free week of Gold</button><button class="pbtn pbtn--ghost">Free month of Diamond</button></div>
+        <div class="prow" style="margin-top:8px;"><button class="pbtn pbtn--ghost">Log a weight</button><button class="pbtn pbtn--ghost">Add EVOLT scan</button></div>
+      </div>
+    </div>
+  </main>
+</div>
+</div>
+
+<!-- ============ BOOK A CLIENT IN ============ -->
+<div class="mock-page" id="page-book">
+<div class="coach-shell">
+  <nav class="coach-sidebar">
+    <div class="coach-sidebar__brand"><img src="assets/images/maxfit-logo.png" alt="" /><span>Coach Tools</span></div>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.6 2.7-6 6-6s6 2.4 6 6"/><circle cx="17" cy="9" r="2.6"/><path d="M15 20c0-2.6 1.8-4.6 4-4.9"/></svg>My clients</a>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.6 2.7-6 6-6s6 2.4 6 6"/><path d="M18 8v6M15 11h6"/></svg>App members</a>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c-1 3-5 5-5 10a5 5 0 0 0 10 0c0-2-1-3-2-2 .5 2-1 3-2 2-1.5-1-1-5-1-10z"/></svg>Coach Fuel</a>
+    <a class="coach-sidebar__link is-active" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>Book a client in</a>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16M4 9v6M8 7v10M16 7v10M20 9v6"/></svg>Workout builder</a>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7"/><rect x="13" y="4" width="7" height="7"/><rect x="4" y="13" width="7" height="7"/><path d="M14 14h2.5v2.5M19.5 14v6M14 19.5h6"/></svg>Check-in</a>
+    <div class="coach-sidebar__divider"></div>
+    <a class="coach-sidebar__link coach-sidebar__link--external" href="#" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3h7v7M21 3l-9 9M5 5h5M5 5v14h14v-5"/></svg>CRM sheet<span class="coach-sidebar__hint">↗</span></a>
+    <a class="coach-sidebar__link coach-sidebar__link--external" href="#" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3h7v7M21 3l-9 9M5 5h5M5 5v14h14v-5"/></svg>Handbook<span class="coach-sidebar__hint">↗</span></a>
+    <div class="coach-sidebar__divider"></div>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>Back to my card</a>
+  </nav>
+
+  <main class="card book" id="book" style="padding:22px;">
+    <div class="card__top"><span class="card__tag">Book a Client In</span></div>
+    <div class="book__field" style="max-width:280px;"><span class="card__label">Client</span><select class="picker__input"><option>Sean Campbell</option></select></div>
+    <div class="book-week-wrap" style="margin-top:16px;">
+      <div class="book-week-day"><h4>Mon 3</h4><div class="book-week-slot">6:00</div><div class="book-week-slot is-taken">7:00 — Bec</div><div class="book-week-slot">8:00</div></div>
+      <div class="book-week-day"><h4>Tue 4</h4><div class="book-week-slot">6:00</div><div class="book-week-slot">7:00</div><div class="book-week-slot is-taken">8:00 — Sean</div></div>
+      <div class="book-week-day"><h4>Wed 5</h4><div class="book-week-slot">6:00</div><div class="book-week-slot">7:00</div></div>
+      <div class="book-week-day"><h4>Thu 6</h4><div class="book-week-slot">6:00</div><div class="book-week-slot">7:00</div><div class="book-week-slot">8:00</div></div>
+      <div class="book-week-day"><h4>Fri 7</h4><div class="book-week-slot">6:00</div></div>
+      <div class="book-week-day"><h4>Sat 8</h4><div class="book-week-slot">7:00</div></div>
+      <div class="book-week-day"><h4>Sun 9</h4></div>
+    </div>
+    <p style="font-size:13px;color:var(--dim);margin-top:16px;">↑ all 7 days at once, click any open slot to confirm. Below 1024px this stays the day-by-day picker you have today.</p>
+  </main>
+</div>
+</div>
+
+<!-- ============ WORKOUT BUILDER ============ -->
+<div class="mock-page" id="page-builder">
+<div class="coach-shell">
+  <nav class="coach-sidebar">
+    <div class="coach-sidebar__brand"><img src="assets/images/maxfit-logo.png" alt="" /><span>Coach Tools</span></div>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.6 2.7-6 6-6s6 2.4 6 6"/><circle cx="17" cy="9" r="2.6"/><path d="M15 20c0-2.6 1.8-4.6 4-4.9"/></svg>My clients</a>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.6 2.7-6 6-6s6 2.4 6 6"/><path d="M18 8v6M15 11h6"/></svg>App members</a>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c-1 3-5 5-5 10a5 5 0 0 0 10 0c0-2-1-3-2-2 .5 2-1 3-2 2-1.5-1-1-5-1-10z"/></svg>Coach Fuel</a>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>Book a client in</a>
+    <a class="coach-sidebar__link is-active" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16M4 9v6M8 7v10M16 7v10M20 9v6"/></svg>Workout builder</a>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7"/><rect x="13" y="4" width="7" height="7"/><rect x="4" y="13" width="7" height="7"/><path d="M14 14h2.5v2.5M19.5 14v6M14 19.5h6"/></svg>Check-in</a>
+    <div class="coach-sidebar__divider"></div>
+    <a class="coach-sidebar__link coach-sidebar__link--external" href="#" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3h7v7M21 3l-9 9M5 5h5M5 5v14h14v-5"/></svg>CRM sheet<span class="coach-sidebar__hint">↗</span></a>
+    <a class="coach-sidebar__link coach-sidebar__link--external" href="#" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3h7v7M21 3l-9 9M5 5h5M5 5v14h14v-5"/></svg>Handbook<span class="coach-sidebar__hint">↗</span></a>
+    <div class="coach-sidebar__divider"></div>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>Back to my card</a>
+  </nav>
+
+  <main class="card builder" id="builder" style="padding:22px;">
+    <div class="card__top"><span class="card__tag">Build Workout — Bec Campbell</span></div>
+    <div class="builder__layout" style="display:flex;gap:28px;align-items:flex-start;margin-top:16px;">
+      <div class="builder__main" style="flex:1 1 34%;min-width:0;">
+        <span class="card__label">Add exercise</span>
+        <input class="picker__input" placeholder="Search exercises…" style="margin:8px 0;width:100%;" />
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <div class="clients__row">Barbell Bench Press <small>Chest</small></div>
+          <div class="clients__row">Incline Dumbbell Press <small>Chest</small></div>
+          <div class="clients__row">Lateral Raise <small>Shoulders</small></div>
+        </div>
+      </div>
+      <div style="flex:1 1 38%;min-width:0;">
+        <span class="card__label">Push Day</span>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
+          <div class="clients__workout"><b>Barbell Bench Press</b><span>3 × 8</span></div>
+          <div class="clients__workout"><b>Incline Dumbbell Press</b><span>3 × 10</span></div>
+          <div class="clients__workout"><b>Lateral Raise</b><span>3 × 15</span></div>
+        </div>
+      </div>
+      <div style="flex:1 1 28%;min-width:0;background:var(--bg);border:1px solid var(--line);border-radius:var(--radius-sm);padding:14px;">
+        <span class="card__label">Muscles worked</span>
+        <p style="font-size:14px;color:var(--grey-light);margin-top:8px;">Chest, Front Delts, Triceps, Side Delts</p>
+      </div>
+    </div>
+    <p style="font-size:13px;color:var(--dim);margin-top:16px;">↑ already has a 2-column version today above 860px — this adds the sidebar and a 3rd column (muscles) at 1440px.</p>
+  </main>
+</div>
+</div>
+
+<!-- ============ CHECK-IN ============ -->
+<div class="mock-page" id="page-checkin">
+<div class="coach-shell">
+  <nav class="coach-sidebar">
+    <div class="coach-sidebar__brand"><img src="assets/images/maxfit-logo.png" alt="" /><span>Coach Tools</span></div>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.6 2.7-6 6-6s6 2.4 6 6"/><circle cx="17" cy="9" r="2.6"/><path d="M15 20c0-2.6 1.8-4.6 4-4.9"/></svg>My clients</a>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.6 2.7-6 6-6s6 2.4 6 6"/><path d="M18 8v6M15 11h6"/></svg>App members</a>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c-1 3-5 5-5 10a5 5 0 0 0 10 0c0-2-1-3-2-2 .5 2-1 3-2 2-1.5-1-1-5-1-10z"/></svg>Coach Fuel</a>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>Book a client in</a>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16M4 9v6M8 7v10M16 7v10M20 9v6"/></svg>Workout builder</a>
+    <a class="coach-sidebar__link is-active" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7"/><rect x="13" y="4" width="7" height="7"/><rect x="4" y="13" width="7" height="7"/><path d="M14 14h2.5v2.5M19.5 14v6M14 19.5h6"/></svg>Check-in</a>
+    <div class="coach-sidebar__divider"></div>
+    <a class="coach-sidebar__link coach-sidebar__link--external" href="#" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3h7v7M21 3l-9 9M5 5h5M5 5v14h14v-5"/></svg>CRM sheet<span class="coach-sidebar__hint">↗</span></a>
+    <a class="coach-sidebar__link coach-sidebar__link--external" href="#" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3h7v7M21 3l-9 9M5 5h5M5 5v14h14v-5"/></svg>Handbook<span class="coach-sidebar__hint">↗</span></a>
+    <div class="coach-sidebar__divider"></div>
+    <a class="coach-sidebar__link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>Back to my card</a>
+  </nav>
+
+  <main class="card checkin" id="checkin" style="padding:22px;max-width:520px;">
+    <div class="card__top"><span class="card__tag">Check In</span></div>
+    <p style="color:var(--grey-light);font-size:16px;margin-top:10px;">Waiting for a QR scan — or look a client up by name below (no camera needed on a laptop).</p>
+    <div class="checkin-manual">
+      <h3>Find a client</h3>
+      <input class="picker__input" placeholder="Search by name…" style="width:100%;" />
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px;">
+        <div class="clients__row"><b>Bec Campbell</b><small>3 left</small></div>
+        <div class="clients__row"><b>Sean Campbell</b><small>1 left</small></div>
+      </div>
+    </div>
+    <p style="font-size:13px;color:var(--dim);margin-top:16px;">↑ proposed: a name search beside the QR waiting-state, only shown at 1024px+ (a phone still just uses the camera).</p>
+  </main>
+</div>
+</div>
+
+<script>
+  document.getElementById("mockSwitch").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-page]");
+    if (!btn) return;
+    document.querySelectorAll(".mock-switch button").forEach((b) => b.classList.toggle("on", b === btn));
+    document.querySelectorAll(".mock-page").forEach((p) => p.classList.toggle("on", p.id === "page-" + btn.dataset.page));
+  });
+  // Mockup-only: clicking a client row swaps the right-hand detail panel's heading, just to show the interaction.
+  document.querySelectorAll(".clients__row").forEach((row) => {
+    row.addEventListener("click", () => {
+      document.querySelectorAll(".clients__row").forEach((r) => (r.style.borderColor = "var(--line)"));
+      row.style.borderColor = "var(--red)";
+    });
+  });
+</script>
+</body>
+</html>

@@ -11,7 +11,7 @@
  */
 const People = (function () {
   const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbya8dm8g5eC4ldAbNYmMCccDCZ6K7encj_q4IzXtKMOpd007RMYhnR3_PJ2eL2gjVDQ/exec";
-  const PIN_KEY = "maxfitStaffPin"; // shared with checkin.js, book-staff.js and the workout builder
+  const PIN_KEY = "maxfitStaffPin"; // shared with checkin.js, book-staff.js, coach.js and the workout builder
   const MAX_SLUG = "maxfrench"; // Max's own card row isn't a person to coach
   const NUDGE_DAYS = 30;
   const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];

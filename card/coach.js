@@ -2,7 +2,9 @@
  * MaxFit coach view for the macro tracker (card/coach.html).
  *
  * PIN-gated with the same STAFF_PIN as check-in. The PIN is kept in
- * sessionStorage only, so it's forgotten when the tab closes. From here
+ * localStorage under the same key every other coach tool uses (2026-11-05
+ * — was its own sessionStorage key, forgotten on tab close), so entering it
+ * once on any coach page remembers it on all the others too. From here
  * Max can:
  *   - issue a client's personal Fuel link (id + secret key) to text them
  *   - see each client's own targets (clients set them in Fuel since
@@ -19,7 +21,7 @@
 (function () {
   const body = document.getElementById("coachBody");
   const toastEl = document.getElementById("fuelToast");
-  const PIN_STORAGE = "maxfitCoachPin";
+  const PIN_STORAGE = "maxfitStaffPin"; // shared with checkin.js, book-staff.js, people.js and the workout builder
   let pin = "";
   let clients = [];
   // Every client's logged sets, for strength and training goals (null until loaded).
@@ -30,7 +32,7 @@
   const open = {}; // slug -> which inline form is showing
 
   try {
-    pin = sessionStorage.getItem(PIN_STORAGE) || "";
+    pin = localStorage.getItem(PIN_STORAGE) || "";
   } catch (err) {
     pin = "";
   }
@@ -78,7 +80,7 @@
     try {
       const data = await MacroApi.coach("coachList", pin);
       try {
-        sessionStorage.setItem(PIN_STORAGE, pin);
+        localStorage.setItem(PIN_STORAGE, pin);
       } catch (err) {
         // ignore
       }
@@ -92,7 +94,7 @@
       if (err.code === "bad_pin") {
         pin = "";
         try {
-          sessionStorage.removeItem(PIN_STORAGE);
+          localStorage.removeItem(PIN_STORAGE);
         } catch (e) {
           // ignore
         }

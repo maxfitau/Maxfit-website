@@ -14,7 +14,7 @@
  * replaces the one named workout being edited, never a client's other ones.
  */
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbya8dm8g5eC4ldAbNYmMCccDCZ6K7encj_q4IzXtKMOpd007RMYhnR3_PJ2eL2gjVDQ/exec";
-const STAFF_PIN_STORAGE_KEY = "maxfitStaffPin"; // shared with checkin.js
+const STAFF_PIN_STORAGE_KEY = "maxfitStaffPin"; // shared with checkin.js, book-staff.js, coach.js and people.js
 
 const DAY_ABBR = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
