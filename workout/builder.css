@@ -423,9 +423,30 @@
 
 .builder__row-exercise-top {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
+  align-items: center;
+  gap: 12px;
   min-width: 0;
+}
+
+/* The muscles this exercise mainly works, drawn from the body figure. */
+.builder__row-symbol {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  overflow: hidden;
+  background: #111;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.builder__row-symbol:not([hidden]) {
+  display: block;
+}
+
+.builder__row-symbol svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .builder__row-exercise:active {
@@ -444,7 +465,7 @@
 
 /* A row whose exercise name has no muscle data at all — not in the
    Exercises catalog under this exact or a normalised name, or matched a
-   row that itself has none set yet (2026-10-09). Sits under the name/dot
+   row that itself has none set yet (2026-10-09). Sits under the name/symbol
    line; no separate button, since the row itself already reopens the
    picker on tap. */
 .builder__row-exercise-warning {

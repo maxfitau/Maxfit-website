@@ -234,7 +234,7 @@
     return rows
       .map((r) => ({
         name: cell(r, col.name),
-        movement: cell(r, col.movement),
+        movement: ExercisePicker.movementFor(cell(r, col.bodyPart), cell(r, col.movement)),
         bodyPart: cell(r, col.bodyPart),
         primary: parseMuscleKeys(cell(r, col.primaryMuscles)),
         secondary: parseMuscleKeys(cell(r, col.secondaryMuscles)),

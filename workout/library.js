@@ -53,6 +53,12 @@ function libEsc(text) {
   return div.innerHTML;
 }
 
+function libMovementFor_(r, col) {
+  const movement = col.movement >= 0 ? String(r[col.movement] || "").trim() : "";
+  const bodyPart = col.bodyPart >= 0 ? String(r[col.bodyPart] || "").trim() : "";
+  return typeof ExercisePicker !== "undefined" ? ExercisePicker.movementFor(bodyPart, movement) : movement;
+}
+
 let libExercises = []; // [{ name, movement, bodyPart, primaryMuscles, secondaryMuscles, bestView }]
 let libHeatRange = "week";
 
@@ -153,7 +159,7 @@ function libBodyPartGroup_(bodyPart, list) {
  * Two levels so the list doesn't just run off the bottom of the screen:
  * Movement (Push/Pull/Legs/Core/Conditioning) as a collapsed `<details>`,
  * Body Part as a plain sub-heading once it's open — e.g. tap Push, see
- * Chest/Shoulders/Triceps/Traps each with their own exercises underneath.
+ * Chest/Shoulders/Triceps each with their own exercises underneath.
  * Order and grouping come from ExercisePicker's own tables so this always
  * matches the builder's categories; any exercise whose movement/body part
  * isn't in those tables (shouldn't happen — Code.gs uses the same list)
@@ -441,7 +447,7 @@ async function initLibrary() {
     libExercises = rows
       .map((r) => ({
         name: String(r[col.name] || "").trim(),
-        movement: col.movement >= 0 ? String(r[col.movement] || "").trim() : "",
+        movement: libMovementFor_(r, col),
         bodyPart: col.bodyPart >= 0 ? String(r[col.bodyPart] || "").trim() : "",
         primaryMuscles: col.primaryMuscles >= 0 ? parseMuscleKeys(r[col.primaryMuscles]) : [],
         secondaryMuscles: col.secondaryMuscles >= 0 ? parseMuscleKeys(r[col.secondaryMuscles]) : [],

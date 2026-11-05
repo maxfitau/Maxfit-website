@@ -18,6 +18,60 @@ const STAFF_PIN_STORAGE_KEY = "maxfitStaffPin"; // shared with checkin.js, book-
 
 const DAY_ABBR = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+// The symbol on each exercise row: a tight crop of Max's own figure with the
+// muscles it mainly works in red, so a workout can be read without reading.
+// Built from just the figure's outlines (the full figure is 50KB per copy, far
+// too much to repeat on every row), and only ever measured once per view.
+const muscleSymbolViews_ = {};
+
+function muscleSymbolView_(name) {
+  if (muscleSymbolViews_[name]) return muscleSymbolViews_[name];
+  const host = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  host.setAttribute("viewBox", "0 0 200 460");
+  host.style.cssText = "position:absolute;left:-9999px;top:0;width:200px;height:460px;visibility:hidden";
+  host.innerHTML = name === "back" ? MUSCLE_BACK_SVG_ : MUSCLE_FRONT_SVG_;
+  document.body.appendChild(host); // getBBox only answers for something on the page
+  const view = {
+    outline: Array.from(host.querySelectorAll(".silhouette path")).map((p) => p.getAttribute("d")),
+    shapes: Array.from(host.querySelectorAll("path[data-muscle]")).map((p) => {
+      const box = p.getBBox();
+      return { d: p.getAttribute("d"), muscle: p.getAttribute("data-muscle"), group: p.getAttribute("data-group"), x: box.x, y: box.y, right: box.x + box.width, bottom: box.y + box.height, area: box.width * box.height };
+    }),
+  };
+  host.remove();
+  muscleSymbolViews_[name] = view;
+  return view;
+}
+
+/** SVG markup for these muscle keys (fine or broad), from whichever side of the body shows more of them; "" if none has a shape. */
+function muscleSymbolSvg_(keys) {
+  const isLit = (shape) => keys.includes(shape.muscle) || keys.includes(shape.group);
+  const litArea = (view) => view.shapes.filter(isLit).reduce((sum, shape) => sum + shape.area, 0);
+  const front = muscleSymbolView_("front");
+  const back = muscleSymbolView_("back");
+  const view = litArea(back) > litArea(front) ? back : front;
+  const lit = view.shapes.filter(isLit);
+  if (!lit.length) return "";
+
+  const left = Math.min(...lit.map((s) => s.x));
+  const top = Math.min(...lit.map((s) => s.y));
+  const right = Math.max(...lit.map((s) => s.right));
+  const bottom = Math.max(...lit.map((s) => s.bottom));
+  // Square, with enough of the body around a small muscle to tell where it is.
+  const size = Math.max(right - left, bottom - top, 46) + 16;
+  const x = (left + right) / 2 - size / 2;
+  const y = (top + bottom) / 2 - size / 2;
+  const paths = (list, fill) => list.map((d) => `<path d="${d}" fill="${fill}"/>`).join("");
+  return (
+    `<svg viewBox="${x.toFixed(1)} ${y.toFixed(1)} ${size.toFixed(1)} ${size.toFixed(1)}" aria-hidden="true">` +
+    `<g stroke="${MUSCLE_GAP_STROKE_COLOR}" stroke-width="1" stroke-linejoin="round">` +
+    paths(view.outline, "#3a3a3a") +
+    paths(view.shapes.filter((s) => !isLit(s)).map((s) => s.d), "#4a4a4a") +
+    paths(lit.map((s) => s.d), MUSCLE_PRIMARY_COLOR) +
+    "</g></svg>"
+  );
+}
+
 const els = {
   clientSelect: document.getElementById("clientSelect"),
   workoutNameInput: document.getElementById("workoutNameInput"),
@@ -89,9 +143,9 @@ function buildExerciseControl(exercise) {
   const top = document.createElement("span");
   top.className = "builder__row-exercise-top";
 
-  const dot = document.createElement("span");
-  dot.className = "exercise-dot";
-  dot.hidden = true;
+  const symbol = document.createElement("span");
+  symbol.className = "builder__row-symbol";
+  symbol.hidden = true;
 
   const label = document.createElement("span");
   label.className = "builder__row-exercise-label";
@@ -113,20 +167,17 @@ function buildExerciseControl(exercise) {
     wrap.dataset.primaryMuscles = (primaryMuscles || []).join(",");
     wrap.dataset.secondaryMuscles = (secondaryMuscles || []).join(",");
     wrap.dataset.muscleWeights = muscleWeights || "";
+    const symbolKeys = (primaryMuscles && primaryMuscles.length ? primaryMuscles : secondaryMuscles) || [];
+    symbol.innerHTML = name && symbolKeys.length ? muscleSymbolSvg_(symbolKeys) : "";
+    symbol.hidden = !symbol.innerHTML;
+    symbol.title = symbol.hidden ? "" : symbolKeys.map(muscleLabel_).join(", ");
     warning.hidden = !name || Boolean((primaryMuscles && primaryMuscles.length) || (secondaryMuscles && secondaryMuscles.length) || muscleWeights);
     if (name) {
       label.textContent = name;
       wrap.classList.remove("builder__row-exercise--empty");
-      if (bodyPart) {
-        dot.style.background = ExercisePicker.colorFor(bodyPart);
-        dot.hidden = false;
-      } else {
-        dot.hidden = true;
-      }
     } else {
       label.textContent = "Choose exercise";
       wrap.classList.add("builder__row-exercise--empty");
-      dot.hidden = true;
     }
   }
 
@@ -165,7 +216,7 @@ function buildExerciseControl(exercise) {
     }
   });
 
-  top.appendChild(dot);
+  top.appendChild(symbol);
   top.appendChild(label);
   wrap.appendChild(top);
   wrap.appendChild(warning);
@@ -736,7 +787,7 @@ async function loadClientList() {
 // The Workout Exercises tab only stores an exercise's NAME against a
 // client, not its category or muscles, so re-opening a saved workout needs
 // a name -> {movement, bodyPart, primary, secondary, matched} lookup to
-// show the same colour dot and muscle data a freshly-picked exercise gets.
+// show the same muscle symbol and data a freshly-picked exercise gets.
 // Built via the shared resolver (buildExerciseIndex_/resolveExerciseMuscles_,
 // card/muscle-map.js) — the same one workout/heatmap.js uses — rather than
 // this file's own plain exact-lowercase lookup (2026-10-09 fix; see that
@@ -758,7 +809,7 @@ function loadExerciseIndex_() {
   if (!exerciseIndexPromise_) {
     exerciseIndexPromise_ = fetchExercises()
       .then(({ rows, col }) => buildExerciseIndex_(rows, col))
-      .catch(() => ({ byExact: {}, byNormalized: {} })); // rows just render without a colour dot or muscle data
+      .catch(() => ({ byExact: {}, byNormalized: {} })); // rows just render without a symbol or muscle data
   }
   return exerciseIndexPromise_;
 }

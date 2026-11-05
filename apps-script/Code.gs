@@ -32,7 +32,7 @@ const GROCERY_SHEET_NAME = "Grocery Items";
 // Changes whenever this file does, and is shown when you open the deployed
 // URL in a browser (see doGet) — the quick way to tell whether a redeploy
 // actually took, instead of guessing from behaviour.
-const BACKEND_VERSION = "2026-11-05b";
+const BACKEND_VERSION = "2026-11-05c";
 
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -295,7 +295,7 @@ function exerciseMovementBodyPart_(category, primary) {
     case "Chest": return ["Push", "Chest"];
     case "Back": return ["Pull", "Back"];
     case "Shoulders & Traps":
-      return primary.length === 1 && first === "traps" ? ["Push", "Traps"] : ["Push", "Shoulders"];
+      return primary.length === 1 && first === "traps" ? ["Pull", "Traps"] : ["Push", "Shoulders"];
     case "Biceps": return ["Pull", "Biceps"];
     case "Triceps": return ["Push", "Triceps"];
     case "Forearms & Grip": return ["Pull", "Forearms"];

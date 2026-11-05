@@ -17,8 +17,8 @@ const ExercisePicker = (function () {
   const MOVEMENTS = ["Push", "Pull", "Legs", "Core", "Conditioning"];
 
   const BODY_PARTS_BY_MOVEMENT = {
-    Push: ["Chest", "Shoulders", "Triceps", "Traps"],
-    Pull: ["Back", "Biceps", "Forearms"],
+    Push: ["Chest", "Shoulders", "Triceps"],
+    Pull: ["Back", "Traps", "Biceps", "Forearms"],
     Legs: ["Quads", "Hamstrings", "Glutes", "Calves"],
     Core: ["Abs", "Obliques", "Lower Back"],
     Conditioning: ["Full Body"],
@@ -31,8 +31,8 @@ const ExercisePicker = (function () {
     Chest: "#e0954a",
     Shoulders: "#e0c04a",
     Triceps: "#d4714a",
-    Traps: "#d4a14a",
     Back: "#4a8fd4",
+    Traps: "#4a6fd4",
     Biceps: "#4ab8c9",
     Forearms: "#6f4ad4",
     Quads: "#5ac97a",
@@ -50,9 +50,16 @@ const ExercisePicker = (function () {
     return BODY_PART_COLORS[bodyPart] || FALLBACK_COLOR;
   }
 
+  // Traps are a pulling muscle (Max, 2026-11-05), but the Barbell Shrug and
+  // Dumbbell Shrug rows on the live Exercises tab still say Movement = Push.
+  // Everything that groups exercises by movement reads it through here.
+  function movementFor(bodyPart, sheetMovement) {
+    return bodyPart === "Traps" ? "Pull" : sheetMovement;
+  }
+
   // One colour per movement too, each picked from that movement's own body
   // parts above so the two steps feel connected (tap an orange Push tile,
-  // land on orange-family Chest/Shoulders/Triceps/Traps tiles).
+  // land on orange-family Chest/Shoulders/Triceps tiles).
   const MOVEMENT_COLORS_ = {
     Push: "#e0954a",
     Pull: "#4a8fd4",
@@ -73,7 +80,7 @@ const ExercisePicker = (function () {
   // movement's own body parts (Push/Core read better from the front,
   // Pull/Legs from the back — picked by checking shape coverage, not by eye).
   const MOVEMENT_CROPS_ = {
-    Push: { view: "front", box: "25 45 150 110", keys: ["chest", "delts", "traps"] },
+    Push: { view: "front", box: "25 45 150 110", keys: ["chest", "delts"] },
     Pull: { view: "back", box: "35 45 130 150", keys: ["lats", "traps", "delts"] },
     Legs: { view: "back", box: "45 210 110 200", keys: ["glutes", "hamstrings", "calves"] },
     Core: { view: "front", box: "50 108 100 105", keys: ["abs", "obliques"] },
@@ -232,7 +239,7 @@ const ExercisePicker = (function () {
         ? rows
             .map((r) => ({
               name: String(r[col.name] || "").trim(),
-              movement: col.movement >= 0 ? String(r[col.movement] || "").trim() : "",
+              movement: movementFor(col.bodyPart >= 0 ? String(r[col.bodyPart] || "").trim() : "", col.movement >= 0 ? String(r[col.movement] || "").trim() : ""),
               bodyPart: col.bodyPart >= 0 ? String(r[col.bodyPart] || "").trim() : "",
               primaryMuscles: col.primaryMuscles >= 0 ? parseMuscleKeys(r[col.primaryMuscles]) : [],
               secondaryMuscles: col.secondaryMuscles >= 0 ? parseMuscleKeys(r[col.secondaryMuscles]) : [],
@@ -461,5 +468,5 @@ const ExercisePicker = (function () {
     exercisesCache = null;
   });
 
-  return { open, chooseMuscles, close, colorFor, MOVEMENTS, BODY_PARTS_BY_MOVEMENT, muscleKeyForShape: chooserKeyFor_ };
+  return { open, chooseMuscles, close, colorFor, movementFor, MOVEMENTS, BODY_PARTS_BY_MOVEMENT, muscleKeyForShape: chooserKeyFor_ };
 })();
