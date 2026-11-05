@@ -1,45 +1,78 @@
 /*
- * Clients (coach's phone): pick a client from a list, then the workout to log for them.
- * No personal link needed: the list comes from the same public sheet the check-in page
- * reads, and the workout opens the normal logger in coach mode (?coach=1), which comes
- * back to this page when it's done. Everything is put on the page with textContent.
+ * My clients (coach's phone, card/clients.html): the people Max trains in person
+ * (Client = Yes on the Sessions Remaining tab; see card/people.js). Each shows
+ * sessions left, last check-in and this month's goal, with a nudge after 30 days
+ * without a check-in. Log workout opens that client's workouts to log for them
+ * (the normal logger in coach mode, ?coach=1, which comes back here), and
+ * "Move to app members" is a button with its own in-page "Are you sure?".
+ * Everything is put on the page with textContent.
  */
 (function () {
   const DAY_ABBR = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const $ = (id) => document.getElementById(id);
   const els = {
-    listView: $("listView"), detailView: $("detailView"), search: $("clientSearch"),
-    listStatus: $("listStatus"), list: $("clientList"), change: $("changeClient"),
-    name: $("detailName"), meta: $("detailMeta"), workouts: $("workoutList"),
-    workoutStatus: $("workoutStatus"), actions: $("actionList"),
+    gate: $("gate"), pageStatus: $("pageStatus"), listView: $("listView"), detailView: $("detailView"),
+    switchHost: $("switchHost"), listStatus: $("listStatus"), list: $("clientList"), change: $("changeClient"),
+    name: $("detailName"), nudge: $("detailNudge"), meta: $("detailMeta"), workouts: $("workoutList"),
+    workoutStatus: $("workoutStatus"), actions: $("actionList"), move: $("detailMove"),
   };
-  let clients = [];
-  let sheetCol = null;
-
-  function el(tag, cls, text) {
-    const e = document.createElement(tag);
-    if (cls) e.className = cls;
-    if (text !== undefined) e.textContent = text;
-    return e;
-  }
+  const el = People.el;
+  let pin = "";
+  let data = null;
 
   function sessionsText(c) {
     const part = (label, v) => (Number.isFinite(v) ? `${label} ${v}` : null);
     return [part("Group", c.group), part("1-on-1", c.oneOnOne), c.duo > 0 ? part("Duo", c.duo) : null].filter(Boolean).join(" · ") || "No sessions tracked";
   }
 
+  /** True when there's been no check-in for 30 days (or none at all since they joined 30+ days ago). */
+  function needsNudge(c) {
+    const since = People.daysSince(c.lastAttended || c.signupDate);
+    return Number.isFinite(since) && since >= People.NUDGE_DAYS;
+  }
+
+  const NUDGE_TEXT = "Hasn't trained with you in 30 days";
+
+  function lastCheckIn(c) {
+    return c.lastAttended ? People.ago(c.lastAttended) : "No check-in yet";
+  }
+
+  function clientsNow() {
+    return data.people.filter((p) => p.isClient);
+  }
+
+  function renderSwitch() {
+    els.switchHost.textContent = "";
+    els.switchHost.appendChild(People.switcher("clients", data.people.filter((p) => !p.isClient && p.asked).length));
+  }
+
   function renderList() {
-    const q = els.search.value.trim().toLowerCase();
+    renderSwitch();
     els.list.textContent = "";
-    const shown = clients.filter((c) => !q || c.name.toLowerCase().includes(q));
-    els.listStatus.textContent = shown.length ? "" : clients.length ? "No one matches that." : "";
-    shown.forEach((c) => {
-      const row = el("button", "clients__row");
-      row.type = "button";
-      row.appendChild(el("b", "", c.name));
-      row.appendChild(el("small", "", sessionsText(c)));
-      row.addEventListener("click", () => openClient(c));
-      els.list.appendChild(row);
+    els.listStatus.textContent = "";
+    if (!data.hasClientColumn) {
+      els.list.appendChild(People.needsSetupNote());
+      return;
+    }
+    const clients = clientsNow();
+    if (!clients.length) {
+      els.listStatus.textContent = "No clients yet. Make someone a client from App members.";
+      return;
+    }
+    clients.forEach((c) => {
+      const card = el("div", "pcard");
+      card.appendChild(el("h2", "pcard__name", c.name));
+      if (needsNudge(c)) card.appendChild(el("p", "pcard__nudge", NUDGE_TEXT));
+      const facts = el("dl", "pfacts");
+      facts.appendChild(People.fact("Sessions left", sessionsText(c)));
+      facts.appendChild(People.fact("Last check-in", lastCheckIn(c)));
+      facts.appendChild(People.fact("This month's goal", c.goalText || "No goal set this month", true));
+      card.appendChild(facts);
+      const row = el("div", "prow");
+      row.appendChild(People.button("Log workout", "", () => openClient(c)));
+      row.appendChild(People.linkButton("Open card", "./?id=" + encodeURIComponent(c.slug), "ghost"));
+      card.appendChild(row);
+      els.list.appendChild(card);
     });
   }
 
@@ -83,15 +116,34 @@
     els.detailView.hidden = false;
     window.scrollTo(0, 0);
     els.name.textContent = c.name;
-    els.meta.textContent = sessionsText(c);
+    els.nudge.hidden = !needsNudge(c);
+    els.nudge.textContent = NUDGE_TEXT;
+    els.meta.textContent = `${sessionsText(c)} · Last check-in: ${lastCheckIn(c)}`;
     els.workouts.textContent = "";
     els.actions.textContent = "";
+    els.move.textContent = "";
     els.workoutStatus.textContent = "Loading their workouts…";
 
     const back = window.location.origin + window.location.pathname + "?c=" + encodeURIComponent(c.slug);
     if (c.token) actionRow("Check in", "Count today's session, no QR scan needed", "../checkin.html?token=" + encodeURIComponent(c.token));
     actionRow("Strength progress", "Their best lifts over time", "../workout/progress.html?id=" + encodeURIComponent(c.slug));
     actionRow("Book them in", "Create a booking for them", "book-staff.html");
+    actionRow("Open their card", "See what they see", "./?id=" + encodeURIComponent(c.slug));
+
+    const moveHost = els.move;
+    moveHost.appendChild(People.button("Move to app members", "ghost", () => {
+      const first = c.name.split(" ")[0];
+      People.confirmSheet(moveHost, {
+        title: `Move ${first} to app members?`,
+        text: `${first} will leave My clients and show under App members. Their sessions, workouts and history stay exactly as they are, and you can move them back any time.`,
+        yesLabel: "Yes, move to app members",
+        onYes: async () => {
+          await People.setClient(pin, c, false);
+          c.isClient = false;
+          showList(`${first} is now an app member. Find them under App members.`);
+        },
+      });
+    }));
 
     try {
       const { list, todayName } = await loadWorkouts(c.slug);
@@ -113,32 +165,28 @@
     }
   }
 
-  els.change.addEventListener("click", () => {
+  function showList(message) {
     history.replaceState(null, "", window.location.pathname);
     els.detailView.hidden = true;
     els.listView.hidden = false;
-  });
-  els.search.addEventListener("input", renderList);
+    renderList();
+    if (message) els.listStatus.textContent = message;
+    window.scrollTo(0, 0);
+  }
 
-  (async function init() {
-    try {
-      const sheet = await fetchSheet();
-      sheetCol = sheet.col;
-      clients = sheet.rows
-        .filter((r) => String(r[sheetCol.name] || "").trim())
-        .map((r) => {
-          const name = String(r[sheetCol.name]).trim();
-          const num = (i) => { const v = i >= 0 ? parseSessions(r[i], NaN) : NaN; return typeof v === "number" ? v : NaN; };
-          return { name, slug: slugify(name), group: num(sheetCol.groupSessions), oneOnOne: num(sheetCol.oneOnOneSessions), duo: num(sheetCol.duoSessions), token: sheetCol.checkInToken >= 0 ? String(r[sheetCol.checkInToken] || "").trim() : "" };
-        })
-        .sort((a, b) => a.name.localeCompare(b.name));
-      els.listStatus.textContent = clients.length ? "" : "No clients found.";
-      renderList();
-      const wanted = new URLSearchParams(window.location.search).get("c");
-      const match = wanted && clients.find((c) => c.slug === wanted);
-      if (match) openClient(match);
-    } catch (err) {
-      els.listStatus.textContent = "Couldn't load clients. Check your signal and try again.";
-    }
-  })();
+  els.change.addEventListener("click", () => showList());
+
+  People.open(els.gate, els.pageStatus, (thePin, loaded, again) => {
+    pin = thePin;
+    data = loaded;
+    if (again && els.listView.hidden) return; // a detail is open; leave it alone
+    els.listView.hidden = false;
+    const wasMessage = again ? els.listStatus.textContent : "";
+    renderList();
+    if (wasMessage) els.listStatus.textContent = wasMessage;
+    data.notes.forEach((n) => { if (!again) els.listStatus.textContent = els.listStatus.textContent || n; });
+    const wanted = new URLSearchParams(window.location.search).get("c");
+    const match = !again && wanted && clientsNow().find((c) => c.slug === wanted);
+    if (match) openClient(match);
+  });
 })();

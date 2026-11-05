@@ -82,6 +82,26 @@ function parseSessions(raw, fallback) {
   return trimmed !== "" && Number.isFinite(num) ? num : fallback;
 }
 
+/**
+ * A date as the sheet shows it, to "yyyy-mm-dd" ("" if it isn't one). The live
+ * tab mixes styles: 2026-11-03, 3/11/26 and 25/08/2026, all day-first.
+ */
+function parseSheetDate(raw) {
+  const t = String(raw || "").trim();
+  let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  let y, mo, d;
+  if (m) { y = +m[1]; mo = +m[2]; d = +m[3]; }
+  else if ((m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/))) { d = +m[1]; mo = +m[2]; y = +m[3]; if (y < 100) y += 2000; }
+  else return "";
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return "";
+  return y + "-" + String(mo).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+}
+
+/** True when Max has marked this row Client = Yes (blank, No or no column all mean app member). */
+function isClientRow(row, col) {
+  return col.client >= 0 && String(row[col.client] || "").trim().toLowerCase() === "yes";
+}
+
 let sheetPromise;
 
 /** Fetches + parses the sheet once per page load; every caller shares the same result. */
@@ -114,6 +134,14 @@ function fetchSheet() {
           referralPunches: findColumn(header, "Referral Punches"),
           manualPunches: findColumn(header, "Manual Session Punches"),
           freeOwed: findColumn(header, "Free Session Owed"),
+          // Clients vs app members (2026-11-05). "Client" is Yes for people Max
+          // trains in person; -1 until setupClientStatus() has added the column.
+          client: findColumn(header, "Client"),
+          joinedVia: findColumn(header, "Joined Via"),
+          signupDate: findColumn(header, "Sign-up Date"),
+          lastAttended: findColumn(header, "Last Attended"),
+          referredBy: findColumn(header, "Referred By"),
+          phone: findColumn(header, "Phone"),
         };
         return { rows, col };
       });

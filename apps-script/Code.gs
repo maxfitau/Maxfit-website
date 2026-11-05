@@ -32,7 +32,7 @@ const GROCERY_SHEET_NAME = "Grocery Items";
 // Changes whenever this file does, and is shown when you open the deployed
 // URL in a browser (see doGet) — the quick way to tell whether a redeploy
 // actually took, instead of guessing from behaviour.
-const BACKEND_VERSION = "2026-11-02a";
+const BACKEND_VERSION = "2026-11-05a";
 
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -726,6 +726,18 @@ function doPost(e) {
   if (action === "selfSignup") {
     return withLock_(() => handleSelfSignup_(payload));
   }
+  // Clients vs app members (2026-11-05): Max's PIN-gated Make client / Move to
+  // app members, the PIN-gated list of who asked to train, and an app member
+  // tapping "Become a member" (public, like sign-up; it only appends a log row).
+  if (action === "setClientStatus") {
+    return withLock_(() => handleSetClientStatus_(payload));
+  }
+  if (action === "peopleInfo") {
+    return handlePeopleInfo_(payload); // read-only, so no lock
+  }
+  if (action === "memberRequest") {
+    return withLock_(() => handleMemberRequest_(payload));
+  }
   if (action === "assignWorkout") {
     return withLock_(() => handleAssignWorkout_(payload));
   }
@@ -1100,6 +1112,138 @@ function handleSignup_(payload) {
  * own card afterward (the Buy-anytime booking flow), same as any client
  * topping up, not as part of signing up.
  */
+// ---------------------------------------------------------------------------
+// Clients vs app members (2026-11-05, Max). Max decides who is a client: a
+// "Client" column (Yes / No) on the Sessions Remaining tab, changed only by
+// him (in the Sheet, or Make client / Move to app members on the coach pages,
+// which need STAFF_PIN). Nothing moves tabs and nothing is automatic. A
+// "Joined Via" column says how an app member arrived (self sign-up writes it).
+// "Become a member" taps are logged on a private Member Requests tab in the
+// MaxFit Bookings sheet, so names and times aren't on the public CRM.
+// ---------------------------------------------------------------------------
+
+const CLIENT_COLUMN = "Client";
+const JOINED_VIA_COLUMN = "Joined Via";
+const MEMBER_REQUESTS_TAB = "Member Requests";
+const MEMBER_REQUESTS_HEADER = ["When", "Slug", "Name", "Timestamp"];
+const MEMBER_REQUEST_REPEAT_MS = 10 * 60 * 1000; // a second tap inside this window isn't logged again
+const FIRST_CLIENT_SLUGS = ["beccampbell", "seancampbell"];
+
+/**
+ * One-time sort, run from the editor. Adds the Client and Joined Via columns,
+ * marks Bec Campbell and Sean Campbell as clients (Yes) and every other named
+ * row as an app member (No). Only fills cells that are blank, so running it
+ * again never undoes a choice Max has made since.
+ */
+function setupClientStatus() {
+  const sheet = getSheetByGid_(SESSIONS_SHEET_GID);
+  const header = ensureColumns_(sheet, [CLIENT_COLUMN, JOINED_VIA_COLUMN]);
+  const nameCol = findColumn_(header, "Name");
+  const clientCol = findColumn_(header, CLIENT_COLUMN);
+  const lastRow = sheet.getLastRow();
+  let clients = 0;
+  let members = 0;
+  if (lastRow >= 2) {
+    const names = sheet.getRange(2, nameCol + 1, lastRow - 1, 1).getValues();
+    const current = sheet.getRange(2, clientCol + 1, lastRow - 1, 1).getValues();
+    const next = current.map(function (cell, i) {
+      const name = String(names[i][0] || "").trim();
+      if (!name) return [cell[0]];
+      if (String(cell[0] || "").trim()) return [cell[0]];
+      return [FIRST_CLIENT_SLUGS.indexOf(slugify_(name)) >= 0 ? "Yes" : "No"];
+    });
+    sheet.getRange(2, clientCol + 1, lastRow - 1, 1).setValues(next);
+    next.forEach(function (cell, i) {
+      if (!String(names[i][0] || "").trim()) return;
+      if (String(cell[0]).trim().toLowerCase() === "yes") clients++;
+      else members++;
+    });
+    sheet.getRange(2, clientCol + 1, lastRow - 1, 1).setDataValidation(
+      SpreadsheetApp.newDataValidation().requireValueInList(["Yes", "No"], true).setAllowInvalid(true).build()
+    );
+  }
+  const book = bookingBook_();
+  if (book) bookingEnsureTab_(book, MEMBER_REQUESTS_TAB, MEMBER_REQUESTS_HEADER, [], ["When", "Slug", "Timestamp"]);
+  Logger.log("Client status ready: " + clients + " client(s), " + members + " app member(s)." + (book ? "" : " (Run setupBooking first to get the Member Requests tab.)"));
+}
+
+/** Max (PIN) sets one person's Client cell to Yes or No. Nothing else about them changes. */
+function handleSetClientStatus_(payload) {
+  if (!checkPin_(payload.pin)) return jsonResponse_({ status: "unauthorized" });
+  const slug = slugify_(payload.slug);
+  if (!slug) return jsonResponse_({ status: "error", message: "Missing client." });
+  const sheet = getSheetByGid_(SESSIONS_SHEET_GID);
+  const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const col = { name: findColumn_(header, "Name"), client: findColumn_(header, CLIENT_COLUMN) };
+  if (col.client < 0) return jsonResponse_({ status: "error", message: "Run setupClientStatus once first (Apps Script editor)." });
+  const row = findClientRowBySlug_(sheet, col, slug);
+  if (row < 0) return jsonResponse_({ status: "error", message: "Couldn't find that person on the sheet." });
+  const isClient = payload.client === true || payload.client === "true";
+  sheet.getRange(row, col.client + 1).setValue(isClient ? "Yes" : "No");
+  SpreadsheetApp.flush();
+  return jsonResponse_({ status: "success", client: isClient });
+}
+
+/** Max (PIN): each app member's latest "Become a member" tap, so the coach page can put them at the top. */
+function handlePeopleInfo_(payload) {
+  if (!checkPin_(payload.pin)) return jsonResponse_({ status: "unauthorized" });
+  const requests = {};
+  const book = bookingBook_();
+  const sheet = book ? book.getSheetByName(MEMBER_REQUESTS_TAB) : null;
+  if (sheet && sheet.getLastRow() >= 2) {
+    const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, MEMBER_REQUESTS_HEADER.length).getValues();
+    rows.forEach(function (r) {
+      const slug = String(r[1] || "").trim();
+      if (!slug) return;
+      const when = String(r[3] || "").trim();
+      const cur = requests[slug] || { count: 0, last: "" };
+      cur.count++;
+      if (when > cur.last) cur.last = when;
+      requests[slug] = cur;
+    });
+  }
+  return jsonResponse_({ status: "success", requests: requests });
+}
+
+/**
+ * An app member taps "Become a member" on their card. Public (no PIN) like
+ * sign-up, and it can only append one row to a private tab: it checks the
+ * person exists and isn't a client, and ignores a repeat tap inside 10 minutes.
+ * Never fails the page, since the message to Max opens either way.
+ */
+function handleMemberRequest_(payload) {
+  const slug = slugify_(payload.slug);
+  if (!slug) return jsonResponse_({ status: "success" });
+  try {
+    const sheet = getSheetByGid_(SESSIONS_SHEET_GID);
+    const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const col = { name: findColumn_(header, "Name"), client: findColumn_(header, CLIENT_COLUMN) };
+    const row = findClientRowBySlug_(sheet, col, slug);
+    if (row < 0) return jsonResponse_({ status: "success" });
+    if (col.client >= 0 && String(sheet.getRange(row, col.client + 1).getValue()).trim().toLowerCase() === "yes") {
+      return jsonResponse_({ status: "success" }); // clients never see the button; ignore a stray tap
+    }
+    const name = String(sheet.getRange(row, col.name + 1).getValue() || "").trim();
+    const book = bookingBook_();
+    if (!book) return jsonResponse_({ status: "success" });
+    const tab = bookingEnsureTab_(book, MEMBER_REQUESTS_TAB, MEMBER_REQUESTS_HEADER, [], ["When", "Slug", "Timestamp"]).sheet;
+    const now = new Date();
+    const last = tab.getLastRow();
+    if (last >= 2) {
+      const recent = tab.getRange(Math.max(2, last - 49), 1, last - Math.max(2, last - 49) + 1, MEMBER_REQUESTS_HEADER.length).getValues();
+      const dupe = recent.some(function (r) {
+        return String(r[1]) === slug && now.getTime() - new Date(String(r[3])).getTime() < MEMBER_REQUEST_REPEAT_MS;
+      });
+      if (dupe) return jsonResponse_({ status: "success" });
+    }
+    tab.getRange(last + 1, 1, 1, MEMBER_REQUESTS_HEADER.length).setValues([[Utilities.formatDate(now, TIMEZONE, "yyyy-MM-dd HH:mm"), slug, name, now.toISOString()]]);
+    SpreadsheetApp.flush();
+  } catch (err) {
+    Logger.log("memberRequest failed: " + err);
+  }
+  return jsonResponse_({ status: "success" });
+}
+
 function handleSelfSignup_(payload) {
   // Honeypot, same idea as handleSignup_: invisible to a real visitor, so a
   // bot that fills every field blind trips it. Pretend success either way.
@@ -1128,6 +1272,8 @@ function handleSelfSignup_(payload) {
     token: findColumn_(header, "Check-in Token"),
     phone: findColumn_(header, "Phone"),
     email: findColumn_(header, "Email"),
+    client: findColumn_(header, CLIENT_COLUMN), // -1 until setupClientStatus() has run
+    joinedVia: findColumn_(header, JOINED_VIA_COLUMN),
   };
   if (col.name < 0 || col.token < 0) {
     return jsonResponse_({ status: "error", message: "Sign-ups aren't set up yet. Please message Max." });
@@ -1155,6 +1301,9 @@ function handleSelfSignup_(payload) {
   row[col.token] = Utilities.getUuid();
   if (col.phone >= 0 && phone) row[col.phone] = phone;
   if (col.email >= 0) row[col.email] = email;
+  // A stranger who signs up is an app member until Max says otherwise.
+  if (col.client >= 0) row[col.client] = "No";
+  if (col.joinedVia >= 0) row[col.joinedVia] = "Self sign-up";
 
   const target = sheet.getRange(sheet.getLastRow() + 1, 1, 1, row.length);
   target.setNumberFormat("@");

@@ -40,7 +40,7 @@
 <link rel="preconnect" href="https://docs.google.com" />
 <link rel="preconnect" href="https://script.google.com" />
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="styles.css?v=20261028a" />
+<link rel="stylesheet" href="styles.css?v=20261105a" />
 <link rel="stylesheet" href="macros.css?v=20261103a" />
 <link rel="stylesheet" href="week.css?v=20261026b" />
 <link rel="stylesheet" href="mealplan.css?v=20261029a" />
@@ -140,14 +140,22 @@
     <!-- Shown by app.js only on Max's own card (clientSlug === "maxfrench"), never anyone else's. -->
     <a class="card__tile" id="clientsTile" href="clients.html" hidden>
       <svg class="card__tile-icon" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.25"/><path d="M3.5 20c0-3.6 2.46-6 5.5-6s5.5 2.4 5.5 6"/><path d="M16 5.2a3.25 3.25 0 0 1 0 5.6M18 14.4c1.9.8 3 2.7 3 5.6"/></svg>
-      <span class="card__tile-label">Clients</span>
-      <span class="card__tile-value">Pick one, log their workout</span>
+      <span class="card__tile-label">My clients</span>
+      <span class="card__tile-value">Log workouts, see who's due</span>
     </a>
     <button class="card__tile" id="coachToolsTile" type="button" hidden>
       <svg class="card__tile-icon" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.6 4.9L4 16.3V20h3.7l5.1-5.1a4 4 0 0 0 4.9-5.6l-2.8 2.8-2.1-2.1 2.8-2.8z"/></svg>
       <span class="card__tile-label">Coach Tools</span>
       <span class="card__tile-value">Your quick links</span>
     </button>
+  </div>
+
+  <!-- App members only (app.js decides; clients, Max and the demo card never see it). -->
+  <div class="become" id="becomeBlock" hidden>
+    <p class="become__text"><b>Want to train with Max in person?</b><br>Your first session is free.</p>
+    <a class="become__btn" id="becomeBtn" href="sms:+61490952388">Become a member</a>
+    <a class="become__msg" id="becomeMsg" href="sms:+61490952388">Message Max</a>
+    <p class="become__hint">Opens a text to Max on 0490 952 388. You can change the words before you send it.</p>
   </div>
 
   <button class="card__complete" id="completeButton" type="button">
@@ -203,7 +211,11 @@
     <h2 class="qr-modal__title" id="coachToolsTitle">Coach Tools</h2>
     <div class="coach-links">
       <a class="coach-links__row" href="clients.html">
-        <span class="coach-links__text"><b>Clients</b><small>Pick a client, then the workout to log for them</small></span>
+        <span class="coach-links__text"><b>My clients</b><small>Log their workouts and see who hasn't trained in a while</small></span>
+        <span class="coach-links__chevron" aria-hidden="true">›</span>
+      </a>
+      <a class="coach-links__row" href="members.html">
+        <span class="coach-links__text"><b>App members</b><small>Everyone else on the app, and who's asked to train with you</small></span>
         <span class="coach-links__chevron" aria-hidden="true">›</span>
       </a>
       <a class="coach-links__row" href="../workout/builder.html" target="_blank" rel="noopener">
@@ -250,9 +262,9 @@
 </div>
 
 <script src="vendor/qrcode.js" defer></script>
-<script src="sheet.js?v=20261029a" defer></script>
+<script src="sheet.js?v=20261105a" defer></script>
 <script src="tour.js?v=20261026b" defer></script>
-<script src="app.js?v=20261031a" defer></script>
+<script src="app.js?v=20261105a" defer></script>
 <script src="icons.js?v=20261026b" defer></script>
 <script src="macros-core.js?v=20261029a" defer></script>
 <script src="macros-api.js?v=20261029a" defer></script>

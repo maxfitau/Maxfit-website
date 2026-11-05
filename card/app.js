@@ -491,6 +491,40 @@ async function assignedWorkoutSummary_(clientSlug) {
   }
 }
 
+/**
+ * "Become a member" (2026-11-05): app members only. Never for a client, for Max's
+ * own card, for the demo card, or before the Client column exists. The button
+ * opens a ready-written text to Max (which they can edit) and quietly logs the
+ * tap so it shows on Max's App members page; "Message Max" is the same chat with
+ * nothing typed. No pop-ups.
+ */
+const MAX_SMS_NUMBER = "+61490952388";
+const MEMBER_REQUEST_URL = "https://script.google.com/macros/s/AKfycbya8dm8g5eC4ldAbNYmMCccDCZ6K7encj_q4IzXtKMOpd007RMYhnR3_PJ2eL2gjVDQ/exec";
+function renderBecomeMember(data) {
+  const block = document.getElementById("becomeBlock");
+  const show = data.hasClientColumn && !data.isClient && data.clientSlug !== "maxfrench";
+  block.hidden = !show;
+  if (!show) return;
+  const body = `Hi Max, it's ${data.memberName} from the MaxFit app. I'd like to find out about training with you.`;
+  const btn = document.getElementById("becomeBtn");
+  btn.href = `sms:${MAX_SMS_NUMBER}?&body=${encodeURIComponent(body)}`;
+  document.getElementById("becomeMsg").href = `sms:${MAX_SMS_NUMBER}`;
+  if (btn.dataset.wired) return;
+  btn.dataset.wired = "1";
+  btn.addEventListener("click", () => {
+    try {
+      fetch(MEMBER_REQUEST_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: "memberRequest", slug: data.clientSlug }),
+        keepalive: true,
+      }).catch(() => {});
+    } catch (err) {
+      // The text still opens; Max just doesn't get the tap recorded.
+    }
+  });
+}
+
 async function render(data, workoutSummary) {
   els.groupSessions.textContent = data.groupSessionsRemaining;
   els.oneOnOneSessions.textContent = data.oneOnOneSessionsRemaining;
@@ -511,6 +545,7 @@ async function render(data, workoutSummary) {
     els.progressLink.href = `../workout/progress.html?id=${encodeURIComponent(data.clientSlug)}`;
     els.progressLink.hidden = false;
     els.replayTourLink.hidden = false;
+    renderBecomeMember(data);
     // Last week's recap and this month's goal (week.js, 2026-10-13). A
     // first-time client sees the welcome tour first — it's also a
     // full-screen takeover, so WeekCard (which can open its own goal-setup
@@ -616,6 +651,10 @@ async function fetchMemberData(id) {
     nutritionPunches: col.nutritionPunches >= 0 ? parseSessions(match[col.nutritionPunches], 0) : 0,
     referralPunches: col.referralPunches >= 0 ? parseSessions(match[col.referralPunches], 0) : 0,
     manualPunches: col.manualPunches >= 0 ? parseSessions(match[col.manualPunches], 0) : 0,
+    // Clients vs app members (2026-11-05): "hasClientColumn" is false until
+    // Max has run setupClientStatus, and the Become a member block stays hidden then.
+    hasClientColumn: col.client >= 0,
+    isClient: isClientRow(match, col),
     freeOwed: col.freeOwed >= 0 && String(match[col.freeOwed] || "").trim().toUpperCase() === "Y",
     checkInUrl: `https://maxfit.now/checkin.html?token=${encodeURIComponent(token)}`,
     programType: programType === "self-guided" ? "self-guided" : "group",

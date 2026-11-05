@@ -1189,3 +1189,11 @@ body::before {
   color: var(--dim);
   margin: 6px 0 0;
 }
+
+/* "Become a member" (app members only, 2026-11-05) */
+.become { display: flex; flex-direction: column; gap: 10px; padding: 16px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.become[hidden] { display: none; }
+.become__text { margin: 0; font-size: 16px; line-height: 1.4; color: var(--white); }
+.become__btn { display: flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 16px; border-radius: 10px; font-family: var(--font-body); font-weight: 700; font-size: 16px; color: var(--on-red); text-decoration: none; background: var(--red); border: 2px solid var(--red); }
+.become__msg { align-self: center; display: flex; align-items: center; min-height: 48px; padding: 0 8px; font-family: var(--font-body); font-size: 16px; font-weight: 600; color: var(--grey); text-decoration: underline; }
+.become__hint { margin: 0; font-size: 14px; line-height: 1.4; text-align: center; color: var(--grey); }
