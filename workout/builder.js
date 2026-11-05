@@ -819,6 +819,93 @@ async function loadClientWorkouts(clientSlug) {
   }
 }
 
+// fetchWorkoutExercises() (card/sheet.js) reads the tab once per page and keeps
+// that copy, so loadClientWorkouts above would bring back the old rows after a
+// save, a delete or a drag. Each write below therefore makes the same change to
+// the page's copy that Code.gs just made to the sheet. It's deliberately not a
+// fresh read: Google's CSV can lag a few seconds behind a write, so re-reading
+// could return the old rows anyway, and Save from there would overwrite the edit.
+async function editWorkoutRowsCopy_(edit) {
+  try {
+    edit(await fetchWorkoutExercises());
+  } catch (err) {
+    // The tab never loaded on this page, so there's no copy to correct.
+  }
+}
+
+/** In the page's copy: what handleDeleteWorkout_ does in Code.gs. */
+function removeWorkoutFromCopy_({ rows, col }, clientSlug, workoutName) {
+  const name = workoutName.toLowerCase();
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const isClient = String(rows[i][col.client] || "").trim().toLowerCase() === clientSlug;
+    const isWorkout = col.workoutName < 0 || String(rows[i][col.workoutName] || "").trim().toLowerCase() === name;
+    if (isClient && isWorkout) rows.splice(i, 1);
+  }
+}
+
+/** In the page's copy: what handleAssignWorkout_ does in Code.gs. Cells are text, as parseCSV gives them. */
+function saveWorkoutToCopy_(copy, clientSlug, workoutName, exercises, days, workoutNote) {
+  const { rows, col } = copy;
+
+  // Saving adds these columns to the sheet if they're missing, so a tab read
+  // before that has no place for them yet (Superset Rest, for one).
+  let width = Math.max(0, ...rows.map((r) => r.length), ...Object.values(col).map((c) => c + 1));
+  for (const key of ["notes", "workoutNotes", "superset", "supersetRest"]) {
+    if (col[key] < 0) col[key] = width++;
+  }
+
+  // A resave keeps its place in the order, a new workout goes on the end.
+  let existingOrder = null;
+  let maxOrder = -1;
+  if (col.workoutOrder >= 0) {
+    for (const r of rows) {
+      if (String(r[col.client] || "").trim().toLowerCase() !== clientSlug) continue;
+      const order = Number(r[col.workoutOrder]);
+      if (Number.isFinite(order) && order > maxOrder) maxOrder = order;
+      if (existingOrder === null && Number.isFinite(order) && String(r[col.workoutName] || "").trim() === workoutName) {
+        existingOrder = order;
+      }
+    }
+  }
+  const workoutOrder = existingOrder !== null ? existingOrder : maxOrder + 1;
+
+  removeWorkoutFromCopy_(copy, clientSlug, workoutName);
+
+  exercises.forEach((ex, i) => {
+    const row = new Array(width).fill("");
+    const put = (column, value) => {
+      if (column >= 0) row[column] = String(value);
+    };
+    put(col.client, clientSlug);
+    put(col.workoutName, workoutName);
+    put(col.order, i + 1);
+    put(col.exercise, ex.name);
+    put(col.sets, ex.sets);
+    put(col.reps, ex.reps);
+    put(col.days, days.join(","));
+    put(col.workoutOrder, workoutOrder);
+    put(col.notes, ex.note);
+    put(col.workoutNotes, workoutNote);
+    put(col.superset, ex.superset ? "Y" : "");
+    put(col.supersetRest, ex.supersetRest >= 15 && ex.supersetRest <= 600 ? ex.supersetRest : "");
+    rows.push(row);
+  });
+}
+
+/** In the page's copy: what handleReorderWorkouts_ does in Code.gs. */
+function reorderWorkoutsInCopy_({ rows, col }, clientSlug, order) {
+  if (col.workoutOrder < 0) return;
+  const position = {};
+  order.forEach((name, i) => {
+    position[name.toLowerCase()] = i;
+  });
+  for (const r of rows) {
+    if (String(r[col.client] || "").trim().toLowerCase() !== clientSlug) continue;
+    const place = position[String(r[col.workoutName] || "").trim().toLowerCase()];
+    if (place !== undefined) r[col.workoutOrder] = String(place);
+  }
+}
+
 function renderChipsAndOptions() {
   els.chips.innerHTML = "";
   els.workoutNameOptions.innerHTML = "";
@@ -940,6 +1027,7 @@ async function persistChipOrder_() {
   }
 
   rememberPin_(pin);
+  await editWorkoutRowsCopy_((copy) => reorderWorkoutsInCopy_(copy, clientSlug, order));
   // Keep clientWorkouts' own order values in sync with what's now on the
   // sheet, so a later renderChipsAndOptions() (e.g. after saving an edit)
   // doesn't undo the drag by re-sorting on stale data.
@@ -1079,6 +1167,7 @@ els.saveButton.addEventListener("click", async () => {
   els.saveButton.disabled = false;
   els.saveButton.textContent = "Save Workout";
   els.deleteButton.hidden = false;
+  await editWorkoutRowsCopy_((copy) => saveWorkoutToCopy_(copy, clientSlug, workoutName, exercises, days, workoutNote));
   await loadClientWorkouts(clientSlug);
   renderChipsAndOptions();
 
@@ -1141,6 +1230,7 @@ els.deleteButton.addEventListener("click", async () => {
   setSelectedDays([]);
   setWorkoutNote("");
   addRow();
+  await editWorkoutRowsCopy_((copy) => removeWorkoutFromCopy_(copy, clientSlug, workoutName));
   await loadClientWorkouts(clientSlug);
   renderChipsAndOptions();
 });

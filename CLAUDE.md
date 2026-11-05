@@ -124,6 +124,10 @@ In Fuel's tiles: **Meal plan** (the planner, Diamond only) and **Shopping** (Gol
 - **Client page (`workout/app.js` `addSupersetSection`):** `supersetOrder_` gives one set of each exercise per round; the round count is the smallest set count, and extra sets go at the end of the last round. Saving moves to the next set ("Now: name") with no rest. The timer runs when a round ends, or between two sets of the same exercise. Rows in folded rounds stay in the DOM, hidden, because `ctx.collectSets` reads saved sets from the page. `collectSets` groups by exercise so the order sent matches a normal exercise.
 - **Builder (`workout/builder.js` `refreshSupersets_`):** the link lives on the row and rows stay flat children of `els.rows`, so drag and up/down keep working; letters, bracket and header are redrawn from the links. Rows load one at a time, so don't overwrite a stored value while a row is briefly on its own. `rowLinksToNext_` is what counts: the last row's stored link is ignored.
 
+## Builder: the page's copy of Workout Exercises (2026-11-05)
+
+`fetchWorkoutExercises()` reads the tab once per page and keeps it. After a save, delete or chip drag, `workout/builder.js` makes the same change to that copy (`saveWorkoutToCopy_`, `removeWorkoutFromCopy_`, `reorderWorkoutsInCopy_`) instead of re-reading, because Google's CSV can lag behind a write and the old rows would come back. **If `handleAssignWorkout_`, `handleDeleteWorkout_` or `handleReorderWorkouts_` in `Code.gs` changes what it writes, change the matching function too.** A page refresh is a real read, so one straight after a save could still be behind.
+
 ## Clients vs app members (built 2026-11-05, not live until Max deploys)
 
 Max trains only Bec Campbell and Sean Campbell in person; everyone else is an **app member**. **Max decides who is a client; nothing moves anyone automatically** (no rule on payments or sessions).
