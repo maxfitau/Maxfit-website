@@ -32,7 +32,7 @@ const GROCERY_SHEET_NAME = "Grocery Items";
 // Changes whenever this file does, and is shown when you open the deployed
 // URL in a browser (see doGet) — the quick way to tell whether a redeploy
 // actually took, instead of guessing from behaviour.
-const BACKEND_VERSION = "2026-11-05a";
+const BACKEND_VERSION = "2026-11-05b";
 
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -91,7 +91,7 @@ function backfillTokens() {
  */
 function setupWorkoutSheets() {
   getOrCreateSheetByName_(EXERCISES_SHEET_NAME, ["Name", "Movement", "Body Part", "Default Starting Weight (kg)"]);
-  getOrCreateSheetByName_(WORKOUT_EXERCISES_SHEET_NAME, ["Client", "Workout Name", "Order", "Exercise", "Target Sets", "Target Reps", "Days", "Workout Order", "Exercise Notes", "Workout Notes", "Superset"]);
+  getOrCreateSheetByName_(WORKOUT_EXERCISES_SHEET_NAME, ["Client", "Workout Name", "Order", "Exercise", "Target Sets", "Target Reps", "Days", "Workout Order", "Exercise Notes", "Workout Notes", "Superset", "Superset Rest"]);
   getOrCreateSheetByName_(LOGGED_SETS_SHEET_NAME, ["Client", "Workout Name", "Exercise", "Set Number", "Weight (kg)", "Reps", "Date", "Timestamp", "Notes"]);
   Logger.log("Workout sheets ready.");
 }
@@ -1806,6 +1806,7 @@ function handleAssignWorkout_(payload) {
     exerciseNotes: findColumn_(header, "Exercise Notes"),
     workoutNotes: findColumn_(header, "Workout Notes"),
     superset: findColumn_(header, "Superset"),
+    supersetRest: findColumn_(header, "Superset Rest"),
   };
 
   // A resave keeps this workout's existing position in the chip/picker
@@ -1854,13 +1855,19 @@ function handleAssignWorkout_(payload) {
     // Lives on the exercise, not a separate group id, so reordering rows in
     // the builder can't leave a stale/mismatched group label behind.
     if (col.superset >= 0) row[col.superset] = (ex && ex.superset) ? "Y" : "";
+    // Seconds of rest after each round of a superset, on its FIRST exercise
+    // only. Blank anywhere else, and blank means 90s to the workout page.
+    if (col.supersetRest >= 0) {
+      const rest = Math.round(Number(ex && ex.supersetRest));
+      row[col.supersetRest] = rest >= 15 && rest <= 600 ? rest : "";
+    }
     return row;
   });
   sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, header.length).setValues(newRows);
 
   // notesSupported lets the builder tell a deployment that stored the tips
   // from an older one that would have quietly ignored them.
-  return jsonResponse_({ status: "success", notesSupported: true });
+  return jsonResponse_({ status: "success", notesSupported: true, supersetRestSupported: true });
 }
 
 /**
@@ -2109,7 +2116,7 @@ function ensureLoggedSetsColumns_(sheet) {
  * workout is saved rather than needing a manual migration.
  */
 function ensureWorkoutExercisesColumns_(sheet) {
-  return ensureColumns_(sheet, ["Exercise Notes", "Workout Notes", "Superset"]);
+  return ensureColumns_(sheet, ["Exercise Notes", "Workout Notes", "Superset", "Superset Rest"]);
 }
 
 function ensureExerciseColumns_(sheet) {

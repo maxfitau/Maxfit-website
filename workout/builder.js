@@ -173,46 +173,183 @@ function buildExerciseControl(exercise) {
 }
 
 /**
- * The "+ Superset with next" toggle at the bottom of a row — lives inside
- * the row (not a separate element between rows) so it travels automatically
- * with drag-reordering and the up/down buttons, same as everything else on
- * the row. Means "this exercise and whichever one ends up right after it
- * are done back-to-back, minimal rest" — chains naturally for a tri-set by
- * marking every exercise but the last in the group, and never goes stale
- * when rows are reordered since it's not a separate named group to keep in
- * sync. The last row in the list never gets to be "linked to next" (there
- * is no next) — refreshSupersetAvailability_ keeps that in sync.
+ * Supersets in the builder. A link is stored on the row as "this exercise and
+ * whichever one is right after it are done back to back", so it travels with
+ * drag-reordering and the up/down buttons, and there's no separate named group
+ * to go stale. Everything you see (A1/A2, the bracket, the group's header) is
+ * worked out from those links by refreshSupersets_, which runs after any add,
+ * remove, reorder, join or split. Rows stay flat children of els.rows.
  */
-function buildSupersetToggle_(row, initial) {
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.className = "builder__superset-toggle";
-  row.dataset.superset = initial ? "true" : "false";
+const LINK_ICON_ = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1 1"/><path d="M14 10a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l1-1"/></svg>';
+const SUPERSET_REST_DEFAULT_ = 90;
 
-  function render() {
-    const on = row.dataset.superset === "true";
-    btn.classList.toggle("builder__superset-toggle--on", on);
-    btn.textContent = on ? "⚡ Superset with next — tap to unlink" : "+ Superset with next exercise";
-  }
-  render();
-
-  btn.addEventListener("click", () => {
-    row.dataset.superset = row.dataset.superset === "true" ? "false" : "true";
-    render();
-  });
-
-  return btn;
+/** A link to nothing doesn't count: the last row has no next exercise. */
+function rowLinksToNext_(row) {
+  return row.dataset.superset === "true" && Boolean(row.nextElementSibling);
 }
 
-/** Hides the superset toggle on whichever row is currently last — there's no "next" for it to link to. Call after any add/remove/reorder. */
-function refreshSupersetAvailability_() {
+function toggleRowLink_(row) {
+  row.dataset.superset = rowLinksToNext_(row) ? "false" : "true";
+  closeRowMenus_();
+  refreshSupersets_();
+}
+
+function closeRowMenus_() {
+  els.rows.querySelectorAll(".builder__row-menu").forEach((menu) => {
+    menu.hidden = true;
+  });
+}
+document.addEventListener("click", (event) => {
+  if (!event.target.closest(".builder__row-more")) closeRowMenus_();
+});
+
+/** The small link icon under a row: tap to join it to the next exercise, or split them. */
+function buildSupersetLink_(row) {
+  const wrap = document.createElement("div");
+  wrap.className = "builder__ss-link";
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "builder__ss-link-btn";
+  btn.innerHTML = `<span>${LINK_ICON_}</span>`;
+  btn.addEventListener("click", () => toggleRowLink_(row));
+  wrap.appendChild(btn);
+  return wrap;
+}
+
+/** The ⋯ menu on a row, holding "Superset with next". */
+function buildRowMoreMenu_(row) {
+  const wrap = document.createElement("div");
+  wrap.className = "builder__row-more";
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "builder__row-more-btn";
+  btn.textContent = "⋯";
+  btn.setAttribute("aria-label", "More options");
+  const menu = document.createElement("div");
+  menu.className = "builder__row-menu";
+  menu.hidden = true;
+  const item = document.createElement("button");
+  item.type = "button";
+  item.className = "builder__row-menu-item";
+  item.addEventListener("click", () => toggleRowLink_(row));
+  menu.appendChild(item);
+  btn.addEventListener("click", () => {
+    const wasOpen = !menu.hidden;
+    closeRowMenus_();
+    menu.hidden = wasOpen;
+  });
+  wrap.append(btn, menu);
+  return wrap;
+}
+
+/** The header on a group's first row: its name, its rest time, and a note if the set counts differ. */
+function fillSupersetHead_(head, members, letter) {
+  head.replaceChildren();
+  const top = document.createElement("div");
+  top.className = "builder__ss-top";
+  const pill = document.createElement("span");
+  pill.className = "builder__ss-pill";
+  pill.textContent = `${members.length >= 3 ? "Circuit" : "Superset"} ${letter}`;
+  top.appendChild(pill);
+
+  const rest = document.createElement("div");
+  rest.className = "builder__ss-rest";
+  const restLabel = document.createElement("span");
+  restLabel.textContent = "Rest after each round";
+  const restValue = document.createElement("span");
+  restValue.className = "builder__ss-rest-value";
+  restValue.textContent = `${members[0].dataset.supersetRest}s`;
+  const stepper = (text, label, change) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "builder__ss-step";
+    btn.textContent = text;
+    btn.setAttribute("aria-label", label);
+    btn.addEventListener("click", () => {
+      const next = Math.max(15, Math.min(600, Number(members[0].dataset.supersetRest) + change));
+      members.forEach((row) => {
+        row.dataset.supersetRest = String(next);
+      });
+      restValue.textContent = `${next}s`;
+    });
+    return btn;
+  };
+  rest.append(restLabel, stepper("−", "15 seconds less rest", -15), restValue, stepper("+", "15 seconds more rest", 15));
+  top.appendChild(rest);
+  head.appendChild(top);
+
+  const setInputs = members.map((row) => row.querySelector("input"));
+  const counts = setInputs.map((input) => Number(input.value)).filter((n) => Number.isFinite(n) && n > 0);
+  if (counts.length === members.length && new Set(counts).size > 1) {
+    const most = Math.max(...counts);
+    const note = document.createElement("div");
+    note.className = "builder__ss-note";
+    const text = document.createElement("span");
+    text.textContent = `${counts.map((n, i) => `${letter}${i + 1} has ${n}${i === 0 ? " sets" : ""}`).join(", ")}. The extra sets will go at the end of the last round.`;
+    const match = document.createElement("button");
+    match.type = "button";
+    match.className = "builder__ss-match";
+    match.textContent = `Make them match (${most} sets)`;
+    match.addEventListener("click", () => {
+      setInputs.forEach((input) => {
+        input.value = String(most);
+      });
+      refreshSupersets_();
+      refreshMuscleLoadPanel_();
+    });
+    note.append(text, match);
+    head.appendChild(note);
+  }
+}
+
+/** Redraws everything superset-related from the rows' links. */
+function refreshSupersets_() {
   const rows = Array.from(els.rows.children);
+  let groups = 0;
+  for (let i = 0; i < rows.length; ) {
+    let end = i;
+    while (rowLinksToNext_(rows[end])) end++;
+    const members = rows.slice(i, end + 1);
+    const grouped = members.length > 1;
+    const letter = grouped ? String.fromCharCode(65 + groups++ % 26) : "";
+    // A group has one rest time. The first one set among its rows wins (joining two groups keeps the upper one's).
+    const setRest = members.map((row) => Number(row.dataset.supersetRest)).find((n) => n >= 15 && n <= 600);
+    members.forEach((row, n) => {
+      // Rows load one at a time, so a row on its own here may be about to join its group: keep its value.
+      if (grouped) row.dataset.supersetRest = String(setRest || SUPERSET_REST_DEFAULT_);
+      row.classList.toggle("builder__row--ss", grouped);
+      row.classList.toggle("builder__row--ss-start", grouped && n === 0);
+      row.classList.toggle("builder__row--ss-end", grouped && n === members.length - 1);
+
+      let badge = row.querySelector(".builder__ss-letter");
+      if (grouped && !badge) {
+        badge = document.createElement("span");
+        badge.className = "builder__ss-letter";
+        row.querySelector(".builder__row-exercise-top").prepend(badge);
+      } else if (!grouped && badge) {
+        badge.remove();
+      }
+      if (grouped) badge.textContent = `${letter}${n + 1}`;
+
+      const head = row.querySelector(".builder__ss-head");
+      const isHead = grouped && n === 0;
+      head.hidden = !isHead;
+      if (isHead) fillSupersetHead_(head, members, letter);
+      else head.replaceChildren();
+    });
+    i = end + 1;
+  }
+
   rows.forEach((row, i) => {
-    const btn = row.querySelector(".builder__superset-toggle");
-    if (!btn) return;
     const isLast = i === rows.length - 1;
-    btn.hidden = isLast;
-    if (isLast) row.dataset.superset = "false"; // nothing to link to — don't silently save a stale "true"
+    const linked = rowLinksToNext_(row);
+    row.querySelector(".builder__ss-link").hidden = isLast;
+    row.querySelector(".builder__row-more").hidden = isLast;
+    const btn = row.querySelector(".builder__ss-link-btn");
+    btn.setAttribute("aria-pressed", String(linked));
+    btn.setAttribute("aria-label", linked ? "Split this exercise from the next one" : "Join this exercise to the next one");
+    btn.title = linked ? "Split" : "Join as a superset";
+    row.querySelector(".builder__row-menu-item").textContent = linked ? "Split from next" : "Superset with next";
   });
 }
 
@@ -378,6 +515,7 @@ function addRow(exercise) {
   setsInput.placeholder = "Sets";
   setsInput.value = exercise && exercise.sets ? exercise.sets : "";
   setsInput.addEventListener("input", refreshMuscleLoadPanel_);
+  setsInput.addEventListener("input", refreshSupersets_);
 
   const repsInput = document.createElement("input");
   repsInput.type = "text";
@@ -413,7 +551,7 @@ function addRow(exercise) {
   upButton.addEventListener("click", () => {
     const prev = row.previousElementSibling;
     if (prev) els.rows.insertBefore(row, prev);
-    refreshSupersetAvailability_();
+    refreshSupersets_();
   });
 
   const downButton = document.createElement("button");
@@ -424,7 +562,7 @@ function addRow(exercise) {
   downButton.addEventListener("click", () => {
     const next = row.nextElementSibling;
     if (next) els.rows.insertBefore(next, row);
-    refreshSupersetAvailability_();
+    refreshSupersets_();
   });
 
   moveWrap.appendChild(upButton);
@@ -437,11 +575,15 @@ function addRow(exercise) {
   removeButton.setAttribute("aria-label", "Remove exercise");
   removeButton.addEventListener("click", () => {
     row.remove();
-    refreshSupersetAvailability_();
+    refreshSupersets_();
     refreshMuscleLoadPanel_();
   });
 
-  const supersetToggle = buildSupersetToggle_(row, exercise && exercise.superset);
+  row.dataset.superset = exercise && exercise.superset ? "true" : "false";
+  row.dataset.supersetRest = (exercise && exercise.supersetRest) || "";
+  const supersetHead = document.createElement("div");
+  supersetHead.className = "builder__ss-head";
+  supersetHead.hidden = true;
 
   row.appendChild(nameControl);
   row.appendChild(setsInput);
@@ -450,13 +592,15 @@ function addRow(exercise) {
   row.appendChild(moveWrap);
   row.appendChild(removeButton);
   row.appendChild(tipInput);
-  row.appendChild(supersetToggle);
+  row.appendChild(buildSupersetLink_(row));
+  row.appendChild(buildRowMoreMenu_(row));
+  row.appendChild(supersetHead);
   // Last, and hidden — keeps the elements above in the exact DOM order the
   // CSS's nth-child row layout (builder.css) already expects, and keeps
   // the picked name out of the save handler's positional input lookup below.
   row.appendChild(nameValueInput);
   els.rows.appendChild(row);
-  refreshSupersetAvailability_();
+  refreshSupersets_();
   refreshMuscleLoadPanel_();
 }
 
@@ -496,7 +640,7 @@ function makeRowDraggable(row, handle) {
       handle.removeEventListener("pointermove", onMove);
       handle.removeEventListener("pointerup", onUp);
       handle.removeEventListener("pointercancel", onUp);
-      refreshSupersetAvailability_();
+      refreshSupersets_();
     }
 
     handle.addEventListener("pointermove", onMove);
@@ -653,6 +797,7 @@ async function loadClientWorkouts(clientSlug) {
             note: col.notes >= 0 ? String(r[col.notes] || "").trim() : "",
             workoutNote: col.workoutNotes >= 0 ? String(r[col.workoutNotes] || "").trim() : "",
             superset: col.superset >= 0 && String(r[col.superset] || "").trim().toUpperCase() === "Y",
+            supersetRest: col.supersetRest >= 0 ? Number(r[col.supersetRest]) || "" : "",
           };
         })
     );
@@ -866,10 +1011,19 @@ els.saveButton.addEventListener("click", async () => {
         sets: Number(setsInput.value),
         reps: repsInput.value.trim(),
         note: tipInput ? tipInput.value.trim() : "",
-        superset: row.dataset.superset === "true",
+        superset: rowLinksToNext_(row),
+        supersetRest: Number(row.dataset.supersetRest) || "",
       };
     })
     .filter((ex) => ex.name);
+
+  // A superset's rest is saved on its first exercise only. (Filtering out a
+  // blank row can leave the last exercise linked to nothing, so unlink it.)
+  exercises.forEach((ex, i) => {
+    if (i === exercises.length - 1) ex.superset = false;
+    const prevLinks = i > 0 && exercises[i - 1].superset;
+    if (!ex.superset || prevLinks) ex.supersetRest = "";
+  });
 
   if (!exercises.length) {
     showError("Add at least one exercise.");
@@ -883,6 +1037,7 @@ els.saveButton.addEventListener("click", async () => {
   const days = getSelectedDays();
   const workoutNote = workoutNoteValue();
   const hasNotes = Boolean(workoutNote) || exercises.some((ex) => ex.note);
+  const hasCustomRest = exercises.some((ex) => ex.supersetRest && ex.supersetRest !== SUPERSET_REST_DEFAULT_);
   const pin = currentPin();
   els.saveButton.disabled = true;
   els.saveButton.textContent = "Saving…";
@@ -931,6 +1086,8 @@ els.saveButton.addEventListener("click", async () => {
   // silently throws the tips away — say so, rather than let "Saved" imply they're there.
   if (hasNotes && !result.notesSupported) {
     showError("Saved the exercises, but the tips and notes were NOT stored — the Apps Script on Google is out of date. Redeploy it (Deploy → Manage deployments → New version), then Save again.");
+  } else if (hasCustomRest && !result.supersetRestSupported) {
+    showError("Saved the workout, but the superset rest times were NOT stored, so clients will get 90s — the Apps Script on Google is out of date. Paste the new Code.gs, deploy a new version, then Save again.");
   }
 });
 

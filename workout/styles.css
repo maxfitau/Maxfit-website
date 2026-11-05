@@ -667,7 +667,8 @@ body {
 
 .workout__set-fields {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* weight gets the extra room: "102.5" needs far more than "12" reps */
+  grid-template-columns: 1.2fr 1fr;
   gap: 8px;
 }
 
@@ -818,39 +819,207 @@ body {
   color: var(--grey-light);
 }
 
-/* Superset/Circuit (set in the builder's "Superset with next" toggle): the
-   whole chain is styled as one shared panel — tinted background plus a
-   border that wraps the group and is only rounded at its two ends — rather
-   than a thin left accent line carrying the whole signal on its own (too
-   easy to miss at a glance, worse on a quick scroll). --superset-start and
-   --superset-end mark the two ends for the rounded corners and the top
-   label; --superset-link closes the list's normal 22px gap so members sit
-   flush against each other inside the shared panel, with a lighter internal
-   divider (the base rule's border-bottom) between them. */
-.workout__exercise--superset {
+/* Superset/Circuit (linked in the builder), logged in rounds: addSupersetSection
+   in app.js. One tinted panel holds the whole group. */
+.workout__ss {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   background: rgba(224, 0, 0, 0.07);
-  border-left: 1px solid rgba(224, 0, 0, 0.35);
-  border-right: 1px solid rgba(224, 0, 0, 0.35);
-  border-bottom: 1px solid rgba(224, 0, 0, 0.18);
-  padding: 14px 14px 18px;
+  border: 1px solid rgba(224, 0, 0, 0.35);
+  border-radius: var(--radius-sm);
+  /* runs a little wider than the page's other sections, so its set rows are
+     exactly as wide as a normal exercise's and a weight like 102.5 still fits */
+  margin: 0 -8px;
+  padding: 14px 6px 16px;
 }
 
-.workout__exercise--superset-start {
-  border-top: 1px solid rgba(224, 0, 0, 0.35);
-  border-top-left-radius: var(--radius-sm);
-  border-top-right-radius: var(--radius-sm);
-  padding-top: 16px;
+.workout__ss-pill {
+  align-self: flex-start;
 }
 
-.workout__exercise--superset-end {
-  border-bottom: 1px solid rgba(224, 0, 0, 0.35);
-  border-bottom-left-radius: var(--radius-sm);
-  border-bottom-right-radius: var(--radius-sm);
+.workout__ss-rule {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--white);
 }
 
-.workout__exercise--superset-link {
-  padding-bottom: 12px;
-  margin-bottom: -22px;
+.workout__ss-letter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-width: 34px;
+  height: 26px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--red);
+  color: var(--on-red);
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.workout__ss-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.workout__ss-overview-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.workout__ss-overview-row .workout__exercise-muscles,
+.workout__ss-overview-row .workout__exercise-hint {
+  margin: 0;
+}
+
+.workout__ss-overview-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.workout__ss-overview-name {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 16px;
+  color: var(--white);
+}
+
+.workout__ss-rounds {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.workout__ss-fold {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 12px;
+  text-align: left;
+  color: var(--white);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.workout__ss-fold[hidden],
+.workout__ss-round[hidden],
+.workout__ss-done[hidden] {
+  display: none;
+}
+
+.workout__ss-fold--done {
+  border-color: rgba(224, 0, 0, 0.55);
+}
+
+.workout__ss-fold-title {
+  flex-shrink: 0;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.workout__ss-fold--done .workout__ss-fold-title {
+  color: var(--red);
+}
+
+.workout__ss-fold-summary {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--grey);
+  text-align: right;
+}
+
+.workout__ss-round {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  scroll-margin-top: 16px;
+}
+
+.workout__ss-round-title {
+  margin: 2px 0 0;
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 24px;
+  color: var(--white);
+}
+
+.workout__ss-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  scroll-margin-top: 16px;
+}
+
+.workout__ss-item-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.workout__ss-item-name {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 19px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--white);
+}
+
+.workout__ss-item-tag {
+  flex-shrink: 0;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--grey);
+}
+
+.workout__ss-item--now .workout__set {
+  border: 2px solid var(--red);
+  box-shadow: 0 0 0 3px rgba(224, 0, 0, 0.22);
+}
+
+.workout__ss-adds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.workout__ss-done {
+  margin: 0;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 20px;
+  color: var(--white);
+}
+
+.workout__exercise,
+.workout__ss {
+  scroll-margin-top: 16px;
 }
 
 .workout__superset-label {
@@ -865,23 +1034,6 @@ body {
   background: var(--red);
   border-radius: 999px;
   padding: 5px 12px 4px;
-}
-
-.workout__superset-index {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 22px;
-  height: 22px;
-  margin-right: 8px;
-  border-radius: 999px;
-  background: var(--red);
-  color: var(--on-red);
-  font-family: var(--font-head);
-  font-weight: 700;
-  font-size: 14px;
-  vertical-align: middle;
 }
 
 .workout__add-set {

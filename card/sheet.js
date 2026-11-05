@@ -208,6 +208,7 @@ function fetchWorkoutExercises() {
           notes: findColumn(header, "Exercise Notes"), // the coach's tip for one exercise
           workoutNotes: findColumn(header, "Workout Notes"), // a note for the whole workout (repeated on each of its rows)
           superset: findColumn(header, "Superset"), // "Y" = this exercise + the next one (by Order) are done back-to-back
+          supersetRest: findColumn(header, "Superset Rest"), // seconds of rest after each round, on the superset's first exercise; blank = 90
         };
         return { rows, col };
       });

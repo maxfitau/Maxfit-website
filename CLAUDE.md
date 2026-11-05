@@ -117,6 +117,13 @@ In Fuel's tiles: **Meal plan** (the planner, Diamond only) and **Shopping** (Gol
 - Ideas' foods go through `cleanPlanMeal_`. "Log it" opens the normal confirm screen (source `fridge`), with the chosen meal pre-picked (workout purposes go to Snack). "+ List" uses `shoppingAdd`.
 - The JSON schema is built inside `fridgeSchema_()`, never at load time: Apps Script loads Macro.gs before MacrosCore.gs, so top-level code can't touch `MacroCore`.
 
+## Supersets in rounds (built 2026-11-05, not live until Max deploys)
+
+- **The rule:** a superset is a layout, never a different way of saving. Every set saves through `ctx.saveSet` with the same exercise name and set number, so Logged Sets, history, progress and the muscle map don't change.
+- **Storage:** Workout Exercises `Superset` = "Y" means this exercise and the next (by Order) are linked; 3+ linked reads as "Circuit". `Superset Rest` = seconds of rest after each round, on the group's first exercise only (15-600). Blank or a missing column means 90s. `ensureWorkoutExercisesColumns_` adds the column the first time a workout is saved.
+- **Client page (`workout/app.js` `addSupersetSection`):** `supersetOrder_` gives one set of each exercise per round; the round count is the smallest set count, and extra sets go at the end of the last round. Saving moves to the next set ("Now: name") with no rest. The timer runs when a round ends, or between two sets of the same exercise. Rows in folded rounds stay in the DOM, hidden, because `ctx.collectSets` reads saved sets from the page. `collectSets` groups by exercise so the order sent matches a normal exercise.
+- **Builder (`workout/builder.js` `refreshSupersets_`):** the link lives on the row and rows stay flat children of `els.rows`, so drag and up/down keep working; letters, bracket and header are redrawn from the links. Rows load one at a time, so don't overwrite a stored value while a row is briefly on its own. `rowLinksToNext_` is what counts: the last row's stored link is ignored.
+
 ## Clients vs app members (built 2026-11-05, not live until Max deploys)
 
 Max trains only Bec Campbell and Sean Campbell in person; everyone else is an **app member**. **Max decides who is a client; nothing moves anyone automatically** (no rule on payments or sessions).

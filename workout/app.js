@@ -230,6 +230,7 @@ let restDuration = 90;
 let restRemaining = 0;
 let restInterval = null;
 let restDoneTimeout = null;
+let restIsOneOff = false; // a superset's own rest: -15/+15 change this countdown only, not the page's usual rest
 
 function formatRest(totalSeconds) {
   const s = Math.max(0, totalSeconds);
@@ -243,13 +244,15 @@ function positionRestTimer() {
   els.restTimer.style.bottom = `${window.innerHeight - nav.getBoundingClientRect().top + 10}px`;
 }
 
-function startRestTimer() {
+/** options (a superset's rest): { seconds, label } — its own length, and what the bar says. */
+function startRestTimer(options) {
   if (coachMode) return;
   clearInterval(restInterval);
   clearTimeout(restDoneTimeout);
   els.restTimer.classList.remove("workout__rest--done");
-  els.restLabel.textContent = "Rest";
-  restRemaining = restDuration;
+  els.restLabel.textContent = (options && options.label) || "Rest";
+  restIsOneOff = Boolean(options && options.seconds);
+  restRemaining = restIsOneOff ? options.seconds : restDuration;
   els.restValue.textContent = formatRest(restRemaining);
   positionRestTimer();
   els.restTimer.hidden = false;
@@ -280,14 +283,14 @@ function stopRestTimer() {
 }
 
 els.restMinus.addEventListener("click", () => {
-  restDuration = Math.max(15, restDuration - 15);
+  if (!restIsOneOff) restDuration = Math.max(15, restDuration - 15);
   if (restInterval) {
     restRemaining = Math.max(1, restRemaining - 15);
     els.restValue.textContent = formatRest(restRemaining);
   }
 });
 els.restPlus.addEventListener("click", () => {
-  restDuration = Math.min(600, restDuration + 15);
+  if (!restIsOneOff) restDuration = Math.min(600, restDuration + 15);
   if (restInterval) {
     restRemaining += 15;
     els.restValue.textContent = formatRest(restRemaining);
@@ -815,57 +818,115 @@ function libEscApp_(text) {
   return div.innerHTML;
 }
 
-function addExerciseSection(ctx, exercise, opts) {
+/**
+ * One exercise's set rows, not yet on the page: last-time numbers, starting
+ * weight and anything already saved today. Shared by a normal exercise
+ * (addExerciseSection) and a superset (addSupersetSection), which lays the
+ * same rows out in rounds. Set numbers stay 1, 2, 3... per exercise either way.
+ */
+function buildExerciseSets_(ctx, exercise, savedSets, onSave) {
   const { clientSlug, setRows, setCol, startingWeights } = ctx;
-  const isExtra = Boolean(opts && opts.isExtra);
-  const savedSets = (opts && opts.savedSets) || new Map(); // setNumber -> { weight, reps }
   const key = exercise.name.toLowerCase();
   const historySets = mostRecentSessionSets(setRows, setCol, clientSlug, key, ctx.beforeKey);
   const maxHistSetNumber = historySets ? Math.max(...historySets.keys()) : 0;
   const firstSetHistory = historySets ? historySets.get(1) : null;
   const historyWeight = firstSetHistory ? firstSetHistory.weight : null;
   const prefillWeight = historyWeight !== null ? historyWeight : (startingWeights[key] !== undefined ? startingWeights[key] : null);
+  const rows = [];
+
+  function addRow(addedByClient) {
+    const setNumber = rows.length + 1;
+    let initial = null;
+
+    const saved = savedSets.get(setNumber);
+    if (saved) {
+      const histForSaved = historySets && (historySets.get(setNumber) || historySets.get(maxHistSetNumber));
+      initial = { weight: saved.weight, reps: saved.reps, saved: true, suggestion: false, last: histForSaved || null };
+    } else if (addedByClient && rows.length) {
+      // An extra set is most likely "same again" — start from the set above.
+      const above = rowValues(rows[rows.length - 1]);
+      const histForExtra = historySets && (historySets.get(setNumber) || historySets.get(maxHistSetNumber));
+      if (above.valid) initial = { weight: above.weight, reps: above.reps, saved: false, suggestion: true, last: histForExtra || null };
+    }
+    if (!initial) {
+      // Set-for-set against last session where possible (today's Set 2 gets
+      // last time's Set 2); a set beyond how many they did last time falls
+      // back to repeating the last set of that session rather than going in
+      // blind, since that's the closest known data point.
+      const hist = historySets && (historySets.get(setNumber) || historySets.get(maxHistSetNumber));
+      initial = {
+        last: hist || null,
+        weight: hist ? hist.weight : prefillWeight,
+        reps: hist ? hist.reps : null,
+        saved: false,
+        suggestion: Boolean(hist),
+      };
+    }
+    const row = buildSetRow(exercise, setNumber, initial, onSave);
+    rows.push(row);
+    return row;
+  }
+
+  const maxSavedSetNumber = savedSets.size ? Math.max(...savedSets.keys()) : 0;
+  const initialRows = Math.max(exercise.sets, maxSavedSetNumber);
+  for (let i = 0; i < initialRows; i++) addRow(false);
+
+  return { rows, addRow, historyWeight, prefillWeight };
+}
+
+/** The "Starting weight" line, only when there's no last time to go on. */
+function buildExerciseHint_(sets) {
+  const hint = document.createElement("p");
+  hint.className = "workout__exercise-hint";
+  // With history, each set row shows its own "Last time" line, so this hint is only for the no-history cases.
+  hint.hidden = sets.historyWeight !== null;
+  hint.textContent = sets.historyWeight !== null
+    ? ""
+    : sets.prefillWeight !== null
+      ? `Starting weight: ${formatWeight(sets.prefillWeight)}kg`
+      : "New exercise — enter your starting weight";
+  return hint;
+}
+
+/** Which muscles this exercise works, or null if we don't know. */
+function buildExerciseMuscles_(exercise) {
+  const muscles = resolveExerciseMuscles_(exercise.name, exerciseIndex_);
+  if (!muscles.primary.length && !muscles.secondary.length) return null;
+  const musclesEl = document.createElement("div");
+  musclesEl.className = "workout__exercise-muscles";
+  renderMuscleHighlight(musclesEl, muscles.primary, muscles.secondary);
+  return musclesEl.hidden ? null : musclesEl;
+}
+
+/** The coach's tip. Inserted as text, never as markup, so whatever was typed is shown exactly as written. */
+function buildExerciseTip_(note) {
+  const tip = document.createElement("p");
+  tip.className = "workout__exercise-tip";
+  const tipLabel = document.createElement("span");
+  tipLabel.className = "workout__exercise-tip-label";
+  tipLabel.textContent = "Tip";
+  tip.appendChild(tipLabel);
+  tip.appendChild(document.createTextNode(note));
+  return tip;
+}
+
+function addExerciseSection(ctx, exercise, opts) {
+  const isExtra = Boolean(opts && opts.isExtra);
+  const savedSets = (opts && opts.savedSets) || new Map(); // setNumber -> { weight, reps }
+  const key = exercise.name.toLowerCase();
+  const sets = buildExerciseSets_(ctx, exercise, savedSets, ctx.saveSet);
 
   const section = document.createElement("section");
   section.className = "workout__exercise";
+  section.dataset.firstExercise = exercise.name;
   if (isExtra) section.classList.add("workout__exercise--extra");
-
-  // Superset/Circuit grouping (builder.js's "Superset with next" toggle): a
-  // chain of 2+ exercises done back-to-back with minimal rest. The whole
-  // chain is styled as one shared panel (tinted background + a border that
-  // wraps the group, rounded only at its two ends) rather than relying on
-  // a thin accent line to carry the whole signal — easy to miss at a glance
-  // or a quick scroll, especially for Max's older clients (readable-text
-  // rule). --superset-start/-end mark the two ends of the panel for the
-  // rounded corners and the label; --superset-link closes the list's normal
-  // gap so members sit flush against each other inside the shared panel.
-  if (opts && opts.inSuperset) section.classList.add("workout__exercise--superset");
-  if (opts && opts.isChainStart) section.classList.add("workout__exercise--superset-start");
-  if (opts && opts.isChainEnd) section.classList.add("workout__exercise--superset-end");
-  if (opts && opts.linksToNext) section.classList.add("workout__exercise--superset-link");
-  if (opts && opts.supersetLabel) {
-    const supersetLabel = document.createElement("span");
-    supersetLabel.className = "workout__superset-label";
-    const word = opts.chainLength >= 3 ? "Circuit" : "Superset";
-    supersetLabel.textContent = `${word} — back to back, minimal rest`;
-    section.appendChild(supersetLabel);
-  }
 
   const head = document.createElement("div");
   head.className = "workout__exercise-head";
 
   const name = document.createElement("h2");
   name.className = "workout__exercise-name";
-  // A small numbered badge for its spot in the sequence (1, 2, 3...) — makes
-  // the order explicit, which matters most for a 3+ circuit (go in order,
-  // repeat), not just "these are linked".
-  if (opts && opts.inSuperset && opts.chainIndex) {
-    const indexBadge = document.createElement("span");
-    indexBadge.className = "workout__superset-index";
-    indexBadge.textContent = String(opts.chainIndex);
-    name.appendChild(indexBadge);
-  }
-  name.appendChild(document.createTextNode(exercise.name));
+  name.textContent = exercise.name;
   head.appendChild(name);
 
   const target = document.createElement("span");
@@ -879,77 +940,21 @@ function addExerciseSection(ctx, exercise, opts) {
 
   section.appendChild(head);
 
-  const muscles = resolveExerciseMuscles_(exercise.name, exerciseIndex_);
-  if (muscles.primary.length || muscles.secondary.length) {
-    const musclesEl = document.createElement("div");
-    musclesEl.className = "workout__exercise-muscles";
-    renderMuscleHighlight(musclesEl, muscles.primary, muscles.secondary);
-    if (!musclesEl.hidden) section.appendChild(musclesEl);
-  }
+  const musclesEl = buildExerciseMuscles_(exercise);
+  if (musclesEl) section.appendChild(musclesEl);
 
-  const hint = document.createElement("p");
-  hint.className = "workout__exercise-hint";
-  // With history, each set row shows its own "Last time" line, so this hint is only for the no-history cases.
-  hint.hidden = historyWeight !== null;
-  hint.textContent = historyWeight !== null
-    ? ""
-    : prefillWeight !== null
-      ? `Starting weight: ${formatWeight(prefillWeight)}kg`
-      : "New exercise — enter your starting weight";
-  section.appendChild(hint);
+  section.appendChild(buildExerciseHint_(sets));
 
-  // The coach's tip for this exercise, if there is one. Inserted as text, never
-  // as markup, so whatever was typed is shown exactly as written.
-  if (exercise.note) {
-    const tip = document.createElement("p");
-    tip.className = "workout__exercise-tip";
-    const tipLabel = document.createElement("span");
-    tipLabel.className = "workout__exercise-tip-label";
-    tipLabel.textContent = "Tip";
-    tip.appendChild(tipLabel);
-    tip.appendChild(document.createTextNode(exercise.note));
-    section.appendChild(tip);
-  }
+  if (exercise.note) section.appendChild(buildExerciseTip_(exercise.note));
 
   const setsWrap = document.createElement("div");
   setsWrap.className = "workout__sets";
+  sets.rows.forEach((row) => setsWrap.appendChild(row));
   section.appendChild(setsWrap);
 
-  let setCount = 0;
   function appendSetRow(addedByClient) {
-    setCount++;
-    let initial = null;
-
-    const saved = savedSets.get(setCount);
-    if (saved) {
-      const histForSaved = historySets && (historySets.get(setCount) || historySets.get(maxHistSetNumber));
-      initial = { weight: saved.weight, reps: saved.reps, saved: true, suggestion: false, last: histForSaved || null };
-    } else if (addedByClient && setsWrap.lastElementChild) {
-      // An extra set is most likely "same again" — start from the set above.
-      const above = rowValues(setsWrap.lastElementChild);
-      const histForExtra = historySets && (historySets.get(setCount) || historySets.get(maxHistSetNumber));
-      if (above.valid) initial = { weight: above.weight, reps: above.reps, saved: false, suggestion: true, last: histForExtra || null };
-    }
-    if (!initial) {
-      // Set-for-set against last session where possible (today's Set 2 gets
-      // last time's Set 2); a set beyond how many they did last time falls
-      // back to repeating the last set of that session rather than going in
-      // blind, since that's the closest known data point.
-      const hist = historySets && (historySets.get(setCount) || historySets.get(maxHistSetNumber));
-      initial = {
-        last: hist || null,
-        weight: hist ? hist.weight : prefillWeight,
-        reps: hist ? hist.reps : null,
-        saved: false,
-        suggestion: Boolean(hist),
-      };
-    }
-    setsWrap.appendChild(buildSetRow(exercise, setCount, initial, ctx.saveSet));
+    setsWrap.appendChild(sets.addRow(addedByClient));
   }
-
-  const maxSavedSetNumber = savedSets.size ? Math.max(...savedSets.keys()) : 0;
-  const initialRows = Math.max(exercise.sets, maxSavedSetNumber);
-  for (let i = 0; i < initialRows; i++) appendSetRow(false);
 
   const addSetBtn = document.createElement("button");
   addSetBtn.type = "button";
@@ -959,6 +964,248 @@ function addExerciseSection(ctx, exercise, opts) {
   section.appendChild(addSetBtn);
 
   ctx.sections.set(key, { section, name: exercise.name, addSet: () => appendSetRow(true) });
+  ctx.list.insertBefore(section, ctx.addExerciseWrap);
+  return section;
+}
+
+/** The set order for a superset: one set of each exercise per round; uneven counts finish their extra sets at the end of the last round. */
+function supersetOrder_(members) {
+  const rounds = Math.min(...members.map((m) => m.sets.rows.length));
+  const most = Math.max(...members.map((m) => m.sets.rows.length));
+  const order = [];
+  for (let setNumber = 1; setNumber <= most; setNumber++) {
+    members.forEach((member) => {
+      const row = member.sets.rows[setNumber - 1];
+      if (row) order.push({ member, row, setNumber, round: Math.min(setNumber, rounds), extra: setNumber > rounds });
+    });
+  }
+  return { rounds, order };
+}
+
+function supersetRestText_(seconds) {
+  return seconds >= 120 && seconds % 60 === 0 ? `${seconds / 60} min` : `${seconds}s`;
+}
+
+function scrollToSet_(el) {
+  const calm = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  el.scrollIntoView({ behavior: calm ? "auto" : "smooth", block: "start" });
+}
+
+/**
+ * A superset or circuit (2+ exercises the builder linked with "Superset with
+ * next"), logged in rounds: one set of A1, one of A2, rest, Round 2.
+ *
+ * Only the layout is different. Every set is the same row a normal exercise
+ * uses, saved through ctx.saveSet with the same exercise name and set number,
+ * so Logged Sets, history, progress and the muscle map see no difference.
+ * Rows in folded rounds stay on the page, just hidden, because ctx.collectSets
+ * reads saved sets from the page.
+ */
+function addSupersetSection(ctx, exercises, letter, savedByExercise, restSeconds) {
+  const word = exercises.length >= 3 ? "Circuit" : "Superset";
+  const section = document.createElement("section");
+  section.className = "workout__ss";
+  section.dataset.firstExercise = exercises[0].name;
+
+  const pill = document.createElement("span");
+  pill.className = "workout__superset-label workout__ss-pill";
+  pill.textContent = `${word} ${letter}`;
+  section.appendChild(pill);
+
+  const rule = document.createElement("p");
+  rule.className = "workout__ss-rule";
+  rule.textContent = `${word}: do these back to back, then rest ${supersetRestText_(restSeconds)}`;
+  section.appendChild(rule);
+
+  const members = exercises.map((exercise, i) => {
+    const member = { exercise, code: `${letter}${i + 1}` };
+    const saved = savedByExercise.get(exercise.name.toLowerCase());
+    member.sets = buildExerciseSets_(ctx, exercise, saved ? saved.sets : new Map(), (row) => onSave(row));
+    return member;
+  });
+
+  const letterBadge = (code) => {
+    const badge = document.createElement("span");
+    badge.className = "workout__ss-letter";
+    badge.textContent = code;
+    return badge;
+  };
+
+  const overview = document.createElement("div");
+  overview.className = "workout__ss-overview";
+  members.forEach((member) => {
+    const { exercise } = member;
+    const line = document.createElement("div");
+    line.className = "workout__ss-overview-line";
+    const name = document.createElement("span");
+    name.className = "workout__ss-overview-name";
+    name.textContent = exercise.name;
+    const target = document.createElement("span");
+    target.className = "workout__exercise-target";
+    target.textContent = exercise.reps ? `${exercise.sets} × ${exercise.reps}` : `${exercise.sets} ${exercise.sets === 1 ? "set" : "sets"}`;
+    line.append(letterBadge(member.code), name, target);
+    const block = document.createElement("div");
+    block.className = "workout__ss-overview-row";
+    block.appendChild(line);
+    const musclesEl = buildExerciseMuscles_(exercise);
+    if (musclesEl) block.appendChild(musclesEl);
+    block.appendChild(buildExerciseHint_(member.sets));
+    overview.appendChild(block);
+  });
+  section.appendChild(overview);
+
+  const roundsWrap = document.createElement("div");
+  roundsWrap.className = "workout__ss-rounds";
+  section.appendChild(roundsWrap);
+
+  const doneLine = document.createElement("p");
+  doneLine.className = "workout__ss-done";
+  doneLine.textContent = `${word} ${letter} done ✓`;
+  section.appendChild(doneLine);
+
+  const adds = document.createElement("div");
+  adds.className = "workout__ss-adds";
+  members.forEach((member) => {
+    const add = document.createElement("button");
+    add.type = "button";
+    add.className = "workout__add-set";
+    add.textContent = `+ ${member.code} set`;
+    add.setAttribute("aria-label", `Add a set of ${member.exercise.name}`);
+    add.addEventListener("click", () => addSet(member));
+    adds.appendChild(add);
+  });
+  section.appendChild(adds);
+
+  const firstUnsaved = (order) => order.find((item) => !item.row._saved) || null;
+  let openRound = 0;
+
+  function render() {
+    const { rounds, order } = supersetOrder_(members);
+    const now = firstUnsaved(order);
+    roundsWrap.replaceChildren();
+    for (let round = 1; round <= rounds; round++) {
+      const items = order.filter((item) => item.round === round);
+      const finished = items.every((item) => item.row._saved);
+
+      const fold = document.createElement("button");
+      fold.type = "button";
+      fold.className = "workout__ss-fold";
+      fold.classList.toggle("workout__ss-fold--done", finished);
+      fold.hidden = round === openRound;
+      const foldTitle = document.createElement("span");
+      foldTitle.className = "workout__ss-fold-title";
+      foldTitle.textContent = `Round ${round}${finished ? " ✓" : ""}`;
+      const foldSummary = document.createElement("span");
+      foldSummary.className = "workout__ss-fold-summary";
+      items.forEach((item) => {
+        const line = document.createElement("span");
+        const saved = item.row._saved;
+        line.textContent = saved
+          ? `${item.member.code} ${formatWeight(saved.weight)} kg × ${saved.reps}`
+          : `${item.member.code} ${item.extra ? "extra set" : `set ${item.setNumber}`}`;
+        foldSummary.appendChild(line);
+      });
+      fold.append(foldTitle, foldSummary);
+      fold.addEventListener("click", () => {
+        openRound = round;
+        render();
+        scrollToSet_(roundsWrap.querySelector(`[data-round="${round}"]`));
+      });
+      roundsWrap.appendChild(fold);
+
+      const body = document.createElement("div");
+      body.className = "workout__ss-round";
+      body.dataset.round = String(round);
+      body.hidden = round !== openRound;
+      const title = document.createElement("h3");
+      title.className = "workout__ss-round-title";
+      title.textContent = `Round ${round} of ${rounds}`;
+      body.appendChild(title);
+      items.forEach((item) => {
+        const isNow = item === now;
+        const wrap = document.createElement("div");
+        wrap.className = "workout__ss-item";
+        wrap.classList.toggle("workout__ss-item--now", isNow);
+        const head = document.createElement("div");
+        head.className = "workout__ss-item-head";
+        const name = document.createElement("h4");
+        name.className = "workout__ss-item-name";
+        name.textContent = `${isNow ? "Now: " : ""}${item.member.exercise.name}`;
+        head.append(letterBadge(item.member.code), name);
+        if (item.extra) {
+          const tag = document.createElement("span");
+          tag.className = "workout__ss-item-tag";
+          tag.textContent = "Extra set";
+          head.appendChild(tag);
+        }
+        wrap.appendChild(head);
+        if (isNow && item.member.exercise.note) wrap.appendChild(buildExerciseTip_(item.member.exercise.note));
+        wrap.appendChild(item.row);
+        body.appendChild(wrap);
+      });
+      roundsWrap.appendChild(body);
+    }
+    doneLine.hidden = Boolean(now);
+  }
+
+  function restFor(label) {
+    startRestTimer({ seconds: restSeconds, label });
+  }
+
+  function onSave(row) {
+    const wasSaved = Boolean(row._saved);
+    if (!ctx.saveSet(row, { noRest: true })) return;
+    if (wasSaved) {
+      render(); // fixing a number: stay put, no timer
+      return;
+    }
+    const { order } = supersetOrder_(members);
+    const saved = order.find((item) => item.row === row);
+    const nextHere = firstUnsaved(order.filter((item) => item.round === saved.round));
+    if (nextHere) {
+      // Still in this round. Changing exercise is back to back; another set of the same one gets a rest.
+      if (nextHere.member === saved.member) restFor("Rest, then extra set");
+      openRound = saved.round;
+      render();
+      scrollToSet_(roundsWrap.querySelector(".workout__ss-item--now") || roundsWrap);
+      return;
+    }
+    const next = firstUnsaved(order);
+    if (next) {
+      restFor(`Rest, then Round ${next.round}`);
+      openRound = next.round;
+      render();
+      scrollToSet_(roundsWrap.querySelector(`[data-round="${next.round}"]`));
+      return;
+    }
+    openRound = 0;
+    render();
+    const after = section.nextElementSibling;
+    const nextName = after && after.dataset.firstExercise;
+    if (nextName) {
+      restFor(nextName.length <= 16 ? `Rest, then ${nextName}` : "Rest, then next exercise");
+      scrollToSet_(after);
+    }
+  }
+
+  function addSet(member) {
+    member.sets.addRow(true);
+    const { order } = supersetOrder_(members);
+    const now = firstUnsaved(order);
+    if (now) openRound = now.round;
+    render();
+    const nowEl = roundsWrap.querySelector(".workout__ss-item--now");
+    if (nowEl) scrollToSet_(nowEl);
+  }
+
+  const startAt = firstUnsaved(supersetOrder_(members).order);
+  openRound = startAt ? startAt.round : 0;
+  render();
+
+  ctx.supersetRenders.push(render);
+  members.forEach((member) => {
+    ctx.sections.set(member.exercise.name.toLowerCase(), { section, name: member.exercise.name, addSet: () => addSet(member) });
+  });
   ctx.list.insertBefore(section, ctx.addExerciseWrap);
   return section;
 }
@@ -1122,6 +1369,7 @@ function buildLogSection(ctx) {
         unfinished++; // typed something but never gave it both a weight and reps
       }
     });
+    ctx.supersetRenders.forEach((redraw) => redraw());
 
     const previous = readDraft(ctx.draftKey);
     const draft = ctx.persist();
@@ -1223,6 +1471,7 @@ function renderWorkout(shared, workoutName, exercises) {
     addExerciseWrap: null,
     notesInput: null,
     sections: new Map(), // nameLower -> { section, name, addSet }
+    supersetRenders: [], // each superset panel's redraw, for when sets are saved from outside it
     draftKey: key,
     dateStr,
     isToday,
@@ -1236,11 +1485,14 @@ function renderWorkout(shared, workoutName, exercises) {
 
   /** Every set they've tapped Save on, in on-screen order — using the numbers as last saved, not whatever's typed in the box right now. */
   ctx.collectSets = () => {
-    const sets = [];
+    // Grouped by exercise, so a superset's rounds give the same order as any other exercise.
+    const byExercise = new Map();
     ctx.list.querySelectorAll(".workout__set").forEach((row) => {
-      if (row._saved) sets.push({ exercise: row.dataset.exercise, setNumber: Number(row.dataset.setNumber), weight: row._saved.weight, reps: row._saved.reps });
+      if (!row._saved) return;
+      if (!byExercise.has(row.dataset.exercise)) byExercise.set(row.dataset.exercise, []);
+      byExercise.get(row.dataset.exercise).push({ exercise: row.dataset.exercise, setNumber: Number(row.dataset.setNumber), weight: row._saved.weight, reps: row._saved.reps });
     });
-    return sets;
+    return Array.from(byExercise.values()).flat();
   };
 
   /**
@@ -1267,14 +1519,15 @@ function renderWorkout(shared, workoutName, exercises) {
     return next;
   };
 
-  ctx.saveSet = (row) => {
+  /** Returns whether it saved. A superset passes noRest and runs its own timer. */
+  ctx.saveSet = (row, options) => {
     const values = rowValues(row);
     if (!values.valid) {
       const needsWeight = !Number.isFinite(values.weight) || values.weight < 0;
       row.querySelector(needsWeight ? ".workout__weight" : ".workout__reps").classList.add("workout__field--invalid");
       setTimeout(() => row.querySelectorAll(".workout__field--invalid").forEach((el) => el.classList.remove("workout__field--invalid")), 1400);
       flashStatus(needsWeight ? "Add the weight first (0 for bodyweight)." : "Add the reps first.", true);
-      return;
+      return false;
     }
     row._saved = { weight: values.weight, reps: values.reps };
     refreshRowState(row);
@@ -1282,7 +1535,8 @@ function renderWorkout(shared, workoutName, exercises) {
     const after = ctx.persist();
     if (!before || !after || after.rev !== before.rev) els.done.hidden = true; // changed since it was logged — needs logging again
     ctx.updateSummary();
-    startRestTimer();
+    if (!(options && options.noRest)) startRestTimer();
+    return true;
   };
 
   els.list.appendChild(buildMuscleLoadSection(ctx));
@@ -1294,42 +1548,25 @@ function renderWorkout(shared, workoutName, exercises) {
   ctx.addExerciseWrap = buildAddExerciseControl(ctx, exerciseNameOptions || []);
   els.list.appendChild(ctx.addExerciseWrap);
 
-  // A chain's length (how many exercises are linked back-to-back, counting
-  // the starting one) decides its label: 2 reads as "Superset", 3+ reads as
-  // "Circuit" — same join mechanism either way, wording only.
-  const chainLengthFrom = (startIndex) => {
-    let n = 1;
-    let i = startIndex;
-    while (exercises[i] && exercises[i].superset) {
-      n++;
-      i++;
-    }
-    return n;
-  };
-
+  // Linked exercises become one superset panel. A "Y" with nothing after it
+  // links to nothing, so that exercise stays a normal one.
   const assignedKeys = new Set();
-  let chainIndex = 0; // this exercise's 1-based spot within its own chain; 0 outside any chain
-  exercises.forEach((exercise, i) => {
-    const lower = exercise.name.toLowerCase();
-    assignedKeys.add(lower);
-    const saved = savedByExercise.get(lower);
-    const prevLinksHere = i > 0 && exercises[i - 1].superset;
-    const inSuperset = Boolean(exercise.superset || prevLinksHere);
-    const isChainStart = Boolean(exercise.superset && !prevLinksHere); // first exercise of the chain only
-    const isChainEnd = inSuperset && !exercise.superset; // last exercise of the chain only
-    chainIndex = inSuperset ? (prevLinksHere ? chainIndex + 1 : 1) : 0;
-    addExerciseSection(ctx, exercise, {
-      isExtra: false,
-      savedSets: saved ? saved.sets : null,
-      inSuperset,
-      isChainStart,
-      isChainEnd,
-      chainIndex,
-      linksToNext: Boolean(exercise.superset),
-      supersetLabel: isChainStart,
-      chainLength: isChainStart ? chainLengthFrom(i) : 0,
-    });
-  });
+  let supersetCount = 0;
+  for (let i = 0; i < exercises.length; ) {
+    let last = i;
+    while (exercises[last].superset && exercises[last + 1]) last++;
+    const chain = exercises.slice(i, last + 1);
+    chain.forEach((exercise) => assignedKeys.add(exercise.name.toLowerCase()));
+    if (chain.length > 1) {
+      const rest = chain.map((exercise) => exercise.supersetRest).find((seconds) => seconds >= 15 && seconds <= 600) || 90;
+      addSupersetSection(ctx, chain, String.fromCharCode(65 + supersetCount % 26), savedByExercise, rest);
+      supersetCount++;
+    } else {
+      const saved = savedByExercise.get(chain[0].name.toLowerCase());
+      addExerciseSection(ctx, chain[0], { isExtra: false, savedSets: saved ? saved.sets : null });
+    }
+    i = last + 1;
+  }
 
   // Extras they'd saved earlier TODAY come back with the rest of today's
   // session. (Nothing from a previous workout carries over — those live in
@@ -1565,6 +1802,7 @@ async function init() {
         note: workout.col.notes >= 0 ? String(r[workout.col.notes] || "").trim() : "",
         workoutNote: workout.col.workoutNotes >= 0 ? String(r[workout.col.workoutNotes] || "").trim() : "",
         superset: workout.col.superset >= 0 && String(r[workout.col.superset] || "").trim().toUpperCase() === "Y",
+        supersetRest: workout.col.supersetRest >= 0 ? Number(r[workout.col.supersetRest]) : NaN,
       }))
       .filter((ex) => ex.name && ex.sets > 0);
 
