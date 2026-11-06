@@ -88,7 +88,7 @@ const WeekCard = (function () {
   const WHY_IDEAS = ["keep up with my grandkids", "feel better in my clothes", "stay independent", "sleep better"];
   const SECTION_WORD = { "Legs & Hips": "legs", Chest: "chest", Back: "back", Arms: "arms", Shoulders: "shoulders", Core: "core" };
   const SNOOZE_KEY = "maxfitGoalSnoozed";
-  const MUSCLE_MAP_SRC = "muscle-map.js?v=20261013b";
+  const MUSCLE_MAP_SRC = "muscle-map.js?v=20261107b";
 
   let slug = "";
   let mount = null;
@@ -120,6 +120,13 @@ const WeekCard = (function () {
     const { rows, col } = await fetchLoggedSets(slug);
     sets = rows
       .filter((r) => String(r[col.client] || "").trim().toLowerCase() === slug)
+      // Boxing rounds (client-run or pads) never count toward kg moved, the
+      // week's workout/set tally or a new personal best — they're always
+      // 0kg/0reps anyway, but skip them explicitly rather than rely on that.
+      .filter((r) => {
+        const t = col.type >= 0 ? String(r[col.type] || "").trim().toLowerCase() : "";
+        return t !== "round" && t !== "pads";
+      })
       .map((r) => ({ date: ymd(r[col.date]), exercise: String(r[col.exercise] || "").trim(), kg: Number(r[col.weight]) || 0, reps: Number(r[col.reps]) || 0 }))
       .filter((s) => s.date && s.exercise);
   }

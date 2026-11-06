@@ -21,6 +21,8 @@
 <ol id="results"></ol>
 
 <script src="../muscle-map.js"></script>
+<script>const APPS_SCRIPT_URL = "https://stub.invalid/exec"; function fetchExercises() { return Promise.resolve({ rows: [], col: {} }); }</script>
+<script src="../../workout/exercise-picker.js"></script>
 <script>
   /*
    * Checks on card/muscle-map.js: the muscle key/colour tables stay in
@@ -59,7 +61,7 @@
     const uniqueKeys = Array.from(new Set(shapeKeys));
     truthy(`${view}: has at least one muscle group`, uniqueKeys.length > 0);
     uniqueKeys.forEach((key) => {
-      truthy(`${view}: shape key "${key}" is a known muscle`, KEYS.includes(key));
+      truthy(`${view}: shape key "${key}" is a known muscle`, KEYS.includes(key) || isRealFineKey_(key));
     });
 
     paintMuscleFigure(svg, [uniqueKeys[0]], uniqueKeys[1] ? [uniqueKeys[1]] : []);
@@ -78,7 +80,47 @@
   // nothing outside the 14 should ever appear).
   wrap.innerHTML = muscleFigureSvg("front", "t_f2") + muscleFigureSvg("back", "t_b2");
   const allShapeKeys = Array.from(new Set(Array.from(wrap.querySelectorAll("[data-muscle]")).map((g) => g.getAttribute("data-muscle"))));
-  eq("front+back together cover every MUSCLE_KEYS entry", allShapeKeys.sort(), KEYS.slice().sort());
+  // (The figure is v2 now: shapes carry fine keys, and the broad MUSCLE_KEYS entry is their data-group.)
+  const allShapeGroups = new Set(Array.from(wrap.querySelectorAll("[data-muscle]")).flatMap((g) => [g.getAttribute("data-muscle"), g.getAttribute("data-group")]));
+  eq("front+back together cover every MUSCLE_KEYS entry", KEYS.filter((k) => !allShapeGroups.has(k)), []);
+
+  // --- every muscle shape is tappable, named and counted (2026-11-07) ----
+  // Each data-muscle shape on both figures maps to a chip in the "What does
+  // it work?" list (the same mapping the tap step uses), and has a label and
+  // a screen-reader name. Every chip's key resolves to a muscle group the
+  // heatmap and the effective-sets engine already know.
+  const chooserKeys = new Set(MUSCLE_CHOOSER_.flatMap((sec) => sec.muscles.map((m) => m[0])));
+  ["front", "back"].forEach((view) => {
+    wrap.innerHTML = muscleFigureSvg(view, "t_tap_" + view);
+    wrap.querySelectorAll("[data-muscle]").forEach((shape) => {
+      const id = shape.id || shape.getAttribute("data-muscle");
+      const chip = ExercisePicker.muscleKeyForShape(shape);
+      truthy(`${view}: ${id} maps to a muscle chip`, chip && chooserKeys.has(chip));
+      truthy(`${view}: ${id} has a readable name`, muscleLabel_(shape.getAttribute("data-muscle")) !== shape.getAttribute("data-muscle"));
+      truthy(`${view}: ${id} has an aria-label`, shape.getAttribute("aria-label"));
+    });
+  });
+  MUSCLE_CHOOSER_.forEach((sec) =>
+    sec.muscles.forEach(([key, label]) => {
+      truthy(`chip ${key} is a real muscle key`, MUSCLE_KEYS[key] || MUSCLE_FINE_LABELS_[key]);
+      truthy(`chip ${key} has a label`, label && label.length > 1);
+      truthy(`chip ${key} sits in a Muscles-tab group`, MUSCLE_UI_GROUPS_.includes(muscleUiGroupOf_(key)));
+    })
+  );
+  eq("rhomboids, rotator cuff and teres sit under Back", ["rhomboids", "infraspinatus", "teres-minor", "teres-major"].map(muscleUiGroupOf_), ["Back", "Back", "Back", "Back"]);
+  eq("serratus under Chest, shins under Legs & Hips, neck under Other", [muscleUiGroupOf_("serratus"), muscleUiGroupOf_("tibialis-anterior"), muscleUiGroupOf_("sternocleidomastoid")], ["Chest", "Legs & Hips", "Other"]);
+  const eff = effectiveSetsPerSet_({ primary: ["rhomboids", "infraspinatus"], secondary: ["sternocleidomastoid"], muscleWeights: "" });
+  truthy("rhomboids, infraspinatus and neck all get credit in the engine", eff.rhomboids > 0 && eff.infraspinatus > 0 && eff.sternocleidomastoid > 0);
+  // The tendon-layer shapes that look like muscles now belong to one.
+  wrap.innerHTML = muscleFigureSvg("back", "t_tendon");
+  eq("lower-back triangles light as Lower Back", wrap.querySelectorAll('#b-lowerback-fascia-l,#b-lowerback-fascia-r').length, 2);
+  paintMuscleFigure(wrap.querySelector("svg"), ["erector-spinae"], ["tfl", "triceps-long"]);
+  eq("lower-back triangle painted primary", wrap.querySelector("#b-lowerback-fascia-l").getAttribute("fill"), MUSCLE_PRIMARY_COLOR);
+  eq("IT-band strip painted secondary as TFL", wrap.querySelector("#b-itband-r").getAttribute("fill"), MUSCLE_SECONDARY_COLOR);
+  eq("back-of-elbow shape painted secondary as Triceps", wrap.querySelector("#b-elbow-triceps-l").getAttribute("fill"), MUSCLE_SECONDARY_COLOR);
+  wrap.innerHTML = muscleFigureSvg("front", "t_peroneus");
+  paintMuscleFigure(wrap.querySelector("svg"), ["tibialis-anterior"], []);
+  eq("peroneus lights with the Shins chip", wrap.querySelector("#f-peroneus-r").getAttribute("fill"), MUSCLE_PRIMARY_COLOR);
 
   // --- renderMuscleHighlight (the chip row) ------------------------------
   const chipBox = document.createElement("div");

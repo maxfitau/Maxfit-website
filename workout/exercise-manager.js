@@ -147,6 +147,7 @@
     '<aside class="exm__side" aria-label="Muscles it works">' +
     '<div class="exm__side-head"><span class="card__label">Muscles it works</span><span class="exm__side-sub" id="exmSideSub"></span></div>' +
     `<div class="exm__figs" id="exmFigs"><div class="exm__fig-col">${muscleFigureSvg("front", "exmFrontTitle")}<span class="exm__fig-caption">Front</span></div><div class="exm__fig-col">${muscleFigureSvg("back", "exmBackTitle")}<span class="exm__fig-caption">Back</span></div></div>` +
+    '<p class="exercise-picker__muscle-now" id="exmNow" role="status" aria-live="polite"></p>' +
     legendHtml +
     '<p class="exm__summary" id="exmSummary"></p>' +
     "</aside>" +
@@ -179,6 +180,7 @@
     error: $("exmError"),
     success: $("exmSuccess"),
     figs: $("exmFigs"),
+    now: $("exmNow"),
     summary: $("exmSummary"),
     sideSub: $("exmSideSub"),
     libCount: $("exmLibCount"),
@@ -410,6 +412,8 @@
     if (now === "main") state.muscles[key] = "helps";
     else if (now === "helps") delete state.muscles[key];
     else state.muscles[key] = "main";
+    // Name what was just tapped and what it is now, under the figure.
+    els.now.textContent = `${labelFor(key)} — ${state.muscles[key] === "main" ? "main muscle" : state.muscles[key] === "helps" ? "helps" : "cleared"}`;
     clearMessages();
     update();
   }

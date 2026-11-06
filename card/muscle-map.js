@@ -48,7 +48,7 @@ const MUSCLE_PRIMARY_COLOR = "#ff2a1f";
 const MUSCLE_SECONDARY_COLOR = "#b3b3b3";
 const MUSCLE_UNUSED_COLOR = "#3c3c3c"; // a muscle key that exists, but isn't part of this exercise
 const MUSCLE_BASE_COLOR = "#2a2a2a"; // head, neck, hands, feet — never individually highlighted
-const MUSCLE_TENDON_COLOR = "#333333"; // tendons/bony landmarks (v2 figure only) — between base and unused
+const MUSCLE_TENDON_COLOR = "#555555"; // tendons/bony landmarks (v2 figure only) — flat and lighter than any muscle, no outline, so they read as sinew not muscle
 const MUSCLE_GAP_STROKE_COLOR = "#141414"; // outline between adjoining muscles, dark-card version
 
 // Display names for the v2 fine keys (maxfit-muscle-keys.json) — used for
@@ -59,14 +59,14 @@ const MUSCLE_GAP_STROKE_COLOR = "#141414"; // outline between adjoining muscles,
 // on purpose — "lats" is both a fine key and its own group, and already
 // has a label via MUSCLE_KEYS.
 const MUSCLE_FINE_LABELS_ = {
-  sternocleidomastoid: "Sternocleidomastoid",
+  sternocleidomastoid: "Neck",
   "traps-upper": "Upper Traps",
   "delts-front": "Front Delt",
   "delts-side": "Side Delt",
   "chest-upper": "Upper Chest",
   "chest-mid": "Mid Chest",
   "chest-lower": "Lower Chest",
-  serratus: "Serratus Anterior",
+  serratus: "Serratus",
   "obliques-external": "External Obliques",
   "abs-upper": "Upper Abs",
   "abs-mid": "Mid Abs",
@@ -90,7 +90,7 @@ const MUSCLE_FINE_LABELS_ = {
   "vastus-lateralis": "Vastus Lateralis",
   "adductor-longus": "Adductor Longus",
   gracilis: "Gracilis",
-  "tibialis-anterior": "Tibialis Anterior",
+  "tibialis-anterior": "Shins",
   peroneus: "Peroneus Longus",
   "calves-soleus": "Soleus",
   "calves-gastroc-medial": "Gastrocnemius (Medial)",
@@ -98,8 +98,8 @@ const MUSCLE_FINE_LABELS_ = {
   "traps-lower": "Lower Traps",
   rhomboids: "Rhomboids",
   "delts-rear": "Rear Delt",
-  infraspinatus: "Infraspinatus",
-  "teres-minor": "Teres Minor",
+  infraspinatus: "Infraspinatus (Rotator Cuff)",
+  "teres-minor": "Teres Minor (Rotator Cuff)",
   "teres-major": "Teres Major",
   "triceps-medial": "Triceps (Medial Head)",
   "forearm-extensors": "Forearm Extensors",
@@ -140,7 +140,7 @@ const MUSCLE_UI_GROUP_OF_ = {
   // side and rear delt stay 3 separate rows (Max's own earlier request),
   // not re-merged here.
   "delts-front": "Shoulders", "delts-side": "Shoulders", "delts-rear": "Shoulders", delts: "Shoulders",
-  infraspinatus: "Shoulders", "teres-minor": "Shoulders", "teres-major": "Shoulders", rotatorcuff: "Shoulders", teres: "Shoulders",
+  // (Rotator cuff and teres moved to Back 2026-11-07: they are back muscles on the figure.)
 
   // Arms — Biceps/Triceps/Forearms, exactly as Max listed.
   "biceps-long": "Arms", "biceps-short": "Arms", biceps: "Arms", brachialis: "Arms", brachioradialis: "Arms",
@@ -153,7 +153,11 @@ const MUSCLE_UI_GROUP_OF_ = {
   // (flagged for him, not a definite final call).
   lats: "Back", "traps-upper": "Back", "traps-mid": "Back", "traps-lower": "Back", traps: "Back",
   rhomboids: "Back", "erector-spinae": "Back", lowerback: "Back",
-  sternocleidomastoid: "Back", neck: "Back",
+  infraspinatus: "Back", "teres-minor": "Back", "teres-major": "Back", rotatorcuff: "Back", teres: "Back",
+
+  // Other — the neck (sternocleidomastoid) has no section of its own in
+  // Max's list; since 2026-11-07 it sits under Other, not Back.
+  sternocleidomastoid: "Other", neck: "Other",
 
   // Core — Abs (merged to Rectus Abdominis, see abs-rectus above) + obliques.
   // No real TVA key exists anywhere in the data yet, so it's left out
@@ -212,15 +216,19 @@ MUSCLE_FAMILIES_.forEach((f) => f.keys.forEach((k) => (MUSCLE_FAMILY_OF_[k] = f)
 
 // What the builder offers when Max adds his own exercise and picks the
 // muscles it works (2026-10-10). Whole muscles, not heads, except the
-// three delts, which he keeps apart. Each key lights its whole muscle on
+// three delts, which he keeps apart. Since 2026-11-07 every muscle shape on
+// the figure has a chip here (rhomboids, rotator cuff, teres, serratus,
+// shins, neck) so none can be seen but not tapped; peroneus shares the
+// Shins chip (MUSCLE_SHAPE_ALIAS_). Each key lights its whole muscle on
 // the figure and counts for it in the effective-sets engine.
 const MUSCLE_CHOOSER_ = [
-  { section: "Chest", muscles: [["chest", "Chest"]] },
+  { section: "Chest", muscles: [["chest", "Chest"], ["serratus", "Serratus"]] },
   { section: "Shoulders", muscles: [["delts-front", "Front Delts"], ["delts-side", "Side Delts"], ["delts-rear", "Rear Delts"]] },
   { section: "Arms", muscles: [["biceps", "Biceps"], ["triceps", "Triceps"], ["forearms", "Forearms"]] },
-  { section: "Back", muscles: [["lats", "Lats"], ["traps", "Traps"], ["erector-spinae", "Lower Back"]] },
+  { section: "Back", muscles: [["lats", "Lats"], ["traps", "Traps"], ["erector-spinae", "Lower Back"], ["rhomboids", "Rhomboids"], ["infraspinatus", "Infraspinatus (Rotator Cuff)"], ["teres-minor", "Teres Minor (Rotator Cuff)"], ["teres-major", "Teres Major"]] },
   { section: "Core", muscles: [["abs", "Abs"], ["obliques", "Obliques"]] },
-  { section: "Legs & Hips", muscles: [["quads", "Quads"], ["hamstrings", "Hamstrings"], ["glutes", "Glutes"], ["calves", "Calves"], ["hip-flexors", "Hip Flexors"], ["adductors", "Adductors"]] },
+  { section: "Legs & Hips", muscles: [["quads", "Quads"], ["hamstrings", "Hamstrings"], ["glutes", "Glutes"], ["calves", "Calves"], ["hip-flexors", "Hip Flexors"], ["adductors", "Adductors"], ["tibialis-anterior", "Shins"]] },
+  { section: "Other", muscles: [["sternocleidomastoid", "Neck"]] },
 ];
 
 /** "Quads" for "vastus-medialis"; an unlisted key is its own muscle. */
@@ -881,7 +889,7 @@ const MUSCLE_FRONT_SVG_RAW_ = `
     </g>
   </g>
   <!-- ===== Tendons, fascia & bony landmarks (non-interactive) ===== -->
-  <g class="tendons" fill="#e0ddd7" stroke="#ffffff" stroke-width="0.8" stroke-linejoin="round" pointer-events="none">
+  <g class="tendons" fill="#e0ddd7" stroke="none" pointer-events="none">
     <!-- Linea alba -->
     <path class="tendon" d="M98.6 125.4 Q100 124.6 101.4 125.4 L101.4 177.4 Q100 177 98.6 177.4 Z M98.6 180.6 Q100 181 101.4 180.6 L101.2 228.8 Q100 230 98.8 228.8 Z"/>
     <!-- Navel -->
@@ -1173,23 +1181,23 @@ const MUSCLE_BACK_SVG_RAW_ = `
     </g>
   </g>
   <!-- ===== Tendons, fascia & bony landmarks (non-interactive) ===== -->
-  <g class="tendons" fill="#e0ddd7" stroke="#ffffff" stroke-width="0.8" stroke-linejoin="round" pointer-events="none">
+  <g class="tendons" fill="#e0ddd7" stroke="none" pointer-events="none">
     <!-- Spine line (spinous processes / nuchal ligament) -->
     <path class="tendon" d="M99.2 50 Q100 49.4 100.8 50 L100.8 216.6 Q100 217.4 99.2 216.6 Z"/>
     <!-- Trapezius tendinous diamond at C7 -->
     <path class="tendon" d="M98.8 82.8 Q100 81.6 101.2 82.8 L101.2 84.6 Q100 86 98.8 84.6 Z"/>
     <!-- Thoracolumbar fascia (where the lats attach) -->
-    <path class="tendon" d="M94 145.8 C88.4 160 81.8 180 76.6 196.8 Q77.2 199.2 78.2 199.8 C82 201.2 85.4 204.6 87.8 208.8 Q87.6 205 87.8 202 C87.8 193 88.6 183 90.2 172 C91.4 163 92.6 154 94 145.8 Z"/>
-    <path class="tendon" d="M106 145.8 C111.6 160 118.2 180 123.4 196.8 Q122.8 199.2 121.8 199.8 C118 201.2 114.6 204.6 112.2 208.8 Q112.4 205 112.2 202 C112.2 193 111.4 183 109.8 172 C108.6 163 107.4 154 106 145.8 Z"/>
+    <path id="b-lowerback-fascia-l" class="tendon muscle" fill="#d9d6d0" data-muscle="erector-spinae" data-group="lowerback" data-side="left" pointer-events="auto" stroke="#ffffff" stroke-width="0.8" stroke-linejoin="round" d="M94 145.8 C88.4 160 81.8 180 76.6 196.8 Q77.2 199.2 78.2 199.8 C82 201.2 85.4 204.6 87.8 208.8 Q87.6 205 87.8 202 C87.8 193 88.6 183 90.2 172 C91.4 163 92.6 154 94 145.8 Z"/>
+    <path id="b-lowerback-fascia-r" class="tendon muscle" fill="#d9d6d0" data-muscle="erector-spinae" data-group="lowerback" data-side="right" pointer-events="auto" stroke="#ffffff" stroke-width="0.8" stroke-linejoin="round" d="M106 145.8 C111.6 160 118.2 180 123.4 196.8 Q122.8 199.2 121.8 199.8 C118 201.2 114.6 204.6 112.2 208.8 Q112.4 205 112.2 202 C112.2 193 111.4 183 109.8 172 C108.6 163 107.4 154 106 145.8 Z"/>
     <!-- Sacral fascia -->
     <path class="tendon" d="M89.8 214 Q94 217 98.8 216.8 L98.8 218 Q94.4 218 90 216.4 Z"/>
     <path class="tendon" d="M110.2 214 Q106 217 101.2 216.8 L101.2 218 Q105.6 218 110 216.4 Z"/>
     <!-- Triceps tendon -->
-    <path class="tendon" d="M54.4 140.2 C55.8 139.8 57 140.6 57.6 142.2 C57.8 149 56.8 156 54.6 162.4 Q52.6 163.8 51.2 162.8 C52.2 155 53 147.4 54.4 140.2 Z"/>
-    <path class="tendon" d="M145.6 140.2 C144.2 139.8 143 140.6 142.4 142.2 C142.2 149 143.2 156 145.4 162.4 Q147.4 163.8 148.8 162.8 C147.8 155 147 147.4 145.6 140.2 Z"/>
+    <path id="b-elbow-triceps-l" class="tendon muscle" fill="#d9d6d0" data-muscle="triceps-long" data-group="triceps" data-side="left" pointer-events="auto" stroke="#ffffff" stroke-width="0.8" stroke-linejoin="round" d="M54.4 140.2 C55.8 139.8 57 140.6 57.6 142.2 C57.8 149 56.8 156 54.6 162.4 Q52.6 163.8 51.2 162.8 C52.2 155 53 147.4 54.4 140.2 Z"/>
+    <path id="b-elbow-triceps-r" class="tendon muscle" fill="#d9d6d0" data-muscle="triceps-long" data-group="triceps" data-side="right" pointer-events="auto" stroke="#ffffff" stroke-width="0.8" stroke-linejoin="round" d="M145.6 140.2 C144.2 139.8 143 140.6 142.4 142.2 C142.2 149 143.2 156 145.4 162.4 Q147.4 163.8 148.8 162.8 C147.8 155 147 147.4 145.6 140.2 Z"/>
     <!-- Iliotibial band (ITB) -->
-    <path class="tendon" d="M64.2 236.8 C65.4 241.8 66.8 245.4 68.8 248.8 C68.6 256 68 264 68.6 272 C69.4 286 71.4 300 74 318.8 Q73 321.6 71.4 321 C70.8 312 68.4 302 66.6 290 C64.4 276 63.8 262 63.8 248 C63.8 243 63.9 239.6 64.2 236.8 Z"/>
-    <path class="tendon" d="M135.8 236.8 C134.6 241.8 133.2 245.4 131.2 248.8 C131.4 256 132 264 131.4 272 C130.6 286 128.6 300 126 318.8 Q127 321.6 128.6 321 C129.2 312 131.6 302 133.4 290 C135.6 276 136.2 262 136.2 248 C136.2 243 136.1 239.6 135.8 236.8 Z"/>
+    <path id="b-itband-l" class="tendon muscle" fill="#d9d6d0" data-muscle="tfl" data-group="hipflexors" data-side="left" pointer-events="auto" stroke="#ffffff" stroke-width="0.8" stroke-linejoin="round" d="M64.2 236.8 C65.4 241.8 66.8 245.4 68.8 248.8 C68.6 256 68 264 68.6 272 C69.4 286 71.4 300 74 318.8 Q73 321.6 71.4 321 C70.8 312 68.4 302 66.6 290 C64.4 276 63.8 262 63.8 248 C63.8 243 63.9 239.6 64.2 236.8 Z"/>
+    <path id="b-itband-r" class="tendon muscle" fill="#d9d6d0" data-muscle="tfl" data-group="hipflexors" data-side="right" pointer-events="auto" stroke="#ffffff" stroke-width="0.8" stroke-linejoin="round" d="M135.8 236.8 C134.6 241.8 133.2 245.4 131.2 248.8 C131.4 256 132 264 131.4 272 C130.6 286 128.6 300 126 318.8 Q127 321.6 128.6 321 C129.2 312 131.6 302 133.4 290 C135.6 276 136.2 262 136.2 248 C136.2 243 136.1 239.6 135.8 236.8 Z"/>
     <!-- Achilles tendon -->
     <path class="tendon" d="M81.6 377.6 Q82.8 379.8 84 382.4 C83.8 392 83.8 404 84.4 418 Q83 420.8 81.4 419.6 C81.6 406 81.4 394 80.8 384 Q80.8 380.4 81.6 377.6 Z"/>
     <path class="tendon" d="M118.4 377.6 Q117.2 379.8 116 382.4 C116.2 392 116.2 404 115.6 418 Q117 420.8 118.6 419.6 C118.4 406 118.6 394 119.2 384 Q119.2 380.4 118.4 377.6 Z"/>
@@ -1329,8 +1337,17 @@ function muscleRecolourForDarkCard_(svgMarkup) {
     .split("#ffffff").join(MUSCLE_GAP_STROKE_COLOR);
 }
 
-const MUSCLE_FRONT_SVG_ = muscleRecolourForDarkCard_(MUSCLE_FRONT_SVG_RAW_);
-const MUSCLE_BACK_SVG_ = muscleRecolourForDarkCard_(MUSCLE_BACK_SVG_RAW_);
+/**
+ * Gives every muscle shape a screen-reader name (aria-label, from
+ * muscleLabel_), so a shape that can be tapped can also be announced
+ * (2026-11-07). Done once on the markup string, not per paint.
+ */
+function muscleNameShapes_(svgMarkup) {
+  return svgMarkup.replace(/<path\b[^>]*\bdata-muscle="([^"]+)"/g, (m, key) => `${m} aria-label="${muscleLabel_(key)}"`);
+}
+
+const MUSCLE_FRONT_SVG_ = muscleNameShapes_(muscleRecolourForDarkCard_(MUSCLE_FRONT_SVG_RAW_));
+const MUSCLE_BACK_SVG_ = muscleNameShapes_(muscleRecolourForDarkCard_(MUSCLE_BACK_SVG_RAW_));
 
 /**
  * The front or back figure as inline SVG markup (a string, not yet in the
@@ -1364,9 +1381,20 @@ function muscleCropSvg(view, viewBox, keys) {
 }
 
 /** Paints a muscleCropSvg() once it's in the DOM — keys lit up, everything else nearly gone. */
+/**
+ * A few small shapes belong to another muscle's chip (2026-11-07): the
+ * peroneus has no chip of its own and counts as Shins (tibialis-anterior).
+ * Shape-level only: the shape keeps its own data-muscle key.
+ */
+const MUSCLE_SHAPE_ALIAS_ = { peroneus: "tibialis-anterior" };
+function muscleShapeKey_(el) {
+  const k = el.getAttribute("data-muscle");
+  return MUSCLE_SHAPE_ALIAS_[k] || k;
+}
+
 /** A shape matches `keys` if EITHER its fine key (data-muscle, e.g. "chest-upper") or its broad one (data-group, e.g. "chest") is listed — so exercise data can mix fine and broad keys freely (see EXERCISE_MUSCLE_DATA_'s header comment in Code.gs) and both still paint correctly. */
 function muscleShapeMatches_(el, keys) {
-  return keys.includes(el.getAttribute("data-muscle")) || keys.includes(el.getAttribute("data-group"));
+  return keys.includes(el.getAttribute("data-muscle")) || keys.includes(muscleShapeKey_(el)) || keys.includes(el.getAttribute("data-group"));
 }
 
 function paintMuscleCrop(svgRoot) {
@@ -1426,7 +1454,11 @@ function paintMuscleHeat(svgRoot, weighted) {
   // "chest", from an exercise whose data never got the v2 upgrade) — the
   // broad hit applies to every sub-region of that muscle, same as it
   // would've painted the whole muscle before v2 existed.
-  const values = shapes.map((g) => ((weighted && weighted[g.getAttribute("data-muscle")]) || 0) + ((weighted && weighted[g.getAttribute("data-group")]) || 0));
+  const values = shapes.map((g) => {
+    const own = g.getAttribute("data-muscle");
+    const alias = muscleShapeKey_(g);
+    return ((weighted && weighted[own]) || 0) + (alias !== own ? (weighted && weighted[alias]) || 0 : 0) + ((weighted && weighted[g.getAttribute("data-group")]) || 0);
+  });
   const max = Math.max(0, ...values);
   shapes.forEach((g, i) => {
     g.setAttribute("fill", values[i] > 0 && max > 0 ? muscleHeatColor_(0.35 + 0.65 * (values[i] / max)) : MUSCLE_UNUSED_COLOR);
@@ -1466,7 +1498,9 @@ function paintMuscleHeatWeek_(svgRoot, weighted) {
   // no data at all. Adding the two double-counts whenever a Conditioning
   // exercise also logs the bare group name (found 2026-10-09).
   const valueOf = (g) => {
-    const key = muscleAbsDisplayKey_(g.getAttribute("data-muscle"));
+    const has = (k) => weighted && Object.prototype.hasOwnProperty.call(weighted, k);
+    let key = muscleAbsDisplayKey_(muscleShapeKey_(g));
+    if (!has(key)) key = muscleAbsDisplayKey_(g.getAttribute("data-muscle"));
     const groupKey = g.getAttribute("data-group");
     return weighted && Object.prototype.hasOwnProperty.call(weighted, key) ? weighted[key] : (weighted && weighted[groupKey]) || 0;
   };
@@ -1572,7 +1606,7 @@ function wireMuscleTooltips_(svgRoot, contentForKey, onSelect) {
   if (!svgRoot) return;
   const canHover = typeof window.matchMedia === "function" && window.matchMedia("(hover: hover)").matches;
   svgRoot.querySelectorAll("[data-muscle]").forEach((shape) => {
-    const rawKey = shape.getAttribute("data-muscle");
+    const rawKey = muscleShapeKey_(shape);
     // Only wired shapes get the pointer cursor — the static Anatomy Lab
     // detail figure (showLibDetail, workout/library.js) uses the same
     // .muscle-figure class without calling this, and isn't tappable.

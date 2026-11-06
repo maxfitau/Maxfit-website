@@ -321,6 +321,17 @@
   cursor: pointer;
 }
 
+/* The line under the figure naming the muscle just tapped and what it is now (2026-11-07). */
+.exercise-picker__muscle-now {
+  min-height: 24px;
+  margin: 6px 0;
+  text-align: center;
+  font-family: var(--font-body);
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+}
+
 .exercise-picker__muscle-legend {
   display: flex;
   align-items: center;
