@@ -13,8 +13,13 @@
  *  - The library: every exercise in the Exercises tab, searchable, with a
  *    "Needs muscles" filter. Tapping one that has no muscles opens it for
  *    filling in (the backend fills blanks only); tapping one that has them
- *    shows them on the figure, read-only. The backend never changes muscles an
- *    exercise already has, so editing those is still done in the sheet.
+ *    shows them on the figure, with a "Change muscles" button.
+ *  - Changing one (2026-11-06, Max: "you should be able to override this"):
+ *    "Change muscles", or typing the name of one that already has muscles,
+ *    saves with overwrite: true, which needs the staff PIN and replaces its
+ *    Movement, Body Part and muscles (never its name). It needs Code.gs
+ *    2026-11-06a or later; an older backend ignores the flag, and the reply's
+ *    missing `overwritten` says so.
  *
  * After a save it forgets the cached Exercises tab and fires
  * "maxfit:exercises-changed", which builder.js and exercise-picker.js listen
@@ -47,7 +52,7 @@
   const INTRO_NEW = "Make a new exercise and choose which muscles it works. It shows up in the exercise picker for every workout straight away.";
 
   const state = {
-    mode: "new", // "new": making one; "fill": adding muscles to one that has none; "view": looking at one that has them
+    mode: "new", // "new": making one; "fill": adding muscles to one that has none; "view": looking at one that has them; "edit": changing one that has them
     name: "",
     movement: "",
     bodyPart: "",
@@ -57,6 +62,8 @@
     query: "",
     current: null, // the library exercise being viewed or filled in
     saving: false,
+    pinNeeded: false, // the server said the PIN was wrong: ask for it here
+    extraKeys: [], // muscles the exercise being changed has that the list above doesn't offer (e.g. "infraspinatus")
   };
 
   // Exercises saved this visit, merged into the library if its first load was
@@ -110,7 +117,14 @@
     '<div class="builder__field">' +
     '<span class="card__label">Which muscles does it work?</span>' +
     '<p class="exm__hint">Tap a muscle once if it is the main one, twice if it only helps, a third time to clear. You can tap the body too.</p>' +
-    `<div class="exm__muscles">${muscleSectionsHtml}</div>` +
+    `<div class="exm__muscles">${muscleSectionsHtml}` +
+    '<div id="exmExtraBox" hidden><p class="exercise-picker__muscle-section">Also on this exercise</p><div class="exercise-picker__muscle-chips" id="exmExtra"></div></div>' +
+    "</div>" +
+    "</div>" +
+    '<div class="builder__field" id="exmPinRow" hidden>' +
+    '<label class="card__label" for="exmPin">Staff PIN</label>' +
+    '<input class="picker__input exm__pin" id="exmPin" type="tel" inputmode="numeric" autocomplete="off" placeholder="····" />' +
+    '<p class="exm__hint">Changing an exercise needs your PIN. This device remembers it after.</p>' +
     "</div>" +
     '<div class="exm__actions">' +
     '<button class="builder__save exm__save" id="exmSave" type="button" disabled>Save exercise</button>' +
@@ -123,8 +137,11 @@
     '<div class="exm__view" id="exmViewBox" hidden>' +
     '<h3 class="exm__view-name" id="exmViewName"></h3>' +
     '<div class="exm__view-cat" id="exmViewCat"></div>' +
-    '<p class="exm__view-note">This exercise already has its muscles. To change them, edit its row in the Exercises tab of the CRM sheet.</p>' +
+    '<p class="exm__view-note">These are the muscles it works now. Tap Change muscles to fix them, or its movement and body part.</p>' +
+    '<div class="exm__view-actions">' +
+    '<button class="builder__save exm__edit" id="exmEdit" type="button">Change muscles</button>' +
     '<button class="exm__clear" id="exmNew" type="button">Make a new exercise</button>' +
+    "</div>" +
     "</div>" +
     "</div>" +
     '<aside class="exm__side" aria-label="Muscles it works">' +
@@ -153,6 +170,10 @@
     movements: $("exmMovements"),
     bodyParts: $("exmBodyParts"),
     save: $("exmSave"),
+    pinRow: $("exmPinRow"),
+    pin: $("exmPin"),
+    extraBox: $("exmExtraBox"),
+    extra: $("exmExtra"),
     clear: $("exmClear"),
     needs: $("exmNeeds"),
     error: $("exmError"),
@@ -395,6 +416,20 @@
 
   panel.querySelectorAll(".exercise-picker__muscle-chip").forEach((chip) => chip.addEventListener("click", () => cycle(chip.dataset.key)));
 
+  // Muscles an exercise being changed has that aren't in the list (finer keys
+  // from the sheet): shown as their own chips so they can be cleared too.
+  function renderExtra() {
+    els.extra.innerHTML = state.extraKeys
+      .map((key) => `<button class="exercise-picker__muscle-chip" type="button" data-key="${esc(key)}">${esc(labelFor(key))}</button>`)
+      .join("");
+    els.extraBox.hidden = !state.extraKeys.length;
+  }
+
+  els.extra.addEventListener("click", (e) => {
+    const chip = e.target.closest("[data-key]");
+    if (chip) cycle(chip.dataset.key);
+  });
+
   // The figure is tappable too: a shape stands for the list muscle it belongs
   // to (the picker's own mapping); neck, rotator cuff and the like do nothing.
   els.figs.addEventListener("click", (e) => {
@@ -417,7 +452,7 @@
       return;
     }
     els.nameHint.textContent = hasMuscles(hit)
-      ? "That one is already in the library, with its muscles. Tap it in the list below to see them."
+      ? `"${hit.name}" is already in the library, with its muscles. Saving will replace its movement, body part and muscles with what you choose here.`
       : "That one is already in the library but has no muscles yet. Choose them below and save to fill them in.";
     els.nameHint.hidden = false;
   }
@@ -448,13 +483,38 @@
     if (!state.movement) missing.push("a movement");
     else if (!state.bodyPart) missing.push("a body part");
     if (!main.length) missing.push("a main muscle");
-    const dup = state.mode === "new" ? findInLibrary(state.name) : null;
-    const blocked = Boolean(dup && hasMuscles(dup));
+    const replacing = isReplacing();
+    els.pinRow.hidden = !replacing || !(state.pinNeeded || !rememberedPin());
+    if (!els.pinRow.hidden && !els.pin.value.trim()) missing.push("your staff PIN");
 
-    els.save.disabled = state.saving || missing.length > 0 || blocked;
-    els.needs.hidden = state.saving || (!missing.length && !blocked);
-    els.needs.textContent = blocked ? "That name is already in the library with its muscles." : missing.length ? `Still needed: ${joinList(missing)}.` : "";
+    if (!state.saving) els.save.textContent = saveLabel();
+    els.save.disabled = state.saving || missing.length > 0;
+    els.needs.hidden = state.saving || (!missing.length && !replacing);
+    els.needs.textContent = missing.length ? `Still needed: ${joinList(missing)}.` : replacing ? "Saving replaces what the library has for it now." : "";
   }
+
+  /** Saving will overwrite an exercise that already has muscles: "Change muscles", or a new one typed with an existing name. */
+  function isReplacing() {
+    if (state.mode === "edit") return true;
+    if (state.mode !== "new") return false;
+    const dup = findInLibrary(state.name);
+    return Boolean(dup && hasMuscles(dup));
+  }
+
+  function saveLabel() {
+    if (state.mode === "fill") return "Save muscles";
+    return isReplacing() ? "Save changes" : "Save exercise";
+  }
+
+  /** The PIN this device already has (the builder's remembered or typed one), or "". */
+  function rememberedPin() {
+    return typeof currentPin === "function" ? currentPin() : "";
+  }
+
+  els.pin.addEventListener("input", () => {
+    clearMessages();
+    update();
+  });
 
   // ---------------------------------------------------------------------
   // Modes
@@ -462,14 +522,48 @@
 
   function setMode(mode) {
     state.mode = mode;
+    if (mode !== "edit" && state.extraKeys.length) {
+      state.extraKeys = [];
+      renderExtra();
+    }
     els.formBox.hidden = mode === "view";
     els.viewBox.hidden = mode !== "view";
     els.intro.hidden = mode === "view";
     els.figs.classList.toggle("exm__figs--readonly", mode === "view");
-    els.name.readOnly = mode === "fill";
-    els.save.textContent = mode === "fill" ? "Save muscles" : "Save exercise";
-    els.intro.textContent = mode === "fill" && state.current ? `${state.current.name} is in the library but has no muscles yet. Choose which it works and save.` : INTRO_NEW;
+    els.name.readOnly = mode === "fill" || mode === "edit";
+    els.save.textContent = saveLabel();
+    els.intro.textContent =
+      mode === "fill" && state.current
+        ? `${state.current.name} is in the library but has no muscles yet. Choose which it works and save.`
+        : mode === "edit" && state.current
+        ? `Changing ${state.current.name}. Fix its movement, body part or muscles, then save. Its name and logged sets stay the same.`
+        : INTRO_NEW;
   }
+
+  /** "Change muscles": the form, filled in with what the exercise has now. */
+  function startEdit(ex) {
+    state.current = ex;
+    state.name = ex.name;
+    state.movement = validMovement(ex.movement) ? ex.movement : "";
+    state.bodyPart = state.movement && validPart(state.movement, ex.bodyPart) ? ex.bodyPart : "";
+    state.muscles = {};
+    ex.secondary.forEach((k) => (state.muscles[k] = "helps"));
+    ex.primary.forEach((k) => (state.muscles[k] = "main"));
+    state.extraKeys = Object.keys(state.muscles).filter((k) => !CHOOSER_LABEL[k]);
+    renderExtra();
+    els.name.value = ex.name;
+    setMode("edit");
+    renderMovements();
+    renderBodyParts();
+    clearMessages();
+    updateNameHint();
+    update();
+    renderLibrary();
+  }
+
+  $("exmEdit").addEventListener("click", () => {
+    if (state.current) startEdit(state.current);
+  });
 
   /** A blank form: making a new exercise. */
   function startNew() {
@@ -529,7 +623,6 @@
 
   function finishSaving() {
     state.saving = false;
-    els.save.textContent = state.mode === "fill" ? "Save muscles" : "Save exercise";
     update();
   }
 
@@ -538,6 +631,9 @@
     const main = keysWith("main");
     const helps = keysWith("helps");
     const wasFill = state.mode === "fill";
+    const wasEdit = state.mode === "edit";
+    const replacing = isReplacing();
+    const pin = replacing ? els.pin.value.trim() || rememberedPin() : "";
     const payload = {
       action: "addExercise",
       name: state.name.trim(),
@@ -546,6 +642,10 @@
       primaryMuscles: main.join(","),
       secondaryMuscles: helps.join(","),
     };
+    if (replacing) {
+      payload.overwrite = true;
+      payload.pin = pin;
+    }
 
     state.saving = true;
     els.save.textContent = "Saving…";
@@ -566,10 +666,36 @@
       return;
     }
 
+    if (result && result.status === "unauthorized") {
+      try {
+        localStorage.removeItem(typeof STAFF_PIN_STORAGE_KEY === "string" ? STAFF_PIN_STORAGE_KEY : "maxfitStaffPin");
+      } catch (err) {
+        // Ignore: they retype it below either way.
+      }
+      state.pinNeeded = true;
+      els.pin.value = "";
+      finishSaving();
+      showError("Incorrect PIN.");
+      els.pin.focus();
+      return;
+    }
+
     if (!result || result.status !== "success") {
       finishSaving();
       showError((result && result.message) || "Couldn't save that exercise. Try again.");
       return;
+    }
+
+    // An older backend ignores overwrite and hands back the muscles it already had.
+    if (replacing && result.overwritten !== true) {
+      finishSaving();
+      showError("Nothing was changed: the check-in backend needs its new code pasted in first (2026-11-06a).");
+      return;
+    }
+    if (replacing) {
+      state.pinNeeded = false;
+      if (typeof rememberPin_ === "function") rememberPin_(pin);
+      els.pin.value = "";
     }
 
     // Trust what the server says it now holds: an existing row that already had
@@ -597,7 +723,7 @@
     document.dispatchEvent(new CustomEvent("maxfit:exercises-changed"));
 
     state.saving = false;
-    if (wasFill) {
+    if (wasFill || wasEdit) {
       startNew();
     } else {
       // Ready for the next one in the same body part: keep Movement and Body part, clear the rest.
@@ -613,9 +739,10 @@
     if (!result.musclesSaved) {
       showError("The exercise is saved, but its muscles weren't: the check-in backend needs its new code pasted in first.");
     } else {
-      showSuccess(wasFill ? `Added muscles to "${entry.name}".` : `Saved "${entry.name}". It is in the exercise picker now.`);
+      showSuccess(
+        replacing ? `Changed "${entry.name}". The picker and new workouts use its new muscles now.` : wasFill ? `Added muscles to "${entry.name}".` : `Saved "${entry.name}". It is in the exercise picker now.`
+      );
     }
-    els.save.textContent = "Save exercise";
   }
 
   els.save.addEventListener("click", save);

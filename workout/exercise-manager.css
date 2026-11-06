@@ -121,7 +121,8 @@
 }
 
 .exm__hint[hidden],
-.exm__needs[hidden] {
+.exm__needs[hidden],
+#exmPinRow[hidden] {
   display: none;
 }
 
@@ -237,10 +238,28 @@
   border-color: var(--red);
 }
 
-/* inside the read-only card it is a plain button under the text, not a full-width bar */
+/* the read-only card's buttons: Change muscles (red) and Make a new exercise, side by side */
+.exm__view-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.exm__edit {
+  flex: 0 1 auto;
+  width: auto;
+  min-height: 48px;
+  padding: 12px 26px;
+}
+
 .exm__view .exm__clear {
-  align-self: flex-start;
+  min-height: 48px;
   padding: 12px 22px;
+}
+
+.exm__pin {
+  max-width: 200px;
 }
 
 .exm__needs {

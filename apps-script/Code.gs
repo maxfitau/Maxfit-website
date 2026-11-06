@@ -32,7 +32,7 @@ const GROCERY_SHEET_NAME = "Grocery Items";
 // Changes whenever this file does, and is shown when you open the deployed
 // URL in a browser (see doGet) — the quick way to tell whether a redeploy
 // actually took, instead of guessing from behaviour.
-const BACKEND_VERSION = "2026-11-05c";
+const BACKEND_VERSION = "2026-11-06a";
 
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -1886,6 +1886,13 @@ function handleAssignWorkout_(payload) {
  * and filled in on an existing row only while both its muscle cells are
  * blank, so nobody (there's no PIN) can overwrite curated muscle data.
  * musclesSaved in the reply tells the builder whether they went in.
+ *
+ * overwrite: true (2026-11-06, Max: "you should be able to override this")
+ * is the builder Exercises tab's "Change muscles": it needs the staff PIN,
+ * and replaces an existing row's Movement, Body Part and both muscle cells
+ * with what was sent. The Name cell is never changed, so logged sets (keyed
+ * by name) stay with it. overwritten: true in the reply says it happened,
+ * so a page talking to an older backend can tell nothing changed.
  */
 function handleAddExercise_(payload) {
   const name = String(payload.name || "").trim().slice(0, 120);
@@ -1901,6 +1908,13 @@ function handleAddExercise_(payload) {
   const secondary = muscleList(payload.secondaryMuscles).filter((k) => primary.indexOf(k) < 0);
   if (!name || !movement || !bodyPart) {
     return jsonResponse_({ status: "error", message: "Missing exercise name, movement or body part." });
+  }
+  const overwrite = payload.overwrite === true || payload.overwrite === "true";
+  if (overwrite && !checkPin_(payload.pin)) {
+    return jsonResponse_({ status: "unauthorized" });
+  }
+  if (overwrite && !primary.length) {
+    return jsonResponse_({ status: "error", message: "Choose at least one main muscle." });
   }
 
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(EXERCISES_SHEET_NAME);
@@ -1924,6 +1938,19 @@ function handleAddExercise_(payload) {
     for (let i = 0; i < existing.length; i++) {
       const row = existing[i];
       if (String(row[col.name] || "").trim().toLowerCase() !== name.toLowerCase()) continue;
+      if (overwrite) {
+        const at = i + 2;
+        sheet.getRange(at, col.movement + 1).setValue(movement);
+        sheet.getRange(at, col.bodyPart + 1).setValue(bodyPart);
+        sheet.getRange(at, col.primary + 1).setValue(primary.join(", "));
+        sheet.getRange(at, col.secondary + 1).setValue(secondary.join(", "));
+        return jsonResponse_({
+          status: "success",
+          musclesSaved: true,
+          overwritten: true,
+          exercise: { name: row[col.name], movement, bodyPart, primaryMuscles: primary, secondaryMuscles: secondary },
+        });
+      }
       let rowPrimary = split(row[col.primary]);
       let rowSecondary = split(row[col.secondary]);
       let musclesSaved = false;
