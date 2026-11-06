@@ -12,20 +12,31 @@
  * if so, this opens on a picker so they choose which one they're doing
  * today; a client with only one skips straight to it.
  *
- * How saving works: every set has its own Save button. Tapping it commits
- * that set to this phone right away — instantly, no network, so it can't be
- * slow and can't fail — which means closing the page or losing signal
- * mid-workout never costs them anything they've already saved; reopening the
- * workout puts every saved set straight back. "Log Workout" at the end is the
- * one step that sends the finished session to Max's sheet. (A workout that
- * was saved but never logged is sent automatically the next time this page
- * opens on a later day, so it isn't stranded on the phone.)
+ * Three ways to SEE the same workout — Checklist (default), Show all, Simple
+ * view — picked from the VIEW button and remembered per member
+ * (maxfitWorkoutView|<id>). Switching views never loses anything typed or
+ * saved: every view is built from the same underlying set-row elements
+ * (buildSetRow), just arranged differently, and a snapshot of whatever's on
+ * screen (saved or just typed) is carried across a switch — see
+ * snapshotRows_/applySnapshot_.
  *
- * A "Workout date" row at the top defaults to today. Pointing it at an earlier
+ * How saving works: every set has its own tick (or, in Simple view, a DONE
+ * button). Tapping it commits that set to this phone right away — instantly,
+ * no network, so it can't be slow and can't fail — which means closing the
+ * page or losing signal mid-workout never costs them anything they've
+ * already saved; reopening the workout puts every saved set straight back.
+ * "Finish Workout" opens a review screen (time/sets/kg, a personal-best
+ * card, what this session trained, and the "how did it feel" note); "Save &
+ * Close" there is the one step that actually sends the finished session to
+ * Max's sheet. (A workout that was saved but never sent is sent
+ * automatically the next time this page opens on a later day, so it isn't
+ * stranded on the phone.)
+ *
+ * A "Today ▾" pill at the top defaults to today. Pointing it at an earlier
  * day logs a session that already happened (a workout done with a client
  * yesterday, say): everything — the phone-side draft, the "last time"
- * numbers, the Log Workout that sends it — then belongs to THAT day, and it
- * doesn't tick today's "workout completed" box on the card.
+ * numbers, what gets sent — then belongs to THAT day, and it doesn't tick
+ * today's "workout completed" box on the card.
  *
  * Coach mode (?coach=1): opened from the check-in page (checkin.html) after
  * Max scans a client's QR code, so he can log THEIR workout on his own phone.
@@ -41,8 +52,8 @@
  * The weight prefill is what makes a normal week quick: every set opens with
  * the numbers from the client's most recent PREVIOUS session of that exact
  * exercise — regardless of which named workout it was logged under — so they
- * glance at the number, do the set, and tap Save (editing first if they went
- * up or down).
+ * glance at the number, do the set, and tap the tick (editing first if they
+ * went up or down).
  */
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbya8dm8g5eC4ldAbNYmMCccDCZ6K7encj_q4IzXtKMOpd007RMYhnR3_PJ2eL2gjVDQ/exec";
 const MEMBER_ID_STORAGE_KEY = "maxfitMemberId"; // shared with card/app.js
@@ -99,11 +110,10 @@ function homeHref() {
 
 const els = {
   pageTag: document.getElementById("pageTag"),
-  timer: document.getElementById("workoutTimer"),
-  timerValue: document.getElementById("workoutTimerValue"),
   picker: document.getElementById("workoutPicker"),
   pickerList: document.getElementById("workoutPickerList"),
   list: document.getElementById("exerciseList"),
+  review: document.getElementById("workoutReview"),
   done: document.getElementById("workoutDone"),
   doneText: document.querySelector(".workout__done-text"),
   status: document.getElementById("status"),
@@ -195,18 +205,19 @@ function formatElapsed(ms) {
  * Counts up from when the client opens their actual workout (not the
  * picker) — based on wall-clock time each tick rather than counting ticks,
  * so it stays accurate even if the tab is backgrounded and iOS throttles
- * the interval.
+ * the interval. Writes into whichever element it's given (the timer pill
+ * rebuilt in the header each renderWorkout) rather than a fixed global, so
+ * a view switch — which doesn't rebuild the header — doesn't interrupt it.
  */
 let workoutTimerInterval = null;
 let workoutTimerStart = null;
 
-function startWorkoutTimer() {
-  workoutTimerStart = Date.now();
-  els.timer.hidden = false;
-  els.timerValue.textContent = formatElapsed(0);
+function startWorkoutTimer(valueEl, resumeFromMs) {
+  workoutTimerStart = Date.now() - (resumeFromMs || 0);
+  if (valueEl) valueEl.textContent = formatElapsed(resumeFromMs || 0);
   if (workoutTimerInterval) clearInterval(workoutTimerInterval);
   workoutTimerInterval = setInterval(() => {
-    els.timerValue.textContent = formatElapsed(Date.now() - workoutTimerStart);
+    if (valueEl) valueEl.textContent = formatElapsed(Date.now() - workoutTimerStart);
   }, 1000);
 }
 
@@ -355,6 +366,28 @@ function mostRecentSessionSets(setRows, col, clientSlug, exerciseName, beforeKey
 }
 
 /**
+ * The best set this client has EVER logged for this exercise (heaviest
+ * weight; ties broken by more reps at that weight) — used only for the
+ * review screen's "New Personal Best" card. Returns null if the sheet's
+ * columns needed to tell can't be found, so that card never guesses.
+ */
+function allTimeBestSet_(setRows, col, clientSlug, exerciseName) {
+  if (col.weight < 0 || col.exercise < 0 || col.client < 0) return null;
+  let best = null;
+  for (const row of setRows) {
+    if (String(row[col.client] || "").trim().toLowerCase() !== clientSlug) continue;
+    if (String(row[col.exercise] || "").trim().toLowerCase() !== exerciseName) continue;
+    const weight = Number(row[col.weight]);
+    if (!Number.isFinite(weight)) continue;
+    const reps = Number(row[col.reps]);
+    if (!best || weight > best.weight || (weight === best.weight && Number.isFinite(reps) && reps > (best.reps || 0))) {
+      best = { weight, reps: Number.isFinite(reps) ? reps : null };
+    }
+  }
+  return best;
+}
+
+/**
  * How many distinct sets the sheet already holds for this client + workout +
  * day — used ONLY to warn that logging is about to replace them (say, the
  * client already logged that session from their own phone). It's a count,
@@ -379,10 +412,10 @@ function existingLogCount(setRows, col, clientSlug, workoutName, dateStr) {
 //
 // One draft per (client, workout, day): { clientSlug, workoutName, date, sets,
 // notes, rev, pending, updatedAt }. `sets` are only the ones they've tapped
-// Save on. `pending` means "this is ahead of what's in the sheet" — true from
-// the moment something's saved until a Log Workout for it succeeds. `rev`
-// ticks up on every change, so a request that was in flight while they kept
-// saving can't mark newer changes as sent.
+// the tick on. `pending` means "this is ahead of what's in the sheet" — true
+// from the moment something's saved until a Save & Close for it succeeds.
+// `rev` ticks up on every change, so a request that was in flight while they
+// kept saving can't mark newer changes as sent.
 
 let storageUsable = true;
 try {
@@ -482,14 +515,14 @@ async function postSession(draft) {
 const DRAFT_KEEP_MS = 14 * 24 * 60 * 60 * 1000; // sent drafts are kept this long, then cleaned up
 
 /**
- * A workout that was saved set-by-set but never logged (they forgot the final
- * button, or had no signal when they pressed it) would otherwise sit on the
- * phone forever. Once the day it belongs to is over, send it — every set in
- * it was one they deliberately saved. A draft that's been sent is kept (marked
- * as sent, not deleted) for a couple of weeks rather than thrown away: a
- * session being logged for an earlier day can then be reopened and carried on
- * from where it was left, without the sets already sent being lost. Runs in
- * the background; anything that fails stays put for the next open.
+ * A workout that was saved set-by-set but never sent (they forgot to finish,
+ * or had no signal) would otherwise sit on the phone forever. Once the day
+ * it belongs to is over, send it — every set in it was one they deliberately
+ * saved. A draft that's been sent is kept (marked as sent, not deleted) for a
+ * couple of weeks rather than thrown away: a session being logged for an
+ * earlier day can then be reopened and carried on from where it was left,
+ * without the sets already sent being lost. Runs in the background; anything
+ * that fails stays put for the next open.
  */
 async function flushOldDrafts(todayStr) {
   for (const key of allDraftKeys()) {
@@ -514,113 +547,126 @@ async function flushOldDrafts(todayStr) {
   }
 }
 
-// ---- Set rows -------------------------------------------------------------
+// ---- Icons ------------------------------------------------------------
 
-/** What's typed into a set row right now, and whether it's complete enough to save (reps > 0, and a weight — 0 is fine for bodyweight, blank is not). */
+const TICK_SVG = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L19 7"/></svg>';
+const CHECK_CIRCLE_SVG = '<svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><path d="M8 12.5l2.7 2.7L16.5 9"/></svg>';
+const TROPHY_SVG = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h8v4a4 4 0 0 1-8 0V4z"/><path d="M8 5H5a3 3 0 0 0 3 5M16 5h3a3 3 0 0 1-3 5"/><path d="M12 13v3M9 20h6M10 16.5h4v2a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-2z"/></svg>';
+const PLAY_SVG = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><path d="M10 8.5l6 3.5-6 3.5z" fill="currentColor" stroke="none"/></svg>';
+const VIEW_ICON_SVG = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="5" rx="1.5"/><rect x="3" y="11" width="18" height="5" rx="1.5"/><rect x="3" y="18" width="10" height="3" rx="1.5"/></svg>';
+const CALENDAR_ICON_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>';
+const CLOCK_ICON_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+const CL_DIAGRAM_SVG = '<svg width="30" height="30" viewBox="0 0 30 30" fill="none"><rect x="2" y="2" width="26" height="9" rx="2" stroke="currentColor" stroke-width="2"/><rect x="2" y="14" width="26" height="4" rx="1.5" fill="currentColor" opacity="0.35"/><rect x="2" y="21" width="26" height="4" rx="1.5" fill="currentColor" opacity="0.35"/></svg>';
+const SA_DIAGRAM_SVG = '<svg width="30" height="30" viewBox="0 0 30 30" fill="none"><rect x="2" y="2" width="26" height="7" rx="1.5" stroke="currentColor" stroke-width="2"/><rect x="2" y="11.5" width="26" height="7" rx="1.5" stroke="currentColor" stroke-width="2"/><rect x="2" y="21" width="26" height="7" rx="1.5" stroke="currentColor" stroke-width="2"/></svg>';
+const SV_DIAGRAM_SVG = '<svg width="30" height="30" viewBox="0 0 30 30" fill="none"><rect x="4" y="2" width="22" height="26" rx="3" stroke="currentColor" stroke-width="2"/><rect x="9" y="19" width="12" height="5" rx="1.5" fill="currentColor" opacity="0.4"/></svg>';
+
+/** Plain-text escape for the small bits of user-entered text (an exercise name) interpolated into innerHTML on this page — same purpose as library.js's libEsc, duplicated rather than shared since this page doesn't load that file. */
+function libEscApp_(text) {
+  const div = document.createElement("div");
+  div.textContent = text == null ? "" : String(text);
+  return div.innerHTML;
+}
+
+function scrollToSet_(el) {
+  if (!el) return;
+  const calm = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  el.scrollIntoView({ behavior: calm ? "auto" : "smooth", block: "start" });
+}
+
+// ---- Set rows ---------------------------------------------------------
+//
+// One component shared by all three views: the DOM node, its weight/reps
+// inputs, and its `_saved`/`_touched` state are identical regardless of
+// which view built it — only the layout around them differs (a compact
+// grid row for Checklist/Show all, two big stepper cards for Simple view).
+// ctx.collectSets() and everything downstream of it reads `_saved` straight
+// off these nodes, so that contract never changes.
+
+/**
+ * What's typed into a set row right now, and whether it's complete enough to
+ * save (reps > 0, and a weight — 0 is fine for bodyweight, blank is not) —
+ * EXCEPT a blank compact-variant box falls back to its own grey suggested
+ * number (row._suggestedWeight/_suggestedReps, set in buildSetRow): per the
+ * brief, tapping the tick with nothing typed confirms the suggestion shown
+ * as placeholder text, it doesn't block the save.
+ */
 function rowValues(row) {
   const weightText = row.querySelector(".workout__weight-input").value.trim();
   const repsText = row.querySelector(".workout__reps-input").value.trim();
-  const weight = weightText === "" ? NaN : Number(weightText);
-  const reps = repsText === "" ? NaN : Number(repsText);
+  const weight = weightText === "" ? (Number.isFinite(row._suggestedWeight) ? row._suggestedWeight : NaN) : Number(weightText);
+  const reps = repsText === "" ? (Number.isFinite(row._suggestedReps) ? row._suggestedReps : NaN) : Number(repsText);
   return { weight, reps, valid: Number.isFinite(weight) && weight >= 0 && Number.isFinite(reps) && reps > 0 };
 }
 
-/** Save button reads "Save set" until the row's current numbers match what was last saved, then "Saved" with a tick; edit a saved set and it goes back to "Save set". The small status beside "Set 1" says which it is: saved, a suggestion from last time, or typed but not saved yet. */
+/** Saved = tick solid red (or, in Simple view, the stepper cards get a red border). Editing a saved set's numbers un-ticks it — this is the only place that decides "saved" visually, from the numbers on screen vs. what was last actually saved. */
 function refreshRowState(row) {
   const values = rowValues(row);
   const isSaved = Boolean(row._saved) && values.valid && values.weight === row._saved.weight && values.reps === row._saved.reps;
   row.classList.toggle("workout__set--saved", isSaved);
-  // once a set is saved its numbers are real, so they stop looking like suggestions
   if (isSaved) row.querySelectorAll(".workout__weight-input--prefilled, .workout__reps-input--prefilled").forEach((el) => el.classList.remove("workout__weight-input--prefilled", "workout__reps-input--prefilled"));
-  const isSuggestion = !isSaved && !row._touched && Boolean(row.querySelector(".workout__weight-input--prefilled, .workout__reps-input--prefilled"));
-  row.classList.toggle("workout__set--suggested", isSuggestion);
-  const btn = row.querySelector(".workout__set-save");
-  btn.textContent = isSaved ? "Saved ✓" : "Save set";
-  btn.setAttribute("aria-label", isSaved ? `Set ${row.dataset.setNumber} saved` : `Save set ${row.dataset.setNumber}`);
-  const status = row.querySelector(".workout__set-status");
-  if (status) status.textContent = isSaved ? "Saved" : isSuggestion ? "Suggested, not saved" : "Not saved yet";
+  const tick = row.querySelector(".workout__set-tick");
+  if (tick) tick.setAttribute("aria-label", isSaved ? `Set ${row.dataset.setNumber} saved` : `Save set ${row.dataset.setNumber}`);
 }
 
 /**
- * initial: { weight, reps, saved, suggestion } — `saved` rows come back from
- * a draft/the sheet already committed; `suggestion` marks numbers that are
- * only a starting point (last session's, or copied from the set above), which
- * show dimmed until touched. Nothing here counts as done until Save is tapped.
+ * initial: { weight, reps, saved, suggestion, last } — `saved` rows come
+ * back from a draft/the sheet already committed; `suggestion` marks numbers
+ * that are only a starting point (last session's, or copied from the set
+ * above). options: { variant: "compact"|"simple", hideSaveButton } — Simple
+ * view hides the row's own tick, since the page-level DONE button saves it
+ * instead (and also decides whether to start a rest timer, which varies by
+ * what comes next).
  */
-function buildSetRow(exercise, setNumber, initial, onSave) {
+function buildSetRow(exercise, setNumber, initial, onSave, options) {
+  const variant = (options && options.variant) || "compact";
+  const hideSaveButton = Boolean(options && options.hideSaveButton);
+
   const row = document.createElement("div");
-  row.className = "workout__set";
+  row.className = `workout__set workout__set--${variant}`;
   row.dataset.exercise = exercise.name;
   row.dataset.setNumber = String(setNumber);
   row._saved = initial.saved ? { weight: initial.weight, reps: initial.reps } : null;
   row._touched = false;
-
-  // "Set 1" on the left, and on the right whether it is saved, only a suggestion, or not saved yet.
-  const title = document.createElement("div");
-  title.className = "workout__set-title";
-  const label = document.createElement("span");
-  label.className = "workout__set-num";
-  label.textContent = `Set ${setNumber}`;
-  const status = document.createElement("span");
-  status.className = "workout__set-status";
-  title.appendChild(label);
-  title.appendChild(status);
-  row.appendChild(title);
-
-  const fields = document.createElement("div");
-  fields.className = "workout__set-fields";
-
-  // One labelled stepper: a 48px minus, the value, a 48px plus.
-  function stepper(wrapClass, labelText, input, minusLabel, plusLabel, onStep) {
-    const field = document.createElement("div");
-    field.className = "workout__field";
-    const fieldLabel = document.createElement("span");
-    fieldLabel.className = "workout__field-label";
-    fieldLabel.textContent = labelText;
-    const wrap = document.createElement("div");
-    wrap.className = wrapClass;
-    const minus = document.createElement("button");
-    minus.type = "button";
-    minus.className = "workout__step";
-    minus.textContent = "−";
-    minus.setAttribute("aria-label", minusLabel);
-    const plus = document.createElement("button");
-    plus.type = "button";
-    plus.className = "workout__step";
-    plus.textContent = "+";
-    plus.setAttribute("aria-label", plusLabel);
-    minus.addEventListener("click", () => onStep(-1));
-    plus.addEventListener("click", () => onStep(1));
-    wrap.appendChild(minus);
-    wrap.appendChild(input);
-    wrap.appendChild(plus);
-    field.appendChild(fieldLabel);
-    field.appendChild(wrap);
-    return field;
-  }
+  row._last = initial.last && Number.isFinite(initial.last.weight) ? { ...initial.last } : null;
+  // Indirection so a superset's round-navigation logic can rewire what
+  // saving this exact row does (rest or not, which round opens next) once
+  // it's built — see renderSupersetBody_. Everything else just calls it.
+  row._onSave = onSave;
 
   const weightInput = document.createElement("input");
   weightInput.type = "text";
   weightInput.inputMode = "decimal";
   weightInput.className = "workout__weight-input";
   weightInput.setAttribute("aria-label", `Set ${setNumber} weight in kilograms`);
-  if (initial.weight !== null && initial.weight !== undefined) {
-    weightInput.value = formatWeight(initial.weight);
-    if (initial.suggestion) weightInput.classList.add("workout__weight-input--prefilled");
-  } else {
-    weightInput.placeholder = "kg";
-  }
 
   const repsInput = document.createElement("input");
   repsInput.type = "number";
   repsInput.inputMode = "numeric";
   repsInput.className = "workout__reps-input";
   repsInput.setAttribute("aria-label", `Set ${setNumber} reps`);
-  if (initial.reps !== null && initial.reps !== undefined) {
+
+  const bodyweightZero = initial.weight === 0;
+  if (initial.saved) {
+    weightInput.value = formatWeight(initial.weight);
     repsInput.value = String(initial.reps);
-    if (initial.suggestion) repsInput.classList.add("workout__reps-input--prefilled");
+  } else if (variant === "compact") {
+    // Empty, with the suggestion shown as placeholder text only (2026-11 redesign: numbers never sit in the box pretending to be typed) —
+    // but the number itself is kept on the row (_suggestedWeight/_suggestedReps, read by rowValues) so tapping the tick with nothing typed
+    // still confirms it, per the brief: "using typed values, or the grey suggested values if the client didn't type anything."
+    if (initial.weight !== null && initial.weight !== undefined) row._suggestedWeight = initial.weight;
+    if (initial.reps !== null && initial.reps !== undefined) row._suggestedReps = initial.reps;
+    weightInput.placeholder = initial.weight !== null && initial.weight !== undefined ? (bodyweightZero ? "BW" : formatWeight(initial.weight)) : "kg";
+    repsInput.placeholder = initial.reps !== null && initial.reps !== undefined ? String(initial.reps) : (exercise.reps || "reps");
   } else {
-    repsInput.placeholder = exercise.reps || "reps";
+    // Simple view's steppers need a real number to nudge from.
+    weightInput.value = formatWeight(initial.weight !== null && initial.weight !== undefined ? initial.weight : 0);
+    weightInput.classList.add("workout__weight-input--prefilled");
+    if (initial.reps !== null && initial.reps !== undefined) {
+      repsInput.value = String(initial.reps);
+      repsInput.classList.add("workout__reps-input--prefilled");
+    } else {
+      repsInput.placeholder = exercise.reps || "reps";
+    }
   }
 
   function touched() {
@@ -648,183 +694,115 @@ function buildSetRow(exercise, setNumber, initial, onSave) {
     touched();
   });
   repsInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
+    if (event.key === "Enter" && !hideSaveButton) {
       event.preventDefault();
-      onSave(row);
+      row._onSave(row);
     }
   });
 
-  fields.appendChild(stepper("workout__weight", "Weight (kg)", weightInput, "Decrease weight", "Increase weight", nudgeWeight));
-  fields.appendChild(stepper("workout__reps", "Reps", repsInput, "Decrease reps", "Increase reps", nudgeReps));
-  row.appendChild(fields);
+  if (variant === "compact") {
+    const num = document.createElement("span");
+    num.className = "workout__set-num";
+    num.textContent = String(setNumber);
+    row.appendChild(num);
 
-  // What they did on this set last time, kept in plain sight whatever they type.
-  if (initial.last && Number.isFinite(initial.last.weight)) {
     const last = document.createElement("p");
     last.className = "workout__set-last";
-    last.textContent = `Last time: ${formatWeight(initial.last.weight)} kg${Number.isFinite(initial.last.reps) ? ` × ${initial.last.reps} reps` : ""}`;
+    last.textContent = row._last ? `${formatWeight(row._last.weight)}kg${Number.isFinite(row._last.reps) ? ` × ${row._last.reps}` : ""}` : "—";
     row.appendChild(last);
-  }
 
-  const saveBtn = document.createElement("button");
-  saveBtn.type = "button";
-  saveBtn.className = "workout__set-save";
-  saveBtn.addEventListener("click", () => onSave(row));
-  row.appendChild(saveBtn);
+    const weightWrap = document.createElement("div");
+    weightWrap.className = "workout__weight workout__field";
+    weightWrap.appendChild(weightInput);
+    row.appendChild(weightWrap);
+
+    const repsWrap = document.createElement("div");
+    repsWrap.className = "workout__reps workout__field";
+    repsWrap.appendChild(repsInput);
+    row.appendChild(repsWrap);
+
+    if (!hideSaveButton) {
+      const tick = document.createElement("button");
+      tick.type = "button";
+      tick.className = "workout__set-tick";
+      tick.innerHTML = TICK_SVG;
+      tick.addEventListener("click", () => row._onSave(row));
+      row.appendChild(tick);
+    }
+  } else {
+    const field = (labelText, input, minusLabel, plusLabel, onStep) => {
+      const wrap = document.createElement("div");
+      wrap.className = "workout__simple-field";
+      const label = document.createElement("span");
+      label.className = "workout__simple-field-label";
+      label.textContent = labelText;
+      wrap.appendChild(label);
+      const stepper = document.createElement("div");
+      stepper.className = "workout__simple-stepper";
+      const minus = document.createElement("button");
+      minus.type = "button";
+      minus.className = "workout__simple-step";
+      minus.textContent = "−";
+      minus.setAttribute("aria-label", minusLabel);
+      minus.addEventListener("click", () => onStep(-1));
+      const plus = document.createElement("button");
+      plus.type = "button";
+      plus.className = "workout__simple-step";
+      plus.textContent = "+";
+      plus.setAttribute("aria-label", plusLabel);
+      plus.addEventListener("click", () => onStep(1));
+      stepper.append(minus, input, plus);
+      wrap.appendChild(stepper);
+      return wrap;
+    };
+    row.appendChild(field("Weight (kg)", weightInput, "Decrease weight", "Increase weight", nudgeWeight));
+    row.appendChild(field("Reps", repsInput, "Decrease reps", "Increase reps", nudgeReps));
+  }
 
   refreshRowState(row);
   return row;
 }
 
 /**
- * Builds one exercise's section (name/target/hint + its set rows) and drops
- * it into the list. Shared by the assigned-workout render loop, by
- * "+ Add Exercise" (a client who finds their machine taken can log whatever
- * they did instead — it prefills/tracks history exactly like an assigned
- * exercise would), and by restoring extras they'd already saved earlier
- * today. Every exercise gets "+ Add Set" for when they do more than planned.
+ * Captures exactly what's on screen right now for every set row — saved
+ * state AND whatever's currently typed, even if not yet saved — so
+ * switching views (which rebuilds every row in the new layout) can restore
+ * it. Keyed by exercise name + set number, which is stable across variants.
  */
-// Built once during the initial load (card/muscle-map.js's
-// buildExerciseIndex_, from the Exercises tab) so addExerciseSection can
-// show which muscles an exercise works — and refreshMuscleLoadSection_
-// below can resolve a saved set's exercise name to its muscles — without an
-// extra fetch or needing either to become async itself.
-let exerciseIndex_ = { byExact: {}, byNormalized: {} };
-
-/**
- * The "Muscles Worked" panel at the top of the list (2026-10-05) — the same
- * live muscle-tracking concept as the coach builder's side panel
- * (refreshMuscleLoadPanel_, workout/builder.js) and the Muscles tab's
- * heatmap (workout/heatmap.js), applied here so a client can see what THIS
- * session is actually training as they go. Unlike either of those: it
- * counts real SAVED sets (ctx.collectSets()), not planned/target sets or
- * logged history, so it reads as "what have I done so far today" and
- * grows as the workout happens. Built once per renderWorkout; repainted by
- * refreshMuscleLoadSection_ below, piggybacking on ctx.updateSummary
- * (buildLogSection) — the same existing hook that already fires after
- * every set save and once at the end of the initial render, so a reload
- * with sets restored from today's draft shows the real state immediately,
- * not just after the next new save.
- */
-function buildMuscleLoadSection(ctx) {
-  const wrap = document.createElement("div");
-  wrap.className = "workout__muscle-load";
-
-  const head = document.createElement("div");
-  head.className = "workout__muscle-load-head";
-  const label = document.createElement("span");
-  label.className = "card__label";
-  label.textContent = "Muscles Worked";
-  const sub = document.createElement("span");
-  sub.className = "workout__muscle-load-sub";
-  sub.textContent = "this session";
-  head.appendChild(label);
-  head.appendChild(sub);
-  wrap.appendChild(head);
-
-  const figs = document.createElement("div");
-  figs.className = "workout__muscle-load-figs";
-  wrap.appendChild(figs);
-
-  const list = document.createElement("div");
-  list.className = "workout__muscle-load-list";
-  wrap.appendChild(list);
-
-  ctx.muscleLoadFigs = figs;
-  ctx.muscleLoadList = list;
-  return wrap;
-}
-
-/** One row of the breakdown — same red/orange "primary+secondary SET count" shape as the builder's side panel (builderHeatRowHtml_, workout/builder.js); this session view stays a direct-count view, same as that panel, not the single red bar the Muscles tab's lists use (heatRowHtml_, workout/library.js). */
-/** Each count sits directly under its own bar segment (2026-10-05, was a combined "3+5" off to the side) so it's unambiguous which number is which. A zero-count side renders no number — an empty segment already shows zero. */
-function muscleLoadRowHtml_(key, primaryN, secondaryN, scale) {
-  const primaryPct = Math.max(0, Math.min(100, (primaryN / scale) * 100));
-  const secondaryPct = Math.max(0, Math.min(100 - primaryPct, (secondaryN / scale) * 100));
-  return `
-    <div class="workout__muscle-load-row">
-      <span class="workout__muscle-load-row__name">${muscleLabel_(key)}</span>
-      <span class="workout__muscle-load-row__bar">
-        <span class="workout__muscle-load-row__track">
-          <span class="workout__muscle-load-row__fill--primary" style="width:${primaryPct}%"></span>
-          <span class="workout__muscle-load-row__fill--secondary" style="width:${secondaryPct}%"></span>
-        </span>
-        <span class="workout__muscle-load-row__nums">
-          ${primaryN > 0 ? `<span class="workout__muscle-load-row__segnum--primary" style="width:${primaryPct}%">${primaryN}</span>` : ""}
-          ${secondaryN > 0 ? `<span class="workout__muscle-load-row__segnum--secondary" style="width:${secondaryPct}%">${secondaryN}</span>` : ""}
-        </span>
-      </span>
-    </div>`;
-}
-
-/** Repaints ctx's Muscles Worked panel from the sets actually saved so far this session — primary=1/secondary=0.5 per set, same weighting as everywhere else this app scores a set. */
-function refreshMuscleLoadSection_(ctx) {
-  if (!ctx.muscleLoadFigs) return;
-
-  const weighted = {};
-  const primaryCount = {};
-  const secondaryCount = {};
-  const unmatchedNames = new Set();
-  ctx.collectSets().forEach((s) => {
-    const exName = String(s.exercise || "").trim();
-    const resolved = resolveExerciseMuscles_(exName, exerciseIndex_);
-    if (!resolved.primary.length && !resolved.secondary.length) {
-      if (exName) unmatchedNames.add(exName);
-      return;
-    }
-    // Effective-sets model (2026-10-09), same engine the Muscles tab's
-    // weekly heatmap and the builder's side panel use — caps a single
-    // set's contribution to any muscle GROUP at 1.0 even when the exercise
-    // lists more than one fine head for it. primaryCount/secondaryCount
-    // stay the plain catalog-role tally the red/orange segments show,
-    // unrelated to the weighted number.
-    const perSet = effectiveSetsPerSet_(resolved);
-    Object.keys(perSet).forEach((k) => {
-      weighted[k] = (weighted[k] || 0) + perSet[k];
-    });
-    new Set(resolved.primary).forEach((k) => {
-      primaryCount[k] = (primaryCount[k] || 0) + 1;
-    });
-    new Set(resolved.secondary).forEach((k) => {
-      secondaryCount[k] = (secondaryCount[k] || 0) + 1;
+function snapshotRows_(ctx) {
+  const snap = new Map();
+  allRows_(ctx).forEach((row) => {
+    const key = `${row.dataset.exercise.toLowerCase()}|${row.dataset.setNumber}`;
+    snap.set(key, {
+      saved: row._saved ? { ...row._saved } : null,
+      touched: row._touched,
+      weightText: row.querySelector(".workout__weight-input").value,
+      repsText: row.querySelector(".workout__reps-input").value,
     });
   });
-
-  const frontSvg = muscleFigureSvg("front", "muscleLoadFrontTitle");
-  const backSvg = muscleFigureSvg("back", "muscleLoadBackTitle");
-  ctx.muscleLoadFigs.innerHTML =
-    `<div class="workout__muscle-load-fig-col">${frontSvg}<span class="workout__muscle-load-fig-caption">Front</span></div>` +
-    `<div class="workout__muscle-load-fig-col">${backSvg}<span class="workout__muscle-load-fig-caption">Back</span></div>`;
-  // Relative to this session's busiest muscle, not a fixed set count (2026-10-13).
-  ctx.muscleLoadFigs.querySelectorAll("svg.muscle-figure").forEach((svg) => paintMuscleHeat(svg, weighted));
-
-  const entries = Object.keys(weighted).sort((a, b) => weighted[b] - weighted[a]);
-  const scale = Math.max(1, ...entries.map((k) => (primaryCount[k] || 0) + (secondaryCount[k] || 0)));
-  const rowsHtml = entries.length
-    ? entries.map((k) => muscleLoadRowHtml_(k, primaryCount[k] || 0, secondaryCount[k] || 0, scale)).join("")
-    : '<p class="workout__muscle-load-empty">Save a set to see what this session trains</p>';
-  // Saved sets whose exercise name has no muscle data never silently
-  // vanish from the total (2026-10-09) — same "always show it" rule as the
-  // Muscles tab's weekly heatmap (workout/library.js).
-  const unmatchedHtml = unmatchedNames.size
-    ? `<p class="workout__muscle-load-empty">Not counted — no muscle data for: ${Array.from(unmatchedNames).map(libEscApp_).join(", ")}</p>`
-    : "";
-  ctx.muscleLoadList.innerHTML = rowsHtml + unmatchedHtml;
+  return snap;
 }
 
-/** Plain-text escape for the small bits of user-entered text (an exercise name) interpolated into innerHTML on this page — same purpose as library.js's libEsc, duplicated rather than shared since this page doesn't load that file. */
-function libEscApp_(text) {
-  const div = document.createElement("div");
-  div.textContent = text == null ? "" : String(text);
-  return div.innerHTML;
+function applySnapshot_(row, snap) {
+  const entry = snap && snap.get(`${row.dataset.exercise.toLowerCase()}|${row.dataset.setNumber}`);
+  if (!entry) return;
+  if (entry.touched || entry.saved) {
+    row.querySelector(".workout__weight-input").value = entry.weightText;
+    row.querySelector(".workout__reps-input").value = entry.repsText;
+    row.querySelectorAll(".workout__weight-input--prefilled, .workout__reps-input--prefilled").forEach((el) => el.classList.remove("workout__weight-input--prefilled", "workout__reps-input--prefilled"));
+  }
+  row._saved = entry.saved ? { ...entry.saved } : null;
+  row._touched = entry.touched;
+  refreshRowState(row);
 }
 
 /**
  * One exercise's set rows, not yet on the page: last-time numbers, starting
- * weight and anything already saved today. Shared by a normal exercise
- * (addExerciseSection) and a superset (addSupersetSection), which lays the
- * same rows out in rounds. Set numbers stay 1, 2, 3... per exercise either way.
+ * weight and anything already saved today. Shared by a normal exercise and a
+ * superset's members, which lay the same rows out in rounds. Set numbers
+ * stay 1, 2, 3... per exercise either way.
  */
-function buildExerciseSets_(ctx, exercise, savedSets, onSave) {
+function buildExerciseSets_(ctx, exercise, savedSets, onSave, rowOptions) {
   const { clientSlug, setRows, setCol, startingWeights } = ctx;
   const key = exercise.name.toLowerCase();
   const historySets = mostRecentSessionSets(setRows, setCol, clientSlug, key, ctx.beforeKey);
@@ -862,7 +840,8 @@ function buildExerciseSets_(ctx, exercise, savedSets, onSave) {
         suggestion: Boolean(hist),
       };
     }
-    const row = buildSetRow(exercise, setNumber, initial, onSave);
+    const row = buildSetRow(exercise, setNumber, initial, onSave, rowOptions);
+    if (ctx.activeSnapshot) applySnapshot_(row, ctx.activeSnapshot);
     rows.push(row);
     return row;
   }
@@ -874,21 +853,7 @@ function buildExerciseSets_(ctx, exercise, savedSets, onSave) {
   return { rows, addRow, historyWeight, prefillWeight };
 }
 
-/** The "Starting weight" line, only when there's no last time to go on. */
-function buildExerciseHint_(sets) {
-  const hint = document.createElement("p");
-  hint.className = "workout__exercise-hint";
-  // With history, each set row shows its own "Last time" line, so this hint is only for the no-history cases.
-  hint.hidden = sets.historyWeight !== null;
-  hint.textContent = sets.historyWeight !== null
-    ? ""
-    : sets.prefillWeight !== null
-      ? `Starting weight: ${formatWeight(sets.prefillWeight)}kg`
-      : "New exercise — enter your starting weight";
-  return hint;
-}
-
-/** Which muscles this exercise works, or null if we don't know. */
+/** Which muscles this exercise works, or null if we don't know. Left out of Simple view's single-exercise screen — no room, and not part of that view's spec. */
 function buildExerciseMuscles_(exercise) {
   const muscles = resolveExerciseMuscles_(exercise.name, exerciseIndex_);
   if (!muscles.primary.length && !muscles.secondary.length) return null;
@@ -910,308 +875,126 @@ function buildExerciseTip_(note) {
   return tip;
 }
 
-function addExerciseSection(ctx, exercise, opts) {
-  const isExtra = Boolean(opts && opts.isExtra);
-  const savedSets = (opts && opts.savedSets) || new Map(); // setNumber -> { weight, reps }
-  const key = exercise.name.toLowerCase();
-  const sets = buildExerciseSets_(ctx, exercise, savedSets, ctx.saveSet);
-
-  const section = document.createElement("section");
-  section.className = "workout__exercise";
-  section.dataset.firstExercise = exercise.name;
-  if (isExtra) section.classList.add("workout__exercise--extra");
-
-  const head = document.createElement("div");
-  head.className = "workout__exercise-head";
-
-  const name = document.createElement("h2");
-  name.className = "workout__exercise-name";
-  name.textContent = exercise.name;
-  head.appendChild(name);
-
-  const target = document.createElement("span");
-  target.className = "workout__exercise-target";
-  target.textContent = isExtra
-    ? "Extra"
-    : exercise.reps
-      ? `${exercise.sets} × ${exercise.reps}`
-      : `${exercise.sets} ${exercise.sets === 1 ? "set" : "sets"}`;
-  head.appendChild(target);
-
-  section.appendChild(head);
-
-  const musclesEl = buildExerciseMuscles_(exercise);
-  if (musclesEl) section.appendChild(musclesEl);
-
-  section.appendChild(buildExerciseHint_(sets));
-
-  if (exercise.note) section.appendChild(buildExerciseTip_(exercise.note));
-
-  const setsWrap = document.createElement("div");
-  setsWrap.className = "workout__sets";
-  sets.rows.forEach((row) => setsWrap.appendChild(row));
-  section.appendChild(setsWrap);
-
-  function appendSetRow(addedByClient) {
-    setsWrap.appendChild(sets.addRow(addedByClient));
+/**
+ * The play-icon "Watch how" button — hidden whenever an exercise has no
+ * video link. Nothing in the sheet carries one yet (no Exercises-tab column
+ * for it), so right now this is always hidden; it's wired up ready for when
+ * Max wants to add that.
+ */
+function buildWatchButton_(exercise, size) {
+  const url = exercise.video;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.hidden = !url;
+  if (size === "large") {
+    btn.className = "workout__watch-link";
+    btn.innerHTML = `${PLAY_SVG}<span>Watch how</span>`;
+  } else {
+    btn.className = "workout__watch-btn";
+    btn.setAttribute("aria-label", "Watch how to do it");
+    btn.innerHTML = PLAY_SVG;
   }
-
-  const addSetBtn = document.createElement("button");
-  addSetBtn.type = "button";
-  addSetBtn.className = "workout__add-set";
-  addSetBtn.textContent = "+ Add set";
-  addSetBtn.addEventListener("click", () => appendSetRow(true));
-  section.appendChild(addSetBtn);
-
-  ctx.sections.set(key, { section, name: exercise.name, addSet: () => appendSetRow(true) });
-  ctx.list.insertBefore(section, ctx.addExerciseWrap);
-  return section;
+  if (url) btn.addEventListener("click", () => window.open(url, "_blank", "noopener"));
+  return btn;
 }
 
-/** The set order for a superset: one set of each exercise per round; uneven counts finish their extra sets at the end of the last round. */
-function supersetOrder_(members) {
-  const rounds = Math.min(...members.map((m) => m.sets.rows.length));
-  const most = Math.max(...members.map((m) => m.sets.rows.length));
-  const order = [];
-  for (let setNumber = 1; setNumber <= most; setNumber++) {
-    members.forEach((member) => {
-      const row = member.sets.rows[setNumber - 1];
-      if (row) order.push({ member, row, setNumber, round: Math.min(setNumber, rounds), extra: setNumber > rounds });
-    });
-  }
-  return { rounds, order };
-}
+// ---- Item model ---------------------------------------------------------
+//
+// A workout is an ordered list of "items" — a plain exercise, or a superset
+// (2+ exercises the builder linked with "Superset with next"), each holding
+// its members' already-built set rows. Pure data + row construction; no DOM
+// insertion happens here — each view's own layout function decides how to
+// arrange these same items and rows on screen.
 
-function supersetRestText_(seconds) {
-  return seconds >= 120 && seconds % 60 === 0 ? `${seconds / 60} min` : `${seconds}s`;
+function itemName_(item) {
+  return item.type === "exercise" ? item.exercise.name : item.members.map((m) => m.exercise.name).join(" + ");
 }
-
-function scrollToSet_(el) {
-  const calm = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  el.scrollIntoView({ behavior: calm ? "auto" : "smooth", block: "start" });
+function itemTotalCount_(item) {
+  return item.type === "exercise" ? item.sets.rows.length : item.members.reduce((n, m) => n + m.sets.rows.length, 0);
+}
+function itemSavedCount_(item) {
+  const rows = item.type === "exercise" ? item.sets.rows : item.members.flatMap((m) => m.sets.rows);
+  return rows.filter((r) => r._saved).length;
+}
+function itemDone_(item) {
+  const total = itemTotalCount_(item);
+  return total > 0 && itemSavedCount_(item) === total;
 }
 
 /**
- * A superset or circuit (2+ exercises the builder linked with "Superset with
- * next"), logged in rounds: one set of A1, one of A2, rest, Round 2.
- *
- * Only the layout is different. Every set is the same row a normal exercise
- * uses, saved through ctx.saveSet with the same exercise name and set number,
- * so Logged Sets, history, progress and the muscle map see no difference.
- * Rows in folded rounds stay on the page, just hidden, because ctx.collectSets
- * reads saved sets from the page.
+ * Every set row that exists right now, whether or not it's actually mounted
+ * in the DOM — Checklist only attaches the one open item's rows, so a
+ * collapsed item's rows (and anything saved or typed into them before they
+ * collapsed) would be invisible to a plain `els.list.querySelectorAll(...)`.
+ * collectSets, the Finish-tap sweep and the unsaved-entries check all read
+ * through this instead, so nothing saved or typed is ever missed just
+ * because its exercise isn't the one currently open.
  */
-function addSupersetSection(ctx, exercises, letter, savedByExercise, restSeconds) {
-  const word = exercises.length >= 3 ? "Circuit" : "Superset";
-  const section = document.createElement("section");
-  section.className = "workout__ss";
-  section.dataset.firstExercise = exercises[0].name;
-
-  const pill = document.createElement("span");
-  pill.className = "workout__superset-label workout__ss-pill";
-  pill.textContent = `${word} ${letter}`;
-  section.appendChild(pill);
-
-  const rule = document.createElement("p");
-  rule.className = "workout__ss-rule";
-  rule.textContent = `${word}: do these back to back, then rest ${supersetRestText_(restSeconds)}`;
-  section.appendChild(rule);
-
-  const members = exercises.map((exercise, i) => {
-    const member = { exercise, code: `${letter}${i + 1}` };
-    const saved = savedByExercise.get(exercise.name.toLowerCase());
-    member.sets = buildExerciseSets_(ctx, exercise, saved ? saved.sets : new Map(), (row) => onSave(row));
-    return member;
-  });
-
-  const letterBadge = (code) => {
-    const badge = document.createElement("span");
-    badge.className = "workout__ss-letter";
-    badge.textContent = code;
-    return badge;
-  };
-
-  const overview = document.createElement("div");
-  overview.className = "workout__ss-overview";
-  members.forEach((member) => {
-    const { exercise } = member;
-    const line = document.createElement("div");
-    line.className = "workout__ss-overview-line";
-    const name = document.createElement("span");
-    name.className = "workout__ss-overview-name";
-    name.textContent = exercise.name;
-    const target = document.createElement("span");
-    target.className = "workout__exercise-target";
-    target.textContent = exercise.reps ? `${exercise.sets} × ${exercise.reps}` : `${exercise.sets} ${exercise.sets === 1 ? "set" : "sets"}`;
-    line.append(letterBadge(member.code), name, target);
-    const block = document.createElement("div");
-    block.className = "workout__ss-overview-row";
-    block.appendChild(line);
-    const musclesEl = buildExerciseMuscles_(exercise);
-    if (musclesEl) block.appendChild(musclesEl);
-    block.appendChild(buildExerciseHint_(member.sets));
-    overview.appendChild(block);
-  });
-  section.appendChild(overview);
-
-  const roundsWrap = document.createElement("div");
-  roundsWrap.className = "workout__ss-rounds";
-  section.appendChild(roundsWrap);
-
-  const doneLine = document.createElement("p");
-  doneLine.className = "workout__ss-done";
-  doneLine.textContent = `${word} ${letter} done ✓`;
-  section.appendChild(doneLine);
-
-  const adds = document.createElement("div");
-  adds.className = "workout__ss-adds";
-  members.forEach((member) => {
-    const add = document.createElement("button");
-    add.type = "button";
-    add.className = "workout__add-set";
-    add.textContent = `+ ${member.code} set`;
-    add.setAttribute("aria-label", `Add a set of ${member.exercise.name}`);
-    add.addEventListener("click", () => addSet(member));
-    adds.appendChild(add);
-  });
-  section.appendChild(adds);
-
-  const firstUnsaved = (order) => order.find((item) => !item.row._saved) || null;
-  let openRound = 0;
-
-  function render() {
-    const { rounds, order } = supersetOrder_(members);
-    const now = firstUnsaved(order);
-    roundsWrap.replaceChildren();
-    for (let round = 1; round <= rounds; round++) {
-      const items = order.filter((item) => item.round === round);
-      const finished = items.every((item) => item.row._saved);
-
-      const fold = document.createElement("button");
-      fold.type = "button";
-      fold.className = "workout__ss-fold";
-      fold.classList.toggle("workout__ss-fold--done", finished);
-      fold.hidden = round === openRound;
-      const foldTitle = document.createElement("span");
-      foldTitle.className = "workout__ss-fold-title";
-      foldTitle.textContent = `Round ${round}${finished ? " ✓" : ""}`;
-      const foldSummary = document.createElement("span");
-      foldSummary.className = "workout__ss-fold-summary";
-      items.forEach((item) => {
-        const line = document.createElement("span");
-        const saved = item.row._saved;
-        line.textContent = saved
-          ? `${item.member.code} ${formatWeight(saved.weight)} kg × ${saved.reps}`
-          : `${item.member.code} ${item.extra ? "extra set" : `set ${item.setNumber}`}`;
-        foldSummary.appendChild(line);
-      });
-      fold.append(foldTitle, foldSummary);
-      fold.addEventListener("click", () => {
-        openRound = round;
-        render();
-        scrollToSet_(roundsWrap.querySelector(`[data-round="${round}"]`));
-      });
-      roundsWrap.appendChild(fold);
-
-      const body = document.createElement("div");
-      body.className = "workout__ss-round";
-      body.dataset.round = String(round);
-      body.hidden = round !== openRound;
-      const title = document.createElement("h3");
-      title.className = "workout__ss-round-title";
-      title.textContent = `Round ${round} of ${rounds}`;
-      body.appendChild(title);
-      items.forEach((item) => {
-        const isNow = item === now;
-        const wrap = document.createElement("div");
-        wrap.className = "workout__ss-item";
-        wrap.classList.toggle("workout__ss-item--now", isNow);
-        const head = document.createElement("div");
-        head.className = "workout__ss-item-head";
-        const name = document.createElement("h4");
-        name.className = "workout__ss-item-name";
-        name.textContent = `${isNow ? "Now: " : ""}${item.member.exercise.name}`;
-        head.append(letterBadge(item.member.code), name);
-        if (item.extra) {
-          const tag = document.createElement("span");
-          tag.className = "workout__ss-item-tag";
-          tag.textContent = "Extra set";
-          head.appendChild(tag);
-        }
-        wrap.appendChild(head);
-        if (isNow && item.member.exercise.note) wrap.appendChild(buildExerciseTip_(item.member.exercise.note));
-        wrap.appendChild(item.row);
-        body.appendChild(wrap);
-      });
-      roundsWrap.appendChild(body);
-    }
-    doneLine.hidden = Boolean(now);
-  }
-
-  function restFor(label) {
-    startRestTimer({ seconds: restSeconds, label });
-  }
-
-  function onSave(row) {
-    const wasSaved = Boolean(row._saved);
-    if (!ctx.saveSet(row, { noRest: true })) return;
-    if (wasSaved) {
-      render(); // fixing a number: stay put, no timer
-      return;
-    }
-    const { order } = supersetOrder_(members);
-    const saved = order.find((item) => item.row === row);
-    const nextHere = firstUnsaved(order.filter((item) => item.round === saved.round));
-    if (nextHere) {
-      // Still in this round. Changing exercise is back to back; another set of the same one gets a rest.
-      if (nextHere.member === saved.member) restFor("Rest, then extra set");
-      openRound = saved.round;
-      render();
-      scrollToSet_(roundsWrap.querySelector(".workout__ss-item--now") || roundsWrap);
-      return;
-    }
-    const next = firstUnsaved(order);
-    if (next) {
-      restFor(`Rest, then Round ${next.round}`);
-      openRound = next.round;
-      render();
-      scrollToSet_(roundsWrap.querySelector(`[data-round="${next.round}"]`));
-      return;
-    }
-    openRound = 0;
-    render();
-    const after = section.nextElementSibling;
-    const nextName = after && after.dataset.firstExercise;
-    if (nextName) {
-      restFor(nextName.length <= 16 ? `Rest, then ${nextName}` : "Rest, then next exercise");
-      scrollToSet_(after);
-    }
-  }
-
-  function addSet(member) {
-    member.sets.addRow(true);
-    const { order } = supersetOrder_(members);
-    const now = firstUnsaved(order);
-    if (now) openRound = now.round;
-    render();
-    const nowEl = roundsWrap.querySelector(".workout__ss-item--now");
-    if (nowEl) scrollToSet_(nowEl);
-  }
-
-  const startAt = firstUnsaved(supersetOrder_(members).order);
-  openRound = startAt ? startAt.round : 0;
-  render();
-
-  ctx.supersetRenders.push(render);
-  members.forEach((member) => {
-    ctx.sections.set(member.exercise.name.toLowerCase(), { section, name: member.exercise.name, addSet: () => addSet(member) });
-  });
-  ctx.list.insertBefore(section, ctx.addExerciseWrap);
-  return section;
+function allRows_(ctx) {
+  if (!ctx || !ctx.items) return [];
+  return ctx.items.flatMap((item) => (item.type === "exercise" ? item.sets.rows : item.members.flatMap((m) => m.sets.rows)));
 }
 
-/** "+ Add Exercise" — collapsed button that expands into a name field + confirm, for whatever the client ends up doing instead of what was planned. */
-function buildAddExerciseControl(ctx, exerciseNameOptions) {
+/** Builds the ordered top-level items for this workout, including extras saved earlier today — same grouping rule as before (a run of "superset: Y" exercises becomes one group). */
+function buildItems_(ctx, exercises, savedByExercise, rowOptions) {
+  const items = [];
+  const assignedKeys = new Set();
+  let supersetCount = 0;
+  for (let i = 0; i < exercises.length; ) {
+    let last = i;
+    while (exercises[last].superset && exercises[last + 1]) last++;
+    const chain = exercises.slice(i, last + 1);
+    chain.forEach((exercise) => assignedKeys.add(exercise.name.toLowerCase()));
+    if (chain.length > 1) {
+      const rest = chain.map((exercise) => exercise.supersetRest).find((seconds) => seconds >= 15 && seconds <= 600) || 90;
+      const letter = String.fromCharCode(65 + (supersetCount % 26));
+      supersetCount++;
+      const members = chain.map((exercise, idx) => {
+        const saved = savedByExercise.get(exercise.name.toLowerCase());
+        const sets = buildExerciseSets_(ctx, exercise, saved ? saved.sets : new Map(), (row) => ctx.saveSet(row), rowOptions);
+        return { exercise, code: `${letter}${idx + 1}`, sets };
+      });
+      items.push({ type: "superset", letter, word: chain.length >= 3 ? "Circuit" : "Superset", members, restSeconds: rest });
+    } else {
+      const exercise = chain[0];
+      const saved = savedByExercise.get(exercise.name.toLowerCase());
+      const item = { type: "exercise", exercise, isExtra: false };
+      item.sets = buildExerciseSets_(ctx, exercise, saved ? saved.sets : new Map(), (row) => {
+        if (!ctx.saveSet(row)) return;
+        if (ctx.onItemChanged) ctx.onItemChanged(item);
+      }, rowOptions);
+      items.push(item);
+    }
+    i = last + 1;
+  }
+
+  for (const [lower, saved] of savedByExercise) {
+    if (assignedKeys.has(lower)) continue;
+    const exercise = { name: saved.name, sets: 1, reps: "" };
+    const item = { type: "exercise", exercise, isExtra: true };
+    item.sets = buildExerciseSets_(ctx, exercise, saved.sets, (row) => {
+      if (!ctx.saveSet(row)) return;
+      if (ctx.onItemChanged) ctx.onItemChanged(item);
+    }, rowOptions);
+    items.push(item);
+  }
+  return items;
+}
+
+function buildSavedByExercise_(sets) {
+  const map = new Map();
+  for (const s of sets) {
+    const lower = s.exercise.toLowerCase();
+    if (!map.has(lower)) map.set(lower, { name: s.exercise, sets: new Map() });
+    map.get(lower).sets.set(s.setNumber, { weight: s.weight, reps: s.reps });
+  }
+  return map;
+}
+
+// ---- "+ Add Exercise" ------------------------------------------------
+
+/** "+ Add Exercise" — collapsed button that expands into a name field + confirm, for whatever the client ends up doing instead of what was planned. Adds straight into ctx.items and re-lays-out the current view (relayoutCurrentView_), so it works the same from any of the three views. */
+function buildAddExerciseControl(ctx) {
   const wrap = document.createElement("div");
   wrap.className = "workout__add-exercise";
 
@@ -1235,7 +1018,7 @@ function buildAddExerciseControl(ctx, exerciseNameOptions) {
   if (!document.getElementById("extraExerciseOptions")) {
     const datalist = document.createElement("datalist");
     datalist.id = "extraExerciseOptions";
-    for (const optName of exerciseNameOptions) {
+    for (const optName of ctx.exerciseNameOptions || []) {
       const option = document.createElement("option");
       option.value = optName;
       datalist.appendChild(option);
@@ -1263,18 +1046,20 @@ function buildAddExerciseControl(ctx, exerciseNameOptions) {
       input.focus();
       return;
     }
-
-    // Two sections for the same lift would fight over the same set numbers
-    // when the session is saved — if it's already on the page, add a set to
-    // that one instead.
-    const existing = ctx.sections.get(exerciseName.toLowerCase());
+    const existing = ctx.items.find((it) => it.type === "exercise" && it.exercise.name.toLowerCase() === exerciseName.toLowerCase());
     if (existing) {
-      existing.addSet();
-      existing.section.scrollIntoView({ behavior: "smooth", block: "center" });
-      flashStatus(`${existing.name} is already in this workout — added a set to it.`, false);
+      existing.sets.addRow(true);
+      relayoutCurrentView_(ctx);
+      flashStatus(`${existing.exercise.name} is already in this workout — added a set to it.`, false);
     } else {
-      const section = addExerciseSection(ctx, { name: exerciseName, sets: 1, reps: "" }, { isExtra: true });
-      section.scrollIntoView({ behavior: "smooth", block: "center" });
+      const exercise = { name: exerciseName, sets: 1, reps: "" };
+      const item = { type: "exercise", exercise, isExtra: true };
+      item.sets = buildExerciseSets_(ctx, exercise, new Map(), (row) => {
+        if (!ctx.saveSet(row)) return;
+        if (ctx.onItemChanged) ctx.onItemChanged(item);
+      }, ctx.rowOptions);
+      ctx.items.push(item);
+      relayoutCurrentView_(ctx);
     }
     input.value = "";
     form.hidden = true;
@@ -1289,145 +1074,1111 @@ function buildAddExerciseControl(ctx, exerciseNameOptions) {
   return wrap;
 }
 
-/** Free-text notes for the whole session — how they're feeling, not tied to any one exercise. Kept with the saved sets, and sent with the rest when they log the workout. */
-function buildNotesSection(ctx, initialNotes) {
-  const wrap = document.createElement("div");
-  wrap.className = "workout__notes";
+/** Re-lays-out whichever view is currently showing, from ctx.items as they stand right now — used after "+ Add Exercise"/"+ Add set" change what items exist, without rebuilding any row's saved/typed state. */
+function relayoutCurrentView_(ctx) {
+  if (ctx.currentView === "checklist") {
+    if (ctx.checklistOpenIndex == null || ctx.checklistOpenIndex >= ctx.items.length) ctx.checklistOpenIndex = ctx.items.length - 1;
+    layoutChecklist_(ctx);
+  } else if (ctx.currentView === "simple") {
+    const preserveRow = ctx.simpleSteps[ctx.simpleIndex] && ctx.simpleSteps[ctx.simpleIndex].row;
+    ctx.simpleSteps = buildSimpleSteps_(ctx.items);
+    const newIdx = preserveRow ? ctx.simpleSteps.findIndex((s) => s.row === preserveRow) : -1;
+    ctx.simpleIndex = newIdx >= 0 ? newIdx : 0;
+    layoutSimple_(ctx);
+  } else {
+    layoutShowAll_(ctx);
+  }
+}
 
-  const label = document.createElement("span");
-  label.className = "workout__notes-label";
-  label.textContent = "Notes";
-  wrap.appendChild(label);
+function maybeAppendCoachNote_(ctx) {
+  if (ctx.coachNote) els.list.appendChild(buildCoachNote(ctx.coachNote));
+}
 
-  const textarea = document.createElement("textarea");
-  textarea.className = "workout__notes-input";
-  textarea.placeholder = "e.g. slept bad, shoulder hurts, etc.";
-  textarea.rows = 2;
-  textarea.value = initialNotes || "";
-  let saveTimer = null;
-  textarea.addEventListener("input", () => {
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => ctx.persist(), 400);
+function updateProgress_(ctx) {
+  if (!ctx.items) return;
+  const total = ctx.items.length;
+  const done = ctx.items.filter(itemDone_).length;
+  if (ctx.progressTextEl) ctx.progressTextEl.textContent = total ? `${done} of ${total} done` : "";
+  if (ctx.progressFillEl) ctx.progressFillEl.style.width = total ? `${(done / total) * 100}%` : "0%";
+}
+
+// ---- Show all -----------------------------------------------------------
+//
+// Every exercise open, one under another — closest to the old single view.
+// Column labels (Set/Last time/Kg/Reps) sit once in a sticky bar instead of
+// repeating per exercise.
+
+function renderExerciseBody_(ctx, item) {
+  const wrap = document.createElement("section");
+  wrap.className = "workout__exercise";
+  if (item.isExtra) wrap.classList.add("workout__exercise--extra");
+
+  const head = document.createElement("div");
+  head.className = "workout__exercise-head";
+  const name = document.createElement("h2");
+  name.className = "workout__exercise-name";
+  name.textContent = item.exercise.name;
+  head.appendChild(name);
+  const target = document.createElement("span");
+  target.className = "workout__exercise-target";
+  target.textContent = item.isExtra ? "Extra" : (item.exercise.reps ? `${item.exercise.sets} × ${item.exercise.reps}` : `${item.exercise.sets} ${item.exercise.sets === 1 ? "set" : "sets"}`);
+  head.appendChild(target);
+  head.appendChild(buildWatchButton_(item.exercise, "small"));
+  wrap.appendChild(head);
+
+  const musclesEl = buildExerciseMuscles_(item.exercise);
+  if (musclesEl) wrap.appendChild(musclesEl);
+  if (item.exercise.note) wrap.appendChild(buildExerciseTip_(item.exercise.note));
+
+  const setsWrap = document.createElement("div");
+  setsWrap.className = "workout__sets";
+  item.sets.rows.forEach((row) => setsWrap.appendChild(row));
+  wrap.appendChild(setsWrap);
+
+  const addBtn = document.createElement("button");
+  addBtn.type = "button";
+  addBtn.className = "workout__add-set";
+  addBtn.textContent = "+ Add set";
+  addBtn.addEventListener("click", () => {
+    setsWrap.appendChild(item.sets.addRow(true));
+    updateProgress_(ctx);
   });
-  wrap.appendChild(textarea);
+  wrap.appendChild(addBtn);
 
-  ctx.notesInput = textarea;
   return wrap;
 }
 
 /**
- * The end of the workout: a count of what's saved so far, and the "Log
- * Workout" button that sends it. Anything they filled in but forgot to tap
- * Save on still counts (they clearly did it); a set left as untouched
- * prefill doesn't (that's just last time's numbers, not something they did).
+ * A superset's full round-by-round body — shared by Show all (always shown
+ * this way) and Checklist (shown this way only for the one open item). One
+ * set of A1, one of A2, rest, Round 2 — only the layout is different from a
+ * normal exercise; every set still saves through ctx.saveSet with the same
+ * exercise name and set number, so Logged Sets, history, progress and the
+ * muscle map see no difference.
  */
-function buildLogSection(ctx) {
-  const wrap = document.createElement("div");
-  wrap.className = "workout__save-wrap";
+function renderSupersetBody_(ctx, item) {
+  const section = document.createElement("section");
+  section.className = "workout__ss";
 
-  const summary = document.createElement("p");
-  summary.className = "workout__save-summary";
-  wrap.appendChild(summary);
+  const pill = document.createElement("span");
+  pill.className = "workout__ss-pill";
+  pill.textContent = `${item.word} ${item.letter}`;
+  section.appendChild(pill);
 
-  // Only when the sheet already has this workout for this day and this phone has
-  // no draft of it (so it wasn't logged from here): logging would replace it.
-  const warning = document.createElement("p");
-  warning.className = "workout__save-warning";
-  warning.hidden = !ctx.alreadyLoggedCount;
-  if (ctx.alreadyLoggedCount) {
-    const when = ctx.isToday ? "today" : friendlyDate(ctx.dateStr);
-    warning.textContent = `${ctx.workoutName} is already logged for ${when} (${ctx.alreadyLoggedCount} set${ctx.alreadyLoggedCount === 1 ? "" : "s"}). Log Workout will replace it.`;
+  const rule = document.createElement("p");
+  rule.className = "workout__ss-rule";
+  rule.textContent = `${item.word}: do these back to back, then rest ${supersetRestText_(item.restSeconds)}`;
+  section.appendChild(rule);
+
+  const overview = document.createElement("div");
+  overview.className = "workout__ss-overview";
+  item.members.forEach((member, i) => {
+    const { exercise } = member;
+    const line = document.createElement("div");
+    line.className = "workout__ss-overview-line";
+    const letterBadge = document.createElement("span");
+    letterBadge.className = "workout__ss-letter";
+    letterBadge.textContent = member.code;
+    const name = document.createElement("span");
+    name.className = "workout__ss-overview-name";
+    name.textContent = exercise.name;
+    line.append(letterBadge, name, buildWatchButton_(exercise, "small"));
+    const block = document.createElement("div");
+    block.className = "workout__ss-overview-row";
+    block.appendChild(line);
+    const musclesEl = buildExerciseMuscles_(exercise);
+    if (musclesEl) block.appendChild(musclesEl);
+    if (exercise.note) block.appendChild(buildExerciseTip_(exercise.note));
+    overview.appendChild(block);
+    if (i < item.members.length - 1) {
+      const div = document.createElement("div");
+      div.className = "workout__ss-divider";
+      overview.appendChild(div);
+    }
+  });
+  section.appendChild(overview);
+
+  const roundsWrap = document.createElement("div");
+  roundsWrap.className = "workout__ss-rounds";
+  section.appendChild(roundsWrap);
+
+  const doneLine = document.createElement("p");
+  doneLine.className = "workout__ss-done";
+  doneLine.textContent = `${item.word} ${item.letter} done ✓`;
+  section.appendChild(doneLine);
+
+  const adds = document.createElement("div");
+  adds.className = "workout__ss-adds";
+  item.members.forEach((member) => {
+    const add = document.createElement("button");
+    add.type = "button";
+    add.className = "workout__add-set";
+    add.textContent = `+ ${member.code} set`;
+    add.setAttribute("aria-label", `Add a set of ${member.exercise.name}`);
+    add.addEventListener("click", () => addSet(member));
+    adds.appendChild(add);
+  });
+  section.appendChild(adds);
+
+  const firstUnsaved = (order) => order.find((o) => !o.row._saved) || null;
+  let openRound = 0;
+
+  function render() {
+    const { rounds, order } = supersetOrder_(item.members);
+    const now = firstUnsaved(order);
+    roundsWrap.replaceChildren();
+    for (let round = 1; round <= rounds; round++) {
+      const roundItems = order.filter((o) => o.round === round);
+      const finished = roundItems.every((o) => o.row._saved);
+
+      const fold = document.createElement("button");
+      fold.type = "button";
+      fold.className = "workout__ss-fold";
+      fold.classList.toggle("workout__ss-fold--done", finished);
+      fold.hidden = round === openRound;
+      const foldTitle = document.createElement("span");
+      foldTitle.className = "workout__ss-fold-title";
+      foldTitle.textContent = `Round ${round}${finished ? " ✓" : ""}`;
+      const foldSummary = document.createElement("span");
+      foldSummary.className = "workout__ss-fold-summary";
+      roundItems.forEach((o) => {
+        const line = document.createElement("span");
+        const saved = o.row._saved;
+        line.textContent = saved
+          ? `${o.member.code} ${formatWeight(saved.weight)} kg × ${saved.reps}`
+          : `${o.member.code} ${o.extra ? "extra set" : `set ${o.setNumber}`}`;
+        foldSummary.appendChild(line);
+      });
+      fold.append(foldTitle, foldSummary);
+      fold.addEventListener("click", () => {
+        openRound = round;
+        render();
+        scrollToSet_(roundsWrap.querySelector(`[data-round="${round}"]`));
+      });
+      roundsWrap.appendChild(fold);
+
+      const body = document.createElement("div");
+      body.className = "workout__ss-round";
+      body.dataset.round = String(round);
+      body.hidden = round !== openRound;
+      const title = document.createElement("h3");
+      title.className = "workout__ss-round-title";
+      title.textContent = `Round ${round} of ${rounds}`;
+      body.appendChild(title);
+      roundItems.forEach((o) => {
+        const isNow = o === now;
+        const itemWrap = document.createElement("div");
+        itemWrap.className = "workout__ss-item";
+        itemWrap.classList.toggle("workout__ss-item--now", isNow);
+        const h = document.createElement("div");
+        h.className = "workout__ss-item-head";
+        const badge = document.createElement("span");
+        badge.className = "workout__ss-letter";
+        badge.textContent = o.member.code;
+        const nm = document.createElement("h4");
+        nm.className = "workout__ss-item-name";
+        nm.textContent = `${isNow ? "Now: " : ""}${o.member.exercise.name}`;
+        h.append(badge, nm);
+        if (o.extra) {
+          const tag = document.createElement("span");
+          tag.className = "workout__ss-item-tag";
+          tag.textContent = "Extra set";
+          h.appendChild(tag);
+        }
+        itemWrap.appendChild(h);
+        itemWrap.appendChild(o.row);
+        body.appendChild(itemWrap);
+      });
+      roundsWrap.appendChild(body);
+    }
+    doneLine.hidden = Boolean(now);
   }
-  wrap.appendChild(warning);
 
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.className = "workout__save-btn";
-  btn.textContent = "Log Workout";
-  wrap.appendChild(btn);
+  function restFor(label) {
+    startRestTimer({ seconds: item.restSeconds, label });
+  }
 
-  ctx.updateSummary = () => {
-    const count = ctx.collectSets().length;
-    summary.textContent = count
-      ? `${count} set${count === 1 ? "" : "s"} saved — tap Log Workout when you're done.`
-      : "Tap Save after each set so nothing gets lost.";
-    // Piggybacks on this hook rather than adding a new call site — it
-    // already fires at exactly the right moments (every save, and once at
-    // the end of the initial render after any draft sets are restored).
-    refreshMuscleLoadSection_(ctx);
-  };
-  ctx.updateSummary();
-
-  btn.addEventListener("click", async () => {
-    let unfinished = 0;
-    ctx.list.querySelectorAll(".workout__set").forEach((row) => {
-      const values = rowValues(row);
-      if (values.valid && (row._saved || row._touched)) {
-        row._saved = { weight: values.weight, reps: values.reps };
-        refreshRowState(row);
-      } else if (!row._saved && row._touched) {
-        unfinished++; // typed something but never gave it both a weight and reps
-      }
-    });
-    ctx.supersetRenders.forEach((redraw) => redraw());
-
-    const previous = readDraft(ctx.draftKey);
-    const draft = ctx.persist();
-    if (!draft || !draft.sets.length) {
-      flashStatus("Tap Save on the sets you've done first, then Log Workout.", true);
+  function onSave(row) {
+    const wasSaved = Boolean(row._saved);
+    if (!ctx.saveSet(row, { noRest: true })) return;
+    if (wasSaved) {
+      render();
+      if (ctx.onItemChanged) ctx.onItemChanged(item);
       return;
     }
+    const { order } = supersetOrder_(item.members);
+    const saved = order.find((o) => o.row === row);
+    const nextHere = firstUnsaved(order.filter((o) => o.round === saved.round));
+    if (nextHere) {
+      if (nextHere.member === saved.member) restFor("Rest, then extra set");
+      openRound = saved.round;
+      render();
+      scrollToSet_(roundsWrap.querySelector(".workout__ss-item--now") || roundsWrap);
+      if (ctx.onItemChanged) ctx.onItemChanged(item);
+      return;
+    }
+    const next = firstUnsaved(order);
+    if (next) {
+      restFor(`Rest, then Round ${next.round}`);
+      openRound = next.round;
+      render();
+      scrollToSet_(roundsWrap.querySelector(`[data-round="${next.round}"]`));
+      if (ctx.onItemChanged) ctx.onItemChanged(item);
+      return;
+    }
+    openRound = 0;
+    render();
+    if (ctx.onItemChanged) ctx.onItemChanged(item);
+  }
 
-    els.status.hidden = true;
-    btn.disabled = true;
-    btn.textContent = "Logging…";
-    try {
-      // Nothing has changed since the last successful log — no need to send it again.
-      const alreadyInSheet = previous && !previous.pending && previous.notes === draft.notes && JSON.stringify(previous.sets) === JSON.stringify(draft.sets);
-      if (!alreadyInSheet) await postSession(draft);
+  function addSet(member) {
+    member.sets.addRow(true);
+    const { order } = supersetOrder_(item.members);
+    const now = firstUnsaved(order);
+    if (now) openRound = now.round;
+    render();
+    scrollToSet_(roundsWrap.querySelector(".workout__ss-item--now"));
+    updateProgress_(ctx);
+  }
 
-      const latest = readDraft(ctx.draftKey);
-      if (latest && latest.rev === draft.rev) writeDraft(ctx.draftKey, { ...latest, pending: false });
+  item.members.forEach((member) => member.sets.rows.forEach((row) => { row._onSave = onSave; }));
 
-      // The date was changed (or they went back) while this was sending — the
-      // draft above is already marked sent, but this screen isn't theirs anymore.
-      if (ctx.dead) return;
+  const startAt = firstUnsaved(supersetOrder_(item.members).order);
+  openRound = startAt ? startAt.round : 0;
+  render();
 
-      warning.hidden = true; // it's this phone's own log now
-      const unfinishedNote = unfinished
-        ? ` (${unfinished} set${unfinished === 1 ? "" : "s"} had no weight or reps, so ${unfinished === 1 ? "it wasn't" : "they weren't"} logged.)`
-        : "";
-      if (coachMode) {
-        // Logged by the coach for a client: no timer text, and the "workout
-        // completed" box (which belongs to whichever phone this is) stays alone.
-        const who = coachClientName || "them";
-        els.doneText.textContent = `Logged for ${who}${ctx.isToday ? "" : ` (${friendlyDate(ctx.dateStr)})`}. Scan the next member's QR code, or tap back to check-in.${unfinishedNote}`;
-      } else if (ctx.isToday) {
-        if (ctx.finalElapsed === undefined) ctx.finalElapsed = stopWorkoutTimer();
-        els.timerValue.textContent = formatElapsed(ctx.finalElapsed);
-        els.doneText.textContent = `Nice work — logged in ${formatElapsed(ctx.finalElapsed)}. Head back to your card.${unfinishedNote}`;
-        try {
-          localStorage.setItem(WORKOUT_COMPLETE_STORAGE_KEY, todayString());
-        } catch (err) {
-          // Storage unavailable — the card just won't auto-show as completed.
-        }
-      } else {
-        // A session for an earlier day isn't today's workout: no timer, and
-        // the card's "workout completed" box is left alone.
-        els.doneText.textContent = `Logged for ${friendlyDate(ctx.dateStr)}. Head back to your card.${unfinishedNote}`;
-      }
-      els.done.hidden = false;
-      els.done.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    } catch (err) {
-      if (!ctx.dead) showStatus("Couldn't reach the server — your sets are saved on this phone. Tap Log Workout again when you have signal.", true);
-    } finally {
-      btn.disabled = false;
-      btn.textContent = "Log Workout";
+  return section;
+}
+
+/** The set order for a superset: one set of each exercise per round; uneven counts finish their extra sets at the end of the last round. */
+function supersetOrder_(members) {
+  const rounds = Math.min(...members.map((m) => m.sets.rows.length));
+  const most = Math.max(...members.map((m) => m.sets.rows.length));
+  const order = [];
+  for (let setNumber = 1; setNumber <= most; setNumber++) {
+    members.forEach((member) => {
+      const row = member.sets.rows[setNumber - 1];
+      if (row) order.push({ member, row, setNumber, round: Math.min(setNumber, rounds), extra: setNumber > rounds });
+    });
+  }
+  return { rounds, order };
+}
+
+function supersetRestText_(seconds) {
+  return seconds >= 120 && seconds % 60 === 0 ? `${seconds / 60} min` : `${seconds}s`;
+}
+
+function layoutShowAll_(ctx) {
+  els.list.className = "workout__list view--showall";
+  els.list.innerHTML = "";
+  maybeAppendCoachNote_(ctx);
+
+  const labels = document.createElement("div");
+  labels.className = "workout__showall-labels";
+  labels.innerHTML = "<span>Set</span><span>Last time</span><span>Kg</span><span>Reps</span><span></span>";
+  els.list.appendChild(labels);
+
+  ctx.items.forEach((item) => {
+    els.list.appendChild(item.type === "exercise" ? renderExerciseBody_(ctx, item) : renderSupersetBody_(ctx, item));
+  });
+
+  ctx.addExerciseWrap = buildAddExerciseControl(ctx);
+  els.list.appendChild(ctx.addExerciseWrap);
+  els.list.appendChild(buildFinishBar_(ctx));
+  updateProgress_(ctx);
+}
+
+// ---- Checklist ------------------------------------------------------------
+//
+// One exercise open at a time; everything else collapses to a single row.
+// Finishing the open item's last set collapses it and opens the next
+// unfinished one automatically.
+
+function checklistSummary_(item) {
+  const total = itemTotalCount_(item);
+  const savedN = itemSavedCount_(item);
+  if (item.type === "exercise") {
+    const lastRow = item.sets.rows.find((r) => r._last);
+    const lastText = lastRow ? ` · last ${formatWeight(lastRow._last.weight)}kg${Number.isFinite(lastRow._last.reps) ? ` × ${lastRow._last.reps}` : ""}` : "";
+    return `${savedN}/${total} set${total === 1 ? "" : "s"}${lastText}`;
+  }
+  return `${item.word} · ${savedN}/${total} sets`;
+}
+
+function renderSupersetCollapsed_(ctx, item, idx) {
+  const box = document.createElement("div");
+  box.className = "workout__ss";
+  box.dataset.itemIndex = String(idx);
+  box.style.cursor = "pointer";
+  box.classList.toggle("workout__cl-row--done", itemDone_(item));
+
+  const pill = document.createElement("span");
+  pill.className = "workout__ss-pill";
+  pill.textContent = `${item.word} ${item.letter}`;
+  box.appendChild(pill);
+
+  const rule = document.createElement("p");
+  rule.className = "workout__ss-rule";
+  rule.textContent = `${item.word}: do these back to back, then rest ${supersetRestText_(item.restSeconds)}`;
+  box.appendChild(rule);
+
+  const members = document.createElement("div");
+  members.className = "workout__cl-ss-members";
+  item.members.forEach((m) => {
+    const row = document.createElement("div");
+    row.className = "workout__cl-ss-member";
+    const letter = document.createElement("span");
+    letter.className = "workout__ss-letter";
+    letter.textContent = m.code;
+    const nm = document.createElement("span");
+    nm.className = "workout__ss-member-name";
+    nm.textContent = m.exercise.name;
+    row.append(letter, nm);
+    members.appendChild(row);
+  });
+  box.appendChild(members);
+
+  box.addEventListener("click", () => {
+    ctx.checklistOpenIndex = idx;
+    layoutChecklist_(ctx);
+    requestAnimationFrame(() => scrollToSet_(els.list.querySelector(`[data-item-index="${idx}"]`)));
+  });
+  return box;
+}
+
+function checklistOnItemChanged_(ctx, item) {
+  if (!itemDone_(item)) return; // still mid-item (e.g. a superset round in progress) — its own body re-renders itself
+  const idx = ctx.items.indexOf(item);
+  if (idx !== ctx.checklistOpenIndex) return;
+  const next = ctx.items.findIndex((it, i) => i > idx && !itemDone_(it));
+  ctx.checklistOpenIndex = next >= 0 ? next : idx;
+  layoutChecklist_(ctx);
+  requestAnimationFrame(() => scrollToSet_(els.list.querySelector(`[data-item-index="${ctx.checklistOpenIndex}"]`)));
+}
+
+function layoutChecklist_(ctx) {
+  ctx.onItemChanged = (item) => checklistOnItemChanged_(ctx, item);
+  els.list.className = "workout__list view--checklist";
+  els.list.innerHTML = "";
+  maybeAppendCoachNote_(ctx);
+
+  if (ctx.checklistOpenIndex == null || ctx.checklistOpenIndex < 0) {
+    const firstUnfinished = ctx.items.findIndex((it) => !itemDone_(it));
+    ctx.checklistOpenIndex = firstUnfinished >= 0 ? firstUnfinished : Math.max(0, ctx.items.length - 1);
+  }
+
+  ctx.items.forEach((item, idx) => {
+    if (idx === ctx.checklistOpenIndex) {
+      const open = document.createElement("div");
+      open.className = "workout__cl-open";
+      open.dataset.itemIndex = String(idx);
+      open.appendChild(item.type === "exercise" ? renderExerciseBody_(ctx, item) : renderSupersetBody_(ctx, item));
+      els.list.appendChild(open);
+    } else if (item.type === "superset") {
+      els.list.appendChild(renderSupersetCollapsed_(ctx, item, idx));
+    } else {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "workout__cl-row";
+      row.dataset.itemIndex = String(idx);
+      const done = itemDone_(item);
+      row.classList.toggle("workout__cl-row--done", done);
+      const badge = document.createElement("span");
+      badge.className = "workout__cl-badge";
+      badge.innerHTML = done ? TICK_SVG : String(idx + 1);
+      const text = document.createElement("span");
+      text.className = "workout__cl-text";
+      const nameEl = document.createElement("span");
+      nameEl.className = "workout__cl-name";
+      nameEl.textContent = itemName_(item);
+      const sub = document.createElement("span");
+      sub.className = "workout__cl-sub";
+      sub.textContent = checklistSummary_(item);
+      text.append(nameEl, sub);
+      row.append(badge, text);
+      row.addEventListener("click", () => {
+        ctx.checklistOpenIndex = idx;
+        layoutChecklist_(ctx);
+        requestAnimationFrame(() => scrollToSet_(els.list.querySelector(`[data-item-index="${idx}"]`)));
+      });
+      els.list.appendChild(row);
     }
   });
 
+  ctx.addExerciseWrap = buildAddExerciseControl(ctx);
+  els.list.appendChild(ctx.addExerciseWrap);
+  els.list.appendChild(buildFinishBar_(ctx));
+  updateProgress_(ctx);
+}
+
+// ---- Simple view ----------------------------------------------------------
+//
+// One exercise, one set, one screen. The whole workout is flattened into a
+// single ordered sequence of steps (supersetOrder_ already gives the right
+// A1 → A2 → rest → round-2 order for a group); DONE saves the current step
+// and moves to the next one, Previous/Skip just move without saving.
+
+function buildSimpleSteps_(items) {
+  const steps = [];
+  items.forEach((item, itemIndex) => {
+    if (item.type === "exercise") {
+      item.sets.rows.forEach((row, idx) => {
+        steps.push({ item, itemIndex, kind: "exercise", row, setNumber: idx + 1, totalSets: item.sets.rows.length });
+      });
+    } else {
+      const { rounds, order } = supersetOrder_(item.members);
+      order.forEach((o) => {
+        steps.push({ item, itemIndex, kind: "superset", row: o.row, member: o.member, setNumber: o.setNumber, round: o.round, rounds, extra: o.extra });
+      });
+    }
+  });
+  return steps;
+}
+
+function describeNextStep_(steps, currentIdx) {
+  const cur = steps[currentIdx];
+  const next = steps[currentIdx + 1];
+  if (!cur) return "";
+  if (!next) return "You're done — tap Finish Workout below";
+  if (cur.kind === "exercise") {
+    if (next.itemIndex === cur.itemIndex) return `Next: Set ${next.setNumber}`;
+    return `Next: ${next.kind === "superset" ? next.member.exercise.name : next.item.exercise.name}, no rest`;
+  }
+  // superset
+  if (next.itemIndex === cur.itemIndex) {
+    if (next.round === cur.round) {
+      if (next.member === cur.member) return "Next: Rest, then extra set";
+      return `Next: ${next.member.exercise.name}, no rest`;
+    }
+    return `Next: Rest ${supersetRestText_(cur.item.restSeconds)}, then Round ${next.round}`;
+  }
+  return `Next: ${next.kind === "superset" ? next.member.exercise.name : next.item.exercise.name}, no rest`;
+}
+
+function onSimpleDone_(ctx) {
+  const steps = ctx.simpleSteps;
+  const idx = ctx.simpleIndex;
+  const cur = steps[idx];
+  if (!cur) return;
+  const next = steps[idx + 1];
+  let restSeconds = null;
+  let restLabel = null;
+  if (cur.kind === "superset" && next && next.itemIndex === cur.itemIndex) {
+    if (next.round !== cur.round) {
+      restSeconds = cur.item.restSeconds;
+      restLabel = `Rest, then Round ${next.round}`;
+    } else if (next.member === cur.member) {
+      restSeconds = cur.item.restSeconds;
+      restLabel = "Rest, then extra set";
+    }
+  }
+  if (!ctx.saveSet(cur.row, { noRest: true })) return;
+  if (restSeconds !== null) startRestTimer({ seconds: restSeconds, label: restLabel });
+  ctx.simpleIndex = Math.min(idx + 1, steps.length);
+  layoutSimple_(ctx);
+}
+
+function onSimplePrev_(ctx) {
+  ctx.simpleIndex = Math.max(0, ctx.simpleIndex - 1);
+  layoutSimple_(ctx);
+}
+
+function onSimpleSkip_(ctx) {
+  ctx.simpleIndex = Math.min(ctx.simpleSteps.length, ctx.simpleIndex + 1);
+  layoutSimple_(ctx);
+}
+
+function layoutSimple_(ctx) {
+  ctx.onItemChanged = undefined;
+  els.list.className = "workout__list view--simple";
+  els.list.innerHTML = "";
+  maybeAppendCoachNote_(ctx);
+
+  const steps = ctx.simpleSteps;
+  const container = document.createElement("div");
+
+  const progress = document.createElement("div");
+  progress.className = "workout__simple-progress";
+  const curItemIdx = steps[ctx.simpleIndex] ? steps[ctx.simpleIndex].itemIndex : ctx.items.length;
+  ctx.items.forEach((item, i) => {
+    const seg = document.createElement("span");
+    seg.className = "workout__simple-seg";
+    if (i < curItemIdx) seg.classList.add("workout__simple-seg--done");
+    else if (i === curItemIdx) seg.classList.add("workout__simple-seg--now");
+    progress.appendChild(seg);
+  });
+  container.appendChild(progress);
+
+  const meta = document.createElement("p");
+  meta.className = "workout__simple-meta";
+  const elapsedText = ctx.isToday && !coachMode ? ` · ${formatElapsed(workoutTimerStart ? Date.now() - workoutTimerStart : (ctx.finalElapsed || 0))}` : "";
+  meta.textContent = `Exercise ${Math.min(curItemIdx + 1, ctx.items.length)} of ${ctx.items.length}${elapsedText}`;
+  container.appendChild(meta);
+
+  const step = steps[ctx.simpleIndex];
+  if (!step) {
+    const complete = document.createElement("div");
+    complete.className = "workout__simple-complete";
+    complete.innerHTML = `${CHECK_CIRCLE_SVG}<p>All sets done</p>`;
+    container.appendChild(complete);
+  } else {
+    if (step.kind === "superset") {
+      const pill = document.createElement("span");
+      pill.className = "workout__simple-ss-pill";
+      pill.textContent = `${step.item.word} ${step.item.letter} · Round ${step.round} of ${step.rounds}`;
+      container.appendChild(pill);
+    }
+
+    const exercise = step.kind === "superset" ? step.member.exercise : step.item.exercise;
+    const card = document.createElement("div");
+    card.className = "workout__simple-card";
+
+    const exName = document.createElement("h2");
+    exName.className = "workout__simple-exname";
+    exName.textContent = exercise.name;
+    card.appendChild(exName);
+
+    const last = document.createElement("p");
+    last.className = "workout__simple-last";
+    last.textContent = step.row._last ? `Last time: ${formatWeight(step.row._last.weight)} kg${Number.isFinite(step.row._last.reps) ? ` × ${step.row._last.reps}` : ""}` : "No history yet";
+    card.appendChild(last);
+
+    const watchRow = document.createElement("div");
+    watchRow.className = "workout__simple-watch-row";
+    watchRow.appendChild(buildWatchButton_(exercise, "large"));
+    card.appendChild(watchRow);
+
+    if (exercise.note) {
+      const tip = buildExerciseTip_(exercise.note);
+      tip.classList.add("workout__simple-tip");
+      card.appendChild(tip);
+    }
+
+    const setLabel = document.createElement("p");
+    setLabel.className = "workout__simple-setlabel";
+    const totalForThis = step.kind === "superset" ? step.member.sets.rows.length : step.totalSets;
+    setLabel.textContent = `Set ${step.setNumber} of ${totalForThis}`;
+    card.appendChild(setLabel);
+
+    card.appendChild(step.row);
+
+    const doneBtn = document.createElement("button");
+    doneBtn.type = "button";
+    doneBtn.className = "workout__simple-done-btn";
+    const doneLabel = document.createElement("span");
+    doneLabel.textContent = "DONE";
+    const doneNext = document.createElement("span");
+    doneNext.className = "workout__simple-done-next";
+    doneNext.textContent = describeNextStep_(steps, ctx.simpleIndex);
+    doneBtn.append(doneLabel, doneNext);
+    doneBtn.addEventListener("click", () => onSimpleDone_(ctx));
+    card.appendChild(doneBtn);
+
+    const nav = document.createElement("div");
+    nav.className = "workout__simple-nav";
+    const prevBtn = document.createElement("button");
+    prevBtn.type = "button";
+    prevBtn.className = "workout__simple-nav-btn";
+    prevBtn.textContent = "Previous";
+    prevBtn.disabled = ctx.simpleIndex === 0;
+    prevBtn.addEventListener("click", () => onSimplePrev_(ctx));
+    const skipBtn = document.createElement("button");
+    skipBtn.type = "button";
+    skipBtn.className = "workout__simple-nav-btn";
+    skipBtn.textContent = "Skip";
+    skipBtn.addEventListener("click", () => onSimpleSkip_(ctx));
+    nav.append(prevBtn, skipBtn);
+    card.appendChild(nav);
+
+    container.appendChild(card);
+  }
+
+  els.list.appendChild(container);
+  ctx.addExerciseWrap = buildAddExerciseControl(ctx);
+  els.list.appendChild(ctx.addExerciseWrap);
+  els.list.appendChild(buildFinishBar_(ctx));
+  updateProgress_(ctx);
+}
+
+// ---- Finish / Review -------------------------------------------------
+
+function buildFinishBar_(ctx) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "workout__finish-btn";
+  btn.textContent = "Finish Workout";
+  btn.addEventListener("click", () => onFinishTapped_(ctx));
+  return btn;
+}
+
+function onFinishTapped_(ctx) {
+  let unfinished = 0;
+  allRows_(ctx).forEach((row) => {
+    const values = rowValues(row);
+    if (values.valid && (row._saved || row._touched)) {
+      row._saved = { weight: values.weight, reps: values.reps };
+      refreshRowState(row);
+    } else if (!row._saved && row._touched) {
+      unfinished++;
+    }
+  });
+  ctx.persist();
+  if (!ctx.collectSets().length) {
+    flashStatus("Tap the tick on the sets you've done first, then Finish Workout.", true);
+    return;
+  }
+  showReview_(ctx, unfinished);
+}
+
+function computePersonalBests_(ctx, sets) {
+  const { setRows, setCol, clientSlug } = ctx;
+  if (setCol.weight < 0 || setCol.exercise < 0 || setCol.client < 0) return [];
+  const byExercise = new Map();
+  sets.forEach((s) => {
+    const key = s.exercise.toLowerCase();
+    const cur = byExercise.get(key);
+    if (!cur || s.weight > cur.weight || (s.weight === cur.weight && s.reps > cur.reps)) {
+      byExercise.set(key, { name: s.exercise, weight: s.weight, reps: s.reps });
+    }
+  });
+  const lines = [];
+  for (const [key, today] of byExercise) {
+    const prevBest = allTimeBestSet_(setRows, setCol, clientSlug, key);
+    const isPb = !prevBest
+      || today.weight > prevBest.weight
+      || (today.weight === prevBest.weight && (!Number.isFinite(prevBest.reps) || today.reps > prevBest.reps));
+    if (isPb) lines.push(`${today.name} — ${formatWeight(today.weight)}kg × ${today.reps}`);
+  }
+  return lines;
+}
+
+function renderMuscleReview_(figsEl, listEl, sets) {
+  const weighted = {};
+  const totalCount = {};
+  const unmatchedNames = new Set();
+  sets.forEach((s) => {
+    const exName = String(s.exercise || "").trim();
+    const resolved = resolveExerciseMuscles_(exName, exerciseIndex_);
+    if (!resolved.primary.length && !resolved.secondary.length) {
+      if (exName) unmatchedNames.add(exName);
+      return;
+    }
+    const perSet = effectiveSetsPerSet_(resolved);
+    Object.keys(perSet).forEach((k) => { weighted[k] = (weighted[k] || 0) + perSet[k]; });
+    new Set([...resolved.primary, ...resolved.secondary]).forEach((k) => { totalCount[k] = (totalCount[k] || 0) + 1; });
+  });
+
+  const frontSvg = muscleFigureSvg("front", "reviewMuscleFrontTitle");
+  const backSvg = muscleFigureSvg("back", "reviewMuscleBackTitle");
+  figsEl.className = "workout__review-figs";
+  figsEl.innerHTML =
+    `<div class="workout__review-fig-col">${frontSvg}<span class="workout__review-fig-caption">Front</span></div>` +
+    `<div class="workout__review-fig-col">${backSvg}<span class="workout__review-fig-caption">Back</span></div>`;
+  figsEl.querySelectorAll("svg.muscle-figure").forEach((svg) => paintMuscleHeat(svg, weighted));
+
+  const entries = Object.keys(totalCount).sort((a, b) => totalCount[b] - totalCount[a]);
+  const scale = Math.max(1, ...entries.map((k) => totalCount[k]));
+  const rowsHtml = entries.length
+    ? entries.map((k) => `<div class="workout__review-muscle-row"><span class="workout__review-muscle-name">${muscleLabel_(k)}</span><span class="workout__review-muscle-track"><span class="workout__review-muscle-fill" style="width:${(totalCount[k] / scale) * 100}%"></span></span><span class="workout__review-muscle-count">${totalCount[k]} set${totalCount[k] === 1 ? "" : "s"}</span></div>`).join("")
+    : '<p class="workout__review-empty">No muscle data for today’s sets.</p>';
+  const unmatchedHtml = unmatchedNames.size
+    ? `<p class="workout__review-empty">Not counted — no muscle data for: ${Array.from(unmatchedNames).map(libEscApp_).join(", ")}</p>`
+    : "";
+  listEl.innerHTML = rowsHtml + unmatchedHtml;
+}
+
+function showReview_(ctx, unfinished) {
+  stopRestTimer();
+  if (ctx.isToday && !coachMode && ctx.finalElapsed === undefined) ctx.finalElapsed = stopWorkoutTimer();
+  const sets = ctx.collectSets();
+  const totalKg = sets.reduce((sum, s) => sum + s.weight * s.reps, 0);
+
+  const wrap = document.createElement("div");
+  wrap.className = "workout__review-inner";
+
+  const head = document.createElement("div");
+  head.className = "workout__review-head";
+  const tickWrap = document.createElement("span");
+  tickWrap.className = "workout__review-tick";
+  tickWrap.innerHTML = CHECK_CIRCLE_SVG;
+  const title = document.createElement("h2");
+  title.className = "workout__review-title";
+  title.textContent = "Workout Done";
+  const sub = document.createElement("p");
+  sub.className = "workout__review-sub";
+  const firstName = (coachClientName || memberId || "").split(/\s+/)[0] || "there";
+  sub.textContent = `Nice work, ${firstName}. ${ctx.workoutName} is ready to save.`;
+  head.append(tickWrap, title, sub);
+  wrap.appendChild(head);
+
+  const tiles = document.createElement("div");
+  tiles.className = "workout__review-tiles";
+  const tileData = [
+    ["TIME", ctx.isToday && !coachMode ? formatElapsed(ctx.finalElapsed || 0) : "—"],
+    ["SETS", String(sets.length)],
+    ["KG LIFTED", String(Math.round(totalKg))],
+  ];
+  tiles.innerHTML = tileData.map(([label, value]) => `<div class="workout__review-tile"><span class="workout__review-tile-label">${label}</span><span class="workout__review-tile-value">${value}</span></div>`).join("");
+  wrap.appendChild(tiles);
+
+  const pbCard = document.createElement("div");
+  pbCard.className = "workout__review-pb";
+  const pbLines = computePersonalBests_(ctx, sets);
+  pbCard.hidden = pbLines.length === 0;
+  pbCard.innerHTML = `<span class="workout__review-pb-title">${TROPHY_SVG}New Personal Best</span>` + pbLines.map((l) => `<p class="workout__review-pb-line">${libEscApp_(l)}</p>`).join("");
+  wrap.appendChild(pbCard);
+
+  const muscleSection = document.createElement("div");
+  muscleSection.className = "workout__review-section";
+  const muscleLabel = document.createElement("span");
+  muscleLabel.className = "workout__review-section-label";
+  muscleLabel.textContent = "Muscles Worked";
+  const figs = document.createElement("div");
+  const list = document.createElement("div");
+  renderMuscleReview_(figs, list, sets);
+  muscleSection.append(muscleLabel, figs, list);
+  wrap.appendChild(muscleSection);
+
+  const notesWrap = document.createElement("div");
+  notesWrap.className = "workout__review-section";
+  const notesLabel = document.createElement("span");
+  notesLabel.className = "workout__review-section-label";
+  notesLabel.textContent = "How did it feel? (optional)";
+  const notesInput = document.createElement("textarea");
+  notesInput.className = "workout__review-notes-input";
+  notesInput.rows = 2;
+  notesInput.placeholder = "e.g. slept bad, shoulder hurts, etc.";
+  const existingDraft = readDraft(ctx.draftKey);
+  notesInput.value = (existingDraft && existingDraft.notes) || "";
+  ctx.notesInput = notesInput;
+  notesWrap.append(notesLabel, notesInput);
+  wrap.appendChild(notesWrap);
+
+  const warning = document.createElement("p");
+  warning.className = "workout__review-warning";
+  warning.hidden = !ctx.alreadyLoggedCount;
+  if (ctx.alreadyLoggedCount) {
+    const when = ctx.isToday ? "today" : friendlyDate(ctx.dateStr);
+    warning.textContent = `${ctx.workoutName} is already logged for ${when} (${ctx.alreadyLoggedCount} set${ctx.alreadyLoggedCount === 1 ? "" : "s"}). Saving will replace it.`;
+  }
+  wrap.appendChild(warning);
+
+  const saveBtn = document.createElement("button");
+  saveBtn.type = "button";
+  saveBtn.className = "workout__review-save";
+  saveBtn.textContent = "Save & Close";
+  wrap.appendChild(saveBtn);
+
+  const backBtn = document.createElement("button");
+  backBtn.type = "button";
+  backBtn.className = "workout__review-back";
+  backBtn.textContent = "Back to workout";
+  backBtn.addEventListener("click", () => {
+    els.review.hidden = true;
+    els.list.hidden = false;
+    if (ctx.isToday && !coachMode && ctx.finalElapsed !== undefined) {
+      startWorkoutTimer(ctx.timerValueEl, ctx.finalElapsed);
+      ctx.finalElapsed = undefined;
+    }
+  });
+  wrap.appendChild(backBtn);
+
+  saveBtn.addEventListener("click", () => doSaveAndClose_(ctx, saveBtn, warning, unfinished));
+
+  els.review.innerHTML = "";
+  els.review.appendChild(wrap);
+  els.list.hidden = true;
+  els.review.hidden = false;
+  els.review.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function doSaveAndClose_(ctx, btn, warning, unfinished) {
+  const previous = readDraft(ctx.draftKey);
+  const draft = ctx.persist();
+  if (!draft || !draft.sets.length) {
+    flashStatus("Tap the tick on the sets you've done first, then Finish Workout.", true);
+    return;
+  }
+  els.status.hidden = true;
+  btn.disabled = true;
+  btn.textContent = "Saving…";
+  try {
+    // Nothing has changed since the last successful save — no need to send it again.
+    const alreadyInSheet = previous && !previous.pending && previous.notes === draft.notes && JSON.stringify(previous.sets) === JSON.stringify(draft.sets);
+    if (!alreadyInSheet) await postSession(draft);
+
+    const latest = readDraft(ctx.draftKey);
+    if (latest && latest.rev === draft.rev) writeDraft(ctx.draftKey, { ...latest, pending: false });
+
+    // The date was changed (or they went back) while this was sending — the
+    // draft above is already marked sent, but this screen isn't theirs anymore.
+    if (ctx.dead) return;
+
+    warning.hidden = true; // it's this phone's own log now
+    const unfinishedNote = unfinished
+      ? ` (${unfinished} set${unfinished === 1 ? "" : "s"} had no weight or reps, so ${unfinished === 1 ? "it wasn't" : "they weren't"} logged.)`
+      : "";
+    if (coachMode) {
+      const who = coachClientName || "them";
+      els.doneText.textContent = `Logged for ${who}${ctx.isToday ? "" : ` (${friendlyDate(ctx.dateStr)})`}. Scan the next member's QR code, or tap back to check-in.${unfinishedNote}`;
+    } else if (ctx.isToday) {
+      els.doneText.textContent = `Nice work — logged in ${formatElapsed(ctx.finalElapsed || 0)}. Head back to your card.${unfinishedNote}`;
+      try {
+        localStorage.setItem(WORKOUT_COMPLETE_STORAGE_KEY, todayString());
+      } catch (err) {
+        // Storage unavailable — the card just won't auto-show as completed.
+      }
+    } else {
+      els.doneText.textContent = `Logged for ${friendlyDate(ctx.dateStr)}. Head back to your card.${unfinishedNote}`;
+    }
+    els.review.hidden = true;
+    els.list.hidden = true;
+    els.done.hidden = false;
+    els.done.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  } catch (err) {
+    if (!ctx.dead) showStatus("Couldn't reach the server — your sets are saved on this phone. Tap Save & Close again when you have signal.", true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Save & Close";
+  }
+}
+
+// ---- View switching + the view picker sheet ---------------------------
+
+function viewPrefKey_() {
+  return `maxfitWorkoutView|${memberId}`;
+}
+function readViewPref_() {
+  if (!storageUsable) return "checklist";
+  try {
+    const v = localStorage.getItem(viewPrefKey_());
+    return v === "checklist" || v === "showall" || v === "simple" ? v : "checklist";
+  } catch (err) {
+    return "checklist";
+  }
+}
+function writeViewPref_(view) {
+  if (!storageUsable) return;
+  try {
+    localStorage.setItem(viewPrefKey_(), view);
+  } catch (err) {
+    // Not remembered this time — no big deal, it'll default to Checklist next open.
+  }
+}
+
+function variantForView_(view) {
+  return view === "simple" ? "simple" : "compact";
+}
+
+function renderCurrentView(ctx, snapshot) {
+  const rowOptions = { variant: variantForView_(ctx.currentView), hideSaveButton: ctx.currentView === "simple" };
+  ctx.rowOptions = rowOptions;
+  ctx.activeSnapshot = snapshot || null;
+  ctx.items = buildItems_(ctx, ctx.exercises, ctx.savedByExercise, rowOptions);
+  ctx.activeSnapshot = null;
+
+  if (ctx.currentView === "checklist") {
+    ctx.checklistOpenIndex = null; // let layoutChecklist_ pick the first unfinished item
+    layoutChecklist_(ctx);
+  } else if (ctx.currentView === "simple") {
+    ctx.simpleSteps = buildSimpleSteps_(ctx.items);
+    const firstUnsavedIdx = ctx.simpleSteps.findIndex((s) => !s.row._saved);
+    ctx.simpleIndex = firstUnsavedIdx >= 0 ? firstUnsavedIdx : ctx.simpleSteps.length;
+    layoutSimple_(ctx);
+  } else {
+    layoutShowAll_(ctx);
+  }
+}
+
+function switchView_(ctx, shared, newView) {
+  if (newView === ctx.currentView) return;
+  const snapshot = snapshotRows_(ctx);
+  ctx.savedByExercise = buildSavedByExercise_(ctx.collectSets());
+  ctx.currentView = newView;
+  shared.currentView = newView;
+  writeViewPref_(newView);
+  renderCurrentView(ctx, snapshot);
+}
+
+const VIEW_OPTIONS = [
+  { id: "checklist", title: "Checklist", sub: "One exercise open at a time. Ticks off as you go.", diagram: CL_DIAGRAM_SVG },
+  { id: "showall", title: "Show all", sub: "Every exercise open. Scroll through the whole session.", diagram: SA_DIAGRAM_SVG },
+  { id: "simple", title: "Simple view", sub: "One exercise per screen, big buttons. Nothing else.", diagram: SV_DIAGRAM_SVG },
+];
+
+let viewSheetEl = null;
+let viewSheetCtx_ = null;
+let viewSheetShared_ = null;
+
+function openViewSheet_(ctx, shared) {
+  viewSheetCtx_ = ctx;
+  viewSheetShared_ = shared;
+  if (!viewSheetEl) {
+    viewSheetEl = document.createElement("div");
+    viewSheetEl.className = "workout__sheet";
+    viewSheetEl.hidden = true;
+    viewSheetEl.innerHTML = `
+      <div class="workout__sheet-backdrop" data-close></div>
+      <div class="workout__sheet-panel" role="dialog" aria-modal="true" aria-label="Choose a view">
+        <div class="workout__sheet-grip"></div>
+        <h2 class="workout__sheet-title">How do you want to see your workout?</h2>
+        <div class="workout__view-options">
+          ${VIEW_OPTIONS.map((o) => `
+            <button type="button" class="workout__view-option" data-view="${o.id}" aria-pressed="false">
+              <span class="workout__view-option-diagram">${o.diagram}</span>
+              <span class="workout__view-option-text">
+                <span class="workout__view-option-title">${o.title}</span>
+                <span class="workout__view-option-sub">${o.sub}</span>
+              </span>
+              <span class="workout__view-option-tick">${TICK_SVG}</span>
+            </button>`).join("")}
+        </div>
+        <p class="workout__sheet-note">You can switch any time. We'll remember your choice.</p>
+        <button type="button" class="workout__sheet-done" data-close>Done</button>
+      </div>`;
+    document.body.appendChild(viewSheetEl);
+    viewSheetEl.addEventListener("click", (e) => {
+      if (e.target.closest("[data-close]")) {
+        viewSheetEl.hidden = true;
+        return;
+      }
+      const optBtn = e.target.closest(".workout__view-option");
+      if (optBtn && viewSheetCtx_) {
+        switchView_(viewSheetCtx_, viewSheetShared_, optBtn.dataset.view);
+        viewSheetEl.querySelectorAll(".workout__view-option").forEach((b) => b.setAttribute("aria-pressed", String(b === optBtn)));
+      }
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && viewSheetEl && !viewSheetEl.hidden) viewSheetEl.hidden = true;
+    });
+  }
+  viewSheetEl.querySelectorAll(".workout__view-option").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === ctx.currentView)));
+  viewSheetEl.hidden = false;
+}
+
+// ---- Shared header: name, VIEW button, date + timer pills, progress ----
+
+function buildWorkoutHead_(ctx, shared, workoutName) {
+  const wrap = document.createElement("div");
+  wrap.className = "workout__head";
+
+  const top = document.createElement("div");
+  top.className = "workout__head-top";
+  const name = document.createElement("h1");
+  name.className = "workout__name";
+  name.textContent = workoutName || (ctx.isToday ? "Today's Workout" : "Workout");
+  const viewBtn = document.createElement("button");
+  viewBtn.type = "button";
+  viewBtn.className = "workout__view-btn";
+  viewBtn.innerHTML = `${VIEW_ICON_SVG}<span>View</span>`;
+  viewBtn.addEventListener("click", () => openViewSheet_(ctx, shared));
+  top.append(name, viewBtn);
+  wrap.appendChild(top);
+
+  const pills = document.createElement("div");
+  pills.className = "workout__pills";
+
+  const datePill = document.createElement("label");
+  datePill.className = "workout__pill workout__pill--date";
+  const dateIcon = document.createElement("span");
+  dateIcon.innerHTML = CALENDAR_ICON_SVG;
+  const dateText = document.createElement("span");
+  dateText.className = "workout__pill-text";
+  const dateInput = document.createElement("input");
+  dateInput.type = "date";
+  dateInput.id = "workoutDateInput";
+  const today = sydneyDateStr();
+  dateInput.max = today;
+  dateInput.min = shiftDate(today, -MAX_BACKLOG_DAYS);
+  dateInput.addEventListener("change", () => changeDate(shared, dateInput.value));
+  datePill.append(dateIcon, dateText, dateInput);
+  pills.appendChild(datePill);
+
+  const timerPill = document.createElement("span");
+  timerPill.className = "workout__pill workout__pill--timer";
+  timerPill.hidden = coachMode || !ctx.isToday;
+  timerPill.innerHTML = `${CLOCK_ICON_SVG}<span class="workout__pill-text">0:00</span>`;
+  pills.appendChild(timerPill);
+  wrap.appendChild(pills);
+
+  const changedNote = document.createElement("p");
+  changedNote.className = "workout__date-changed-note";
+  const changedText = document.createElement("span");
+  changedNote.appendChild(changedText);
+  const resetBtn = document.createElement("button");
+  resetBtn.type = "button";
+  resetBtn.className = "workout__date-reset";
+  resetBtn.textContent = "Back to today";
+  resetBtn.addEventListener("click", () => changeDate(shared, sydneyDateStr()));
+  changedNote.appendChild(resetBtn);
+  wrap.appendChild(changedNote);
+
+  const progress = document.createElement("div");
+  progress.className = "workout__progress";
+  const progressText = document.createElement("p");
+  progressText.className = "workout__progress-text";
+  const progressBar = document.createElement("div");
+  progressBar.className = "workout__progress-bar";
+  const progressFill = document.createElement("div");
+  progressFill.className = "workout__progress-fill";
+  progressBar.appendChild(progressFill);
+  progress.append(progressText, progressBar);
+  wrap.appendChild(progress);
+
+  ctx.timerValueEl = timerPill.querySelector(".workout__pill-text");
+  ctx.progressTextEl = progressText;
+  ctx.progressFillEl = progressFill;
+
+  shared.syncDate = () => {
+    const isToday = shared.date === sydneyDateStr();
+    dateInput.value = shared.date;
+    dateText.textContent = isToday ? "Today ▾" : `${friendlyDate(shared.date)} ▾`;
+    datePill.classList.toggle("workout__pill--changed", !isToday);
+    changedNote.hidden = isToday;
+    changedText.textContent = isToday ? "" : `Logging for ${friendlyDate(shared.date)} — this won't count as today's workout.`;
+  };
+  shared.syncDate();
+
   return wrap;
 }
+
+/** Any typed-in-but-unsaved set, mounted or not (those would be lost when the workout reloads for the new day). */
+function hasUnsavedEntries(ctx) {
+  return allRows_(ctx).some((row) => row._touched && !row.classList.contains("workout__set--saved"));
+}
+
+function changeDate(shared, value) {
+  const today = sydneyDateStr();
+  let next = /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : today; // cleared or garbled -> today
+  if (next > today) next = today; // yyyy-MM-dd strings compare correctly as text
+  const earliest = shiftDate(today, -MAX_BACKLOG_DAYS);
+  if (next < earliest) next = earliest;
+
+  if (next === shared.date) {
+    shared.syncDate();
+    return;
+  }
+
+  if (shared.current) {
+    if (hasUnsavedEntries(shared.currentCtx) && !window.confirm("Changing the date reloads this workout. Sets you've typed but not saved will be cleared. Continue?")) {
+      shared.syncDate(); // stay put
+      return;
+    }
+    if (shared.currentCtx) shared.currentCtx.persist();
+  }
+
+  shared.date = next;
+  shared.syncDate();
+  if (shared.current) renderWorkout(shared, shared.current.workoutName, shared.current.exercises);
+}
+
+// ---- Top-level render ---------------------------------------------------
+
+// Built once during the initial load (card/muscle-map.js's
+// buildExerciseIndex_, from the Exercises tab) so exercise bodies can show
+// which muscles an exercise works — and the review screen can resolve a
+// saved set's exercise name to its muscles — without an extra fetch.
+let exerciseIndex_ = { byExact: {}, byNormalized: {} };
 
 function renderWorkout(shared, workoutName, exercises) {
   const { clientSlug, setRows, setCol, startingWeights, exerciseNameOptions } = shared;
@@ -1439,55 +2190,48 @@ function renderWorkout(shared, workoutName, exercises) {
   els.status.hidden = true;
   els.list.innerHTML = "";
   els.list.hidden = false;
+  els.review.hidden = true;
   els.done.hidden = true;
-  els.pageTag.textContent = workoutName || (isToday ? "Today's Workout" : "Workout");
-  if (isToday && !coachMode) {
-    startWorkoutTimer();
-  } else {
-    stopWorkoutTimer(); // a session logged after the fact (or by the coach) has no meaningful duration
-    els.timer.hidden = true;
-  }
+  els.pageTag.textContent = coachMode ? "Coach" : "Workout";
 
   const key = draftKey(clientSlug, workoutName, dateStr);
 
-  // The only sets ever put back on screen are ones THIS client tapped Save on,
-  // on this phone, today, in this exact workout (the draft's key is client +
-  // workout + day). Nothing is read back out of the sheet for display — logged
-  // history only shows up as the grey "last time" numbers, and in the calendar.
+  // The only sets ever put back on screen are ones THIS client tapped the
+  // tick on, on this phone, today, in this exact workout (the draft's key is
+  // client + workout + day). Nothing is read back out of the sheet for
+  // display — logged history only shows up as "last time" numbers, and in
+  // the calendar.
   const draft = readDraft(key);
   const restored = draft
     ? { sets: draft.sets || [], notes: draft.notes || "" }
     : { sets: [], notes: "" };
-  const savedByExercise = new Map(); // nameLower -> { name, sets: Map(setNumber -> { weight, reps }) }
-  for (const s of restored.sets) {
-    const lower = s.exercise.toLowerCase();
-    if (!savedByExercise.has(lower)) savedByExercise.set(lower, { name: s.exercise, sets: new Map() });
-    savedByExercise.get(lower).sets.set(s.setNumber, { weight: s.weight, reps: s.reps });
-  }
 
   const ctx = {
     clientSlug, workoutName, setRows, setCol, startingWeights,
-    list: els.list,
-    addExerciseWrap: null,
-    notesInput: null,
-    sections: new Map(), // nameLower -> { section, name, addSet }
-    supersetRenders: [], // each superset panel's redraw, for when sets are saved from outside it
+    exerciseNameOptions,
+    exercises,
+    currentView: shared.currentView,
     draftKey: key,
     dateStr,
     isToday,
     beforeKey: dateSortKey(dateStr),
-    // Warn (never display) if logging this would replace a session already in the sheet.
+    coachNote: shared.workoutNotes ? shared.workoutNotes[workoutName] : "",
+    // Warn (never display mid-workout) if finishing this would replace a session already in the sheet.
     alreadyLoggedCount: draft ? 0 : existingLogCount(setRows, setCol, clientSlug, workoutName, dateStr),
     dead: false,
-    updateSummary: () => {},
+    finalElapsed: undefined,
   };
   shared.currentCtx = ctx;
 
-  /** Every set they've tapped Save on, in on-screen order — using the numbers as last saved, not whatever's typed in the box right now. */
+  /** Every set they've tapped the tick on, in on-screen order — using the numbers as last saved, not whatever's typed in the box right now. */
   ctx.collectSets = () => {
     // Grouped by exercise, so a superset's rounds give the same order as any other exercise.
+    // Reads every row that exists (allRows_), not just whichever ones the
+    // current view happens to have mounted — Checklist only mounts the one
+    // open item's rows, so a DOM-only scan would drop anything saved in a
+    // collapsed item.
     const byExercise = new Map();
-    ctx.list.querySelectorAll(".workout__set").forEach((row) => {
+    allRows_(ctx).forEach((row) => {
       if (!row._saved) return;
       if (!byExercise.has(row.dataset.exercise)) byExercise.set(row.dataset.exercise, []);
       byExercise.get(row.dataset.exercise).push({ exercise: row.dataset.exercise, setNumber: Number(row.dataset.setNumber), weight: row._saved.weight, reps: row._saved.reps });
@@ -1504,7 +2248,7 @@ function renderWorkout(shared, workoutName, exercises) {
    */
   ctx.persist = () => {
     const sets = ctx.collectSets();
-    const notes = ctx.notesInput ? ctx.notesInput.value.trim() : "";
+    const notes = ctx.notesInput ? ctx.notesInput.value.trim() : (readDraft(key) ? readDraft(key).notes : "");
     const previous = readDraft(key);
     if (!sets.length && !notes && !previous) return null;
     if (previous && previous.notes === notes && JSON.stringify(previous.sets) === JSON.stringify(sets)) return previous;
@@ -1519,65 +2263,49 @@ function renderWorkout(shared, workoutName, exercises) {
     return next;
   };
 
-  /** Returns whether it saved. A superset passes noRest and runs its own timer. */
+  /** Returns whether it saved. A superset / Simple view pass noRest and run their own rest logic. */
   ctx.saveSet = (row, options) => {
     const values = rowValues(row);
     if (!values.valid) {
       const needsWeight = !Number.isFinite(values.weight) || values.weight < 0;
-      row.querySelector(needsWeight ? ".workout__weight" : ".workout__reps").classList.add("workout__field--invalid");
-      setTimeout(() => row.querySelectorAll(".workout__field--invalid").forEach((el) => el.classList.remove("workout__field--invalid")), 1400);
       flashStatus(needsWeight ? "Add the weight first (0 for bodyweight)." : "Add the reps first.", true);
       return false;
     }
     row._saved = { weight: values.weight, reps: values.reps };
+    // A blank box that saved via its grey suggestion now shows that
+    // confirmed number as a real value, not an empty placeholder.
+    const weightInput = row.querySelector(".workout__weight-input");
+    const repsInput = row.querySelector(".workout__reps-input");
+    if (weightInput.value.trim() === "") weightInput.value = formatWeight(values.weight);
+    if (repsInput.value.trim() === "") repsInput.value = String(values.reps);
     refreshRowState(row);
     const before = readDraft(key);
     const after = ctx.persist();
     if (!before || !after || after.rev !== before.rev) els.done.hidden = true; // changed since it was logged — needs logging again
-    ctx.updateSummary();
+    updateProgress_(ctx);
     if (!(options && options.noRest)) startRestTimer();
     return true;
   };
 
-  els.list.appendChild(buildMuscleLoadSection(ctx));
+  // The sets they'd already saved today for this exact workout+day, restored from the draft.
+  ctx.savedByExercise = buildSavedByExercise_(restored.sets);
 
-  // The coach's note for the whole workout, if there is one, sits above the exercises.
-  const coachNote = shared.workoutNotes ? shared.workoutNotes[workoutName] : "";
-  if (coachNote) els.list.appendChild(buildCoachNote(coachNote));
+  const headWrap = buildWorkoutHead_(ctx, shared, workoutName);
+  const oldHead = document.querySelector(".workout__head");
+  if (oldHead) oldHead.remove();
+  document.querySelector(".card__top").insertAdjacentElement("afterend", headWrap);
 
-  ctx.addExerciseWrap = buildAddExerciseControl(ctx, exerciseNameOptions || []);
-  els.list.appendChild(ctx.addExerciseWrap);
-
-  // Linked exercises become one superset panel. A "Y" with nothing after it
-  // links to nothing, so that exercise stays a normal one.
-  const assignedKeys = new Set();
-  let supersetCount = 0;
-  for (let i = 0; i < exercises.length; ) {
-    let last = i;
-    while (exercises[last].superset && exercises[last + 1]) last++;
-    const chain = exercises.slice(i, last + 1);
-    chain.forEach((exercise) => assignedKeys.add(exercise.name.toLowerCase()));
-    if (chain.length > 1) {
-      const rest = chain.map((exercise) => exercise.supersetRest).find((seconds) => seconds >= 15 && seconds <= 600) || 90;
-      addSupersetSection(ctx, chain, String.fromCharCode(65 + supersetCount % 26), savedByExercise, rest);
-      supersetCount++;
-    } else {
-      const saved = savedByExercise.get(chain[0].name.toLowerCase());
-      addExerciseSection(ctx, chain[0], { isExtra: false, savedSets: saved ? saved.sets : null });
-    }
-    i = last + 1;
+  if (isToday && !coachMode) {
+    startWorkoutTimer(ctx.timerValueEl);
+  } else {
+    stopWorkoutTimer();
   }
 
-  // Extras they'd saved earlier TODAY come back with the rest of today's
-  // session. (Nothing from a previous workout carries over — those live in
-  // the history calendar.)
-  for (const [lower, saved] of savedByExercise) {
-    if (assignedKeys.has(lower)) continue;
-    addExerciseSection(ctx, { name: saved.name, sets: 1, reps: "" }, { isExtra: true, savedSets: saved.sets });
-  }
+  renderCurrentView(ctx, null);
 
-  els.list.appendChild(buildNotesSection(ctx, restored.notes));
-  els.list.appendChild(buildLogSection(ctx));
+  // Pre-fill the notes box (built fresh on the review screen) from the draft;
+  // actual persistence of typed notes happens when the review screen opens
+  // or Finish is tapped, same draft shape as before.
 
   // Arrived from the Exercise Library's "Add to Today's Workout" (?addExercise=).
   // Only once per page load — not on a later renderWorkout (changing the date,
@@ -1589,12 +2317,18 @@ function renderWorkout(shared, workoutName, exercises) {
     const url = new URL(window.location.href);
     url.searchParams.delete("addExercise");
     history.replaceState(null, "", url.toString());
-    if (!assignedKeys.has(pendingAdd.toLowerCase()) && !savedByExercise.has(pendingAdd.toLowerCase())) {
-      addExerciseSection(ctx, { name: pendingAdd, sets: 1, reps: "" }, { isExtra: true });
+    const already = ctx.items.some((it) => it.type === "exercise" && it.exercise.name.toLowerCase() === pendingAdd.toLowerCase());
+    if (!already) {
+      const exercise = { name: pendingAdd, sets: 1, reps: "" };
+      const item = { type: "exercise", exercise, isExtra: true };
+      item.sets = buildExerciseSets_(ctx, exercise, new Map(), (row) => {
+        if (!ctx.saveSet(row)) return;
+        if (ctx.onItemChanged) ctx.onItemChanged(item);
+      }, ctx.rowOptions);
+      ctx.items.push(item);
+      relayoutCurrentView_(ctx);
     }
   }
-
-  ctx.updateSummary();
 }
 
 /** "Logging for <client>" — shown in coach mode so it's always obvious whose workout is being filled in. Text only, never markup. */
@@ -1631,105 +2365,23 @@ function buildCoachNote(text) {
   return box;
 }
 
-/**
- * "Workout date" — today unless it's pointed at an earlier day. Built here
- * (not in index.html) so this script never depends on markup an older cached
- * copy of the page might not have. Future days aren't possible, and neither
- * is anything more than a year back (that's a typo, not a backlog).
- */
-function buildDateRow(shared) {
-  const wrap = document.createElement("div");
-  wrap.className = "workout__date";
-
-  const row = document.createElement("div");
-  row.className = "workout__date-row";
-
-  const label = document.createElement("label");
-  label.className = "workout__date-label";
-  label.htmlFor = "workoutDateInput";
-  label.textContent = "Workout date";
-  row.appendChild(label);
-
-  const input = document.createElement("input");
-  input.type = "date";
-  input.id = "workoutDateInput";
-  input.className = "workout__date-input";
-  const today = sydneyDateStr();
-  input.max = today;
-  input.min = shiftDate(today, -MAX_BACKLOG_DAYS);
-  row.appendChild(input);
-  wrap.appendChild(row);
-
-  const note = document.createElement("p");
-  note.className = "workout__date-note";
-  note.hidden = true;
-  const noteText = document.createElement("span");
-  note.appendChild(noteText);
-  const resetBtn = document.createElement("button");
-  resetBtn.type = "button";
-  resetBtn.className = "workout__date-reset";
-  resetBtn.textContent = "Back to today";
-  note.appendChild(resetBtn);
-  wrap.appendChild(note);
-
-  shared.syncDate = () => {
-    const isToday = shared.date === sydneyDateStr();
-    input.value = shared.date;
-    note.hidden = isToday;
-    noteText.textContent = isToday ? "" : `Logging for ${friendlyDate(shared.date)} — this won't count as today's workout.`;
-  };
-
-  input.addEventListener("change", () => changeDate(shared, input.value));
-  resetBtn.addEventListener("click", () => changeDate(shared, sydneyDateStr()));
-  shared.syncDate();
-  return wrap;
-}
-
-/** Sets: any typed-in-but-unsaved set on screen (those would be lost when the workout reloads for the new day). */
-function hasUnsavedEntries() {
-  return Array.from(els.list.querySelectorAll(".workout__set")).some((row) => row._touched && !row.classList.contains("workout__set--saved"));
-}
-
-function changeDate(shared, value) {
-  const today = sydneyDateStr();
-  let next = /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : today; // cleared or garbled -> today
-  if (next > today) next = today; // yyyy-MM-dd strings compare correctly as text
-  const earliest = shiftDate(today, -MAX_BACKLOG_DAYS);
-  if (next < earliest) next = earliest;
-
-  if (next === shared.date) {
-    shared.syncDate();
-    return;
-  }
-
-  if (shared.current) {
-    if (hasUnsavedEntries() && !window.confirm("Changing the date reloads this workout. Sets you've typed but not saved will be cleared. Continue?")) {
-      shared.syncDate(); // stay put
-      return;
-    }
-    if (shared.currentCtx) shared.currentCtx.persist(); // keep any notes typed so far with the day they belong to
-  }
-
-  shared.date = next;
-  shared.syncDate();
-  if (shared.current) renderWorkout(shared, shared.current.workoutName, shared.current.exercises);
-}
-
 function showPicker(shared, workoutGroups, workoutNames) {
   if (shared.currentCtx) shared.currentCtx.dead = true;
   shared.current = null;
   shared.currentCtx = null;
   els.status.hidden = true;
   els.list.hidden = true;
+  els.review.hidden = true;
   els.done.hidden = true;
   stopWorkoutTimer();
-  els.timer.hidden = true;
   stopRestTimer();
-  els.pageTag.textContent = coachMode ? "Choose Workout" : "Choose Your Workout";
+  const oldHead = document.querySelector(".workout__head");
+  if (oldHead) oldHead.remove();
+  els.pageTag.textContent = coachMode ? "Coach" : "Workout";
   els.picker.hidden = false;
   els.pickerList.innerHTML = "";
   const pickerHint = els.picker.querySelector(".workout__picker-hint");
-  if (pickerHint && coachMode) pickerHint.textContent = "Which workout did they do?";
+  if (pickerHint) pickerHint.textContent = coachMode ? "Which workout did they do?" : "Which one are you doing today?";
   els.backLink.href = homeHref();
   els.backLink.onclick = null;
 
@@ -1836,14 +2488,14 @@ async function init() {
     // Shared resolver (card/muscle-map.js), not a plain exact-lowercase
     // lookup (2026-10-09 fix) — see workout/heatmap.js's header comment for
     // why: the old matching silently dropped most of what clients actually
-    // logged, here too (this is what the live Train-session panel reads).
+    // logged, here too (this is what the review screen's muscle summary reads).
     exerciseIndex_ = buildExerciseIndex_(exerciseDefaults.rows, exerciseDefaults.col);
   } catch (err) {
     showStatus("Couldn't load your workout. Check your connection and reopen.", true);
     return;
   }
 
-  // Send off anything from an earlier day that was saved but never logged.
+  // Send off anything from an earlier day that was saved but never sent.
   flushOldDrafts(sydneyDateStr());
 
   // Infinity - Infinity is NaN, an invalid sort comparator result — a
@@ -1859,9 +2511,13 @@ async function init() {
   }
 
   // date = the day being logged (today unless changed); current/currentCtx =
-  // whichever workout is open, so changing the date can reload it for the new day.
-  const shared = { clientSlug, setRows, setCol, startingWeights, exerciseNameOptions, workoutNotes, date: sydneyDateStr(), current: null, currentCtx: null };
-  document.querySelector(".card__top").insertAdjacentElement("afterend", buildDateRow(shared));
+  // whichever workout is open, so changing the date can reload it for the
+  // new day; currentView = the client's remembered view, shared so switching
+  // views or re-rendering for a new date doesn't reset it.
+  const shared = {
+    clientSlug, setRows, setCol, startingWeights, exerciseNameOptions, workoutNotes,
+    date: sydneyDateStr(), current: null, currentCtx: null, currentView: readViewPref_(),
+  };
   if (coachMode) document.querySelector(".card__top").insertAdjacentElement("afterend", buildCoachBanner(coachClientName || memberId));
 
   // Sent here for one particular workout (the check-in page's buttons): open

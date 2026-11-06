@@ -1,6 +1,10 @@
 /* ==========================================================================
    MAXFIT · workout logger
    Loads on top of card/styles.css — same shell/fonts/palette as the card.
+   Three views (Checklist / Show all / Simple view) share one set of classes
+   for the parts that don't change — header, pills, progress, finish button,
+   review screen, rest timer, add-exercise, notes. Each view's own layout is
+   under its own "view --checklist / --showall / --simple" prefix below.
    ========================================================================== */
 
 /* card/styles.css centers .card vertically with `body { align-items: center }`,
@@ -15,8 +19,7 @@ body {
 }
 
 .workout {
-  gap: 20px;
-  /* a little less side padding than the card, so two 48px steppers fit side by side on a phone */
+  gap: 18px;
   padding-left: 14px;
   padding-right: 14px;
   /* Unlike the fixed-height card, this page can run long — a floating
@@ -66,15 +69,6 @@ body {
   color: var(--red);
 }
 
-.workout__version {
-  font-family: var(--font-body);
-  font-size: 14px;
-  color: var(--dim);
-  text-align: center;
-  opacity: 0.7;
-  margin: -6px 0 0;
-}
-
 /* Coach mode: whose workout this is, unmistakably. */
 .workout__coach-banner {
   display: flex;
@@ -108,63 +102,130 @@ body {
   overflow-wrap: anywhere;
 }
 
-/* Workout date: today by default; pointed at an earlier day it logs a session that already happened. */
-.workout__date {
+/* ==========================================================================
+   Shared header — workout name, VIEW button, date + timer pills, progress.
+   Built once per renderWorkout by buildWorkoutHead_ (app.js).
+   ========================================================================== */
+
+.workout__head {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 
-.workout__date-row {
+.workout__head-top {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+}
+
+.workout__name {
+  margin: 0;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  font-size: 36px;
+  line-height: 1.05;
+  color: var(--white);
+  overflow-wrap: anywhere;
+}
+
+.workout__view-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 48px;
+  padding: 0 16px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 14px;
+  color: var(--white);
   background: var(--bg-card);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  padding: 8px 8px 8px 16px;
+  cursor: pointer;
 }
 
-.workout__date-label {
-  font-family: var(--font-head);
-  font-weight: 700;
-  text-transform: none;
-  letter-spacing: 0;
-  font-size: 14px;
-  color: var(--dim);
+.workout__view-btn:active {
+  border-color: var(--red);
+  color: var(--red);
 }
 
-.workout__date-input {
+.workout__pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.workout__pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: 999px;
   font-family: var(--font-body);
   font-weight: 600;
   font-size: 15px;
-  color: var(--white);
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  padding: 8px 10px;
-  min-width: 0;
+  color: var(--grey-light);
+  cursor: pointer;
+}
+
+.workout__pill--date {
+  position: relative;
+  overflow: hidden;
+}
+
+/* The real <input type=date> sits invisible on top of the pill, so tapping
+   anywhere on the pill opens the native date picker (same control as before,
+   just restyled — shared.syncDate() still drives its value/label). */
+.workout__pill--date input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
   color-scheme: dark;
 }
 
-.workout__date-input:focus {
-  outline: none;
-  border-color: var(--red);
+.workout__pill--timer {
+  cursor: default;
+  color: var(--white);
+  font-variant-numeric: tabular-nums;
 }
 
-.workout__date-note {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 12px;
+.workout__pill svg {
+  flex-shrink: 0;
+  color: var(--dim);
+}
+
+.workout__pill--changed {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.workout__pill--changed svg {
+  color: var(--red);
+}
+
+.workout__date-changed-note {
+  margin: 0;
   font-family: var(--font-body);
   font-size: 14px;
   color: var(--red);
-  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
 }
 
-.workout__date-note[hidden] {
+.workout__date-changed-note[hidden] {
   display: none;
 }
 
@@ -180,7 +241,210 @@ body {
   cursor: pointer;
 }
 
-/* The coach's note above the exercises, and their tip under an exercise. */
+.workout__progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.workout__progress-text {
+  margin: 0;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--grey-light);
+}
+
+.workout__progress-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-card);
+  overflow: hidden;
+}
+
+.workout__progress-fill {
+  height: 100%;
+  background: var(--red);
+  border-radius: 3px;
+  transition: width 0.25s ease;
+}
+
+/* ==========================================================================
+   View picker — bottom sheet (same shape as Fuel's sheets, card/macros.css,
+   duplicated here since this page doesn't load that file).
+   ========================================================================== */
+
+.workout__sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.workout__sheet[hidden] {
+  display: none;
+}
+
+.workout__sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  animation: workout-fade 0.2s ease;
+}
+
+.workout__sheet-panel {
+  position: relative;
+  width: 100%;
+  max-width: 440px;
+  max-height: 90vh;
+  max-height: 90dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-bottom: none;
+  border-radius: var(--radius) var(--radius) 0 0;
+  padding: 8px 20px max(20px, env(safe-area-inset-bottom));
+  animation: workout-rise 0.22s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.workout__sheet-grip {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+  margin: 0 auto;
+}
+
+.workout__sheet-title {
+  margin: 0;
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  font-size: 22px;
+  letter-spacing: 0.02em;
+  color: var(--white);
+}
+
+.workout__view-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.workout__view-option {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  text-align: left;
+  padding: 14px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.workout__view-option[aria-pressed="true"] {
+  border-color: var(--red);
+  background: rgba(224, 0, 0, 0.08);
+}
+
+.workout__view-option-diagram {
+  flex-shrink: 0;
+  color: var(--dim);
+}
+
+.workout__view-option[aria-pressed="true"] .workout__view-option-diagram {
+  color: var(--red);
+}
+
+.workout__view-option-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.workout__view-option-title {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: 17px;
+  color: var(--white);
+}
+
+.workout__view-option-sub {
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.35;
+  color: var(--dim);
+}
+
+.workout__view-option-tick {
+  flex-shrink: 0;
+  color: var(--red);
+  visibility: hidden;
+}
+
+.workout__view-option[aria-pressed="true"] .workout__view-option-tick {
+  visibility: visible;
+}
+
+.workout__sheet-note {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--dim);
+  text-align: center;
+}
+
+.workout__sheet-done {
+  width: 100%;
+  min-height: 52px;
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 16px;
+  color: var(--on-red);
+  background: var(--red);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.workout__sheet-done:active {
+  background: var(--red-dim);
+}
+
+@keyframes workout-rise {
+  from { transform: translateY(40px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes workout-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workout__sheet-backdrop,
+  .workout__sheet-panel {
+    animation: none;
+  }
+}
+
+/* ==========================================================================
+   The coach's note above the exercises, and their tip under an exercise.
+   ========================================================================== */
+
 .workout__coach-note {
   display: flex;
   flex-direction: column;
@@ -215,7 +479,7 @@ body {
   font-size: 14px;
   line-height: 1.4;
   color: var(--grey-light);
-  margin: -4px 0 0;
+  margin: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -230,21 +494,1141 @@ body {
   margin-right: 6px;
 }
 
-.workout__timer {
+/* Which muscles an exercise works (renderMuscleHighlight, card/muscle-map.js) — a small line under its name, kept out of Simple view's single-exercise screen (no room, not in that view's spec). */
+.workout__exercise-muscles {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  background: var(--bg-card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  padding: 12px 16px;
+  flex-wrap: wrap;
+  gap: 4px 10px;
 }
 
-.workout__timer[hidden] {
+/* The play-icon "Watch how" button, 48×48, hidden whenever an exercise has no video link. */
+.workout__watch-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  color: var(--grey-light);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.workout__watch-btn:active {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.workout__watch-btn[hidden] {
   display: none;
 }
 
-.workout__timer-label {
+/* A text "Watch how" button for Simple view's larger header — same data, bigger context. */
+.workout__watch-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 16px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 15px;
+  color: var(--white);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.workout__watch-link[hidden] {
+  display: none;
+}
+
+/* ==========================================================================
+   The set row — the one piece of DOM every view shares (same weight/reps
+   inputs, same `_saved`/`_touched` state, same dataset.exercise/setNumber —
+   see buildSetRow in app.js). Two visual variants: "compact" (Checklist +
+   Show all, a single grid row) and "simple" (Simple view, two big stepper
+   cards). Variant is just a class on the row; the JS contract is identical.
+   ========================================================================== */
+
+.workout__set {
+  --row-h: 52px;
+}
+
+/* ---- compact variant: SET | LAST TIME | KG | REPS | tick ---------------- */
+
+.workout__set--compact {
+  display: grid;
+  grid-template-columns: 34px 1fr 72px 64px 48px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.workout__set--compact.workout__set--saved {
+  border-color: rgba(224, 0, 0, 0.5);
+}
+
+.workout__set-num {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--grey-light);
+  text-align: center;
+}
+
+.workout__set-last {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.25;
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workout__set--compact .workout__weight-input,
+.workout__set--compact .workout__reps-input {
+  width: 100%;
+  height: var(--row-h);
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 18px;
+  text-align: center;
+  color: var(--white);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  -moz-appearance: textfield;
+}
+
+.workout__set--compact .workout__reps-input::-webkit-outer-spin-button,
+.workout__set--compact .workout__reps-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.workout__set--compact .workout__weight-input::placeholder,
+.workout__set--compact .workout__reps-input::placeholder {
+  color: var(--dim);
+  font-weight: 600;
+}
+
+.workout__set--compact .workout__weight-input:focus,
+.workout__set--compact .workout__reps-input:focus {
+  outline: none;
+  border-color: var(--red);
+}
+
+/* numbers carried over as a suggestion stay visually "placeholder-like" even
+   though they're real input values, by request — grey + lighter weight. */
+.workout__set--compact .workout__weight-input--prefilled,
+.workout__set--compact .workout__reps-input--prefilled {
+  color: var(--dim);
+  font-weight: 600;
+}
+
+.workout__set--compact.workout__set--saved .workout__weight-input,
+.workout__set--compact.workout__set--saved .workout__reps-input {
+  color: var(--white);
+  background: var(--bg-card);
+  border-color: transparent;
+}
+
+.workout__set--compact .workout__weight.workout__field--invalid .workout__weight-input,
+.workout__set--compact .workout__reps.workout__field--invalid .workout__reps-input {
+  border-color: var(--red);
+  box-shadow: 0 0 0 1px var(--red);
+}
+
+.workout__set-tick {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--dim);
+  background: transparent;
+  border: 1.5px solid var(--line-strong, var(--line));
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.workout__set-tick:active {
+  border-color: var(--red);
+}
+
+.workout__set--saved .workout__set-tick {
+  color: var(--on-red);
+  background: var(--red);
+  border-color: var(--red);
+}
+
+/* ---- simple variant: two big stepper cards ------------------------------ */
+
+/* Stacked, not side by side — two 64px stepper buttons plus a number don't
+   fit next to a second field's at phone width (found 2026-11-07: the
+   buttons overflowed the card). */
+.workout__set--simple {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.workout__simple-field {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px 10px;
+}
+
+.workout__set--saved .workout__simple-field {
+  border-color: rgba(224, 0, 0, 0.5);
+}
+
+.workout__simple-field-label {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 14px;
+  color: var(--dim);
+}
+
+.workout__simple-stepper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.workout__simple-step {
+  flex-shrink: 0;
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 28px;
+  color: var(--white);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.workout__simple-step:active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.workout__set--simple .workout__weight-input,
+.workout__set--simple .workout__reps-input {
+  width: 84px;
+  min-width: 0;
+  text-align: center;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 44px;
+  color: var(--white);
+  background: transparent;
+  border: none;
+  -moz-appearance: textfield;
+}
+
+.workout__set--simple .workout__reps-input::-webkit-outer-spin-button,
+.workout__set--simple .workout__reps-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.workout__set--simple .workout__weight-input::placeholder,
+.workout__set--simple .workout__reps-input::placeholder {
+  color: var(--dim);
+}
+
+.workout__set--simple .workout__weight-input:focus,
+.workout__set--simple .workout__reps-input:focus {
+  outline: none;
+}
+
+.workout__set--simple .workout__weight-input--prefilled,
+.workout__set--simple .workout__reps-input--prefilled {
+  color: var(--dim);
+}
+
+/* ==========================================================================
+   Exercise chrome shared by the open/compact views: header row, target,
+   add-set button. (Simple view builds its own header — see below.)
+   ========================================================================== */
+
+.workout__exercise-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.workout__exercise-name {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: 19px;
+  color: var(--white);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.workout__exercise-target {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--red);
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+.workout__exercise--extra .workout__exercise-target {
+  color: var(--grey-light);
+}
+
+.workout__sets {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.workout__add-set {
+  align-self: flex-start;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 16px;
+  color: var(--grey-light);
+  background: transparent;
+  border: 1px dashed var(--line-strong, var(--line));
+  border-radius: var(--radius-sm);
+  min-height: 48px;
+  padding: 8px 18px;
+  cursor: pointer;
+}
+
+.workout__add-set:active {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+/* ==========================================================================
+   Show all — every exercise open, column labels sit once in a sticky bar.
+   ========================================================================== */
+
+.view--showall .workout__showall-labels {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: 34px 1fr 72px 64px 48px;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--bg);
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--dim);
+}
+
+.view--showall .workout__showall-labels span:nth-child(3),
+.view--showall .workout__showall-labels span:nth-child(4) {
+  text-align: center;
+}
+
+.view--showall .workout__exercise,
+.view--showall .workout__ss {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+  scroll-margin-top: 48px;
+}
+
+.view--showall .workout__list > .workout__exercise:last-of-type,
+.view--showall .workout__list > .workout__ss:last-of-type {
+  border-bottom: none;
+}
+
+/* ==========================================================================
+   Checklist — one exercise open at a time, others collapse to a row.
+   ========================================================================== */
+
+.view--checklist .workout__list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.workout__cl-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 10px 14px;
+  text-align: left;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  scroll-margin-top: 16px;
+}
+
+.workout__cl-row--done {
+  border-color: rgba(224, 0, 0, 0.5);
+}
+
+.workout__cl-badge {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--grey-light);
+  background: var(--bg);
+  border: 1px solid var(--line);
+}
+
+.workout__cl-row--done .workout__cl-badge {
+  color: var(--on-red);
+  background: var(--red);
+  border-color: var(--red);
+}
+
+.workout__cl-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.workout__cl-name {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--white);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workout__cl-sub {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workout__cl-open {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--bg-card);
+  border: 1.5px solid var(--red);
+  border-radius: var(--radius);
+  scroll-margin-top: 16px;
+}
+
+.workout__cl-open .workout__exercise-head {
+  align-items: flex-start;
+}
+
+/* Checklist's own superset box: collapsed shows the pill + rule + A1/A2 joined by a line; open shows the normal round-by-round layout. */
+.workout__cl-ss-members {
+  display: flex;
+  flex-direction: column;
+}
+
+.workout__cl-ss-member {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0 6px 14px;
+}
+
+.workout__cl-ss-member::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: rgba(224, 0, 0, 0.4);
+}
+
+.workout__cl-ss-member:first-child::before {
+  top: 50%;
+}
+
+.workout__cl-ss-member:last-child::before {
+  bottom: 50%;
+}
+
+/* ==========================================================================
+   Superset / Circuit — shared by Show all and Checklist's open state. One
+   tinted panel holds the whole group (addSupersetSection-equivalent render
+   functions in app.js). The rounds themselves reuse supersetOrder_, unchanged.
+   ========================================================================== */
+
+.workout__ss {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: rgba(224, 0, 0, 0.07);
+  border: 1px solid rgba(224, 0, 0, 0.35);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+}
+
+.workout__cl-open .workout__ss {
+  margin: 0 -2px;
+}
+
+.workout__ss-pill {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
+  color: var(--on-red);
+  background: var(--red);
+  border-radius: 999px;
+  padding: 5px 12px 4px;
+}
+
+.workout__ss-rule {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--white);
+}
+
+.workout__ss-letter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-width: 28px;
+  height: 22px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--red);
+  color: var(--on-red);
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.workout__ss-member-name {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--white);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workout__ss-divider {
+  height: 1px;
+  background: rgba(224, 0, 0, 0.25);
+  margin: 2px 0;
+}
+
+.workout__ss-rounds {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.workout__ss-fold {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 12px;
+  text-align: left;
+  color: var(--white);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.workout__ss-fold[hidden],
+.workout__ss-round[hidden],
+.workout__ss-done[hidden] {
+  display: none;
+}
+
+.workout__ss-fold--done {
+  border-color: rgba(224, 0, 0, 0.55);
+}
+
+.workout__ss-fold-title {
+  flex-shrink: 0;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 17px;
+}
+
+.workout__ss-fold--done .workout__ss-fold-title {
+  color: var(--red);
+}
+
+.workout__ss-fold-summary {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--grey);
+  text-align: right;
+}
+
+.workout__ss-round {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  scroll-margin-top: 16px;
+}
+
+.workout__ss-round-title {
+  margin: 2px 0 0;
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 20px;
+  color: var(--white);
+}
+
+.workout__ss-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  scroll-margin-top: 16px;
+}
+
+.workout__ss-item-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.workout__ss-item-name {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 17px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--white);
+}
+
+.workout__ss-item-tag {
+  flex-shrink: 0;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--grey);
+}
+
+.workout__ss-item--now .workout__set--compact {
+  border: 2px solid var(--red);
+}
+
+.workout__ss-adds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.workout__ss-done {
+  margin: 0;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--white);
+}
+
+/* ==========================================================================
+   Simple view — one exercise, one screen.
+   ========================================================================== */
+
+.view--simple .workout__list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.workout__simple-progress {
+  display: flex;
+  gap: 4px;
+}
+
+.workout__simple-seg {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-card);
+}
+
+.workout__simple-seg--done {
+  background: var(--red);
+}
+
+.workout__simple-seg--now {
+  background: var(--white);
+}
+
+.workout__simple-meta {
+  margin: 0;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.workout__simple-ss-pill {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: 13px;
+  color: var(--on-red);
+  background: var(--red);
+  border-radius: 999px;
+  padding: 6px 14px 5px;
+}
+
+.workout__simple-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  text-align: center;
+}
+
+.workout__simple-exname {
+  margin: 0;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  font-size: 40px;
+  line-height: 1.05;
+  color: var(--white);
+  overflow-wrap: anywhere;
+}
+
+.workout__simple-last {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 16px;
+  color: var(--grey-light);
+}
+
+.workout__simple-watch-row {
+  display: flex;
+  justify-content: center;
+}
+
+.workout__simple-setlabel {
+  margin: 0;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 14px;
+  color: var(--dim);
+}
+
+.workout__simple-tip {
+  margin: -6px 0 0;
+}
+
+.workout__simple-done-btn {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-height: 72px;
+  padding: 14px;
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 22px;
+  color: var(--on-red);
+  background: var(--red);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.workout__simple-done-btn:active {
+  background: var(--red-dim);
+}
+
+.workout__simple-done-next {
+  font-family: var(--font-body);
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
+  color: var(--on-red);
+  opacity: 0.85;
+}
+
+.workout__simple-nav {
+  display: flex;
+  gap: 10px;
+}
+
+.workout__simple-nav-btn {
+  flex: 1;
+  min-height: 48px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 15px;
+  color: var(--grey-light);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.workout__simple-nav-btn:active {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.workout__simple-nav-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.workout__simple-complete {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+  padding: 30px 16px;
+}
+
+.workout__simple-complete svg {
+  color: var(--red);
+}
+
+.workout__simple-complete p {
+  margin: 0;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: 20px;
+  color: var(--white);
+}
+
+/* ==========================================================================
+   Add Exercise, Finish button — shared by every view, always the last
+   things in the list.
+   ========================================================================== */
+
+.workout__add-exercise-toggle {
+  width: 100%;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
+  color: var(--grey-light);
+  background: transparent;
+  border: 1px dashed var(--line-strong, var(--line));
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  cursor: pointer;
+}
+
+.workout__add-exercise-toggle[hidden] {
+  display: none;
+}
+
+.workout__add-exercise-toggle:active {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.workout__add-exercise-form {
+  display: flex;
+  gap: 8px;
+}
+
+.workout__add-exercise-form[hidden] {
+  display: none;
+}
+
+.workout__add-exercise-input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--white);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+}
+
+.workout__add-exercise-input:focus {
+  outline: none;
+  border-color: var(--red);
+}
+
+.workout__add-exercise-confirm {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
+  color: var(--on-red);
+  background: var(--red);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 0 18px;
+  cursor: pointer;
+}
+
+.workout__add-exercise-confirm:active {
+  background: var(--red-dim);
+}
+
+.workout__finish-btn {
+  width: 100%;
+  min-height: 56px;
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 18px;
+  color: var(--on-red);
+  background: var(--red);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.workout__finish-btn:active {
+  background: var(--red-dim);
+}
+
+/* ==========================================================================
+   Review screen — shown before anything is sent (buildReviewScreen, app.js).
+   ========================================================================== */
+
+.workout__review {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.workout__review[hidden] {
+  display: none;
+}
+
+.workout__review-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  padding: 8px 0 0;
+}
+
+.workout__review-tick {
+  color: var(--red);
+}
+
+.workout__review-title {
+  margin: 0;
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 26px;
+  color: var(--white);
+}
+
+.workout__review-sub {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 16px;
+  color: var(--grey-light);
+}
+
+.workout__review-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.workout__review-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 14px 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.workout__review-tile-label {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.workout__review-tile-value {
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 24px;
+  color: var(--white);
+  font-variant-numeric: tabular-nums;
+}
+
+.workout__review-pb {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(224, 0, 0, 0.1);
+  border: 1px solid rgba(224, 0, 0, 0.4);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+}
+
+.workout__review-pb[hidden] {
+  display: none;
+}
+
+.workout__review-pb-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 16px;
+  color: var(--red);
+}
+
+.workout__review-pb-line {
+  margin: 0;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--white);
+}
+
+.workout__review-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.workout__review-section-label {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 14px;
+  color: var(--dim);
+}
+
+.workout__review-figs {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+}
+
+.workout__review-fig-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 42%;
+  max-width: 160px;
+}
+
+.workout__review-figs svg {
+  width: 100%;
+  height: auto;
+}
+
+.workout__review-fig-caption {
   font-family: var(--font-head);
   font-weight: 700;
   text-transform: none;
@@ -253,13 +1637,205 @@ body {
   color: var(--dim);
 }
 
-.workout__timer-value {
+.workout__review-muscle-row {
+  display: grid;
+  grid-template-columns: 110px 1fr 50px;
+  align-items: center;
+  gap: 10px;
+}
+
+.workout__review-muscle-name {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--white);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workout__review-muscle-track {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-card);
+  overflow: hidden;
+}
+
+.workout__review-muscle-fill {
+  display: block;
+  height: 100%;
+  background: var(--red);
+}
+
+.workout__review-muscle-count {
   font-family: var(--font-head);
   font-weight: 700;
-  font-size: 22px;
-  color: var(--white);
-  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: var(--grey-light);
+  text-align: right;
 }
+
+.workout__review-empty {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--dim);
+}
+
+.workout__review-notes-input {
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 15px;
+  color: var(--white);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  resize: vertical;
+  min-height: 64px;
+}
+
+.workout__review-notes-input::placeholder {
+  color: var(--dim);
+}
+
+.workout__review-notes-input:focus {
+  outline: none;
+  border-color: var(--red);
+}
+
+.workout__review-warning {
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--red);
+  text-align: center;
+  margin: 0;
+}
+
+.workout__review-warning[hidden] {
+  display: none;
+}
+
+.workout__review-save {
+  width: 100%;
+  min-height: 56px;
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 18px;
+  color: var(--on-red);
+  background: var(--red);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.workout__review-save:active {
+  background: var(--red-dim);
+}
+
+.workout__review-save:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.workout__review-back {
+  width: 100%;
+  min-height: 48px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 15px;
+  color: var(--grey-light);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.workout__review-back:active {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+/* ==========================================================================
+   Picker (choose which workout, before one is open) — unchanged in shape.
+   ========================================================================== */
+
+.workout__picker {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.workout__picker[hidden] {
+  display: none;
+}
+
+.workout__picker-hint {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--dim);
+  margin: 0;
+}
+
+.workout__picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.workout__picker-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: 17px;
+  color: var(--white);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 16px 18px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.workout__picker-option:active {
+  border-color: var(--red);
+  background: rgba(224, 0, 0, 0.08);
+}
+
+.workout__picker-option-count {
+  font-family: var(--font-body);
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 14px;
+  color: var(--dim);
+  flex-shrink: 0;
+}
+
+.workout__list {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.workout__list[hidden] {
+  display: none;
+}
+
+/* ==========================================================================
+   Rest timer — floating bar, unchanged across every view.
+   ========================================================================== */
 
 .workout__rest {
   position: fixed;
@@ -351,866 +1927,9 @@ body {
   }
 }
 
-.workout__picker {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.workout__picker[hidden] {
-  display: none;
-}
-
-.workout__picker-hint {
-  font-family: var(--font-body);
-  font-size: 14px;
-  color: var(--dim);
-  margin: 0;
-}
-
-.workout__picker-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.workout__picker-option {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  font-family: var(--font-head);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-  font-size: 17px;
-  color: var(--white);
-  background: var(--bg-card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  padding: 16px 18px;
-  cursor: pointer;
-  text-align: left;
-}
-
-.workout__picker-option:active {
-  border-color: var(--red);
-  background: rgba(224, 0, 0, 0.08);
-}
-
-.workout__picker-option-count {
-  font-family: var(--font-body);
-  font-weight: 600;
-  text-transform: none;
-  letter-spacing: normal;
-  font-size: 14px;
-  color: var(--dim);
-  flex-shrink: 0;
-}
-
-.workout__list {
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
-}
-
-.workout__list[hidden] {
-  display: none;
-}
-
-.workout__exercise {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding-bottom: 20px;
-  border-bottom: 1px solid var(--line);
-}
-
-.workout__exercise:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
-}
-
-.workout__exercise-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.workout__exercise-name {
-  font-family: var(--font-head);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-  font-size: 19px;
-  color: var(--white);
-  margin: 0;
-}
-
-.workout__exercise-target {
-  font-family: var(--font-head);
-  font-weight: 700;
-  font-size: 14px;
-  color: var(--red);
-  letter-spacing: 0.02em;
-  flex-shrink: 0;
-}
-
-.workout__exercise-hint {
-  font-family: var(--font-body);
-  font-size: 14px;
-  color: var(--dim);
-  margin: -6px 0 0;
-}
-
-/* Which muscles this exercise works (renderMuscleHighlight, card/muscle-map.js). */
-.workout__exercise-muscles {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 10px;
-  margin: -4px 0 0;
-}
-
-/* The "Muscles Worked / this session" panel at the top of the list
-   (refreshMuscleLoadSection_, app.js) — live, from sets actually saved so
-   far today, same red/orange "primary+secondary set count" language as the
-   coach builder's side panel and the Muscles tab's weekly list. */
-.workout__muscle-load {
-  background: var(--bg-card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 16px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.workout__muscle-load-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.workout__muscle-load-sub {
-  font-family: var(--font-body);
-  font-size: 14px;
-  color: var(--dim);
-}
-
-.workout__muscle-load-figs {
-  display: flex;
-  justify-content: center;
-  gap: 14px;
-}
-
-.workout__muscle-load-fig-col {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  width: 42%;
-  max-width: 160px;
-}
-
-.workout__muscle-load-figs svg {
-  width: 100%;
-  height: auto;
-}
-
-.workout__muscle-load-fig-caption {
-  font-family: var(--font-head);
-  font-weight: 700;
-  text-transform: none;
-  letter-spacing: 0;
-  font-size: 14px;
-  color: var(--dim);
-}
-
-.workout__muscle-load-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.workout__muscle-load-row {
-  display: grid;
-  grid-template-columns: 108px 1fr;
-  align-items: flex-start;
-  gap: 10px;
-}
-
-.workout__muscle-load-row__name {
-  font-family: var(--font-body);
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--white);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* The bar + its own count(s) stacked together, so the numbers below line
-   up under the segment they belong to (2026-10-05, was a combined "3+5"
-   off to the side in its own column). */
-.workout__muscle-load-row__bar {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.workout__muscle-load-row__track {
-  display: flex;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--bg);
-  overflow: hidden;
-}
-
-.workout__muscle-load-row__fill--primary {
-  background: var(--red);
-}
-
-.workout__muscle-load-row__fill--secondary {
-  background: #cccccc;
-}
-
-.workout__muscle-load-row__nums {
-  display: flex;
-  height: 14px;
-}
-
-.workout__muscle-load-row__segnum--primary,
-.workout__muscle-load-row__segnum--secondary {
-  display: flex;
-  justify-content: center;
-  overflow: visible;
-  white-space: nowrap;
-  font-family: var(--font-head);
-  font-weight: 700;
-  font-size: 14px;
-  font-variant-numeric: tabular-nums;
-}
-
-.workout__muscle-load-row__segnum--primary {
-  color: var(--red);
-}
-
-.workout__muscle-load-row__segnum--secondary {
-  color: #cccccc;
-}
-
-.workout__muscle-load-empty {
-  font-family: var(--font-body);
-  font-size: 14px;
-  color: var(--dim);
-  text-align: center;
-  padding: 4px 0;
-  margin: 0;
-}
-
-.workout__sets {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.workout__set {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 10px;
-  background: var(--bg-card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-}
-
-.workout__set-title {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.workout__set-num {
-  font-family: var(--font-head);
-  font-weight: 700;
-  font-size: 16px;
-  letter-spacing: 0.02em;
-  color: var(--white);
-}
-
-/* saved, suggested from last time, or typed but not saved yet */
-.workout__set-status {
-  font-family: var(--font-body);
-  font-weight: 600;
-  font-size: 14px;
-  color: var(--grey-light);
-}
-
-.workout__set--suggested {
-  border-style: dashed;
-}
-
-.workout__set--suggested .workout__set-status {
-  color: var(--dim);
-}
-
-.workout__set--saved {
-  border-color: rgba(224, 0, 0, 0.55);
-}
-
-.workout__set--saved .workout__set-status {
-  color: var(--red);
-}
-
-.workout__set-fields {
-  display: grid;
-  /* weight gets the extra room: "102.5" needs far more than "12" reps */
-  grid-template-columns: 1.2fr 1fr;
-  gap: 8px;
-}
-
-.workout__field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-}
-
-.workout__field-label {
-  font-family: var(--font-body);
-  font-weight: 600;
-  font-size: 14px;
-  color: var(--grey-light);
-}
-
-/* weight and reps: [ - ] value [ + ], every button 48px square */
-.workout__weight,
-.workout__reps {
-  display: flex;
-  align-items: center;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-}
-
-.workout__step {
-  font-family: var(--font-head);
-  font-weight: 700;
-  font-size: 24px;
-  line-height: 1;
-  color: var(--white);
-  background: transparent;
-  border: none;
-  width: 48px;
-  height: 52px;
-  flex-shrink: 0;
-  cursor: pointer;
-}
-
-.workout__step:active {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.workout__step:disabled {
-  color: var(--dim);
-  opacity: 0.5;
-}
-
-.workout__weight-input,
-.workout__reps-input {
-  flex: 1;
-  min-width: 0;
-  font-family: var(--font-body);
-  font-weight: 700;
-  font-size: 20px;
-  text-align: center;
-  color: var(--white);
-  background: transparent;
-  border: none;
-  border-left: 1px solid var(--line);
-  border-right: 1px solid var(--line);
-  height: 52px;
-  padding: 0 2px;
-  -moz-appearance: textfield;
-}
-
-.workout__reps-input::-webkit-outer-spin-button,
-.workout__reps-input::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-
-.workout__weight-input::placeholder,
-.workout__reps-input::placeholder {
-  color: var(--dim);
-  font-weight: 500;
-  font-size: 16px;
-}
-
-/* numbers carried over from last time stay grey until touched */
-.workout__weight-input--prefilled,
-.workout__reps-input--prefilled {
-  color: var(--dim);
-  font-weight: 600;
-}
-
-.workout__weight-input:focus,
-.workout__reps-input:focus {
-  outline: none;
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.workout__weight-input:disabled,
-.workout__reps-input:disabled {
-  opacity: 0.7;
-}
-
-.workout__set-last {
-  margin: 0;
-  font-family: var(--font-body);
-  font-size: 16px;
-  color: var(--grey-light);
-}
-
-/* Save set: a full-width bar. Outlined until tapped, then filled red with a tick.
-   Editing a saved set's numbers flips it back to "Save set" (refreshRowState in app.js). */
-.workout__set-save {
-  font-family: var(--font-head);
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  font-size: 18px;
-  height: 52px;
-  width: 100%;
-  padding: 0;
-  color: var(--white);
-  background: transparent;
-  border: 1px solid var(--line-strong, var(--line));
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-
-.workout__set-save:active {
-  border-color: var(--red);
-  color: var(--red);
-}
-
-.workout__set--saved .workout__set-save {
-  color: var(--on-red);
-  background: var(--red);
-  border-color: var(--red);
-}
-
-.workout__set--saved .workout__weight,
-.workout__set--saved .workout__reps {
-  border-color: rgba(224, 0, 0, 0.45);
-}
-
-.workout__weight.workout__field--invalid,
-.workout__reps.workout__field--invalid {
-  border-color: var(--red);
-  box-shadow: 0 0 0 1px var(--red);
-}
-
-.workout__exercise--extra .workout__exercise-target {
-  color: var(--grey-light);
-}
-
-/* Superset/Circuit (linked in the builder), logged in rounds: addSupersetSection
-   in app.js. One tinted panel holds the whole group. */
-.workout__ss {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  background: rgba(224, 0, 0, 0.07);
-  border: 1px solid rgba(224, 0, 0, 0.35);
-  border-radius: var(--radius-sm);
-  /* runs a little wider than the page's other sections, so its set rows are
-     exactly as wide as a normal exercise's and a weight like 102.5 still fits */
-  margin: 0 -8px;
-  padding: 14px 6px 16px;
-}
-
-.workout__ss-pill {
-  align-self: flex-start;
-}
-
-.workout__ss-rule {
-  margin: 0;
-  font-family: var(--font-body);
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.35;
-  color: var(--white);
-}
-
-.workout__ss-letter {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  min-width: 34px;
-  height: 26px;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: var(--red);
-  color: var(--on-red);
-  font-family: var(--font-head);
-  font-weight: 700;
-  font-size: 16px;
-}
-
-.workout__ss-overview {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.workout__ss-overview-row {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.workout__ss-overview-row .workout__exercise-muscles,
-.workout__ss-overview-row .workout__exercise-hint {
-  margin: 0;
-}
-
-.workout__ss-overview-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.workout__ss-overview-name {
-  flex: 1;
-  min-width: 0;
-  font-family: var(--font-body);
-  font-weight: 600;
-  font-size: 16px;
-  color: var(--white);
-}
-
-.workout__ss-rounds {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.workout__ss-fold {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  width: 100%;
-  min-height: 48px;
-  padding: 8px 12px;
-  text-align: left;
-  color: var(--white);
-  background: var(--bg-card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-
-.workout__ss-fold[hidden],
-.workout__ss-round[hidden],
-.workout__ss-done[hidden] {
-  display: none;
-}
-
-.workout__ss-fold--done {
-  border-color: rgba(224, 0, 0, 0.55);
-}
-
-.workout__ss-fold-title {
-  flex-shrink: 0;
-  font-family: var(--font-head);
-  font-weight: 700;
-  font-size: 18px;
-}
-
-.workout__ss-fold--done .workout__ss-fold-title {
-  color: var(--red);
-}
-
-.workout__ss-fold-summary {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  font-family: var(--font-body);
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1.35;
-  color: var(--grey);
-  text-align: right;
-}
-
-.workout__ss-round {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  scroll-margin-top: 16px;
-}
-
-.workout__ss-round-title {
-  margin: 2px 0 0;
-  font-family: var(--font-head);
-  font-weight: 800;
-  font-size: 24px;
-  color: var(--white);
-}
-
-.workout__ss-item {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  scroll-margin-top: 16px;
-}
-
-.workout__ss-item-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.workout__ss-item-name {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-  font-family: var(--font-head);
-  font-weight: 700;
-  font-size: 19px;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-  color: var(--white);
-}
-
-.workout__ss-item-tag {
-  flex-shrink: 0;
-  font-family: var(--font-head);
-  font-weight: 700;
-  font-size: 14px;
-  color: var(--grey);
-}
-
-.workout__ss-item--now .workout__set {
-  border: 2px solid var(--red);
-  box-shadow: 0 0 0 3px rgba(224, 0, 0, 0.22);
-}
-
-.workout__ss-adds {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.workout__ss-done {
-  margin: 0;
-  font-family: var(--font-head);
-  font-weight: 700;
-  font-size: 20px;
-  color: var(--white);
-}
-
-.workout__exercise,
-.workout__ss {
-  scroll-margin-top: 16px;
-}
-
-.workout__superset-label {
-  display: inline-flex;
-  align-items: center;
-  font-family: var(--font-head);
-  font-weight: 700;
-  text-transform: none;
-  letter-spacing: 0;
-  font-size: 14px;
-  color: var(--on-red);
-  background: var(--red);
-  border-radius: 999px;
-  padding: 5px 12px 4px;
-}
-
-.workout__add-set {
-  align-self: flex-start;
-  font-family: var(--font-head);
-  font-weight: 700;
-  text-transform: none;
-  letter-spacing: 0;
-  font-size: 16px;
-  color: var(--grey-light);
-  background: transparent;
-  border: 1px dashed var(--line-strong, var(--line));
-  border-radius: var(--radius-sm);
-  min-height: 48px;
-  padding: 8px 18px;
-  cursor: pointer;
-}
-
-.workout__add-set:active {
-  border-color: var(--red);
-  color: var(--red);
-}
-
-.workout__add-exercise-toggle {
-  width: 100%;
-  font-family: var(--font-head);
-  font-weight: 700;
-  text-transform: none;
-  letter-spacing: 0;
-  font-size: 14px;
-  color: var(--grey-light);
-  background: transparent;
-  border: 1px dashed var(--line-strong, var(--line));
-  border-radius: var(--radius-sm);
-  padding: 14px;
-  cursor: pointer;
-}
-
-.workout__add-exercise-toggle[hidden] {
-  display: none;
-}
-
-.workout__add-exercise-toggle:active {
-  border-color: var(--red);
-  color: var(--red);
-}
-
-.workout__add-exercise-form {
-  display: flex;
-  gap: 8px;
-}
-
-.workout__add-exercise-form[hidden] {
-  display: none;
-}
-
-.workout__add-exercise-input {
-  flex: 1;
-  min-width: 0;
-  font-family: var(--font-body);
-  font-weight: 600;
-  font-size: 14px;
-  color: var(--white);
-  background: var(--bg-card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  padding: 12px 14px;
-}
-
-.workout__add-exercise-input:focus {
-  outline: none;
-  border-color: var(--red);
-}
-
-.workout__add-exercise-confirm {
-  font-family: var(--font-head);
-  font-weight: 700;
-  text-transform: none;
-  letter-spacing: 0;
-  font-size: 14px;
-  color: var(--on-red);
-  background: var(--red);
-  border: none;
-  border-radius: var(--radius-sm);
-  padding: 0 18px;
-  cursor: pointer;
-}
-
-.workout__add-exercise-confirm:active {
-  background: var(--red-dim);
-}
-
-.workout__notes {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.workout__notes-label {
-  font-family: var(--font-head);
-  font-weight: 700;
-  text-transform: none;
-  letter-spacing: 0;
-  font-size: 14px;
-  color: var(--dim);
-}
-
-.workout__notes-input {
-  font-family: var(--font-body);
-  font-weight: 500;
-  font-size: 14px;
-  color: var(--white);
-  background: var(--bg-card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  padding: 12px 14px;
-  resize: vertical;
-  min-height: 56px;
-}
-
-.workout__notes-input::placeholder {
-  color: var(--dim);
-}
-
-.workout__notes-input:focus {
-  outline: none;
-  border-color: var(--red);
-}
-
-.workout__save-wrap {
-  margin-top: 6px;
-}
-
-.workout__save-warning {
-  font-family: var(--font-body);
-  font-size: 14px;
-  line-height: 1.4;
-  color: var(--red);
-  text-align: center;
-  margin: 0 0 10px;
-}
-
-.workout__save-warning[hidden] {
-  display: none;
-}
-
-.workout__save-summary {
-  font-family: var(--font-body);
-  font-size: 14px;
-  color: var(--dim);
-  text-align: center;
-  margin: 0 0 10px;
-}
-
-.workout__save-btn {
-  width: 100%;
-  font-family: var(--font-head);
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-size: 16px;
-  color: var(--on-red);
-  background: var(--red);
-  border: none;
-  border-radius: var(--radius-sm);
-  padding: 18px;
-  cursor: pointer;
-}
-
-.workout__save-btn:active {
-  background: var(--red-dim);
-}
-
-.workout__save-btn:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
+/* ==========================================================================
+   Done screen (after Save & Close succeeds) — unchanged.
+   ========================================================================== */
 
 .workout__done {
   display: flex;
@@ -1233,17 +1952,38 @@ body {
   margin: 0;
 }
 
+@media (min-width: 560px) {
+  .card.workout {
+    max-width: 480px;
+  }
+}
+
 @media (max-width: 360px) {
-  .workout__set {
-    grid-template-columns: 32px 1fr 48px 46px;
+  .workout__name {
+    font-size: 30px;
+  }
+
+  .workout__set--compact {
+    grid-template-columns: 26px 1fr 60px 52px 44px;
     gap: 5px;
   }
 
-  .workout__step {
-    width: 26px;
+  .workout__set-tick {
+    width: 40px;
+    height: 40px;
   }
 
-  .workout__set-save {
-    font-size: 14px;
+  .workout__simple-exname {
+    font-size: 32px;
+  }
+
+  .workout__simple-step {
+    width: 48px;
+    height: 48px;
+  }
+
+  .workout__set--simple .workout__weight-input,
+  .workout__set--simple .workout__reps-input {
+    font-size: 34px;
   }
 }
