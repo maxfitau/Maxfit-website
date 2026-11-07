@@ -128,7 +128,7 @@ const WeekCard = (function () {
       // would recognise as a lift). See cardioRows below for runs/walks.
       .filter((r) => {
         const t = col.type >= 0 ? String(r[col.type] || "").trim().toLowerCase() : "";
-        return t !== "round" && t !== "pads" && t !== "run" && t !== "walk";
+        return t !== "round" && t !== "pads" && t !== "run" && t !== "walk" && t !== "interval" && t !== "amrap";
       })
       .map((r) => ({ date: ymd(r[col.date]), exercise: String(r[col.exercise] || "").trim(), kg: Number(r[col.weight]) || 0, reps: Number(r[col.reps]) || 0 }))
       .filter((s) => s.date && s.exercise);

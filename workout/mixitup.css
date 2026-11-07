@@ -1,0 +1,109 @@
+/* Mix it up (2026-11-09): the Train-tab button, setup/reveal screens and the player.
+   Same tokens as workout/styles.css: near-black surfaces, ONE accent (--red). Body 16px+, labels 14px+, 48px+ taps (64px for the player's main buttons). */
+
+.workout__mix-btn {
+  width: 100%;
+  min-height: 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 10px 16px;
+  color: var(--on-red);
+  background: var(--red);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: center;
+}
+.workout__mix-btn:active { background: var(--red-dim); }
+.workout__mix-title {
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 24px;
+  line-height: 1.1;
+}
+.workout__mix-sub { font-family: var(--font-body); font-size: 16px; font-weight: 500; }
+
+.mix__sub, .mix__note { margin: 0; font-family: var(--font-body); font-size: 16px; line-height: 1.5; color: var(--grey); }
+.mix__note { color: var(--white); }
+.mix__shuffle, .mix__start { min-height: 64px; }
+.mix__link {
+  min-height: 48px;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  color: var(--grey);
+  font-family: var(--font-body);
+  font-size: 16px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.mix__resume {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.mix__resume-text { margin: 0; font-family: var(--font-body); font-size: 16px; color: var(--white); }
+
+.mix__reveal { gap: 10px; }
+.mix__eyebrow { margin: 0; font-family: var(--font-head); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; font-size: 14px; color: var(--red); }
+.mix__name { margin: 0; font-family: var(--font-head); font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em; font-size: 44px; line-height: 1.02; color: var(--white); }
+.mix__meta { margin: 0; font-family: var(--font-body); font-size: 16px; color: var(--grey); }
+.mix__meta--eq { color: var(--white); }
+.mix__blocks { list-style: none; margin: 6px 0 10px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.mix__blocks li { padding: 12px 14px; font-family: var(--font-body); font-size: 16px; line-height: 1.35; color: var(--white); background: var(--bg-card); border: 1px solid var(--line); border-radius: var(--radius-sm); }
+
+/* The player */
+.mix__player {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  padding: max(16px, env(safe-area-inset-top)) 20px max(16px, env(safe-area-inset-bottom));
+  overflow-y: auto;
+}
+.mix__player[hidden] { display: none; }
+.mix__top { display: flex; align-items: center; gap: 10px; }
+.mix__top-title { flex: 1; min-width: 0; font-family: var(--font-head); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; font-size: 15px; color: var(--grey); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mix__icon-btn { min-width: 48px; min-height: 48px; display: inline-flex; align-items: center; justify-content: center; padding: 0 14px; color: var(--white); background: var(--bg-card); border: 1px solid var(--line); border-radius: 999px; font-family: var(--font-head); font-weight: 700; font-size: 16px; text-transform: uppercase; cursor: pointer; }
+.mix__body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; padding: 12px 0; }
+.mix__tag { margin: 0; font-family: var(--font-head); font-weight: 800; text-transform: uppercase; letter-spacing: 0.12em; font-size: 16px; color: var(--red); }
+.is-rest .mix__tag { color: var(--grey); }
+.mix__title { margin: 0; font-family: var(--font-head); font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em; font-size: 46px; line-height: 1.02; color: var(--white); }
+.mix__subline { margin: 0; font-family: var(--font-body); font-size: 18px; color: var(--grey); }
+.mix__time { margin: 4px 0 0; font-family: var(--font-head); font-weight: 800; font-size: 104px; line-height: 1; letter-spacing: 0.01em; color: var(--white); font-variant-numeric: tabular-nums; }
+.is-rest .mix__time { color: var(--grey); }
+.mix__bar { width: 100%; max-width: 360px; height: 8px; background: rgba(255, 255, 255, 0.12); border-radius: 999px; overflow: hidden; }
+.mix__bar-fill { display: block; height: 100%; width: 0; background: var(--red); }
+.mix__combo { padding: 12px 16px; background: var(--bg-card); border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.mix__combo-nums { margin: 0; font-family: var(--font-head); font-weight: 800; font-size: 34px; color: var(--white); }
+.mix__combo-words { margin: 4px 0 0; font-family: var(--font-body); font-size: 16px; color: var(--grey); }
+.mix__amrap-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-family: var(--font-body); font-size: 20px; font-weight: 600; color: var(--white); }
+.mix__rounds { margin: 0; font-family: var(--font-head); font-weight: 800; text-transform: uppercase; font-size: 30px; color: var(--white); }
+.mix__plus { width: 100%; max-width: 360px; min-height: 72px; font-family: var(--font-head); font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; font-size: 26px; color: var(--on-red); background: var(--red); border: none; border-radius: var(--radius-sm); cursor: pointer; }
+.mix__plus:active { background: var(--red-dim); }
+.mix__minus { min-width: 64px; min-height: 48px; font-family: var(--font-head); font-weight: 700; font-size: 20px; color: var(--grey); background: none; border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer; }
+.mix__easier { margin: 0; font-family: var(--font-body); font-size: 16px; color: var(--grey); }
+.mix__next { margin: 4px 0 0; font-family: var(--font-body); font-size: 18px; font-weight: 600; color: var(--white); }
+.mix__controls { display: flex; gap: 12px; align-items: stretch; }
+.mix__main-btn { flex: 1; min-height: 64px; font-family: var(--font-head); font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; font-size: 22px; color: var(--on-red); background: var(--red); border: none; border-radius: var(--radius-sm); cursor: pointer; }
+.mix__main-btn:active { background: var(--red-dim); }
+.mix__skip-btn { min-width: 110px; min-height: 64px; padding: 0 16px; font-family: var(--font-head); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; font-size: 17px; color: var(--white); background: var(--bg-card); border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer; }
+.mix__confirm { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; justify-content: center; gap: 12px; padding: 24px; background: rgba(0, 0, 0, 0.92); }
+.mix__confirm-text { margin: 0 0 6px; font-family: var(--font-body); font-size: 20px; line-height: 1.4; color: var(--white); text-align: center; }
+.mix__confirm .mix__main-btn, .mix__confirm .mix__skip-btn { flex: none; width: 100%; }
+
+@media (max-width: 380px) {
+  .mix__time { font-size: 88px; }
+  .mix__title { font-size: 38px; }
+}

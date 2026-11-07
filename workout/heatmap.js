@@ -103,13 +103,16 @@ async function heatmapMuscleData(memberId, range) {
     if (!Number.isFinite(key) || key < fromKey || key > toKey) return;
     const exName = String(setCol.exercise >= 0 ? row[setCol.exercise] : "").trim();
     if (!exName) return;
+    // Mix it up (2026-11-09): an AMRAP row holds the rounds completed in Reps, and counts as that many sets for the exercise's muscles. An interval or round row is one set, like any other row.
+    const mult = rowType_ === "amrap" ? Math.max(0, Math.round(Number(setCol.reps >= 0 ? row[setCol.reps] : 0) || 0)) : 1;
+    if (!mult) return;
     const resolved = resolveExerciseMuscles_(exName, exerciseIndex);
     if (!resolved.matched) {
-      unmatchedByName[exName] = (unmatchedByName[exName] || 0) + 1;
-      unmatchedSetsCount++;
+      unmatchedByName[exName] = (unmatchedByName[exName] || 0) + mult;
+      unmatchedSetsCount += mult;
       return;
     }
-    setsCounted++;
+    setsCounted += mult;
     // Effective-sets model (2026-10-09) — effectiveSetsPerSet_ already
     // caps any single set's contribution to a muscle GROUP at 1.0, even
     // when an exercise lists more than one fine head for it (the old
@@ -119,7 +122,7 @@ async function heatmapMuscleData(memberId, range) {
     const scale = effortScaleForSet_(row, setCol);
     const perSet = effectiveSetsPerSet_(resolved);
     Object.keys(perSet).forEach((k) => {
-      const contribution = perSet[k] * scale;
+      const contribution = perSet[k] * scale * mult;
       weighted[k] = (weighted[k] || 0) + contribution;
       const byExercise = (contributionsByMuscle[k] = contributionsByMuscle[k] || {});
       byExercise[resolved.catalogName] = (byExercise[resolved.catalogName] || 0) + contribution;
@@ -129,10 +132,10 @@ async function heatmapMuscleData(memberId, range) {
     // effective-sets number above, and still what the red/orange segment
     // counts in the breakdown list show.
     new Set(resolved.primary).forEach((k) => {
-      primaryCount[k] = (primaryCount[k] || 0) + 1;
+      primaryCount[k] = (primaryCount[k] || 0) + mult;
     });
     new Set(resolved.secondary).forEach((k) => {
-      secondaryCount[k] = (secondaryCount[k] || 0) + 1;
+      secondaryCount[k] = (secondaryCount[k] || 0) + mult;
     });
   });
 

@@ -108,6 +108,9 @@ function buildSeries_(rows, col, clientSlug) {
     const dateKey = normalizeDateKey(col.date >= 0 ? r[col.date] : "");
     if (!dateKey) continue;
 
+    // Timed work (Mix it up intervals, EMOM minutes, AMRAP rounds, boxing rounds) is never strength progress.
+    const rowType = col.type >= 0 ? String(r[col.type] || "").trim().toLowerCase() : "";
+    if (rowType === "interval" || rowType === "amrap" || rowType === "round" || rowType === "pads") continue;
     const weight = Number(col.weight >= 0 ? r[col.weight] : NaN);
     const reps = Number(col.reps >= 0 ? r[col.reps] : NaN);
     if (!Number.isFinite(weight) || !Number.isFinite(reps) || weight < 0 || reps <= 0) continue;

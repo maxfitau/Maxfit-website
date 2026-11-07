@@ -84,7 +84,9 @@ function addSet(dateKey, workoutName, exerciseName, setNumber, weight, reps, not
   // the later row is the current one. Collapsing them here means a
   // duplicated row never shows as a phantom extra set (and saving the day
   // writes it back once).
-  const existing = list.find((s) => s.setNumber === setNumber);
+  // Mix it up interval/AMRAP rows (2026-11-09) are never merged: the same exercise can legitimately appear twice with the same round number (two blocks), and saving the day must write every one back.
+  const timed = type === "interval" || type === "amrap";
+  const existing = timed ? null : list.find((s) => s.setNumber === setNumber);
   if (existing) {
     existing.weight = weight;
     existing.reps = reps;
@@ -181,7 +183,7 @@ async function saveDay_() {
         // looking like a normal 0kg/0rep set (saveWorkoutSession replaces
         // the whole day's session at once).
         if (Number.isFinite(s.duration)) set.duration = s.duration;
-        if (s.type === "round" || s.type === "pads" || s.type === "run" || s.type === "walk") set.type = s.type;
+        if (s.type === "round" || s.type === "pads" || s.type === "run" || s.type === "walk" || s.type === "interval" || s.type === "amrap") set.type = s.type;
         if (Number.isFinite(s.distance)) set.distance = s.distance;
         sets.push(set);
       }
@@ -257,12 +259,25 @@ function renderDay_() {
     const name = document.createElement("p");
     name.className = "calendar__detail-workout-name";
     name.textContent = workoutName;
+    // Mix it up (2026-11-09): "Mix it up · Fight Night · 32 min · Steady", from the workout name and the note the session was saved with ("Mix it up · Boxing · 32 min · Steady — how it felt").
+    let noteText = workout.notes;
+    if (/^mix it up:/i.test(workoutName)) {
+      const parts = String(workout.notes || "").split(" — ");
+      const facts = parts[0].split(" · ");
+      if (facts.length >= 4 && /^mix it up$/i.test(facts[0])) {
+        name.textContent = `Mix it up · ${workoutName.replace(/^mix it up:\s*/i, "")} · ${facts[2]} · ${facts[3]}`;
+        noteText = parts.slice(1).join(" — ");
+      } else {
+        name.textContent = `Mix it up · ${workoutName.replace(/^mix it up:\s*/i, "")}`;
+        noteText = "";
+      }
+    }
     section.appendChild(name);
 
-    if (workout.notes) {
+    if (noteText) {
       const notes = document.createElement("p");
       notes.className = "calendar__detail-notes";
-      notes.textContent = workout.notes;
+      notes.textContent = noteText;
       section.appendChild(notes);
     }
 
@@ -300,9 +315,18 @@ function buildExerciseEditor_(workoutName, exerciseName) {
   // shown as "Run · 5.2 km · 32:10 · 6:11 /km" rather than the usual
   // weight/reps set list, same treatment as a boxing block above.
   const isCardio = sets.length === 1 && (sets[0].type === "run" || sets[0].type === "walk");
+  // Mix it up (2026-11-09): "Goblet squats · 3 rounds × 0:40" for intervals, "Plank · 5 rounds" for an AMRAP.
+  const isInterval = sets.length > 0 && sets.every((s) => s.type === "interval");
+  const isAmrap = sets.length > 0 && sets.every((s) => s.type === "amrap");
   const exName = document.createElement("span");
   exName.className = "calendar__detail-exercise-name";
-  if (isBoxing) {
+  if (isInterval) {
+    const sec = Math.max(0, ...sets.map((s) => (Number.isFinite(s.duration) ? s.duration : 0)));
+    exName.textContent = `${exerciseName} · ${sets.length} round${sets.length === 1 ? "" : "s"} × ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+  } else if (isAmrap) {
+    const rounds = sets.reduce((n, s) => n + (Number(s.reps) || 0), 0);
+    exName.textContent = `${exerciseName} · ${rounds} round${rounds === 1 ? "" : "s"}`;
+  } else if (isBoxing) {
     const isPads = sets[0].type === "pads";
     const workSeconds = Math.max(0, ...sets.map((s) => (Number.isFinite(s.duration) ? s.duration : 0)));
     const mins = Math.floor(workSeconds / 60);

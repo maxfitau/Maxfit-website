@@ -223,6 +223,50 @@ function fetchWorkoutExercises() {
   return workoutExercisesPromise;
 }
 
+let mixItUpPromise;
+
+/**
+ * Fetches + parses the "Mix It Up" tab (2026-11-09): Max's surprise HIIT
+ * workouts, one row per exercise. A sheet with no such tab makes Google send
+ * back the FIRST tab instead of an error, so a reply without a "Block Type"
+ * and "Workout" header is treated as "no tab yet" (empty list).
+ */
+function fetchMixItUp() {
+  if (!mixItUpPromise) {
+    mixItUpPromise = fetch(gvizCsvUrl_("Mix It Up"), { cache: "no-store" })
+      .then((res) => {
+        if (!res.ok) throw new Error("mix it up fetch failed");
+        return res.text();
+      })
+      .then((text) => {
+        const [header, ...rows] = parseCSV(text);
+        const col = {
+          on: findColumn(header, "On"),
+          workout: findColumn(header, "Workout"),
+          style: findColumn(header, "Style"),
+          equipment: findColumn(header, "Equipment"),
+          minutes: findColumn(header, "Minutes"),
+          blockOrder: findColumn(header, "Block Order"),
+          blockType: findColumn(header, "Block Type"),
+          blockName: findColumn(header, "Block Name"),
+          rounds: findColumn(header, "Rounds"),
+          workSeconds: findColumn(header, "Work Seconds"),
+          restSeconds: findColumn(header, "Rest Seconds"),
+          restBetween: findColumn(header, "Rest Between Rounds"),
+          blockMinutes: findColumn(header, "Block Minutes"),
+          exerciseOrder: findColumn(header, "Exercise Order"),
+          exercise: findColumn(header, "Exercise"),
+          easier: findColumn(header, "Easier"),
+          reps: findColumn(header, "Target Reps"),
+          combos: findColumn(header, "Combos"),
+        };
+        if (col.workout < 0 || col.blockType < 0 || col.exercise < 0) return { rows: [], col };
+        return { rows, col };
+      });
+  }
+  return mixItUpPromise;
+}
+
 const loggedSetsPromises = {};
 
 /**

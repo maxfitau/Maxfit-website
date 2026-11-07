@@ -2493,7 +2493,7 @@ function computePersonalBests_(ctx, sets) {
   if (setCol.weight < 0 || setCol.exercise < 0 || setCol.client < 0) return [];
   const byExercise = new Map();
   sets.forEach((s) => {
-    if (s.type === "round" || s.type === "pads") return; // boxing rounds never count toward a personal best
+    if (s.type === "round" || s.type === "pads" || s.type === "interval" || s.type === "amrap") return; // timed work never counts toward a personal best
     const key = s.exercise.toLowerCase();
     const cur = byExercise.get(key);
     if (!cur || s.weight > cur.weight || (s.weight === cur.weight && s.reps > cur.reps)) {
@@ -2518,14 +2518,17 @@ function renderMuscleReview_(figsEl, listEl, sets) {
   sets.forEach((s) => {
     if (s.type === "pads") return; // pad rounds show in session history only, never on the muscle map
     const exName = String(s.exercise || "").trim();
+    // Mix it up: an AMRAP row's Reps is the rounds completed, which count as that many sets; every other row is one set.
+    const mult = s.type === "amrap" ? Math.max(0, Math.round(Number(s.reps) || 0)) : 1;
+    if (!mult) return;
     const resolved = resolveExerciseMuscles_(exName, exerciseIndex_);
     if (!resolved.primary.length && !resolved.secondary.length) {
       if (exName) unmatchedNames.add(exName);
       return;
     }
     const perSet = effectiveSetsPerSet_(resolved);
-    Object.keys(perSet).forEach((k) => { weighted[k] = (weighted[k] || 0) + perSet[k]; });
-    new Set([...resolved.primary, ...resolved.secondary]).forEach((k) => { totalCount[k] = (totalCount[k] || 0) + 1; });
+    Object.keys(perSet).forEach((k) => { weighted[k] = (weighted[k] || 0) + perSet[k] * mult; });
+    new Set([...resolved.primary, ...resolved.secondary]).forEach((k) => { totalCount[k] = (totalCount[k] || 0) + mult; });
   });
 
   const frontSvg = muscleFigureSvg("front", "reviewMuscleFrontTitle");
@@ -3197,6 +3200,15 @@ function buildLogElseSection_(shared) {
 
   const list = document.createElement("div");
   list.className = "workout__log-else-list";
+  // Mix it up sits first, as its own standout button (mixitup.js owns everything behind it).
+  if (typeof openMixItUp_ === "function") {
+    const mix = document.createElement("button");
+    mix.type = "button";
+    mix.className = "workout__mix-btn";
+    mix.innerHTML = '<span class="workout__mix-title">MIX IT UP</span><span class="workout__mix-sub">A surprise HIIT session</span>';
+    mix.addEventListener("click", () => openMixItUp_(shared));
+    list.appendChild(mix);
+  }
   [
     { title: "Log a run or walk", sub: "Distance, time and pace", icon: RUN_ICON_SVG, onPick: () => openRunWalkSetup_(shared) },
     { title: "Log my own workout", sub: "Pick your own exercises", icon: CUSTOM_WORKOUT_ICON_SVG, onPick: () => openCustomWorkoutPrompt_(shared) },
@@ -3958,7 +3970,10 @@ async function init() {
       workoutGroups[name].sort((a, b) => a.order - b.order);
     }
 
-    setRows = sets.rows;
+    // Mix it up rows (2026-11-09) never feed "last time", the personal-best check or the "already logged" count: they have no weight, and an AMRAP row's Reps is rounds, not reps.
+    setRows = sets.col.type >= 0
+      ? sets.rows.filter((r) => { const t = String(r[sets.col.type] || "").trim().toLowerCase(); return t !== "interval" && t !== "amrap"; })
+      : sets.rows;
     setCol = sets.col;
 
     startingWeights = {};

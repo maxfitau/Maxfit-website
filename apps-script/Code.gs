@@ -32,7 +32,7 @@ const GROCERY_SHEET_NAME = "Grocery Items";
 // Changes whenever this file does, and is shown when you open the deployed
 // URL in a browser (see doGet) — the quick way to tell whether a redeploy
 // actually took, instead of guessing from behaviour.
-const BACKEND_VERSION = "2026-11-08a";
+const BACKEND_VERSION = "2026-11-09a";
 
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -510,6 +510,58 @@ const EXERCISE_MUSCLE_DATA_ = [
   ["Shadow Boxing", "Full Body & Conditioning", "Bodyweight", ["delts", "obliques"], ["triceps", "abs", "calves"], "front"],
   ["Pad Work", "Full Body & Conditioning", "Pads (with coach)", ["delts", "obliques"], ["triceps", "chest", "abs"], "front"],
   ["Skipping", "Full Body & Conditioning", "Skipping rope", ["calves"], ["delts", "forearms", "abs"], "front"],
+
+  // Mix it up (2026-11-09): exercises Max's 14 Mix It Up workouts use that weren't on the sheet yet.
+  // seedMixItUp() runs seedExerciseMuscleData(), so these land on the Exercises tab (only blank cells are ever filled).
+  ["Bag: fast 1-2s", "Full Body & Conditioning", "Heavy bag", ["delts", "obliques"], ["triceps", "chest", "abs", "calves"], "front"],
+  ["Bag: hooks (3-4)", "Full Body & Conditioning", "Heavy bag", ["delts", "obliques"], ["triceps", "chest", "abs", "calves"], "front"],
+  ["Bag: uppercuts (5-6)", "Full Body & Conditioning", "Heavy bag", ["delts", "obliques"], ["biceps", "abs", "quads", "glutes"], "front"],
+  ["Bag: speed punches", "Full Body & Conditioning", "Heavy bag", ["delts", "obliques"], ["triceps", "chest", "abs", "calves"], "front"],
+  ["Bag: power hooks and uppercuts", "Full Body & Conditioning", "Heavy bag", ["delts", "obliques"], ["triceps", "chest", "biceps", "abs"], "front"],
+  ["Shadow boxing speed punches", "Full Body & Conditioning", "Bodyweight", ["delts", "obliques"], ["triceps", "abs", "calves"], "front"],
+  ["Bodyweight squat", "Quads", "Bodyweight", ["quads", "glutes"], ["hamstrings", "lowerback"], "front"],
+  ["Plank knee-ins", "Core", "Bodyweight", ["abs"], ["hip-flexors", "delts"], "front"],
+  ["Standing knee drives", "Core", "Bodyweight", ["hip-flexors"], ["abs", "quads"], "front"],
+  ["Wall push-ups", "Chest", "Bodyweight", ["chest-mid"], ["delts-front", "triceps-lateral"], "front"],
+  ["Squat to punch", "Full Body & Conditioning", "Bodyweight", ["quads", "glutes"], ["delts", "obliques"], "front"],
+  ["Skater steps", "Full Body & Conditioning", "Bodyweight", ["glutes", "quads"], ["calves", "obliques"], "front"],
+  ["Side steps", "Full Body & Conditioning", "Bodyweight", ["glutes-med"], ["quads", "calves"], "front"],
+  ["Sit-up punches", "Core", "Bodyweight", ["abs-upper", "abs-mid"], ["delts", "obliques-external", "hip-flexors"], "front"],
+  ["Seated punches", "Core", "Bodyweight", ["abs"], ["delts", "triceps"], "front"],
+  ["Plank shoulder taps", "Core", "Bodyweight", ["abs"], ["delts-front", "obliques-external"], "front"],
+  ["Wall plank taps", "Core", "Bodyweight", ["abs"], ["delts-front"], "front"],
+  ["Crunch punches", "Core", "Bodyweight", ["abs-upper", "abs-mid"], ["obliques-external", "delts"], "front"],
+  ["Seated knee tucks", "Core", "Bodyweight", ["abs-lower", "abs-infra"], ["hip-flexors"], "front"],
+  ["Step jacks", "Full Body & Conditioning", "Bodyweight", ["quads", "calves"], ["glutes", "delts"], "front"],
+  ["Heel taps", "Core", "Bodyweight", ["obliques"], ["abs-lower"], "front"],
+  ["Step-back with chair support", "Quads", "Chair", ["quads", "glutes"], ["hamstrings"], "front"],
+  ["Bent-over dumbbell rows", "Back", "Dumbbell", ["lats", "traps-mid"], ["biceps-long", "delts-rear", "erector-spinae", "forearm-flexors"], "back"],
+  ["Dumbbell push press", "Shoulders & Traps", "Dumbbell", ["delts-front"], ["triceps-lateral", "quads", "traps-upper"], "front"],
+  ["Sit-to-stands", "Quads", "Chair", ["quads", "glutes"], ["hamstrings"], "front"],
+  ["Kettlebell deadlift", "Hamstrings & Glutes", "Kettlebell", ["glutes", "hamstrings"], ["lowerback", "forearms", "traps"], "back"],
+  ["Kettlebell halo", "Shoulders & Traps", "Kettlebell", ["delts"], ["traps", "triceps", "abs"], "front"],
+  ["Suitcase march", "Core", "Kettlebell", ["obliques"], ["abs", "forearms", "glutes"], "front"],
+  ["Farmer carry march", "Forearms & Grip", "Kettlebell", ["forearms"], ["traps", "abs", "glutes"], "front"],
+  ["Kettlebell floor press", "Chest", "Kettlebell", ["chest-mid"], ["delts-front", "triceps-lateral"], "front"],
+  ["Bike", "Full Body & Conditioning", "Exercise bike", ["quads"], ["hamstrings", "calves", "glutes"], "front"],
+  ["Ski erg", "Full Body & Conditioning", "Ski erg", ["lats", "triceps"], ["abs", "delts", "quads"], "front"],
+  ["Box step-ups", "Quads", "Box", ["quads", "glutes"], ["hamstrings", "calves"], "front"],
+  ["Dumbbell thrusters", "Full Body & Conditioning", "Dumbbell", ["quads", "glutes", "delts"], ["triceps", "hamstrings", "abs"], "front"],
+  ["Dumbbell squat", "Quads", "Dumbbell", ["quads", "glutes"], ["hamstrings", "abs"], "front"],
+  ["Med ball slams", "Full Body & Conditioning", "Medicine ball", ["delts", "abs"], ["lats", "triceps", "glutes"], "front"],
+  ["Dumbbell woodchops", "Core", "Dumbbell", ["obliques"], ["abs", "delts-side"], "front"],
+  ["Band pull-aparts", "Back", "Resistance band", ["delts-rear", "traps-mid"], ["rhomboids"], "back"],
+  ["Dumbbell high pulls", "Shoulders & Traps", "Dumbbell", ["traps"], ["delts", "biceps", "glutes"], "front"],
+  ["March on the spot", "Full Body & Conditioning", "Bodyweight", ["quads", "calves"], ["glutes", "hip-flexors"], "front"],
+  ["Side plank left", "Core", "Bodyweight", ["obliques"], ["abs", "glutes-med", "delts-side"], "front"],
+  ["Side plank right", "Core", "Bodyweight", ["obliques"], ["abs", "glutes-med", "delts-side"], "front"],
+  ["Lateral lunge", "Quads", "Bodyweight", ["quads", "glutes"], ["adductors", "hamstrings"], "front"],
+  ["Calf raises", "Calves", "Bodyweight", ["calves"], [], "back"],
+  ["Bike sprint", "Full Body & Conditioning", "Exercise bike", ["quads"], ["hamstrings", "glutes", "calves"], "front"],
+  ["Fast feet", "Full Body & Conditioning", "Bodyweight", ["calves", "quads"], ["hamstrings", "glutes"], "front"],
+  ["Brisk march", "Full Body & Conditioning", "Bodyweight", ["quads", "calves"], ["glutes", "hamstrings"], "front"],
+  ["Dumbbell rows", "Back", "Dumbbell", ["lats"], ["biceps-long", "delts-rear", "traps-mid", "forearm-flexors"], "back"],
+  ["Dumbbell curl to press", "Biceps", "Dumbbell", ["biceps"], ["delts", "triceps"], "front"],
 
   // Top-up (2026-10-02): exact names from the original ~45-exercise seed
   // (EXERCISE_SEED_ above) that don't share a name with any of the 150
@@ -2374,7 +2426,7 @@ function handleSaveWorkoutSession_(payload) {
       const duration = Number(s.duration);
       if (Number.isFinite(duration) && duration >= 0) rowValues[col.duration] = Math.round(duration);
     }
-    if (col.type >= 0 && (s.type === "round" || s.type === "pads" || s.type === "run" || s.type === "walk")) rowValues[col.type] = s.type;
+    if (col.type >= 0 && (s.type === "round" || s.type === "pads" || s.type === "run" || s.type === "walk" || s.type === "interval" || s.type === "amrap")) rowValues[col.type] = s.type;
     // "Log something else" (2026-11-08): a run/walk's distance. Weight/Reps
     // above are already 0 for these, same shape as a boxing round.
     if (col.distance >= 0) {
@@ -5396,4 +5448,190 @@ function arrangeSheetTabs() {
     ["Upcoming", "Bookings", "Clients", "Availability", "Time Off", "Prices", "Payments", "Settings"], []) : [];
   Logger.log("CRM: " + crm.join(", ") + "\nBookings: " + bookings.join(", "));
   return { crm: crm, bookings: bookings };
+}
+
+// =============================================================================
+// Mix it up (2026-11-09): surprise HIIT sessions the client shuffles on the
+// Train tab. Max's workouts live in a "Mix It Up" tab of this sheet, one row
+// per exercise, so he can edit or add workouts without a coder. The page
+// (workout/mixitup.js) reads the tab, shuffles one workout and plays it;
+// nothing here runs per client, only seedMixItUp() (one time, safe to re-run).
+// =============================================================================
+
+const MIX_IT_UP_SHEET_NAME = "Mix It Up";
+const MIX_IT_UP_HEADER_ = [
+  "On", "Workout", "Style", "Equipment", "Minutes", "Block Order", "Block Type", "Block Name",
+  "Rounds", "Work Seconds", "Rest Seconds", "Rest Between Rounds", "Block Minutes",
+  "Exercise Order", "Exercise", "Easier", "Target Reps", "Combos",
+];
+
+// A move is [exercise ("A / B / C" = one is picked each shuffle), easier option, target reps].
+function mixBlock_(type, name, o, moves) {
+  return Object.assign({ type, name, moves: moves || [] }, o || {});
+}
+function mixWarmup_(name, moves) {
+  return mixBlock_("Warm-up", name, { rounds: 1, work: 45, rest: 0 }, moves.map((m) => [m]));
+}
+function mixIntervals_(name, rounds, work, rest, between, moves) {
+  return mixBlock_("Intervals", name, { rounds, work, rest, between: between || "" }, moves);
+}
+function mixRounds_(name, rounds, work, rest, exercise, combos) {
+  return mixBlock_("Rounds", name, { rounds, work, rest, combos: combos || "" }, [[exercise]]);
+}
+function mixTimed_(type, name, minutes, moves) {
+  return mixBlock_(type, name, { minutes }, moves);
+}
+
+function mixBoxingWarmup_() {
+  return mixWarmup_("Warm-up", ["March on the spot", "Arm circles", "Bodyweight squats", "Torso twists", "Light shadow boxing"]);
+}
+function mixBootcampWarmup_() {
+  return mixWarmup_("Warm-up", ["March on the spot", "Arm circles", "Bodyweight squats", "Hip hinges", "Step jacks"]);
+}
+function mixCooldown_() {
+  return mixBlock_("Cool-down", "Cool-down", { rounds: 1, work: 45, rest: 0 }, [["Chest stretch"], ["Hamstring stretch"], ["Quad stretch"], ["Slow deep breathing"]]);
+}
+
+// Max's starting 14. Every workout starts with the matching warm-up and ends with the cool-down.
+function mixItUpWorkouts_() {
+  const box = mixBoxingWarmup_, boot = mixBootcampWarmup_, cool = mixCooldown_;
+  const pushups = ["Push-ups / Incline push-ups", "Wall push-ups"];
+  return [
+    { name: "Bag Basics", style: "Boxing", equipment: "Bag", minutes: 30, blocks: [
+      box(),
+      mixRounds_("Bag rounds", 5, 120, 60, "Heavy Bag"),
+      mixIntervals_("Finisher", 2, 40, 20, "", [["Glute bridge"], ["Dead bug"], ["Bird dog"]]),
+      cool() ] },
+    { name: "Fight Night", style: "Boxing", equipment: "Bag", minutes: 30, blocks: [
+      box(),
+      mixIntervals_("Bag circuit", 3, 60, 15, 60, [
+        ["Bag: fast 1-2s"], ["Bodyweight squat / Goblet squat"], ["Bag: hooks (3-4)"],
+        ["Mountain climbers / Plank knee-ins", "Standing knee drives"], ["Bag: uppercuts (5-6)"], pushups ]),
+      cool() ] },
+    { name: "Shadow & Burn", style: "Boxing", equipment: "None", minutes: 25, blocks: [
+      box(),
+      mixRounds_("Shadow rounds", 4, 120, 60, "Shadow Boxing"),
+      mixIntervals_("Burn", 3, 40, 20, "", [
+        ["Squat to punch"], ["Skater steps", "Side steps"], ["Sit-up punches", "Seated punches"], ["Plank shoulder taps", "Wall plank taps"] ]),
+      cool() ] },
+    { name: "Speed & Power", style: "Boxing", equipment: "Bag", minutes: 30, blocks: [
+      box(),
+      mixIntervals_("Bag speed and power", 4, 30, 30, "", [["Bag: speed punches"], ["Bag: power hooks and uppercuts"]]),
+      mixTimed_("AMRAP", "Core AMRAP", 6, [["Russian twists", "", "10"], ["Crunch punches", "Seated knee tucks", "10"], ["Plank", "", "20s"]]),
+      cool() ] },
+    { name: "Footwork & Core", style: "Boxing", equipment: "Bag", minutes: 30, blocks: [
+      box(),
+      mixIntervals_("Skipping", 3, 120, 60, "", [["Skipping", "Step jacks"]]),
+      mixRounds_("Bag rounds", 3, 120, 60, "Heavy Bag", "1-2, pivot | 1-2-3, step back | Freestyle"),
+      mixIntervals_("Core", 2, 40, 20, "", [["Dead bug"], ["Bicycle crunch", "Heel taps"], ["Plank"]]),
+      cool() ] },
+    { name: "Twelve Rounds", style: "Boxing", equipment: "Bag", minutes: 35, blocks: [
+      box(),
+      mixRounds_("Bag rounds", 12, 60, 30, "Heavy Bag"),
+      cool() ] },
+    { name: "Full Body Tabata", style: "Bootcamp", equipment: "None", minutes: 25, blocks: [
+      boot(),
+      mixIntervals_("Tabata: squats", 6, 20, 10, "", [["Bodyweight squat"]]),
+      mixIntervals_("Tabata: push-ups", 6, 20, 10, "", [pushups]),
+      mixIntervals_("Tabata: lunges", 6, 20, 10, "", [["Reverse lunge", "Step-back with chair support"]]),
+      mixIntervals_("Tabata: climbers", 6, 20, 10, "", [["Mountain climbers", "Standing knee drives"]]),
+      cool() ] },
+    { name: "Dumbbell EMOM", style: "Bootcamp", equipment: "Dumbbells", minutes: 25, blocks: [
+      boot(),
+      mixTimed_("EMOM", "EMOM", 20, [
+        ["Goblet squats", "", "10"], ["Bent-over dumbbell rows", "", "10"],
+        ["Dumbbell push press / Dumbbell shoulder press", "", "8"], ["Reverse lunges", "Sit-to-stands", "10"] ]),
+      cool() ] },
+    { name: "Kettlebell Circuit", style: "Bootcamp", equipment: "Kettlebell", minutes: 30, blocks: [
+      boot(),
+      mixIntervals_("Kettlebell circuit", 3, 40, 20, 60, [
+        ["Kettlebell swing", "Kettlebell deadlift"], ["Goblet squat"], ["Kettlebell halo"],
+        ["Suitcase march / Farmer carry march"], ["Kettlebell floor press"] ]),
+      cool() ] },
+    { name: "Engine Builder", style: "Bootcamp", equipment: "Machine", minutes: 30, blocks: [
+      boot(),
+      mixIntervals_("Engine", 6, 60, 60, "", [["Bike / Rowing Machine / Ski erg"]]),
+      mixIntervals_("Finisher", 2, 40, 20, "", [["Bodyweight squat"], pushups, ["Plank"]]),
+      cool() ] },
+    { name: "Bootcamp Stations", style: "Bootcamp", equipment: "Dumbbells", minutes: 35, blocks: [
+      boot(),
+      mixIntervals_("Stations", 3, 45, 15, 60, [
+        ["Box step-ups / Step-ups"], ["Dumbbell thrusters", "Dumbbell squat"], ["Plank shoulder taps", "Wall plank taps"],
+        ["Med ball slams / Dumbbell woodchops"], ["Battle Ropes", "Band pull-aparts"], ["Skater steps", "Side steps"] ]),
+      cool() ] },
+    { name: "The Big AMRAP", style: "Bootcamp", equipment: "Dumbbells, Machine", minutes: 30, blocks: [
+      boot(),
+      mixTimed_("AMRAP", "The Big AMRAP", 15, [
+        ["Bodyweight squats", "", "10"], ["Push-ups", "Incline push-ups", "8"],
+        ["Dumbbell snatch", "Dumbbell high pulls", "6 each side"], ["Rowing Machine / March on the spot", "", "200 m / 30s"] ]),
+      mixIntervals_("Core finisher", 2, 30, 15, "", [["Dead bug"], ["Glute bridge"], ["Side plank left"], ["Side plank right"]]),
+      cool() ] },
+    { name: "Legs & Lungs", style: "Bootcamp", equipment: "Dumbbells, Machine", minutes: 30, blocks: [
+      boot(),
+      mixIntervals_("Legs", 4, 40, 20, "", [["Goblet squat"], ["Reverse lunge"], ["Lateral lunge"], ["Calf raises"]]),
+      mixIntervals_("Lungs", 4, 30, 30, "", [["Bike sprint / Fast feet", "Brisk march"]]),
+      cool() ] },
+    { name: "Upper Body Blast", style: "Bootcamp", equipment: "Dumbbells", minutes: 30, blocks: [
+      boot(),
+      mixTimed_("EMOM", "EMOM", 16, [
+        ["Dumbbell rows", "", "10"], ["Push-ups / Incline push-ups", "Wall push-ups", "10"],
+        ["Dumbbell curl to press", "", "10"], ["Band pull-aparts", "", "15"] ]),
+      mixIntervals_("Finisher", 2, 30, 15, "", [["Shadow boxing speed punches"], ["Plank"]]),
+      cool() ] },
+  ];
+}
+
+/** One sheet row per exercise, in the tab's column order (MIX_IT_UP_HEADER_). */
+function mixItUpRows_(w) {
+  const rows = [];
+  w.blocks.forEach((b, bi) => {
+    b.moves.forEach((m, mi) => {
+      rows.push([
+        "Y", w.name, w.style, w.equipment, w.minutes, bi + 1, b.type, b.name,
+        b.rounds || "", b.work || "", b.rest === undefined ? "" : b.rest, b.between || "",
+        mi === 0 && b.minutes ? b.minutes : "", mi + 1, m[0], m[1] || "", m[2] || "", b.combos || "",
+      ]);
+    });
+  });
+  return rows;
+}
+
+/**
+ * One-time (safe to re-run): creates the Mix It Up tab and adds Max's 14
+ * starting workouts. A workout name already on the tab is left completely
+ * alone (never overwritten, never duplicated), so Max's edits survive. Also
+ * runs seedExerciseMuscleData() so every exercise the workouts use is on the
+ * Exercises tab with muscles (that's what puts a finished interval on the
+ * muscle map). Changes nothing else.
+ */
+function seedMixItUp() {
+  const sheet = getOrCreateSheetByName_(MIX_IT_UP_SHEET_NAME, MIX_IT_UP_HEADER_);
+  const lastRow = sheet.getLastRow();
+  const header = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getDisplayValues()[0];
+  const wCol = findColumn_(header, "Workout");
+  const existing = new Set();
+  if (lastRow >= 2 && wCol >= 0) {
+    sheet.getRange(2, wCol + 1, lastRow - 1, 1).getDisplayValues().forEach((r) => {
+      const n = String(r[0] || "").trim().toLowerCase();
+      if (n) existing.add(n);
+    });
+  }
+  let added = 0;
+  const out = [];
+  mixItUpWorkouts_().forEach((w) => {
+    if (existing.has(w.name.toLowerCase())) return;
+    // Rows follow the tab's own header order, so a column Max has moved still gets the right value.
+    mixItUpRows_(w).forEach((r) => {
+      const row = new Array(header.length).fill("");
+      MIX_IT_UP_HEADER_.forEach((h, i) => {
+        const c = findColumn_(header, h);
+        if (c >= 0) row[c] = r[i];
+      });
+      out.push(row);
+    });
+    added++;
+  });
+  if (out.length) sheet.getRange(sheet.getLastRow() + 1, 1, out.length, header.length).setValues(out);
+  seedExerciseMuscleData();
+  Logger.log("Mix It Up: added " + added + " workout(s); " + (mixItUpWorkouts_().length - added) + " already there.");
 }
