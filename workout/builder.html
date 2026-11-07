@@ -12,7 +12,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="../card/styles.css?v=20261026b" />
 <link rel="stylesheet" href="../checkin.css?v=20261027b" />
-<link rel="stylesheet" href="builder.css?v=20261105d" />
+<link rel="stylesheet" href="builder.css?v=20261107a" />
 <link rel="stylesheet" href="exercise-picker.css?v=20261107b" />
 <link rel="stylesheet" href="exercise-manager.css?v=20261106a" />
 <link rel="stylesheet" href="../card/coach-shell.css?v=20261106a" />
@@ -69,7 +69,10 @@
 
       <div class="builder__exercises" id="exerciseRows"></div>
 
-      <button class="builder__add" id="addExerciseButton" type="button">+ Add Exercise</button>
+      <div class="builder__add-row">
+        <button class="builder__add" id="addExerciseButton" type="button">+ Add Exercise</button>
+        <button class="builder__add builder__add--boxing" id="addBoxingButton" type="button">+ Add Boxing Rounds</button>
+      </div>
 
       <div class="checkin__pin" id="pinRow">
         <span class="card__label">Staff PIN</span>
@@ -102,7 +105,7 @@
 
 <script src="../card/sheet.js?v=20261107b"></script>
 <script src="../card/muscle-map.js?v=20261107b"></script>
-<script src="builder.js?v=20261105d"></script>
+<script src="builder.js?v=20261107a"></script>
 <script src="exercise-picker.js?v=20261107b"></script>
 <script src="exercise-manager.js?v=20261107b"></script>
 </body>

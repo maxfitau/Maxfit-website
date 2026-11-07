@@ -92,6 +92,9 @@ async function heatmapMuscleData(memberId, range) {
   let unmatchedSetsCount = 0;
   setRows.forEach((row) => {
     if (String(setCol.client >= 0 ? row[setCol.client] : "").trim().toLowerCase() !== clientSlug) return;
+    // Pad rounds (coach-run boxing) never count here — a client-run round
+    // ("round") does, as a normal set, once its exercise name resolves below.
+    if (setCol.type >= 0 && String(row[setCol.type] || "").trim().toLowerCase() === "pads") return;
     const key = setCol.date >= 0 ? heatDateSortKey_(row[setCol.date]) : NaN;
     if (!Number.isFinite(key) || key < fromKey || key > toKey) return;
     const exName = String(setCol.exercise >= 0 ? row[setCol.exercise] : "").trim();

@@ -1987,3 +1987,585 @@ body {
     font-size: 34px;
   }
 }
+
+/* ==========================================================================
+   Boxing rounds (built 2026-11-07) — a block card in Checklist/Show all/
+   Simple view, a full-screen round timer shared by all three, and a coach
+   "pads" variant of both. Same brand rules as everything else on this page.
+   ========================================================================== */
+
+.workout__boxing {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+.view--showall .workout__boxing,
+.view--checklist .workout__cl-open .workout__boxing {
+  border: none;
+  padding: 0;
+  background: transparent;
+}
+
+.workout__boxing-label {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  font-family: var(--font-head);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  font-size: 13px;
+  color: var(--on-red);
+  background: var(--red);
+  border-radius: 999px;
+  padding: 5px 12px 4px;
+}
+
+.workout__boxing-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.workout__boxing-name {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: 19px;
+  color: var(--white);
+}
+
+.workout__boxing-meta {
+  margin: -6px 0 0;
+  font-family: var(--font-body);
+  font-size: 15px;
+  color: var(--grey-light);
+}
+
+.workout__boxing-rounds-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.workout__boxing-round-box {
+  flex: 1 1 48px;
+  min-width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--grey-light);
+  background: var(--bg);
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.workout__boxing-round-box--now {
+  border-color: var(--white);
+  color: var(--white);
+}
+
+.workout__boxing-round-box--done {
+  color: var(--on-red);
+  background: var(--red);
+  border-color: var(--red);
+}
+
+.workout__boxing-combos {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.workout__boxing-combo-line {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.workout__boxing-combo-round {
+  flex-shrink: 0;
+  width: 26px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--dim);
+}
+
+.workout__boxing-combo-text {
+  min-width: 0;
+}
+
+.workout__boxing-combo-nums {
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 18px;
+  color: var(--white);
+  letter-spacing: 0.01em;
+}
+
+.workout__boxing-combo-words {
+  margin: 1px 0 0;
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--dim);
+}
+
+.workout__boxing-start-btn {
+  width: 100%;
+  min-height: 56px;
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 18px;
+  color: var(--on-red);
+  background: var(--red);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.workout__boxing-start-btn:active {
+  background: var(--red-dim);
+}
+
+.workout__boxing-shadow-link {
+  align-self: center;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--grey-light);
+  background: none;
+  border: none;
+  text-decoration: underline;
+  cursor: pointer;
+  min-height: 44px;
+  padding: 4px;
+}
+
+/* Coach-run block shown on the CLIENT's own phone: info only, no Start. */
+.workout__boxing-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--bg);
+  border: 1px dashed var(--line-strong, var(--line));
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+}
+
+.workout__boxing-info-title {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--white);
+}
+
+.workout__boxing-info-sub {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--dim);
+}
+
+/* ---- Round timer — full-screen overlay, shared by every view ----------- */
+
+.workout__timer-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom));
+  overflow-y: auto;
+}
+
+.workout__timer-screen[hidden] {
+  display: none;
+}
+
+.workout__timer-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.workout__timer-top-text {
+  min-width: 0;
+}
+
+.workout__timer-exname {
+  margin: 0;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: 18px;
+  color: var(--white);
+  overflow-wrap: anywhere;
+}
+
+.workout__timer-roundline {
+  margin: 2px 0 0;
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--dim);
+}
+
+.workout__timer-sound {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--grey-light);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.workout__timer-segments {
+  display: flex;
+  gap: 4px;
+  margin-top: 16px;
+}
+
+.workout__timer-seg {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-card);
+}
+
+.workout__timer-seg--done {
+  background: var(--red);
+}
+
+.workout__timer-seg--now {
+  background: var(--white);
+}
+
+.workout__timer-mid {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 24px 0;
+}
+
+.workout__timer-ring-wrap {
+  position: relative;
+  width: 240px;
+  height: 240px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.workout__timer-ring-wrap svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.workout__timer-ring-track {
+  stroke: var(--bg-card);
+}
+
+.workout__timer-ring-fill {
+  stroke: var(--red);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.25s linear;
+}
+
+.workout__timer-screen--rest .workout__timer-ring-fill {
+  stroke: var(--white);
+}
+
+.workout__timer-ring-mid {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.workout__timer-ring-label {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 15px;
+  color: var(--red);
+}
+
+.workout__timer-screen--rest .workout__timer-ring-label {
+  color: var(--white);
+}
+
+.workout__timer-ring-value {
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 64px;
+  line-height: 1;
+  color: var(--white);
+  font-variant-numeric: tabular-nums;
+}
+
+.workout__timer-ring-sub {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--dim);
+}
+
+.workout__timer-card {
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px 16px;
+}
+
+.workout__timer-card-label {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.workout__timer-card-combo {
+  margin: 0;
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 34px;
+  color: var(--white);
+  letter-spacing: 0.02em;
+}
+
+.workout__timer-card-words {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 15px;
+  color: var(--grey-light);
+}
+
+.workout__timer-rest-copy {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 16px;
+  color: var(--grey-light);
+  text-align: center;
+}
+
+.workout__timer-rest-adjust {
+  display: flex;
+  gap: 10px;
+}
+
+.workout__timer-rest-adjust-btn {
+  min-width: 56px;
+  min-height: 48px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--grey-light);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.workout__timer-rest-adjust-btn:active {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.workout__timer-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 10px;
+}
+
+.workout__timer-pause-btn {
+  width: 100%;
+  min-height: 64px;
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 20px;
+  color: var(--bg);
+  background: var(--white);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.workout__timer-pause-btn:active {
+  background: var(--grey);
+}
+
+.workout__timer-end-btn {
+  width: 100%;
+  min-height: 48px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 15px;
+  color: var(--grey-light);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.workout__timer-end-btn:active {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.workout__timer-skip-btn {
+  width: 100%;
+  min-height: 56px;
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 16px;
+  color: var(--on-red);
+  background: var(--red);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.workout__timer-skip-btn:active {
+  background: var(--red-dim);
+}
+
+/* Coach pads variant — same screen, red "COACH" tag + client's name up top. */
+.workout__timer-coach-tag {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  font-family: var(--font-head);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  font-size: 13px;
+  color: var(--on-red);
+  background: var(--red);
+  border-radius: 999px;
+  padding: 5px 12px 4px;
+  margin-bottom: 6px;
+}
+
+.workout__timer-coach-name {
+  margin: 0;
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: 30px;
+  color: var(--white);
+  overflow-wrap: anywhere;
+}
+
+.workout__timer-coach-sub {
+  margin: 2px 0 0;
+  font-family: var(--font-body);
+  font-size: 15px;
+  color: var(--grey-light);
+}
+
+.workout__timer-calls-label {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.workout__timer-calls-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+.workout__timer-call-chip {
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 22px;
+  color: var(--white);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px 16px;
+}
+
+.workout__timer-finish-btn {
+  width: 100%;
+  min-height: 56px;
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 17px;
+  color: var(--on-red);
+  background: var(--red);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.workout__timer-finish-btn:active {
+  background: var(--red-dim);
+}
+
+@media (max-width: 360px) {
+  .workout__timer-ring-wrap {
+    width: 200px;
+    height: 200px;
+  }
+
+  .workout__timer-ring-value {
+    font-size: 52px;
+  }
+
+  .workout__timer-card-combo {
+    font-size: 28px;
+  }
+}

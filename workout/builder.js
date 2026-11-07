@@ -236,7 +236,11 @@ const SUPERSET_REST_DEFAULT_ = 90;
 
 /** A link to nothing doesn't count: the last row has no next exercise. */
 function rowLinksToNext_(row) {
-  return row.dataset.superset === "true" && Boolean(row.nextElementSibling);
+  // A boxing block (2026-11-07) can never join a superset, in either
+  // direction — it never has a "join" toggle itself (dataset.superset stays
+  // "false"), and this stops a normal row right before one from sweeping
+  // it into a chain.
+  return row.dataset.superset === "true" && Boolean(row.nextElementSibling) && row.nextElementSibling.dataset.blockType !== "rounds";
 }
 
 function toggleRowLink_(row) {
@@ -366,6 +370,10 @@ function refreshSupersets_() {
     // A group has one rest time. The first one set among its rows wins (joining two groups keeps the upper one's).
     const setRest = members.map((row) => Number(row.dataset.supersetRest)).find((n) => n >= 15 && n <= 600);
     members.forEach((row, n) => {
+      // A boxing block (2026-11-07) has none of the superset DOM below —
+      // rowLinksToNext_ already guarantees it's always solo here (grouped
+      // is always false for it), so there's nothing to do.
+      if (row.dataset.blockType === "rounds") return;
       // Rows load one at a time, so a row on its own here may be about to join its group: keep its value.
       if (grouped) row.dataset.supersetRest = String(setRest || SUPERSET_REST_DEFAULT_);
       row.classList.toggle("builder__row--ss", grouped);
@@ -392,10 +400,12 @@ function refreshSupersets_() {
   }
 
   rows.forEach((row, i) => {
+    if (row.dataset.blockType === "rounds") return; // no join/more-menu controls on a boxing row
     const isLast = i === rows.length - 1;
+    const beforeBoxing = Boolean(rows[i + 1] && rows[i + 1].dataset.blockType === "rounds");
     const linked = rowLinksToNext_(row);
-    row.querySelector(".builder__ss-link").hidden = isLast;
-    row.querySelector(".builder__row-more").hidden = isLast;
+    row.querySelector(".builder__ss-link").hidden = isLast || beforeBoxing;
+    row.querySelector(".builder__row-more").hidden = isLast || beforeBoxing;
     const btn = row.querySelector(".builder__ss-link-btn");
     btn.setAttribute("aria-pressed", String(linked));
     btn.setAttribute("aria-label", linked ? "Split this exercise from the next one" : "Join this exercise to the next one");
@@ -655,6 +665,382 @@ function addRow(exercise) {
   refreshMuscleLoadPanel_();
 }
 
+// ---- Boxing rounds (built 2026-11-07) -------------------------------------
+//
+// A block is one exercise row in Workout Exercises (Block Type "Rounds",
+// Target Sets = round count), but unlike a normal exercise it's never
+// edited inline — the row is just a summary + Edit, and all its setup
+// (rounds/work/rest/combos/who runs it/easier option) lives in a block
+// editor dialog, opened fresh each time. It can never join a superset
+// (rowLinksToNext_/refreshSupersets_ above both guard this).
+
+const BOXING_EXERCISE_OPTIONS_ = ["Heavy Bag", "Shadow Boxing", "Pad Work", "Skipping"];
+const BOXING_COMBO_CHIPS_ = [
+  { label: "1 Jab", insert: "1" },
+  { label: "2 Cross", insert: "2" },
+  { label: "3 Lead hook", insert: "3" },
+  { label: "4 Rear hook", insert: "4" },
+  { label: "5 Lead upper", insert: "5" },
+  { label: "6 Rear upper", insert: "6" },
+  { label: "Slip", insert: "slip" },
+  { label: "Roll", insert: "roll" },
+];
+
+function defaultBoxingBlock_() {
+  return {
+    name: "Heavy Bag",
+    rounds: 3,
+    workSeconds: 120,
+    restSeconds: 60,
+    sameEveryRound: false, // "Different each round" is the default
+    combos: ["", "", ""],
+    runBy: "Client",
+    easierOption: true,
+  };
+}
+
+function boxingSecondsText_(seconds) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function boxingSummaryText_(block) {
+  const runText = block.runBy === "Coach" ? "with you" : `${block.rounds} × ${boxingSecondsText_(block.workSeconds)}`;
+  return `${block.name} · ${block.runBy === "Coach" ? runText : `${runText} · rest ${boxingSecondsText_(block.restSeconds)}`}`;
+}
+
+/** The block row in the exercise list — a summary + Edit, nothing inline. Shares the drag handle / move / remove controls every other row has. */
+function addBoxingRow(block) {
+  const row = document.createElement("div");
+  row.className = "builder__row builder__row--boxing";
+  row.dataset.blockType = "rounds";
+  row.dataset.superset = "false";
+  row._boxing = block || defaultBoxingBlock_();
+
+  const summary = document.createElement("button");
+  summary.type = "button";
+  summary.className = "builder__boxing-summary";
+  summary.addEventListener("click", () => openBoxingEditor_(row));
+  row.appendChild(summary);
+
+  function refreshSummary() {
+    summary.innerHTML = `<span class="builder__boxing-summary-tag">${row._boxing.runBy === "Coach" ? "Pads" : "Boxing"}</span><span class="builder__boxing-summary-text"><span class="builder__boxing-summary-name">${row._boxing.name}</span><span class="builder__boxing-summary-meta">${boxingSummaryText_(row._boxing)}</span></span>`;
+  }
+  row._refreshBoxingSummary = refreshSummary;
+  refreshSummary();
+
+  const handle = document.createElement("div");
+  handle.className = "builder__row-handle";
+  handle.textContent = "⠿";
+  handle.setAttribute("aria-label", "Drag to reorder");
+  makeRowDraggable(row, handle);
+
+  const moveWrap = document.createElement("div");
+  moveWrap.className = "builder__row-move";
+  const upButton = document.createElement("button");
+  upButton.type = "button";
+  upButton.className = "builder__row-move-btn";
+  upButton.textContent = "▲";
+  upButton.setAttribute("aria-label", "Move up");
+  upButton.addEventListener("click", () => {
+    const prev = row.previousElementSibling;
+    if (prev) els.rows.insertBefore(row, prev);
+    refreshSupersets_();
+  });
+  const downButton = document.createElement("button");
+  downButton.type = "button";
+  downButton.className = "builder__row-move-btn";
+  downButton.textContent = "▼";
+  downButton.setAttribute("aria-label", "Move down");
+  downButton.addEventListener("click", () => {
+    const next = row.nextElementSibling;
+    if (next) els.rows.insertBefore(next, row);
+    refreshSupersets_();
+  });
+  moveWrap.append(upButton, downButton);
+  row.appendChild(moveWrap);
+
+  const removeButton = document.createElement("button");
+  removeButton.type = "button";
+  removeButton.className = "builder__row-remove";
+  removeButton.textContent = "×";
+  removeButton.setAttribute("aria-label", "Remove this block");
+  removeButton.addEventListener("click", () => {
+    row.remove();
+    refreshSupersets_();
+    refreshMuscleLoadPanel_();
+  });
+  row.appendChild(removeButton);
+
+  els.rows.appendChild(row);
+  refreshSupersets_();
+  refreshMuscleLoadPanel_();
+  return row;
+}
+
+let boxingModalEl_ = null;
+
+function closeBoxingEditor_() {
+  if (boxingModalEl_) boxingModalEl_.hidden = true;
+}
+
+/** Opens the block editor on a fresh default block (new) or an existing row's block (edit in place). */
+function openBoxingEditor_(existingRow) {
+  const editing = Boolean(existingRow);
+  // A working copy — only written back to the row's own _boxing on "Add to workout", so Cancel truly discards changes.
+  const draft = JSON.parse(JSON.stringify(editing ? existingRow._boxing : defaultBoxingBlock_()));
+  if (!Array.isArray(draft.combos) || draft.combos.length !== draft.rounds) {
+    draft.combos = Array.from({ length: draft.rounds }, (_, i) => draft.combos[i] || "");
+  }
+
+  if (!boxingModalEl_) {
+    boxingModalEl_ = document.createElement("div");
+    boxingModalEl_.className = "builder__boxing-modal";
+    boxingModalEl_.hidden = true;
+    document.body.appendChild(boxingModalEl_);
+  }
+  boxingModalEl_.innerHTML = "";
+  boxingModalEl_.hidden = false;
+
+  const backdrop = document.createElement("div");
+  backdrop.className = "builder__boxing-modal-backdrop";
+  backdrop.addEventListener("click", closeBoxingEditor_);
+  boxingModalEl_.appendChild(backdrop);
+
+  const panel = document.createElement("div");
+  panel.className = "builder__boxing-modal-panel";
+  boxingModalEl_.appendChild(panel);
+
+  const title = document.createElement("h2");
+  title.className = "builder__boxing-modal-title";
+  title.textContent = editing ? "Edit boxing rounds" : "Add boxing rounds";
+  panel.appendChild(title);
+
+  // Exercise
+  const exField = document.createElement("div");
+  exField.className = "builder__boxing-field";
+  exField.innerHTML = '<span class="card__label">Exercise</span>';
+  const exSelect = document.createElement("select");
+  exSelect.className = "builder__boxing-select";
+  BOXING_EXERCISE_OPTIONS_.forEach((name) => {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    if (name === draft.name) opt.selected = true;
+    exSelect.appendChild(opt);
+  });
+  exSelect.addEventListener("change", () => {
+    draft.name = exSelect.value;
+    if (draft.name === "Pad Work") setRunBy("Coach");
+  });
+  exField.appendChild(exSelect);
+  panel.appendChild(exField);
+
+  // Who runs it
+  const runField = document.createElement("div");
+  runField.className = "builder__boxing-field";
+  runField.innerHTML = '<span class="card__label">Who runs it</span>';
+  const runSeg = document.createElement("div");
+  runSeg.className = "builder__boxing-segmented";
+  const clientBtn = document.createElement("button");
+  clientBtn.type = "button";
+  clientBtn.className = "builder__boxing-segmented-btn";
+  clientBtn.textContent = "On their own";
+  const coachBtn = document.createElement("button");
+  coachBtn.type = "button";
+  coachBtn.className = "builder__boxing-segmented-btn";
+  coachBtn.textContent = "With me (pads)";
+  function setRunBy(value) {
+    draft.runBy = value;
+    clientBtn.setAttribute("aria-pressed", String(value === "Client"));
+    coachBtn.setAttribute("aria-pressed", String(value === "Coach"));
+    shadowRow.hidden = value === "Coach";
+  }
+  clientBtn.addEventListener("click", () => setRunBy("Client"));
+  coachBtn.addEventListener("click", () => setRunBy("Coach"));
+  runSeg.append(clientBtn, coachBtn);
+  runField.appendChild(runSeg);
+  panel.appendChild(runField);
+
+  // Steppers: rounds / work / rest
+  const steppers = document.createElement("div");
+  steppers.className = "builder__boxing-steppers";
+  function stepper(label, get, set, min, max, step, format) {
+    const wrap = document.createElement("div");
+    wrap.className = "builder__boxing-stepper";
+    const lab = document.createElement("span");
+    lab.className = "builder__boxing-stepper-label";
+    lab.textContent = label;
+    const row = document.createElement("div");
+    row.className = "builder__boxing-stepper-row";
+    const minus = document.createElement("button");
+    minus.type = "button";
+    minus.className = "builder__boxing-step-btn";
+    minus.textContent = "−";
+    const value = document.createElement("span");
+    value.className = "builder__boxing-step-value";
+    const plus = document.createElement("button");
+    plus.type = "button";
+    plus.className = "builder__boxing-step-btn";
+    plus.textContent = "+";
+    function paint() {
+      value.textContent = format(get());
+    }
+    minus.addEventListener("click", () => {
+      set(Math.max(min, get() - step));
+      paint();
+    });
+    plus.addEventListener("click", () => {
+      set(Math.min(max, get() + step));
+      paint();
+    });
+    paint();
+    row.append(minus, value, plus);
+    wrap.append(lab, row);
+    return wrap;
+  }
+  steppers.appendChild(stepper("Rounds", () => draft.rounds, (v) => {
+    const delta = v - draft.rounds;
+    draft.rounds = v;
+    if (delta > 0) for (let i = 0; i < delta; i++) draft.combos.push("");
+    else if (delta < 0) draft.combos.length = draft.rounds;
+    renderRoundsList();
+  }, 1, 12, 1, (v) => String(v)));
+  steppers.appendChild(stepper("Work", () => draft.workSeconds, (v) => (draft.workSeconds = v), 30, 300, 15, boxingSecondsText_));
+  steppers.appendChild(stepper("Rest", () => draft.restSeconds, (v) => (draft.restSeconds = v), 15, 180, 15, boxingSecondsText_));
+  panel.appendChild(steppers);
+
+  // Combos
+  const comboField = document.createElement("div");
+  comboField.className = "builder__boxing-field";
+  comboField.innerHTML = '<span class="card__label">Combos</span>';
+  const comboSeg = document.createElement("div");
+  comboSeg.className = "builder__boxing-segmented";
+  const sameBtn = document.createElement("button");
+  sameBtn.type = "button";
+  sameBtn.className = "builder__boxing-segmented-btn";
+  sameBtn.textContent = "Same every round";
+  const diffBtn = document.createElement("button");
+  diffBtn.type = "button";
+  diffBtn.className = "builder__boxing-segmented-btn";
+  diffBtn.textContent = "Different each round";
+  function setComboMode(same) {
+    draft.sameEveryRound = same;
+    sameBtn.setAttribute("aria-pressed", String(same));
+    diffBtn.setAttribute("aria-pressed", String(!same));
+    renderRoundsList();
+  }
+  sameBtn.addEventListener("click", () => setComboMode(true));
+  diffBtn.addEventListener("click", () => setComboMode(false));
+  comboSeg.append(sameBtn, diffBtn);
+  comboField.appendChild(comboSeg);
+
+  const chips = document.createElement("div");
+  chips.className = "builder__boxing-chips";
+  let activeRoundInput = null;
+  BOXING_COMBO_CHIPS_.forEach((c) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "builder__boxing-chip";
+    chip.textContent = c.label;
+    chip.addEventListener("click", () => {
+      const input = activeRoundInput || roundsList.querySelector(".builder__boxing-round-input");
+      if (!input) return;
+      const isNumber = /^[1-6]$/.test(c.insert);
+      const sep = input.value.trim() ? (isNumber ? "-" : ", ") : "";
+      input.value = input.value.trim() + sep + c.insert;
+      input.dispatchEvent(new Event("input"));
+      input.focus();
+    });
+    chips.appendChild(chip);
+  });
+  comboField.appendChild(chips);
+
+  const roundsList = document.createElement("div");
+  roundsList.className = "builder__boxing-rounds-list";
+  comboField.appendChild(roundsList);
+  panel.appendChild(comboField);
+
+  function renderRoundsList() {
+    roundsList.innerHTML = "";
+    const count = draft.sameEveryRound ? 1 : draft.rounds;
+    for (let i = 0; i < count; i++) {
+      const row = document.createElement("div");
+      row.className = "builder__boxing-round-row";
+      const num = document.createElement("span");
+      num.className = "builder__boxing-round-num";
+      num.textContent = draft.sameEveryRound ? "All" : `R${i + 1}`;
+      const input = document.createElement("input");
+      input.type = "text";
+      input.className = "builder__boxing-round-input";
+      input.placeholder = "e.g. 1-2-3, slip (blank = freestyle)";
+      input.value = draft.combos[i] || "";
+      input.addEventListener("focus", () => {
+        roundsList.querySelectorAll(".builder__boxing-round-input").forEach((el) => el.classList.remove("builder__boxing-round-input--active"));
+        input.classList.add("builder__boxing-round-input--active");
+        activeRoundInput = input;
+      });
+      input.addEventListener("input", () => {
+        if (draft.sameEveryRound) draft.combos = Array.from({ length: draft.rounds }, () => input.value);
+        else draft.combos[i] = input.value;
+      });
+      row.append(num, input);
+      roundsList.appendChild(row);
+    }
+    activeRoundInput = roundsList.querySelector(".builder__boxing-round-input");
+  }
+
+  // Easier option
+  const shadowRow = document.createElement("div");
+  shadowRow.className = "builder__boxing-switch-row";
+  const shadowLabel = document.createElement("span");
+  shadowLabel.className = "builder__boxing-switch-label";
+  shadowLabel.textContent = "Offer shadow boxing if no bag is free";
+  const shadowSwitch = document.createElement("button");
+  shadowSwitch.type = "button";
+  shadowSwitch.className = "builder__boxing-switch";
+  shadowSwitch.innerHTML = '<span class="builder__boxing-switch-knob"></span>';
+  shadowSwitch.setAttribute("aria-pressed", String(draft.easierOption));
+  shadowSwitch.addEventListener("click", () => {
+    draft.easierOption = !draft.easierOption;
+    shadowSwitch.setAttribute("aria-pressed", String(draft.easierOption));
+  });
+  shadowRow.append(shadowLabel, shadowSwitch);
+  panel.appendChild(shadowRow);
+
+  // Initial paint of the run-by segmented control and combo-mode segmented control.
+  setRunBy(draft.runBy);
+  setComboMode(draft.sameEveryRound);
+
+  const actions = document.createElement("div");
+  actions.className = "builder__boxing-modal-actions";
+  const cancelBtn = document.createElement("button");
+  cancelBtn.type = "button";
+  cancelBtn.className = "builder__boxing-modal-cancel";
+  cancelBtn.textContent = "Cancel";
+  cancelBtn.addEventListener("click", closeBoxingEditor_);
+  const confirmBtn = document.createElement("button");
+  confirmBtn.type = "button";
+  confirmBtn.className = "builder__boxing-modal-confirm";
+  confirmBtn.textContent = "Add to workout";
+  confirmBtn.addEventListener("click", () => {
+    closeBoxingEditor_();
+    if (editing) {
+      existingRow._boxing = draft;
+      existingRow._refreshBoxingSummary();
+      refreshSupersets_();
+    } else {
+      addBoxingRow(draft);
+    }
+  });
+  actions.append(cancelBtn, confirmBtn);
+  panel.appendChild(actions);
+}
+
+els.addBoxingButton = document.getElementById("addBoxingButton");
+if (els.addBoxingButton) els.addBoxingButton.addEventListener("click", () => openBoxingEditor_(null));
+
 /**
  * Press-and-drag on the grip handle to reorder exercise rows — driven by
  * Pointer Events (not native HTML5 drag-and-drop) so it works the same on
@@ -849,6 +1235,12 @@ async function loadClientWorkouts(clientSlug) {
             workoutNote: col.workoutNotes >= 0 ? String(r[col.workoutNotes] || "").trim() : "",
             superset: col.superset >= 0 && String(r[col.superset] || "").trim().toUpperCase() === "Y",
             supersetRest: col.supersetRest >= 0 ? Number(r[col.supersetRest]) || "" : "",
+            blockType: col.blockType >= 0 ? String(r[col.blockType] || "").trim() : "",
+            workSeconds: col.workSeconds >= 0 ? Number(r[col.workSeconds]) || 120 : 120,
+            restSeconds: col.restSeconds >= 0 ? Number(r[col.restSeconds]) || 60 : 60,
+            combos: col.combos >= 0 ? String(r[col.combos] || "").split(" | ").map((c) => c.trim()) : [],
+            runBy: col.runBy >= 0 && String(r[col.runBy] || "").trim() === "Coach" ? "Coach" : "Client",
+            easierOption: col.easierOption >= 0 && String(r[col.easierOption] || "").trim().toUpperCase() === "Y",
           };
         })
     );
@@ -901,7 +1293,7 @@ function saveWorkoutToCopy_(copy, clientSlug, workoutName, exercises, days, work
   // Saving adds these columns to the sheet if they're missing, so a tab read
   // before that has no place for them yet (Superset Rest, for one).
   let width = Math.max(0, ...rows.map((r) => r.length), ...Object.values(col).map((c) => c + 1));
-  for (const key of ["notes", "workoutNotes", "superset", "supersetRest"]) {
+  for (const key of ["notes", "workoutNotes", "superset", "supersetRest", "blockType", "workSeconds", "restSeconds", "combos", "runBy", "easierOption"]) {
     if (col[key] < 0) col[key] = width++;
   }
 
@@ -939,6 +1331,14 @@ function saveWorkoutToCopy_(copy, clientSlug, workoutName, exercises, days, work
     put(col.workoutNotes, workoutNote);
     put(col.superset, ex.superset ? "Y" : "");
     put(col.supersetRest, ex.supersetRest >= 15 && ex.supersetRest <= 600 ? ex.supersetRest : "");
+    if (ex.blockType === "Rounds") {
+      put(col.blockType, "Rounds");
+      put(col.workSeconds, ex.workSeconds);
+      put(col.restSeconds, ex.restSeconds);
+      put(col.combos, (ex.combos || []).join(" | "));
+      put(col.runBy, ex.runBy === "Coach" ? "Coach" : "Client");
+      put(col.easierOption, ex.easierOption ? "Y" : "");
+    }
     rows.push(row);
   });
 }
@@ -1093,7 +1493,22 @@ function loadNamedWorkoutIntoRows(workoutName) {
   const workout = clientWorkouts[key];
   clearRows();
   if (workout && workout.exercises.length) {
-    workout.exercises.forEach((exercise) => addRow(exercise));
+    workout.exercises.forEach((exercise) => {
+      if (exercise.blockType === "Rounds") {
+        addBoxingRow({
+          name: exercise.name,
+          rounds: Number(exercise.sets) || 3,
+          workSeconds: exercise.workSeconds,
+          restSeconds: exercise.restSeconds,
+          sameEveryRound: exercise.combos.length <= 1,
+          combos: exercise.combos.length ? exercise.combos : [""],
+          runBy: exercise.runBy,
+          easierOption: exercise.easierOption,
+        });
+      } else {
+        addRow(exercise);
+      }
+    });
     setSelectedDays(workout.days);
     setWorkoutNote(workout.note);
     els.deleteButton.hidden = false;
@@ -1144,6 +1559,27 @@ els.saveButton.addEventListener("click", async () => {
   // name below instead).
   const exercises = Array.from(els.rows.children)
     .map((row) => {
+      // A boxing block (2026-11-07) has no sets/reps/tip inputs at all — its
+      // whole setup lives on row._boxing (the block editor), not positional
+      // inputs, so it's read on a completely separate path from the generic
+      // exercise-row destructure below.
+      if (row.dataset.blockType === "rounds") {
+        const b = row._boxing;
+        return {
+          name: b.name,
+          sets: b.rounds, // Target Sets doubles as the round count
+          reps: "",
+          note: "",
+          superset: false,
+          supersetRest: "",
+          blockType: "Rounds",
+          workSeconds: b.workSeconds,
+          restSeconds: b.restSeconds,
+          combos: b.sameEveryRound ? [b.combos[0] || ""] : b.combos.slice(),
+          runBy: b.runBy,
+          easierOption: b.easierOption,
+        };
+      }
       const [setsInput, repsInput, tipInput, nameInput] = row.querySelectorAll("input");
       return {
         name: nameInput.value.trim(),
@@ -1177,6 +1613,7 @@ els.saveButton.addEventListener("click", async () => {
   const workoutNote = workoutNoteValue();
   const hasNotes = Boolean(workoutNote) || exercises.some((ex) => ex.note);
   const hasCustomRest = exercises.some((ex) => ex.supersetRest && ex.supersetRest !== SUPERSET_REST_DEFAULT_);
+  const hasBoxing = exercises.some((ex) => ex.blockType === "Rounds");
   const pin = currentPin();
   els.saveButton.disabled = true;
   els.saveButton.textContent = "Saving…";
@@ -1228,6 +1665,8 @@ els.saveButton.addEventListener("click", async () => {
     showError("Saved the exercises, but the tips and notes were NOT stored — the Apps Script on Google is out of date. Redeploy it (Deploy → Manage deployments → New version), then Save again.");
   } else if (hasCustomRest && !result.supersetRestSupported) {
     showError("Saved the workout, but the superset rest times were NOT stored, so clients will get 90s — the Apps Script on Google is out of date. Paste the new Code.gs, deploy a new version, then Save again.");
+  } else if (hasBoxing && !result.boxingSupported) {
+    showError("Saved the workout, but the boxing block's rounds/work/rest/combos were NOT stored — the Apps Script on Google is out of date. Paste the new Code.gs, deploy a new version, then Save again.");
   }
 });
 

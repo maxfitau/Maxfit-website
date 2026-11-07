@@ -74,7 +74,7 @@ let viewMonth = today.getMonth(); // 0-indexed
 // dateKey -> { [workoutName]: { notes, exercises: { [exerciseName]: [{ setNumber, weight, reps }] } } }
 let byDate = {};
 
-function addSet(dateKey, workoutName, exerciseName, setNumber, weight, reps, notes) {
+function addSet(dateKey, workoutName, exerciseName, setNumber, weight, reps, notes, duration, type) {
   if (!byDate[dateKey]) byDate[dateKey] = {};
   const wName = workoutName || "Workout";
   if (!byDate[dateKey][wName]) byDate[dateKey][wName] = { notes: "", exercises: {} };
@@ -88,8 +88,10 @@ function addSet(dateKey, workoutName, exerciseName, setNumber, weight, reps, not
   if (existing) {
     existing.weight = weight;
     existing.reps = reps;
+    existing.duration = duration;
+    existing.type = type;
   } else {
-    list.push({ setNumber, weight, reps });
+    list.push({ setNumber, weight, reps, duration, type });
   }
   if (notes) byDate[dateKey][wName].notes = notes;
 }
@@ -171,7 +173,14 @@ async function saveDay_() {
     const sets = [];
     for (const exerciseName of Object.keys(workout.exercises)) {
       for (const s of workout.exercises[exerciseName]) {
-        sets.push({ exercise: exerciseName, setNumber: s.setNumber, weight: s.weight, reps: s.reps });
+        const set = { exercise: exerciseName, setNumber: s.setNumber, weight: s.weight, reps: s.reps };
+        // A boxing round's Duration/Type — carried through so editing one
+        // exercise on a day that also has boxing on it doesn't silently
+        // strip those rounds back to looking like normal 0kg/0rep sets
+        // (saveWorkoutSession replaces the whole day's session at once).
+        if (Number.isFinite(s.duration)) set.duration = s.duration;
+        if (s.type === "round" || s.type === "pads") set.type = s.type;
+        sets.push(set);
       }
     }
     return fetch(APPS_SCRIPT_URL, {
@@ -277,9 +286,25 @@ function buildExerciseEditor_(workoutName, exerciseName) {
   const head = document.createElement("div");
   head.className = "calendar__edit-exercise-head";
 
+  const sets = dayState.workouts[workoutName].exercises[exerciseName];
+  // Boxing rounds (2026-11-07): every row for this exercise is a "round" or
+  // "pads" entry — shown as "Heavy Bag · 3 rounds × 2:00" / "Pad work with
+  // Max · 6 rounds × 2:00" rather than the usual weight/reps set list.
+  // workSeconds is approximated from the longest round actually logged
+  // (ended-early rounds run shorter, so this stays accurate for a full one).
+  const isBoxing = sets.length > 0 && sets.every((s) => s.type === "round" || s.type === "pads");
   const exName = document.createElement("span");
   exName.className = "calendar__detail-exercise-name";
-  exName.textContent = exerciseName;
+  if (isBoxing) {
+    const isPads = sets[0].type === "pads";
+    const workSeconds = Math.max(0, ...sets.map((s) => (Number.isFinite(s.duration) ? s.duration : 0)));
+    const mins = Math.floor(workSeconds / 60);
+    const secs = workSeconds % 60;
+    const workText = secs ? `${mins}:${String(secs).padStart(2, "0")}` : `${mins} min`;
+    exName.textContent = `${exerciseName}${isPads ? " with Max" : ""} · ${sets.length} round${sets.length === 1 ? "" : "s"} × ${workText}`;
+  } else {
+    exName.textContent = exerciseName;
+  }
   head.appendChild(exName);
 
   const removeExerciseBtn = document.createElement("button");
@@ -299,7 +324,6 @@ function buildExerciseEditor_(workoutName, exerciseName) {
   setsWrap.className = "calendar__edit-sets";
   wrap.appendChild(setsWrap);
 
-  const sets = dayState.workouts[workoutName].exercises[exerciseName];
   sets.sort((a, b) => a.setNumber - b.setNumber);
   sets.forEach((set, i) => {
     setsWrap.appendChild(buildSetEditor_(workoutName, exerciseName, i));
@@ -452,8 +476,10 @@ async function reloadHistory_() {
     const reps = Number(col.reps >= 0 ? r[col.reps] : NaN);
     const notes = col.notes >= 0 ? String(r[col.notes] || "").trim() : "";
     if (!exerciseName || !Number.isFinite(weight) || !Number.isFinite(reps)) continue;
+    const duration = col.duration >= 0 ? Number(r[col.duration]) : NaN;
+    const type = col.type >= 0 ? String(r[col.type] || "").trim() : "";
 
-    addSet(dateKey, workoutName, exerciseName, Number.isFinite(setNumber) ? setNumber : 0, weight, reps, notes);
+    addSet(dateKey, workoutName, exerciseName, Number.isFinite(setNumber) ? setNumber : 0, weight, reps, notes, Number.isFinite(duration) ? duration : undefined, type || undefined);
   }
 }
 

@@ -553,6 +553,8 @@ const TICK_SVG = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" st
 const CHECK_CIRCLE_SVG = '<svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><path d="M8 12.5l2.7 2.7L16.5 9"/></svg>';
 const TROPHY_SVG = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h8v4a4 4 0 0 1-8 0V4z"/><path d="M8 5H5a3 3 0 0 0 3 5M16 5h3a3 3 0 0 1-3 5"/><path d="M12 13v3M9 20h6M10 16.5h4v2a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-2z"/></svg>';
 const PLAY_SVG = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><path d="M10 8.5l6 3.5-6 3.5z" fill="currentColor" stroke="none"/></svg>';
+const SOUND_ON_SVG = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19.5 6a9 9 0 0 1 0 12"/></svg>';
+const SOUND_OFF_SVG = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16 9l5 5M21 9l-5 5"/></svg>';
 const VIEW_ICON_SVG = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="5" rx="1.5"/><rect x="3" y="11" width="18" height="5" rx="1.5"/><rect x="3" y="18" width="10" height="3" rx="1.5"/></svg>';
 const CALENDAR_ICON_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>';
 const CLOCK_ICON_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
@@ -772,6 +774,11 @@ function buildSetRow(exercise, setNumber, initial, onSave, options) {
 function snapshotRows_(ctx) {
   const snap = new Map();
   allRows_(ctx).forEach((row) => {
+    // A boxing round is a plain object, not a DOM node — nothing to
+    // snapshot: it's either saved or it isn't, and that already carries
+    // across a view switch via savedByExercise/buildBoxingItem_, same as
+    // any other already-logged set.
+    if (typeof row.querySelector !== "function") return;
     const key = `${row.dataset.exercise.toLowerCase()}|${row.dataset.setNumber}`;
     snap.set(key, {
       saved: row._saved ? { ...row._saved } : null,
@@ -907,13 +914,15 @@ function buildWatchButton_(exercise, size) {
 // arrange these same items and rows on screen.
 
 function itemName_(item) {
+  if (item.type === "boxing") return item.activeName || item.exercise.name;
   return item.type === "exercise" ? item.exercise.name : item.members.map((m) => m.exercise.name).join(" + ");
 }
 function itemTotalCount_(item) {
+  if (item.type === "boxing") return item.rounds.length;
   return item.type === "exercise" ? item.sets.rows.length : item.members.reduce((n, m) => n + m.sets.rows.length, 0);
 }
 function itemSavedCount_(item) {
-  const rows = item.type === "exercise" ? item.sets.rows : item.members.flatMap((m) => m.sets.rows);
+  const rows = item.type === "boxing" ? item.rounds : item.type === "exercise" ? item.sets.rows : item.members.flatMap((m) => m.sets.rows);
   return rows.filter((r) => r._saved).length;
 }
 function itemDone_(item) {
@@ -932,7 +941,11 @@ function itemDone_(item) {
  */
 function allRows_(ctx) {
   if (!ctx || !ctx.items) return [];
-  return ctx.items.flatMap((item) => (item.type === "exercise" ? item.sets.rows : item.members.flatMap((m) => m.sets.rows)));
+  return ctx.items.flatMap((item) => {
+    if (item.type === "exercise") return item.sets.rows;
+    if (item.type === "boxing") return item.rounds;
+    return item.members.flatMap((m) => m.sets.rows);
+  });
 }
 
 /** Builds the ordered top-level items for this workout, including extras saved earlier today — same grouping rule as before (a run of "superset: Y" exercises becomes one group). */
@@ -942,10 +955,15 @@ function buildItems_(ctx, exercises, savedByExercise, rowOptions) {
   let supersetCount = 0;
   for (let i = 0; i < exercises.length; ) {
     let last = i;
-    while (exercises[last].superset && exercises[last + 1]) last++;
+    // A boxing block never joins a chain, in either direction — it was
+    // already forced to superset:false on the way in (init()), and this
+    // stops a normal exercise right before one from sweeping it in too.
+    while (exercises[last].superset && exercises[last + 1] && exercises[last + 1].blockType !== "Rounds") last++;
     const chain = exercises.slice(i, last + 1);
     chain.forEach((exercise) => assignedKeys.add(exercise.name.toLowerCase()));
-    if (chain.length > 1) {
+    if (chain.length === 1 && chain[0].blockType === "Rounds") {
+      items.push(buildBoxingItem_(ctx, chain[0], savedByExercise.get(chain[0].name.toLowerCase())));
+    } else if (chain.length > 1) {
       const rest = chain.map((exercise) => exercise.supersetRest).find((seconds) => seconds >= 15 && seconds <= 600) || 90;
       const letter = String.fromCharCode(65 + (supersetCount % 26));
       supersetCount++;
@@ -981,12 +999,78 @@ function buildItems_(ctx, exercises, savedByExercise, rowOptions) {
   return items;
 }
 
+// ---- Boxing rounds --------------------------------------------------------
+//
+// A boxing block is always its own standalone top-level item (buildItems_
+// guards against it ever joining a superset chain, either direction). Its
+// "rows" (item.rounds) are plain objects, not DOM elements — nothing here
+// touches buildSetRow/rowValues at all, weight and reps are always 0 — but
+// they carry the same dataset/_saved/_touched shape every generic consumer
+// (allRows_, collectSets, itemDone_, snapshotRows_) already expects, so
+// rounds flow through the exact same draft/persist/postSession pipeline
+// every normal set does, just with an extra _duration/_type on the entry.
+
+const COMBO_WORDS_ = { 1: "Jab", 2: "Cross", 3: "Lead hook", 4: "Rear hook", 5: "Lead uppercut", 6: "Rear uppercut" };
+
+/** "1-2-3" -> nums "1 - 2 - 3", words "Jab · Cross · Lead hook". A non-number token (slip, roll, freestyle...) is shown as written, capitalised, in both lines. */
+function formatCombo_(raw) {
+  const text = String(raw || "").trim();
+  if (!text) return { nums: "Freestyle", words: "" };
+  // The builder joins punch numbers with "-" and words with ", " (buildBoxingEditor_'s
+  // chip-insert rule) — split on either, plus plain whitespace, so "1-2-3" and
+  // "1-2, slip" both break into their real tokens instead of surviving as one.
+  const tokens = text.split(/[\s,\-]+/).filter(Boolean);
+  const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+  return {
+    nums: tokens.map((t) => (COMBO_WORDS_[t] ? t : cap(t))).join(" - "),
+    words: tokens.map((t) => COMBO_WORDS_[t] || cap(t)).join(" · "),
+  };
+}
+
+/** The combo for a given round: set-for-set against the block's combo list (one value in the list already means "every round" this way), repeating the last one if there are more rounds than combos. */
+function comboForRound_(combos, roundNumber) {
+  if (!combos || !combos.length) return "Freestyle";
+  return combos[Math.min(roundNumber, combos.length) - 1] || combos[combos.length - 1] || "Freestyle";
+}
+
+function buildBoxingItem_(ctx, exercise, saved) {
+  const savedSets = saved ? saved.sets : new Map();
+  const item = {
+    type: "boxing",
+    exercise,
+    activeName: exercise.name,
+    workSeconds: exercise.workSeconds,
+    restSeconds: exercise.restSeconds,
+    runBy: exercise.runBy,
+    easierOption: exercise.easierOption,
+  };
+  item.rounds = [];
+  for (let n = 1; n <= exercise.sets; n++) {
+    const savedRound = savedSets.get(n);
+    const round = {
+      roundNumber: n,
+      combo: comboForRound_(exercise.combos, n),
+      _saved: savedRound ? { weight: 0, reps: 0 } : null,
+      _duration: savedRound && Number.isFinite(savedRound.duration) ? savedRound.duration : null,
+      _type: (savedRound && savedRound.type) || (item.runBy === "Coach" ? "pads" : "round"),
+      _touched: false,
+    };
+    // A getter, not a plain property: dataset.exercise always reflects
+    // item.activeName (changed by the shadow-boxing swap) without every
+    // round needing to be individually rewritten when it happens.
+    Object.defineProperty(round, "dataset", { get: () => ({ exercise: item.activeName, setNumber: String(round.roundNumber) }) });
+    item.rounds.push(round);
+  }
+  return item;
+}
+
 function buildSavedByExercise_(sets) {
   const map = new Map();
   for (const s of sets) {
     const lower = s.exercise.toLowerCase();
     if (!map.has(lower)) map.set(lower, { name: s.exercise, sets: new Map() });
-    map.get(lower).sets.set(s.setNumber, { weight: s.weight, reps: s.reps });
+    // duration/type only mean anything for a boxing round — undefined for every normal set, harmless to carry along either way.
+    map.get(lower).sets.set(s.setNumber, { weight: s.weight, reps: s.reps, duration: s.duration, type: s.type });
   }
   return map;
 }
@@ -1080,14 +1164,27 @@ function relayoutCurrentView_(ctx) {
     if (ctx.checklistOpenIndex == null || ctx.checklistOpenIndex >= ctx.items.length) ctx.checklistOpenIndex = ctx.items.length - 1;
     layoutChecklist_(ctx);
   } else if (ctx.currentView === "simple") {
-    const preserveRow = ctx.simpleSteps[ctx.simpleIndex] && ctx.simpleSteps[ctx.simpleIndex].row;
+    const preserveStep = ctx.simpleSteps[ctx.simpleIndex];
+    const preserveRow = preserveStep && preserveStep.row;
+    const preserveItem = preserveStep && preserveStep.item;
     ctx.simpleSteps = buildSimpleSteps_(ctx.items);
-    const newIdx = preserveRow ? ctx.simpleSteps.findIndex((s) => s.row === preserveRow) : -1;
+    const newIdx = preserveRow
+      ? ctx.simpleSteps.findIndex((s) => s.row === preserveRow)
+      : preserveItem
+        ? ctx.simpleSteps.findIndex((s) => s.item === preserveItem)
+        : -1;
     ctx.simpleIndex = newIdx >= 0 ? newIdx : 0;
     layoutSimple_(ctx);
   } else {
     layoutShowAll_(ctx);
   }
+}
+
+/** Just re-paints whichever view is showing from ctx.items exactly as they stand — for when a round's _saved state changed (the round timer finishing, or being closed) but the items themselves didn't, so there's nothing to rebuild and no position to lose. */
+function refreshCurrentView_(ctx) {
+  if (ctx.currentView === "checklist") layoutChecklist_(ctx);
+  else if (ctx.currentView === "simple") layoutSimple_(ctx);
+  else layoutShowAll_(ctx);
 }
 
 function maybeAppendCoachNote_(ctx) {
@@ -1146,6 +1243,587 @@ function renderExerciseBody_(ctx, item) {
   wrap.appendChild(addBtn);
 
   return wrap;
+}
+
+function workSecondsText_(seconds) {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return secs ? `${mins}:${String(secs).padStart(2, "0")}` : `${mins} min`;
+}
+
+/**
+ * A boxing block's card — shared by Show all (always open) and Checklist's
+ * one open item. A coach-run block on the CLIENT's own phone (not coach
+ * mode) shows only the info card, no Start: Max runs that one. Everything
+ * else — client-run, or ANY block viewed in coach mode — gets the round
+ * boxes, the combo list and a Start button that opens the round timer.
+ * Re-renders itself (refresh()) after every round state change, the same
+ * pattern renderSupersetBody_ uses, since most of those changes (ticking
+ * round 1 of 3) don't make the whole item "done" and so wouldn't otherwise
+ * trigger Checklist's own re-layout.
+ */
+function renderBoxingCard_(ctx, item) {
+  const wrap = document.createElement("section");
+  wrap.className = "workout__exercise";
+
+  const card = document.createElement("div");
+  card.className = "workout__boxing";
+  wrap.appendChild(card);
+
+  const label = document.createElement("span");
+  label.className = "workout__boxing-label";
+  label.textContent = item.runBy === "Coach" ? "PADS" : "BOXING";
+  card.appendChild(label);
+
+  const head = document.createElement("div");
+  head.className = "workout__boxing-head";
+  const name = document.createElement("h2");
+  name.className = "workout__boxing-name";
+  name.textContent = itemName_(item);
+  head.appendChild(name);
+  head.appendChild(buildWatchButton_(item.exercise, "small"));
+  card.appendChild(head);
+
+  const clientLockedOut = item.runBy === "Coach" && !coachMode;
+  if (clientLockedOut) {
+    const info = document.createElement("div");
+    info.className = "workout__boxing-info";
+    const title = document.createElement("p");
+    title.className = "workout__boxing-info-title";
+    const done = itemDone_(item);
+    title.textContent = done ? `${item.rounds.length} rounds with Max` : "Pad work with Max";
+    const sub = document.createElement("p");
+    sub.className = "workout__boxing-info-sub";
+    sub.textContent = done ? "Logged by your coach." : "Max runs this one. Bring gloves and wraps.";
+    info.append(title, sub);
+    card.appendChild(info);
+    return wrap;
+  }
+
+  const meta = document.createElement("p");
+  meta.className = "workout__boxing-meta";
+  card.appendChild(meta);
+
+  const roundsRow = document.createElement("div");
+  roundsRow.className = "workout__boxing-rounds-row";
+  card.appendChild(roundsRow);
+
+  const combosWrap = document.createElement("div");
+  combosWrap.className = "workout__boxing-combos";
+  card.appendChild(combosWrap);
+
+  const shadowLink = document.createElement("button");
+  shadowLink.type = "button";
+  shadowLink.className = "workout__boxing-shadow-link";
+  shadowLink.textContent = "No bag free? Shadow box instead";
+  shadowLink.hidden = !item.easierOption || item.runBy === "Coach";
+  shadowLink.addEventListener("click", () => {
+    item.activeName = "Shadow Boxing";
+    shadowLink.hidden = true;
+    refresh();
+  });
+
+  const startBtn = document.createElement("button");
+  startBtn.type = "button";
+  startBtn.className = "workout__boxing-start-btn";
+
+  function refresh() {
+    meta.textContent = `${item.rounds.length} round${item.rounds.length === 1 ? "" : "s"} × ${workSecondsText_(item.workSeconds)} · rest ${item.restSeconds}s`;
+    name.textContent = itemName_(item);
+
+    const firstUnsavedIdx = item.rounds.findIndex((r) => !r._saved);
+    roundsRow.replaceChildren();
+    item.rounds.forEach((round, i) => {
+      const box = document.createElement("button");
+      box.type = "button";
+      box.className = "workout__boxing-round-box";
+      if (round._saved) {
+        box.classList.add("workout__boxing-round-box--done");
+        box.innerHTML = TICK_SVG;
+      } else {
+        if (i === firstUnsavedIdx) box.classList.add("workout__boxing-round-box--now");
+        box.textContent = `R${round.roundNumber}`;
+      }
+      box.setAttribute("aria-label", `Round ${round.roundNumber}${round._saved ? ", done — tap to undo" : ", tap to tick off by hand"}`);
+      box.addEventListener("click", () => {
+        if (round._saved) ctx.unsaveRound(item, round);
+        else ctx.saveRound(item, round, item.workSeconds);
+        refresh();
+      });
+      roundsRow.appendChild(box);
+    });
+
+    combosWrap.innerHTML = "";
+    item.rounds.forEach((round) => {
+      const { nums, words } = formatCombo_(round.combo);
+      const line = document.createElement("div");
+      line.className = "workout__boxing-combo-line";
+      const rn = document.createElement("span");
+      rn.className = "workout__boxing-combo-round";
+      rn.textContent = `R${round.roundNumber}`;
+      const text = document.createElement("div");
+      text.className = "workout__boxing-combo-text";
+      const n = document.createElement("p");
+      n.className = "workout__boxing-combo-nums";
+      n.textContent = nums;
+      text.appendChild(n);
+      if (words) {
+        const w = document.createElement("p");
+        w.className = "workout__boxing-combo-words";
+        w.textContent = words;
+        text.appendChild(w);
+      }
+      line.append(rn, text);
+      combosWrap.appendChild(line);
+    });
+
+    const allDone = itemDone_(item);
+    startBtn.textContent = allDone ? "Rounds done" : `Start Round ${(firstUnsavedIdx >= 0 ? firstUnsavedIdx : 0) + 1}`;
+    startBtn.disabled = allDone;
+  }
+
+  startBtn.addEventListener("click", () => openRoundTimer_(ctx, item));
+  card.append(shadowLink, startBtn);
+
+  refresh();
+  return wrap;
+}
+
+// ---- Round timer — full-screen, shared by every view + coach pads -------
+//
+// Wall-clock based throughout (endAt, not a tick count), so it stays right
+// even if the tab's throttled with the screen locked. One lazily-created
+// overlay element reused across opens; a single module-level state object
+// (roundTimerState_) drives it. layoutRoundTimer_ rebuilds the screen on
+// every phase change (work <-> rest, round N -> N+1) — cheap, same "just
+// rebuild it" approach as the rest of this file; updateRoundTimerDisplay_
+// alone runs on the fast tick, touching only the two numbers that actually
+// need to move every 200ms.
+
+let roundTimerEl_ = null;
+let roundTimerState_ = null;
+
+function roundTimerSoundPrefKey_() {
+  return "maxfitRoundTimerSound";
+}
+function readRoundSoundPref_() {
+  if (!storageUsable) return true;
+  try {
+    return localStorage.getItem(roundTimerSoundPrefKey_()) !== "off";
+  } catch (err) {
+    return true;
+  }
+}
+function writeRoundSoundPref_(on) {
+  if (!storageUsable) return;
+  try {
+    localStorage.setItem(roundTimerSoundPrefKey_(), on ? "on" : "off");
+  } catch (err) {
+    // Not remembered this time.
+  }
+}
+
+let wakeLockSentinel_ = null;
+async function acquireWakeLock_() {
+  try {
+    if ("wakeLock" in navigator) wakeLockSentinel_ = await navigator.wakeLock.request("screen");
+  } catch (err) {
+    // Not available, or the browser refused it (e.g. low battery) — the timer still works, it just won't keep the screen on.
+  }
+}
+function releaseWakeLock_() {
+  try {
+    if (wakeLockSentinel_) {
+      wakeLockSentinel_.release();
+      wakeLockSentinel_ = null;
+    }
+  } catch (err) {
+    // Already gone.
+  }
+}
+
+// One shared AudioContext, created/resumed on the START tap — iOS only
+// allows audio after a real user gesture, so creating it lazily here
+// (rather than at page load) is what makes the bell actually play.
+let sharedAudioCtx_ = null;
+function unlockAudio_() {
+  try {
+    if (!sharedAudioCtx_) sharedAudioCtx_ = new (window.AudioContext || window.webkitAudioContext)();
+    if (sharedAudioCtx_.state === "suspended") sharedAudioCtx_.resume();
+  } catch (err) {
+    // No Web Audio — the timer still works, just silently.
+  }
+}
+function playTone_(freq, durationMs, delayMs) {
+  if (!roundTimerState_ || !roundTimerState_.soundOn || !sharedAudioCtx_) return;
+  try {
+    const ctxA = sharedAudioCtx_;
+    const at = ctxA.currentTime + (delayMs || 0) / 1000;
+    const osc = ctxA.createOscillator();
+    const gain = ctxA.createGain();
+    osc.type = "sine";
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.0001, at);
+    gain.gain.linearRampToValueAtTime(0.3, at + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + durationMs / 1000);
+    osc.connect(gain).connect(ctxA.destination);
+    osc.start(at);
+    osc.stop(at + durationMs / 1000 + 0.05);
+  } catch (err) {
+    // Silently skip this one tone.
+  }
+}
+function playBell_() {
+  playTone_(880, 350, 0);
+  playTone_(880, 350, 450);
+}
+function playDoubleBeep_() {
+  playTone_(1200, 120, 0);
+  playTone_(1200, 120, 180);
+}
+function vibrate_(pattern) {
+  if (navigator.vibrate) navigator.vibrate(pattern);
+}
+
+function openRoundTimer_(ctx, item) {
+  unlockAudio_();
+  const startIdx = item.rounds.findIndex((r) => !r._saved);
+  const roundIndex = startIdx >= 0 ? startIdx : 0;
+
+  if (!roundTimerEl_) {
+    roundTimerEl_ = document.createElement("div");
+    roundTimerEl_.className = "workout__timer-screen";
+    roundTimerEl_.hidden = true;
+    document.body.appendChild(roundTimerEl_);
+  }
+  const workMs = item.workSeconds * 1000;
+  roundTimerState_ = {
+    ctx, item, roundIndex,
+    phase: "work",
+    paused: false,
+    phaseTotalMs: workMs,
+    remainingMs: workMs,
+    endAt: Date.now() + workMs,
+    soundOn: readRoundSoundPref_(),
+    beepedTenSec: false,
+    tickHandle: null,
+  };
+  acquireWakeLock_();
+  layoutRoundTimer_();
+  if (roundTimerState_.tickHandle) clearInterval(roundTimerState_.tickHandle);
+  roundTimerState_.tickHandle = setInterval(tickRoundTimer_, 200);
+  roundTimerEl_.hidden = false;
+}
+
+function closeRoundTimer_() {
+  const st = roundTimerState_;
+  if (st && st.tickHandle) clearInterval(st.tickHandle);
+  releaseWakeLock_();
+  roundTimerState_ = null;
+  if (roundTimerEl_) roundTimerEl_.hidden = true;
+}
+
+function tickRoundTimer_() {
+  const st = roundTimerState_;
+  if (!st || st.paused) return;
+  const remaining = Math.max(0, st.endAt - Date.now());
+  st.remainingMs = remaining;
+
+  if (st.phase === "work" && !st.beepedTenSec && remaining <= 10000 && remaining > 0) {
+    st.beepedTenSec = true;
+    playDoubleBeep_();
+  }
+
+  updateRoundTimerDisplay_(remaining, st.phaseTotalMs);
+  if (remaining <= 0) onRoundTimerPhaseEnd_();
+}
+
+/** Work phase hit 0 (or rest did): logs the finished round if it was work, then moves to rest or the next round's work — or finishes the block if that was the last round. */
+function onRoundTimerPhaseEnd_() {
+  const st = roundTimerState_;
+  if (!st) return;
+  if (st.phase === "work") {
+    playBell_();
+    vibrate_([200, 100, 200]);
+    st.ctx.saveRound(st.item, st.item.rounds[st.roundIndex], st.item.workSeconds);
+    advanceRoundTimer_();
+  } else {
+    playBell_();
+    vibrate_([150]);
+    advanceRoundTimer_();
+  }
+}
+
+/** Moves from the just-finished phase to whatever's next: work -> rest (if another round remains), rest -> the next round's work, or finishes the block if there's nothing left. */
+function advanceRoundTimer_() {
+  const st = roundTimerState_;
+  if (!st) return;
+  const hasNext = st.phase === "work" ? st.roundIndex + 1 < st.item.rounds.length : true;
+  if (st.phase === "work" && !hasNext) {
+    finishRoundTimer_();
+    return;
+  }
+  if (st.phase === "work") {
+    st.phase = "rest";
+    st.phaseTotalMs = st.item.restSeconds * 1000;
+  } else {
+    st.roundIndex += 1;
+    st.phase = "work";
+    st.phaseTotalMs = st.item.workSeconds * 1000;
+  }
+  st.remainingMs = st.phaseTotalMs;
+  st.endAt = Date.now() + st.phaseTotalMs;
+  st.beepedTenSec = false;
+  layoutRoundTimer_();
+}
+
+function endRoundEarly_() {
+  const st = roundTimerState_;
+  if (!st || st.phase !== "work") return;
+  const elapsedMs = st.phaseTotalMs - Math.max(0, st.paused ? st.remainingMs : st.endAt - Date.now());
+  st.ctx.saveRound(st.item, st.item.rounds[st.roundIndex], Math.round(elapsedMs / 1000));
+  if (st.roundIndex + 1 < st.item.rounds.length) {
+    st.phase = "rest";
+    st.phaseTotalMs = st.item.restSeconds * 1000;
+    st.remainingMs = st.phaseTotalMs;
+    st.endAt = Date.now() + st.phaseTotalMs;
+    st.beepedTenSec = false;
+    st.paused = false;
+    layoutRoundTimer_();
+  } else {
+    finishRoundTimer_();
+  }
+}
+
+function togglePauseRoundTimer_() {
+  const st = roundTimerState_;
+  if (!st || st.phase !== "work") return;
+  if (st.paused) {
+    st.endAt = Date.now() + st.remainingMs;
+    st.paused = false;
+  } else {
+    st.remainingMs = Math.max(0, st.endAt - Date.now());
+    st.paused = true;
+  }
+  layoutRoundTimer_();
+}
+
+function adjustRoundRest_(deltaSeconds) {
+  const st = roundTimerState_;
+  if (!st || st.phase !== "rest") return;
+  const deltaMs = deltaSeconds * 1000;
+  st.phaseTotalMs = Math.max(0, st.phaseTotalMs + deltaMs);
+  st.remainingMs = Math.max(0, st.remainingMs + deltaMs);
+  st.endAt += deltaMs;
+}
+
+function skipRoundRest_() {
+  const st = roundTimerState_;
+  if (!st || st.phase !== "rest") return;
+  advanceRoundTimer_();
+}
+
+function toggleRoundSound_() {
+  const st = roundTimerState_;
+  if (!st) return;
+  st.soundOn = !st.soundOn;
+  writeRoundSoundPref_(st.soundOn);
+  layoutRoundTimer_();
+}
+
+function finishRoundTimer_() {
+  const st = roundTimerState_;
+  const ctx = st && st.ctx;
+  closeRoundTimer_();
+  if (ctx) refreshCurrentView_(ctx);
+}
+
+/** One combo split into "large chips", one per token — the coach pad screen's "Your calls this round"; the client screen instead shows the combo as one bold line + the words underneath (same formatCombo_ output, different markup). */
+function comboChipsHtml_(combo) {
+  const { nums } = formatCombo_(combo);
+  return nums.split(" - ").map((tok) => `<span class="workout__timer-call-chip">${libEscApp_(tok)}</span>`).join("");
+}
+
+function layoutRoundTimer_() {
+  const st = roundTimerState_;
+  if (!st) return;
+  const { item, roundIndex, phase } = st;
+  const round = item.rounds[roundIndex];
+  const isCoach = item.runBy === "Coach";
+  const isRest = phase === "rest";
+
+  roundTimerEl_.classList.toggle("workout__timer-screen--rest", isRest);
+  roundTimerEl_.innerHTML = "";
+
+  const top = document.createElement("div");
+  top.className = "workout__timer-top";
+  const topText = document.createElement("div");
+  topText.className = "workout__timer-top-text";
+  if (isCoach) {
+    topText.innerHTML = `<span class="workout__timer-coach-tag">Coach · Pads</span><h1 class="workout__timer-coach-name">${libEscApp_(coachClientName || "Client")}</h1><p class="workout__timer-coach-sub">Pad work · ${item.rounds.length} rounds × ${libEscApp_(workSecondsText_(item.workSeconds))} · rest ${item.restSeconds}s</p>`;
+  } else {
+    const roundLine = isRest ? `Round ${roundIndex + 1} of ${item.rounds.length} done · next: rest ${item.restSeconds}s` : `Round ${roundIndex + 1} of ${item.rounds.length}`;
+    topText.innerHTML = `<h1 class="workout__timer-exname">${libEscApp_(itemName_(item))}</h1><p class="workout__timer-roundline">${libEscApp_(roundLine)}</p>`;
+  }
+  top.appendChild(topText);
+  const soundBtn = document.createElement("button");
+  soundBtn.type = "button";
+  soundBtn.className = "workout__timer-sound";
+  soundBtn.setAttribute("aria-label", st.soundOn ? "Turn sound off" : "Turn sound on");
+  soundBtn.innerHTML = st.soundOn ? SOUND_ON_SVG : SOUND_OFF_SVG;
+  soundBtn.addEventListener("click", toggleRoundSound_);
+  top.appendChild(soundBtn);
+  roundTimerEl_.appendChild(top);
+
+  const segments = document.createElement("div");
+  segments.className = "workout__timer-segments";
+  item.rounds.forEach((r, i) => {
+    const seg = document.createElement("span");
+    seg.className = "workout__timer-seg";
+    if (i < roundIndex || (i === roundIndex && isRest)) seg.classList.add("workout__timer-seg--done");
+    else if (i === roundIndex) seg.classList.add("workout__timer-seg--now");
+    segments.appendChild(seg);
+  });
+  roundTimerEl_.appendChild(segments);
+
+  const mid = document.createElement("div");
+  mid.className = "workout__timer-mid";
+
+  const circumference = 2 * Math.PI * 104;
+  const ringWrap = document.createElement("div");
+  ringWrap.className = "workout__timer-ring-wrap";
+  ringWrap.innerHTML =
+    `<svg viewBox="0 0 240 240"><circle class="workout__timer-ring-track" cx="120" cy="120" r="104" fill="none" stroke-width="10" /><circle class="workout__timer-ring-fill" id="roundTimerRingFill" cx="120" cy="120" r="104" fill="none" stroke-width="10" stroke-dasharray="${circumference}" stroke-dashoffset="0" /></svg>` +
+    `<div class="workout__timer-ring-mid"><span class="workout__timer-ring-label">${isRest ? "Rest" : "Work"}</span><span class="workout__timer-ring-value" id="roundTimerRingValue"></span><span class="workout__timer-ring-sub">${isRest ? "" : "left in this round"}</span></div>`;
+  mid.appendChild(ringWrap);
+
+  if (isRest) {
+    const copy = document.createElement("p");
+    copy.className = "workout__timer-rest-copy";
+    copy.textContent = "Breathe. Shake it out.";
+    mid.appendChild(copy);
+
+    const adjust = document.createElement("div");
+    adjust.className = "workout__timer-rest-adjust";
+    const minus = document.createElement("button");
+    minus.type = "button";
+    minus.className = "workout__timer-rest-adjust-btn";
+    minus.textContent = "−15";
+    minus.addEventListener("click", () => {
+      adjustRoundRest_(-15);
+      layoutRoundTimer_();
+    });
+    const plus = document.createElement("button");
+    plus.type = "button";
+    plus.className = "workout__timer-rest-adjust-btn";
+    plus.textContent = "+15";
+    plus.addEventListener("click", () => {
+      adjustRoundRest_(15);
+      layoutRoundTimer_();
+    });
+    adjust.append(minus, plus);
+    mid.appendChild(adjust);
+
+    const nextRound = item.rounds[roundIndex + 1];
+    const next = document.createElement("div");
+    next.className = "workout__timer-card";
+    if (nextRound) {
+      if (isCoach) {
+        next.innerHTML = `<span class="workout__timer-card-label">Up next · Round ${roundIndex + 2}</span><div class="workout__timer-calls-chips">${comboChipsHtml_(nextRound.combo)}</div>`;
+      } else {
+        const { nums, words } = formatCombo_(nextRound.combo);
+        next.innerHTML = `<span class="workout__timer-card-label">Up next · Round ${roundIndex + 2}</span><p class="workout__timer-card-combo">${libEscApp_(nums)}</p>${words ? `<p class="workout__timer-card-words">${libEscApp_(words)}</p>` : ""}`;
+      }
+    }
+    mid.appendChild(next);
+  } else {
+    const card = document.createElement("div");
+    card.className = "workout__timer-card";
+    if (isCoach) {
+      card.innerHTML = `<span class="workout__timer-card-label">Your calls this round</span><div class="workout__timer-calls-chips">${comboChipsHtml_(round.combo)}</div>`;
+    } else {
+      const { nums, words } = formatCombo_(round.combo);
+      card.innerHTML = `<span class="workout__timer-card-label">This round</span><p class="workout__timer-card-combo">${libEscApp_(nums)}</p>${words ? `<p class="workout__timer-card-words">${libEscApp_(words)}</p>` : ""}`;
+    }
+    mid.appendChild(card);
+  }
+  roundTimerEl_.appendChild(mid);
+
+  const bottom = document.createElement("div");
+  bottom.className = "workout__timer-bottom";
+  if (isRest) {
+    const skip = document.createElement("button");
+    skip.type = "button";
+    skip.className = "workout__timer-skip-btn";
+    skip.textContent = `Skip rest, start Round ${roundIndex + 2}`;
+    skip.addEventListener("click", skipRoundRest_);
+    bottom.appendChild(skip);
+  } else {
+    const pause = document.createElement("button");
+    pause.type = "button";
+    pause.className = "workout__timer-pause-btn";
+    pause.textContent = st.paused ? "Resume" : "Pause";
+    pause.addEventListener("click", togglePauseRoundTimer_);
+    bottom.appendChild(pause);
+    const end = document.createElement("button");
+    end.type = "button";
+    end.className = "workout__timer-end-btn";
+    end.textContent = "End round early";
+    end.addEventListener("click", endRoundEarly_);
+    bottom.appendChild(end);
+  }
+  if (isCoach) {
+    const finish = document.createElement("button");
+    finish.type = "button";
+    finish.className = "workout__timer-finish-btn";
+    finish.textContent = `Finish & log to ${(coachClientName || "their").split(/\s+/)[0]}'s card`;
+    finish.addEventListener("click", () => {
+      const finishedCtx = st.ctx;
+      closeRoundTimer_();
+      coachFinishPads_(finishedCtx);
+    });
+    bottom.appendChild(finish);
+  }
+  roundTimerEl_.appendChild(bottom);
+
+  updateRoundTimerDisplay_(st.remainingMs, st.phaseTotalMs);
+}
+
+function updateRoundTimerDisplay_(remainingMs, totalMs) {
+  const valueEl = document.getElementById("roundTimerRingValue");
+  const fillEl = document.getElementById("roundTimerRingFill");
+  if (!valueEl || !fillEl) return;
+  valueEl.textContent = formatRest(Math.ceil(remainingMs / 1000));
+  const circumference = 2 * Math.PI * 104;
+  const frac = totalMs > 0 ? Math.max(0, Math.min(1, remainingMs / totalMs)) : 0;
+  fillEl.style.strokeDashoffset = String(circumference * (1 - frac));
+}
+
+/**
+ * The coach pad timer's "Finish & log" — sends whatever pad rounds were
+ * ticked (manually or by the timer) straight away, same as Save & Close but
+ * skipping the review screen: Max is moving between clients at the gym, not
+ * reviewing a muscle map for a session that was never his to train for.
+ */
+async function coachFinishPads_(ctx) {
+  refreshCurrentView_(ctx);
+  const draft = ctx.persist();
+  if (!draft || !draft.sets.length) return;
+  els.status.hidden = true;
+  try {
+    await postSession(draft);
+    const latest = readDraft(ctx.draftKey);
+    if (latest && latest.rev === draft.rev) writeDraft(ctx.draftKey, { ...latest, pending: false });
+    if (ctx.dead) return;
+    const who = coachClientName || "them";
+    els.doneText.textContent = `Pad rounds logged for ${who}. Scan the next member's QR code, or tap back to check-in.`;
+    els.review.hidden = true;
+    els.list.hidden = true;
+    els.done.hidden = false;
+    els.done.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  } catch (err) {
+    if (!ctx.dead) showStatus("Couldn't reach the server — the rounds are saved on this phone. Open this block again and tap Finish once you have signal.", true);
+  }
 }
 
 /**
@@ -1379,7 +2057,8 @@ function layoutShowAll_(ctx) {
   els.list.appendChild(labels);
 
   ctx.items.forEach((item) => {
-    els.list.appendChild(item.type === "exercise" ? renderExerciseBody_(ctx, item) : renderSupersetBody_(ctx, item));
+    const body = item.type === "exercise" ? renderExerciseBody_(ctx, item) : item.type === "boxing" ? renderBoxingCard_(ctx, item) : renderSupersetBody_(ctx, item);
+    els.list.appendChild(body);
   });
 
   ctx.addExerciseWrap = buildAddExerciseControl(ctx);
@@ -1401,6 +2080,9 @@ function checklistSummary_(item) {
     const lastRow = item.sets.rows.find((r) => r._last);
     const lastText = lastRow ? ` · last ${formatWeight(lastRow._last.weight)}kg${Number.isFinite(lastRow._last.reps) ? ` × ${lastRow._last.reps}` : ""}` : "";
     return `${savedN}/${total} set${total === 1 ? "" : "s"}${lastText}`;
+  }
+  if (item.type === "boxing") {
+    return item.runBy === "Coach" ? `${savedN}/${total} rounds with Max` : `${savedN}/${total} rounds`;
   }
   return `${item.word} · ${savedN}/${total} sets`;
 }
@@ -1472,7 +2154,7 @@ function layoutChecklist_(ctx) {
       const open = document.createElement("div");
       open.className = "workout__cl-open";
       open.dataset.itemIndex = String(idx);
-      open.appendChild(item.type === "exercise" ? renderExerciseBody_(ctx, item) : renderSupersetBody_(ctx, item));
+      open.appendChild(item.type === "exercise" ? renderExerciseBody_(ctx, item) : item.type === "boxing" ? renderBoxingCard_(ctx, item) : renderSupersetBody_(ctx, item));
       els.list.appendChild(open);
     } else if (item.type === "superset") {
       els.list.appendChild(renderSupersetCollapsed_(ctx, item, idx));
@@ -1521,7 +2203,9 @@ function layoutChecklist_(ctx) {
 function buildSimpleSteps_(items) {
   const steps = [];
   items.forEach((item, itemIndex) => {
-    if (item.type === "exercise") {
+    if (item.type === "boxing") {
+      steps.push({ item, itemIndex, kind: "boxing" });
+    } else if (item.type === "exercise") {
       item.sets.rows.forEach((row, idx) => {
         steps.push({ item, itemIndex, kind: "exercise", row, setNumber: idx + 1, totalSets: item.sets.rows.length });
       });
@@ -1621,6 +2305,24 @@ function layoutSimple_(ctx) {
     complete.className = "workout__simple-complete";
     complete.innerHTML = `${CHECK_CIRCLE_SVG}<p>All sets done</p>`;
     container.appendChild(complete);
+  } else if (step.kind === "boxing") {
+    // The whole block is one screen (renderBoxingCard_, shared with Checklist/Show all) — not flattened into one step per round the way a normal exercise's sets are. Start opens the same round timer either way.
+    container.appendChild(renderBoxingCard_(ctx, step.item));
+    const nav = document.createElement("div");
+    nav.className = "workout__simple-nav";
+    const prevBtn = document.createElement("button");
+    prevBtn.type = "button";
+    prevBtn.className = "workout__simple-nav-btn";
+    prevBtn.textContent = "Previous";
+    prevBtn.disabled = ctx.simpleIndex === 0;
+    prevBtn.addEventListener("click", () => onSimplePrev_(ctx));
+    const skipBtn = document.createElement("button");
+    skipBtn.type = "button";
+    skipBtn.className = "workout__simple-nav-btn";
+    skipBtn.textContent = "Skip";
+    skipBtn.addEventListener("click", () => onSimpleSkip_(ctx));
+    nav.append(prevBtn, skipBtn);
+    container.appendChild(nav);
   } else {
     if (step.kind === "superset") {
       const pill = document.createElement("span");
@@ -1714,6 +2416,10 @@ function buildFinishBar_(ctx) {
 function onFinishTapped_(ctx) {
   let unfinished = 0;
   allRows_(ctx).forEach((row) => {
+    // A boxing round is a plain object, not a DOM node — it's either
+    // ticked (_saved) or it isn't, with no "typed but not confirmed" state
+    // to catch here the way a weight/reps row has.
+    if (typeof row.querySelector !== "function") return;
     const values = rowValues(row);
     if (values.valid && (row._saved || row._touched)) {
       row._saved = { weight: values.weight, reps: values.reps };
@@ -1735,6 +2441,7 @@ function computePersonalBests_(ctx, sets) {
   if (setCol.weight < 0 || setCol.exercise < 0 || setCol.client < 0) return [];
   const byExercise = new Map();
   sets.forEach((s) => {
+    if (s.type === "round" || s.type === "pads") return; // boxing rounds never count toward a personal best
     const key = s.exercise.toLowerCase();
     const cur = byExercise.get(key);
     if (!cur || s.weight > cur.weight || (s.weight === cur.weight && s.reps > cur.reps)) {
@@ -1757,6 +2464,7 @@ function renderMuscleReview_(figsEl, listEl, sets) {
   const totalCount = {};
   const unmatchedNames = new Set();
   sets.forEach((s) => {
+    if (s.type === "pads") return; // pad rounds show in session history only, never on the muscle map
     const exName = String(s.exercise || "").trim();
     const resolved = resolveExerciseMuscles_(exName, exerciseIndex_);
     if (!resolved.primary.length && !resolved.secondary.length) {
@@ -1982,7 +2690,7 @@ function renderCurrentView(ctx, snapshot) {
     layoutChecklist_(ctx);
   } else if (ctx.currentView === "simple") {
     ctx.simpleSteps = buildSimpleSteps_(ctx.items);
-    const firstUnsavedIdx = ctx.simpleSteps.findIndex((s) => !s.row._saved);
+    const firstUnsavedIdx = ctx.simpleSteps.findIndex((s) => (s.row ? !s.row._saved : !itemDone_(s.item)));
     ctx.simpleIndex = firstUnsavedIdx >= 0 ? firstUnsavedIdx : ctx.simpleSteps.length;
     layoutSimple_(ctx);
   } else {
@@ -2144,7 +2852,10 @@ function buildWorkoutHead_(ctx, shared, workoutName) {
 
 /** Any typed-in-but-unsaved set, mounted or not (those would be lost when the workout reloads for the new day). */
 function hasUnsavedEntries(ctx) {
-  return allRows_(ctx).some((row) => row._touched && !row.classList.contains("workout__set--saved"));
+  // A boxing round is never "touched but not saved" — saveRound/unsaveRound
+  // always set both together — so there's genuinely nothing to catch here
+  // for one; .classList doesn't exist on it either (not a DOM node).
+  return allRows_(ctx).some((row) => row._touched && typeof row.classList !== "undefined" && !row.classList.contains("workout__set--saved"));
 }
 
 function changeDate(shared, value) {
@@ -2234,7 +2945,11 @@ function renderWorkout(shared, workoutName, exercises) {
     allRows_(ctx).forEach((row) => {
       if (!row._saved) return;
       if (!byExercise.has(row.dataset.exercise)) byExercise.set(row.dataset.exercise, []);
-      byExercise.get(row.dataset.exercise).push({ exercise: row.dataset.exercise, setNumber: Number(row.dataset.setNumber), weight: row._saved.weight, reps: row._saved.reps });
+      const entry = { exercise: row.dataset.exercise, setNumber: Number(row.dataset.setNumber), weight: row._saved.weight, reps: row._saved.reps };
+      // Only a boxing round carries these (buildBoxingItem_/ctx.saveRound) — undefined on every normal set, which postSession already treats as "not there".
+      if (row._duration !== undefined && row._duration !== null) entry.duration = row._duration;
+      if (row._type) entry.type = row._type;
+      byExercise.get(row.dataset.exercise).push(entry);
     });
     return Array.from(byExercise.values()).flat();
   };
@@ -2285,6 +3000,29 @@ function renderWorkout(shared, workoutName, exercises) {
     updateProgress_(ctx);
     if (!(options && options.noRest)) startRestTimer();
     return true;
+  };
+
+  /** A client-run round (timer finished, ended early, or ticked by hand — durationSeconds decides which): same draft/persist pipeline as ctx.saveSet, just no weight/reps to validate. */
+  ctx.saveRound = (item, round, durationSeconds) => {
+    round._saved = { weight: 0, reps: 0 };
+    round._duration = Math.max(0, Math.round(durationSeconds));
+    round._touched = true;
+    const before = readDraft(key);
+    const after = ctx.persist();
+    if (!before || !after || after.rev !== before.rev) els.done.hidden = true;
+    updateProgress_(ctx);
+    if (ctx.onItemChanged) ctx.onItemChanged(item);
+    return true;
+  };
+
+  /** Un-ticking a manually-ticked round (tap it again). */
+  ctx.unsaveRound = (item, round) => {
+    round._saved = null;
+    round._duration = null;
+    round._touched = false;
+    ctx.persist();
+    updateProgress_(ctx);
+    if (ctx.onItemChanged) ctx.onItemChanged(item);
   };
 
   // The sets they'd already saved today for this exact workout+day, restored from the draft.
@@ -2455,8 +3193,18 @@ async function init() {
         workoutNote: workout.col.workoutNotes >= 0 ? String(r[workout.col.workoutNotes] || "").trim() : "",
         superset: workout.col.superset >= 0 && String(r[workout.col.superset] || "").trim().toUpperCase() === "Y",
         supersetRest: workout.col.supersetRest >= 0 ? Number(r[workout.col.supersetRest]) : NaN,
+        // Boxing rounds (2026-11-07): sets above IS the round count for one of these. A block is never a superset member, whatever its own Superset cell says.
+        blockType: workout.col.blockType >= 0 ? String(r[workout.col.blockType] || "").trim() : "",
+        workSeconds: workout.col.workSeconds >= 0 ? Number(r[workout.col.workSeconds]) || 120 : 120,
+        restSeconds: workout.col.restSeconds >= 0 ? Number(r[workout.col.restSeconds]) || 60 : 60,
+        combos: workout.col.combos >= 0 ? String(r[workout.col.combos] || "").split(" | ").map((c) => c.trim()).filter(Boolean) : [],
+        runBy: workout.col.runBy >= 0 && String(r[workout.col.runBy] || "").trim() === "Coach" ? "Coach" : "Client",
+        easierOption: workout.col.easierOption >= 0 && String(r[workout.col.easierOption] || "").trim().toUpperCase() === "Y",
       }))
       .filter((ex) => ex.name && ex.sets > 0);
+    clientExercises.forEach((ex) => {
+      if (ex.blockType === "Rounds") ex.superset = false; // a boxing block can never be a superset member
+    });
 
     workoutGroups = {};
     workoutOrderByName = {};

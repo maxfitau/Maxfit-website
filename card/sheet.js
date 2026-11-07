@@ -209,6 +209,13 @@ function fetchWorkoutExercises() {
           workoutNotes: findColumn(header, "Workout Notes"), // a note for the whole workout (repeated on each of its rows)
           superset: findColumn(header, "Superset"), // "Y" = this exercise + the next one (by Order) are done back-to-back
           supersetRest: findColumn(header, "Superset Rest"), // seconds of rest after each round, on the superset's first exercise; blank = 90
+          // Boxing rounds (2026-11-07): Block Type "Rounds" marks a block; Target Sets above doubles as its round count.
+          blockType: findColumn(header, "Block Type"),
+          workSeconds: findColumn(header, "Work Seconds"),
+          restSeconds: findColumn(header, "Rest Seconds"),
+          combos: findColumn(header, "Combos"), // one combo per round, separated by " | " — a single value means every round
+          runBy: findColumn(header, "Run By"), // "Client" or "Coach"
+          easierOption: findColumn(header, "Easier Option"), // "Y" = offer shadow boxing if no bag is free
         };
         return { rows, col };
       });
@@ -246,6 +253,12 @@ function fetchLoggedSets(clientSlug) {
         date: findColumn(header, "Date"),
         timestamp: findColumn(header, "Timestamp"),
         notes: findColumn(header, "Notes"),
+        // Boxing rounds (2026-11-07): Weight/Reps above are always 0 on these
+        // rows. Type "round" (client-run, counts on the muscle map) or
+        // "pads" (coach-run, session history only) — blank is every normal
+        // set. Duration is the seconds actually done.
+        duration: findColumn(header, "Duration (s)"),
+        type: findColumn(header, "Type"),
       };
       return { header, rows, col };
     };

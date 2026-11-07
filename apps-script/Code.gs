@@ -32,7 +32,7 @@ const GROCERY_SHEET_NAME = "Grocery Items";
 // Changes whenever this file does, and is shown when you open the deployed
 // URL in a browser (see doGet) — the quick way to tell whether a redeploy
 // actually took, instead of guessing from behaviour.
-const BACKEND_VERSION = "2026-11-06a";
+const BACKEND_VERSION = "2026-11-07a";
 
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -91,8 +91,8 @@ function backfillTokens() {
  */
 function setupWorkoutSheets() {
   getOrCreateSheetByName_(EXERCISES_SHEET_NAME, ["Name", "Movement", "Body Part", "Default Starting Weight (kg)"]);
-  getOrCreateSheetByName_(WORKOUT_EXERCISES_SHEET_NAME, ["Client", "Workout Name", "Order", "Exercise", "Target Sets", "Target Reps", "Days", "Workout Order", "Exercise Notes", "Workout Notes", "Superset", "Superset Rest"]);
-  getOrCreateSheetByName_(LOGGED_SETS_SHEET_NAME, ["Client", "Workout Name", "Exercise", "Set Number", "Weight (kg)", "Reps", "Date", "Timestamp", "Notes"]);
+  getOrCreateSheetByName_(WORKOUT_EXERCISES_SHEET_NAME, ["Client", "Workout Name", "Order", "Exercise", "Target Sets", "Target Reps", "Days", "Workout Order", "Exercise Notes", "Workout Notes", "Superset", "Superset Rest", "Block Type", "Work Seconds", "Rest Seconds", "Combos", "Run By", "Easier Option"]);
+  getOrCreateSheetByName_(LOGGED_SETS_SHEET_NAME, ["Client", "Workout Name", "Exercise", "Set Number", "Weight (kg)", "Reps", "Date", "Timestamp", "Notes", "Duration (s)", "Type"]);
   Logger.log("Workout sheets ready.");
 }
 
@@ -502,6 +502,14 @@ const EXERCISE_MUSCLE_DATA_ = [
   ["Rowing Machine", "Full Body & Conditioning", "Rower", ["lats", "quads"], ["hamstrings", "biceps", "glutes"], "front"],
   ["Assault Bike", "Full Body & Conditioning", "Air bike", ["quads"], ["hamstrings", "delts"], "front"],
   ["Sprint", "Full Body & Conditioning", "Bodyweight", ["hamstrings", "glutes"], ["quads", "calves"], "back"],
+
+  // Boxing (2026-11-07) — broad 14-key muscles, same call as the rest of
+  // this Conditioning block: a punch combo or a skip isn't isolating one
+  // sub-region, so a fine v2 key would be false precision.
+  ["Heavy Bag", "Full Body & Conditioning", "Heavy bag", ["delts", "obliques"], ["triceps", "chest", "abs", "calves"], "front"],
+  ["Shadow Boxing", "Full Body & Conditioning", "Bodyweight", ["delts", "obliques"], ["triceps", "abs", "calves"], "front"],
+  ["Pad Work", "Full Body & Conditioning", "Pads (with coach)", ["delts", "obliques"], ["triceps", "chest", "abs"], "front"],
+  ["Skipping", "Full Body & Conditioning", "Skipping rope", ["calves"], ["delts", "forearms", "abs"], "front"],
 
   // Top-up (2026-10-02): exact names from the original ~45-exercise seed
   // (EXERCISE_SEED_ above) that don't share a name with any of the 150
@@ -1807,6 +1815,12 @@ function handleAssignWorkout_(payload) {
     workoutNotes: findColumn_(header, "Workout Notes"),
     superset: findColumn_(header, "Superset"),
     supersetRest: findColumn_(header, "Superset Rest"),
+    blockType: findColumn_(header, "Block Type"),
+    workSeconds: findColumn_(header, "Work Seconds"),
+    restSeconds: findColumn_(header, "Rest Seconds"),
+    combos: findColumn_(header, "Combos"),
+    runBy: findColumn_(header, "Run By"),
+    easierOption: findColumn_(header, "Easier Option"),
   };
 
   // A resave keeps this workout's existing position in the chip/picker
@@ -1861,13 +1875,38 @@ function handleAssignWorkout_(payload) {
       const rest = Math.round(Number(ex && ex.supersetRest));
       row[col.supersetRest] = rest >= 15 && rest <= 600 ? rest : "";
     }
+    // A boxing rounds block: Block Type = "Rounds", Target Sets above IS the
+    // round count (ex.sets), and these extra columns carry the rest of the
+    // block's setup. Blank Block Type (every normal exercise row) leaves all
+    // of them blank, so nothing changes for a workout with no boxing in it.
+    if (col.blockType >= 0 && ex && ex.blockType === "Rounds") {
+      row[col.blockType] = "Rounds";
+      if (col.workSeconds >= 0) {
+        const work = Math.round(Number(ex.workSeconds));
+        row[col.workSeconds] = work >= 15 && work <= 600 ? work : "";
+      }
+      if (col.restSeconds >= 0) {
+        const rest = Math.round(Number(ex.restSeconds));
+        row[col.restSeconds] = rest >= 0 && rest <= 600 ? rest : "";
+      }
+      // One combo per round, separated by " | " — the client page splits
+      // this back apart; a single value (no " | ") means every round.
+      if (col.combos >= 0) {
+        row[col.combos] = (Array.isArray(ex.combos) ? ex.combos : [])
+          .map((c) => cleanNote_(c, 200))
+          .join(" | ");
+      }
+      if (col.runBy >= 0) row[col.runBy] = ex.runBy === "Coach" ? "Coach" : "Client";
+      if (col.easierOption >= 0) row[col.easierOption] = ex.easierOption ? "Y" : "";
+    }
     return row;
   });
   sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, header.length).setValues(newRows);
 
-  // notesSupported lets the builder tell a deployment that stored the tips
-  // from an older one that would have quietly ignored them.
-  return jsonResponse_({ status: "success", notesSupported: true, supersetRestSupported: true });
+  // notesSupported/boxingSupported let the builder tell a deployment that
+  // stored the tips/boxing fields from an older one that would have
+  // quietly ignored them.
+  return jsonResponse_({ status: "success", notesSupported: true, supersetRestSupported: true, boxingSupported: col.blockType >= 0 });
 }
 
 /**
@@ -2133,7 +2172,15 @@ function handleDeleteWorkout_(payload) {
  * means no manual migration step to remember.
  */
 function ensureLoggedSetsColumns_(sheet) {
-  return ensureColumns_(sheet, ["Workout Name", "Notes"]);
+  return ensureColumns_(sheet, [
+    "Workout Name", "Notes",
+    // Boxing rounds (2026-11-07): a round row still has a Set Number/Weight
+    // (always 0)/Reps (always 0), plus how long it actually ran and which
+    // kind it was — see handleSaveWorkoutSession_ and the "skip round/pads"
+    // rule everywhere else that reads this tab (muscle map, weekly recap,
+    // Strength Progress, personal bests, "last time" prefill).
+    "Duration (s)", "Type",
+  ]);
 }
 
 /**
@@ -2143,7 +2190,13 @@ function ensureLoggedSetsColumns_(sheet) {
  * workout is saved rather than needing a manual migration.
  */
 function ensureWorkoutExercisesColumns_(sheet) {
-  return ensureColumns_(sheet, ["Exercise Notes", "Workout Notes", "Superset", "Superset Rest"]);
+  return ensureColumns_(sheet, [
+    "Exercise Notes", "Workout Notes", "Superset", "Superset Rest",
+    // Boxing rounds (2026-11-07): a block is one exercise row with Block
+    // Type = "Rounds" instead of the usual blank. Target Sets doubles as
+    // the round count for a Rounds block, same column either way.
+    "Block Type", "Work Seconds", "Rest Seconds", "Combos", "Run By", "Easier Option",
+  ]);
 }
 
 function ensureExerciseColumns_(sheet) {
@@ -2252,6 +2305,8 @@ function handleSaveWorkoutSession_(payload) {
     date: findColumn_(header, "Date"),
     timestamp: findColumn_(header, "Timestamp"),
     notes: findColumn_(header, "Notes"),
+    duration: findColumn_(header, "Duration (s)"),
+    type: findColumn_(header, "Type"),
   };
 
   const now = new Date();
@@ -2305,6 +2360,16 @@ function handleSaveWorkoutSession_(payload) {
     // note isn't per-set, but there's no separate per-session tab, so it
     // rides along on each of that session's own rows instead.
     rowValues[col.notes] = notes;
+    // Boxing rounds (2026-11-07): weight/reps above are always 0 for these;
+    // Duration is the seconds actually done (ended early counts less than a
+    // full round), and Type tells a "round" (client-run, counts on the
+    // muscle map) from "pads" (coach-run, session history only). Blank Type
+    // is every ordinary set, unchanged.
+    if (col.duration >= 0) {
+      const duration = Number(s.duration);
+      if (Number.isFinite(duration) && duration >= 0) rowValues[col.duration] = Math.round(duration);
+    }
+    if (col.type >= 0 && (s.type === "round" || s.type === "pads")) rowValues[col.type] = s.type;
     newRows.push(rowValues);
   }
 

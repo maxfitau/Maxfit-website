@@ -911,3 +911,377 @@
     width: 26px;
   }
 }
+
+/* ==========================================================================
+   Boxing rounds (built 2026-11-07) — a block row in the exercise list (just
+   a summary + Edit, never expands inline like a normal exercise row), and
+   the block editor dialog that builds/edits one.
+   ========================================================================== */
+
+.builder__add-row {
+  display: flex;
+  gap: 10px;
+}
+
+.builder__add-row .builder__add {
+  flex: 1;
+}
+
+.builder__add--boxing:active {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.builder__row--boxing {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+
+.builder__boxing-summary {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.builder__boxing-summary-tag {
+  flex-shrink: 0;
+  font-family: var(--font-head);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  font-size: 12px;
+  color: var(--on-red);
+  background: var(--red);
+  border-radius: 999px;
+  padding: 4px 10px 3px;
+}
+
+.builder__boxing-summary-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.builder__boxing-summary-name {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--white);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.builder__boxing-summary-meta {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Block editor dialog ------------------------------------------------ */
+
+.builder__boxing-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.builder__boxing-modal[hidden] {
+  display: none;
+}
+
+.builder__boxing-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+}
+
+.builder__boxing-modal-panel {
+  position: relative;
+  width: 100%;
+  max-width: 520px;
+  max-height: 88vh;
+  overflow-y: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.builder__boxing-modal-title {
+  margin: 0;
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  font-size: 22px;
+  letter-spacing: 0.02em;
+  color: var(--white);
+}
+
+.builder__boxing-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.builder__boxing-select {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--white);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+}
+
+.builder__boxing-segmented {
+  display: flex;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 3px;
+  gap: 3px;
+}
+
+.builder__boxing-segmented-btn {
+  flex: 1;
+  min-height: 40px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
+  color: var(--grey-light);
+  background: transparent;
+  border: none;
+  border-radius: calc(var(--radius-sm) - 3px);
+  cursor: pointer;
+}
+
+.builder__boxing-segmented-btn[aria-pressed="true"] {
+  color: var(--on-red);
+  background: var(--red);
+}
+
+.builder__boxing-steppers {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.builder__boxing-stepper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+}
+
+.builder__boxing-stepper-label {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.builder__boxing-stepper-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.builder__boxing-step-btn {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--white);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.builder__boxing-step-value {
+  min-width: 46px;
+  text-align: center;
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 16px;
+  color: var(--white);
+  font-variant-numeric: tabular-nums;
+}
+
+.builder__boxing-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.builder__boxing-chip {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--grey-light);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.builder__boxing-chip:active {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.builder__boxing-rounds-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.builder__boxing-round-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.builder__boxing-round-num {
+  flex-shrink: 0;
+  width: 26px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.builder__boxing-round-input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--white);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+
+.builder__boxing-round-input--active {
+  border-color: var(--red);
+}
+
+.builder__boxing-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.builder__boxing-switch-label {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--white);
+}
+
+.builder__boxing-switch {
+  flex-shrink: 0;
+  position: relative;
+  width: 46px;
+  height: 26px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.builder__boxing-switch[aria-pressed="true"] {
+  background: var(--red);
+  border-color: var(--red);
+}
+
+.builder__boxing-switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--white);
+  transition: transform 0.15s ease;
+}
+
+.builder__boxing-switch[aria-pressed="true"] .builder__boxing-switch-knob {
+  transform: translateX(20px);
+}
+
+.builder__boxing-modal-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.builder__boxing-modal-cancel {
+  flex: 1;
+  min-height: 48px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 15px;
+  color: var(--grey-light);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.builder__boxing-modal-confirm {
+  flex: 2;
+  min-height: 48px;
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 15px;
+  color: var(--on-red);
+  background: var(--red);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.builder__boxing-modal-confirm:active {
+  background: var(--red-dim);
+}
