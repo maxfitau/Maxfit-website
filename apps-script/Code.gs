@@ -32,7 +32,7 @@ const GROCERY_SHEET_NAME = "Grocery Items";
 // Changes whenever this file does, and is shown when you open the deployed
 // URL in a browser (see doGet) — the quick way to tell whether a redeploy
 // actually took, instead of guessing from behaviour.
-const BACKEND_VERSION = "2026-11-07a";
+const BACKEND_VERSION = "2026-11-08a";
 
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -92,7 +92,7 @@ function backfillTokens() {
 function setupWorkoutSheets() {
   getOrCreateSheetByName_(EXERCISES_SHEET_NAME, ["Name", "Movement", "Body Part", "Default Starting Weight (kg)"]);
   getOrCreateSheetByName_(WORKOUT_EXERCISES_SHEET_NAME, ["Client", "Workout Name", "Order", "Exercise", "Target Sets", "Target Reps", "Days", "Workout Order", "Exercise Notes", "Workout Notes", "Superset", "Superset Rest", "Block Type", "Work Seconds", "Rest Seconds", "Combos", "Run By", "Easier Option"]);
-  getOrCreateSheetByName_(LOGGED_SETS_SHEET_NAME, ["Client", "Workout Name", "Exercise", "Set Number", "Weight (kg)", "Reps", "Date", "Timestamp", "Notes", "Duration (s)", "Type"]);
+  getOrCreateSheetByName_(LOGGED_SETS_SHEET_NAME, ["Client", "Workout Name", "Exercise", "Set Number", "Weight (kg)", "Reps", "Date", "Timestamp", "Notes", "Duration (s)", "Type", "Distance (km)"]);
   Logger.log("Workout sheets ready.");
 }
 
@@ -2180,6 +2180,10 @@ function ensureLoggedSetsColumns_(sheet) {
     // rule everywhere else that reads this tab (muscle map, weekly recap,
     // Strength Progress, personal bests, "last time" prefill).
     "Duration (s)", "Type",
+    // "Log something else" (2026-11-08): a run/walk row's Type is "run"/
+    // "walk", Weight/Reps still 0, Duration still the time — this is just
+    // the extra number neither of those already carries.
+    "Distance (km)",
   ]);
 }
 
@@ -2307,6 +2311,7 @@ function handleSaveWorkoutSession_(payload) {
     notes: findColumn_(header, "Notes"),
     duration: findColumn_(header, "Duration (s)"),
     type: findColumn_(header, "Type"),
+    distance: findColumn_(header, "Distance (km)"),
   };
 
   const now = new Date();
@@ -2369,7 +2374,13 @@ function handleSaveWorkoutSession_(payload) {
       const duration = Number(s.duration);
       if (Number.isFinite(duration) && duration >= 0) rowValues[col.duration] = Math.round(duration);
     }
-    if (col.type >= 0 && (s.type === "round" || s.type === "pads")) rowValues[col.type] = s.type;
+    if (col.type >= 0 && (s.type === "round" || s.type === "pads" || s.type === "run" || s.type === "walk")) rowValues[col.type] = s.type;
+    // "Log something else" (2026-11-08): a run/walk's distance. Weight/Reps
+    // above are already 0 for these, same shape as a boxing round.
+    if (col.distance >= 0) {
+      const distance = Number(s.distance);
+      if (Number.isFinite(distance) && distance >= 0) rowValues[col.distance] = distance;
+    }
     newRows.push(rowValues);
   }
 

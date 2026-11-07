@@ -94,7 +94,11 @@ async function heatmapMuscleData(memberId, range) {
     if (String(setCol.client >= 0 ? row[setCol.client] : "").trim().toLowerCase() !== clientSlug) return;
     // Pad rounds (coach-run boxing) never count here — a client-run round
     // ("round") does, as a normal set, once its exercise name resolves below.
-    if (setCol.type >= 0 && String(row[setCol.type] || "").trim().toLowerCase() === "pads") return;
+    // Runs/walks (2026-11-08) never count either, and are skipped by type
+    // rather than left to fall through as "unmatched" — Run/Walk otherwise
+    // has no muscle data and would show up as noise in "not counted".
+    const rowType_ = setCol.type >= 0 ? String(row[setCol.type] || "").trim().toLowerCase() : "";
+    if (rowType_ === "pads" || rowType_ === "run" || rowType_ === "walk") return;
     const key = setCol.date >= 0 ? heatDateSortKey_(row[setCol.date]) : NaN;
     if (!Number.isFinite(key) || key < fromKey || key > toKey) return;
     const exName = String(setCol.exercise >= 0 ? row[setCol.exercise] : "").trim();

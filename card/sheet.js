@@ -259,6 +259,10 @@ function fetchLoggedSets(clientSlug) {
         // set. Duration is the seconds actually done.
         duration: findColumn(header, "Duration (s)"),
         type: findColumn(header, "Type"),
+        // "Log something else" (2026-11-08): a run/walk row's Type is "run"/
+        // "walk" (Weight/Reps still 0), with its own Distance — Duration
+        // above is still what carries the time.
+        distance: findColumn(header, "Distance (km)"),
       };
       return { header, rows, col };
     };

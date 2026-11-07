@@ -1285,3 +1285,144 @@
 .builder__boxing-modal-confirm:active {
   background: var(--red-dim);
 }
+
+/* ==========================================================================
+   "This week" muscle overview (built 2026-11-08) — a second panel in the
+   same side column as "this workout" above, scoped to every named workout
+   this client has rather than just the one being edited. Read-only.
+   ========================================================================== */
+
+.builder__week {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.builder__week-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.builder__week-summary::-webkit-details-marker {
+  display: none;
+}
+
+.builder__week-summary .card__label {
+  flex-shrink: 0;
+}
+
+.builder__week-summary-text {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.builder__week-summary .builder__side-fam-chevron {
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.builder__week[open] > .builder__week-summary .builder__side-fam-chevron {
+  transform: rotate(180deg);
+}
+
+.builder__week-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.builder__week-toggle {
+  display: flex;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 3px;
+  gap: 3px;
+}
+
+.builder__week-toggle button {
+  flex: 1;
+  min-height: 36px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 13px;
+  color: var(--grey-light);
+  background: transparent;
+  border: none;
+  border-radius: calc(var(--radius-sm) - 3px);
+  cursor: pointer;
+}
+
+.builder__week-toggle button.is-active {
+  color: var(--on-red);
+  background: var(--red);
+}
+
+.builder__week-no-days {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.builder__week-heat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.builder__week-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.builder__week-row .builder__side-heat-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.builder__week-diff {
+  flex-shrink: 0;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 999px;
+}
+
+.builder__week-diff--up {
+  color: var(--red);
+  background: rgba(224, 0, 0, 0.12);
+}
+
+.builder__week-diff--down {
+  color: var(--dim);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.builder__week-note {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--dim);
+}
+
+@media (max-width: 859px) {
+  .builder__week {
+    margin-top: 16px;
+  }
+}

@@ -74,7 +74,7 @@ let viewMonth = today.getMonth(); // 0-indexed
 // dateKey -> { [workoutName]: { notes, exercises: { [exerciseName]: [{ setNumber, weight, reps }] } } }
 let byDate = {};
 
-function addSet(dateKey, workoutName, exerciseName, setNumber, weight, reps, notes, duration, type) {
+function addSet(dateKey, workoutName, exerciseName, setNumber, weight, reps, notes, duration, type, distance) {
   if (!byDate[dateKey]) byDate[dateKey] = {};
   const wName = workoutName || "Workout";
   if (!byDate[dateKey][wName]) byDate[dateKey][wName] = { notes: "", exercises: {} };
@@ -90,8 +90,9 @@ function addSet(dateKey, workoutName, exerciseName, setNumber, weight, reps, not
     existing.reps = reps;
     existing.duration = duration;
     existing.type = type;
+    existing.distance = distance;
   } else {
-    list.push({ setNumber, weight, reps, duration, type });
+    list.push({ setNumber, weight, reps, duration, type, distance });
   }
   if (notes) byDate[dateKey][wName].notes = notes;
 }
@@ -174,12 +175,14 @@ async function saveDay_() {
     for (const exerciseName of Object.keys(workout.exercises)) {
       for (const s of workout.exercises[exerciseName]) {
         const set = { exercise: exerciseName, setNumber: s.setNumber, weight: s.weight, reps: s.reps };
-        // A boxing round's Duration/Type — carried through so editing one
-        // exercise on a day that also has boxing on it doesn't silently
-        // strip those rounds back to looking like normal 0kg/0rep sets
-        // (saveWorkoutSession replaces the whole day's session at once).
+        // A boxing round's Duration/Type, or a run/walk's Duration/Type/
+        // Distance — carried through so editing one exercise on a day that
+        // also has one of these on it doesn't silently strip them back to
+        // looking like a normal 0kg/0rep set (saveWorkoutSession replaces
+        // the whole day's session at once).
         if (Number.isFinite(s.duration)) set.duration = s.duration;
-        if (s.type === "round" || s.type === "pads") set.type = s.type;
+        if (s.type === "round" || s.type === "pads" || s.type === "run" || s.type === "walk") set.type = s.type;
+        if (Number.isFinite(s.distance)) set.distance = s.distance;
         sets.push(set);
       }
     }
@@ -293,6 +296,10 @@ function buildExerciseEditor_(workoutName, exerciseName) {
   // workSeconds is approximated from the longest round actually logged
   // (ended-early rounds run shorter, so this stays accurate for a full one).
   const isBoxing = sets.length > 0 && sets.every((s) => s.type === "round" || s.type === "pads");
+  // A run or walk (2026-11-08): always exactly one row, Type "run"/"walk" —
+  // shown as "Run · 5.2 km · 32:10 · 6:11 /km" rather than the usual
+  // weight/reps set list, same treatment as a boxing block above.
+  const isCardio = sets.length === 1 && (sets[0].type === "run" || sets[0].type === "walk");
   const exName = document.createElement("span");
   exName.className = "calendar__detail-exercise-name";
   if (isBoxing) {
@@ -302,6 +309,17 @@ function buildExerciseEditor_(workoutName, exerciseName) {
     const secs = workSeconds % 60;
     const workText = secs ? `${mins}:${String(secs).padStart(2, "0")}` : `${mins} min`;
     exName.textContent = `${exerciseName}${isPads ? " with Max" : ""} · ${sets.length} round${sets.length === 1 ? "" : "s"} × ${workText}`;
+  } else if (isCardio) {
+    const s = sets[0];
+    const totalSeconds = Math.max(0, Number(s.duration) || 0);
+    const timeText = `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, "0")}`;
+    const km = Number(s.distance) || 0;
+    let paceText = "";
+    if (km > 0 && totalSeconds > 0) {
+      const perKm = totalSeconds / km;
+      paceText = ` · ${Math.floor(perKm / 60)}:${String(Math.round(perKm % 60)).padStart(2, "0")} /km`;
+    }
+    exName.textContent = `${s.type === "walk" ? "Walk" : "Run"} · ${km.toFixed(1)} km · ${timeText}${paceText}`;
   } else {
     exName.textContent = exerciseName;
   }
@@ -478,8 +496,9 @@ async function reloadHistory_() {
     if (!exerciseName || !Number.isFinite(weight) || !Number.isFinite(reps)) continue;
     const duration = col.duration >= 0 ? Number(r[col.duration]) : NaN;
     const type = col.type >= 0 ? String(r[col.type] || "").trim() : "";
+    const distance = col.distance >= 0 ? Number(r[col.distance]) : NaN;
 
-    addSet(dateKey, workoutName, exerciseName, Number.isFinite(setNumber) ? setNumber : 0, weight, reps, notes, Number.isFinite(duration) ? duration : undefined, type || undefined);
+    addSet(dateKey, workoutName, exerciseName, Number.isFinite(setNumber) ? setNumber : 0, weight, reps, notes, Number.isFinite(duration) ? duration : undefined, type || undefined, Number.isFinite(distance) ? distance : undefined);
   }
 }
 

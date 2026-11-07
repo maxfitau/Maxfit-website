@@ -95,6 +95,7 @@ const WeekCard = (function () {
   let sheet = null;
   let today = "";
   let sets = [];
+  let cardioRows = []; // runs/walks (2026-11-08) — kept separate from `sets`, which never includes them (see loadSets)
   let fuel = null;
   let goal = null;
   let ready = false;
@@ -118,17 +119,42 @@ const WeekCard = (function () {
 
   async function loadSets() {
     const { rows, col } = await fetchLoggedSets(slug);
-    sets = rows
-      .filter((r) => String(r[col.client] || "").trim().toLowerCase() === slug)
-      // Boxing rounds (client-run or pads) never count toward kg moved, the
-      // week's workout/set tally or a new personal best — they're always
-      // 0kg/0reps anyway, but skip them explicitly rather than rely on that.
+    const mine = rows.filter((r) => String(r[col.client] || "").trim().toLowerCase() === slug);
+    sets = mine
+      // Boxing rounds (client-run or pads) and runs/walks never count toward
+      // kg moved, the week's workout/set tally or a new personal best —
+      // they're always 0kg/0reps anyway, but skip them explicitly rather
+      // than rely on that (runs/walks also have no "exercise" the reader
+      // would recognise as a lift). See cardioRows below for runs/walks.
       .filter((r) => {
         const t = col.type >= 0 ? String(r[col.type] || "").trim().toLowerCase() : "";
-        return t !== "round" && t !== "pads";
+        return t !== "round" && t !== "pads" && t !== "run" && t !== "walk";
       })
       .map((r) => ({ date: ymd(r[col.date]), exercise: String(r[col.exercise] || "").trim(), kg: Number(r[col.weight]) || 0, reps: Number(r[col.reps]) || 0 }))
       .filter((s) => s.date && s.exercise);
+    cardioRows =
+      col.type < 0 || col.distance < 0
+        ? [] // an older backend, or Part 2 not deployed yet — degrade to nothing rather than guess
+        : mine
+            .filter((r) => {
+              const t = String(r[col.type] || "").trim().toLowerCase();
+              return t === "run" || t === "walk";
+            })
+            .map((r) => ({ date: ymd(r[col.date]), type: String(r[col.type]).trim().toLowerCase(), km: Number(r[col.distance]) || 0 }))
+            .filter((c) => c.date);
+  }
+
+  /** "Cardio this week: 2 runs · 8.4 km · 1 walk · 3.0 km" for the given week — "" when nothing was logged. */
+  function cardioLine_(weekStart, weekEnd) {
+    let runs = 0, runKm = 0, walks = 0, walkKm = 0;
+    cardioRows.forEach((c) => {
+      if (c.date < weekStart || c.date > weekEnd) return;
+      if (c.type === "run") { runs++; runKm += c.km; } else { walks++; walkKm += c.km; }
+    });
+    const parts = [];
+    if (runs) parts.push(`${plural(runs, "run")} · ${runKm.toFixed(1)} km`);
+    if (walks) parts.push(`${plural(walks, "walk")} · ${walkKm.toFixed(1)} km`);
+    return parts.length ? `Cardio this week: ${parts.join(" · ")}` : "";
   }
 
   async function loadGoal() {
@@ -293,12 +319,15 @@ const WeekCard = (function () {
         (r.bests.length > 3 ? `<p class="week-note">And ${r.bests.length - 3} more. Nice work.</p>` : '<p class="week-note">Nice work.</p>') +
         "</div>";
     }
+    const cardio = cardioLine_(r.weekStart, r.weekEnd);
     html +=
       `<div class="week-card"><h3 class="week-h">${MaxIcon("check")}You showed up</h3><div class="week-stats${green ? "" : " week-stats--two"}">` +
       `<div><div class="week-stat__num">${r.workouts}</div><div class="week-stat__label">${r.workouts === 1 ? "workout" : "workouts"}</div></div>` +
       `<div><div class="week-stat__num">${r.sets}</div><div class="week-stat__label">sets</div></div>` +
       (green ? `<div><div class="week-stat__num">${green.greenDays}</div><div class="week-stat__label">green ${green.greenDays === 1 ? "day" : "days"}</div></div>` : "") +
-      "</div></div>" +
+      "</div>" +
+      (cardio ? `<p class="week-note">${esc(cardio)}</p>` : "") +
+      "</div>" +
       `<div class="week-card"><h3 class="week-h">${MaxIcon("bulb")}Tip of the week</h3><p class="week-text">${esc(TIPS[tipIndex])}</p></div>`;
 
     const body = openSheet("Your week", html);

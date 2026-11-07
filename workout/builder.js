@@ -88,6 +88,14 @@ const els = {
   success: document.getElementById("builderSuccess"),
   sideFigs: document.getElementById("builderSideFigs"),
   sideHeatList: document.getElementById("builderSideHeatList"),
+  weekSummaryText: document.getElementById("weekSummaryText"),
+  weekToggle: document.getElementById("weekToggle"),
+  weekFigs: document.getElementById("weekFigs"),
+  weekHeatList: document.getElementById("weekHeatList"),
+  weekNotInPlan: document.getElementById("weekNotInPlan"),
+  weekNotCounted: document.getElementById("weekNotCounted"),
+  weekCardioLine: document.getElementById("weekCardioLine"),
+  weekNoDaysNote: document.getElementById("weekNoDaysNote"),
 };
 
 // This client's existing workouts, keyed by lowercased name — refreshed
@@ -515,6 +523,7 @@ function refreshMuscleLoadPanel_() {
   els.sideHeatList.querySelectorAll("details[data-family]").forEach((el) => {
     el.addEventListener("toggle", () => (el.open ? builderOpenFamilies_.add(el.dataset.family) : builderOpenFamilies_.delete(el.dataset.family)));
   });
+  updateWeekPanel_(); // every trigger for "this workout" also means "this week" changed
 }
 
 /** One muscle in the side panel: a plain row, or a dropdown row that opens to its heads. */
@@ -562,6 +571,290 @@ function builderHeatRowHtml_(label, primaryN, secondaryN, scale) {
         </span>
       </span>
     </div>`;
+}
+
+// ---- "This week" muscle overview (built 2026-11-08) -----------------------
+//
+// Separate from the panel above (which is scoped to just this one workout):
+// across every named workout this client has, multiplied by how many days a
+// week each runs — so a plan can be checked for balance before it's saved,
+// not just what's on screen right now. Read-only: never writes to the sheet
+// and never changes what's saved or what a client sees.
+
+let weekMode_ = "planned"; // "planned" | "done"
+const weekOpenFamilies_ = new Set();
+
+function emptyWeekAcc_() {
+  return { weighted: {}, primaryCount: {}, secondaryCount: {}, contributionsByMuscle: {}, notCounted: new Set(), totalSets: 0 };
+}
+
+/** One exercise's contribution into an accumulator — already-resolved primary/secondary/muscleWeights, sets already multiplied by however many days a week it runs. */
+function addWeekContribution_(acc, exerciseName, primary, secondary, muscleWeights, setsWithMultiplier) {
+  if (!primary.length && !secondary.length) {
+    if (exerciseName) acc.notCounted.add(exerciseName);
+    return;
+  }
+  acc.totalSets += setsWithMultiplier;
+  const perSet = effectiveSetsPerSet_({ catalogName: exerciseName, primary, secondary, muscleWeights });
+  Object.keys(perSet).forEach((k) => {
+    const contribution = perSet[k] * setsWithMultiplier;
+    acc.weighted[k] = (acc.weighted[k] || 0) + contribution;
+    const byExercise = (acc.contributionsByMuscle[k] = acc.contributionsByMuscle[k] || {});
+    byExercise[exerciseName] = (byExercise[exerciseName] || 0) + contribution;
+  });
+  new Set(primary).forEach((k) => {
+    acc.primaryCount[k] = (acc.primaryCount[k] || 0) + setsWithMultiplier;
+  });
+  new Set(secondary).forEach((k) => {
+    acc.secondaryCount[k] = (acc.secondaryCount[k] || 0) + setsWithMultiplier;
+  });
+}
+
+/**
+ * A SAVED workout's exercises (clientWorkouts[key].exercises — already
+ * resolved primary/secondary/muscleWeights by loadClientWorkouts, boxing
+ * blocks included, since that's just a name lookup same as any exercise),
+ * weighted by its days scheduled. A client-run boxing block's rounds count
+ * like any other sets; a coach-run (pads) block never counts.
+ */
+function addSavedWeekWorkout_(acc, exercises, daysMultiplier) {
+  exercises.forEach((ex) => {
+    if (ex.blockType === "Rounds" && ex.runBy === "Coach") return;
+    const sets = Number(ex.sets) || 0;
+    if (sets <= 0) return;
+    addWeekContribution_(acc, ex.name, ex.primaryMuscles || [], ex.secondaryMuscles || [], ex.muscleWeights || "", sets * daysMultiplier);
+  });
+}
+
+/** The workout on screen right now, resolved against the exercise index — a normal row already has its muscle data cached on the picked-exercise control; a boxing row doesn't, so it's looked up by name (same resolver, same as every other exercise). */
+function currentEditorWeekExercises_(index) {
+  const out = [];
+  Array.from(els.rows.children).forEach((row) => {
+    if (row.dataset.blockType === "rounds") {
+      const b = row._boxing;
+      if (b.runBy === "Coach") return;
+      const resolved = resolveExerciseMuscles_(b.name, index);
+      out.push({ name: b.name, sets: b.rounds, primaryMuscles: resolved.primary, secondaryMuscles: resolved.secondary, muscleWeights: resolved.muscleWeights });
+      return;
+    }
+    const control = row.querySelector(".builder__row-exercise");
+    const setsInput = row.querySelector("input");
+    const sets = setsInput ? Number(setsInput.value) : NaN;
+    if (!control || !Number.isFinite(sets) || sets <= 0) return;
+    out.push({
+      name: control.dataset.exerciseName || "",
+      sets,
+      primaryMuscles: (control.dataset.primaryMuscles || "").split(",").filter(Boolean),
+      secondaryMuscles: (control.dataset.secondaryMuscles || "").split(",").filter(Boolean),
+      muscleWeights: control.dataset.muscleWeights || "",
+    });
+  });
+  return out;
+}
+
+/** Every major muscle group (MUSCLE_FAMILIES_'s own names) with 0 planned sets this week. */
+function weekNotInPlan_(weighted) {
+  return MUSCLE_FAMILIES_
+    .map((f) => f.name)
+    .filter((name) => !f_hasWeight_(weighted, name));
+}
+function f_hasWeight_(weighted, familyName) {
+  const fam = MUSCLE_FAMILIES_.find((f) => f.name === familyName);
+  return fam.keys.some((k) => (weighted[k] || 0) > 0);
+}
+
+/** "yyyy-M-d" or "yyyy-MM-dd", whatever the sheet has — normalized to "yyyy-M-d" so a plain string comparison against "Monday" works regardless of which the backend happened to write. Same idea as calendar.js/progress.js's own normalizeDateKey, duplicated rather than shared since this page doesn't load either. */
+function weekNormalizeDateKey_(raw) {
+  const parts = String(raw || "").trim().split("-");
+  if (parts.length !== 3) return null;
+  const [y, m, d] = parts.map((p) => parseInt(p, 10));
+  if (!y || !m || !d) return null;
+  return `${y}-${m}-${d}`;
+}
+
+/** "Also this week: 2 runs · 8.4 km · 1 walk · 3.0 km" — reads Logged Sets directly for Type run/walk since Monday. Degrades to nothing if the Distance (km) column doesn't exist yet (an older backend, or Part 2 not deployed). */
+async function weekCardioLine_(clientSlug) {
+  try {
+    const { rows, col } = await fetchLoggedSets(clientSlug);
+    if (col.type < 0 || col.distance < 0 || col.date < 0) return "";
+    const mondayKey = (() => {
+      const d = new Date();
+      const day = d.getDay();
+      d.setDate(d.getDate() + ((day === 0 ? -6 : 1) - day));
+      return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+    })();
+    const dateKeyNum = (raw) => {
+      const norm = weekNormalizeDateKey_(raw);
+      if (!norm) return NaN;
+      const [y, m, dd] = norm.split("-").map(Number);
+      return y * 10000 + m * 100 + dd;
+    };
+    let runs = 0, runKm = 0, walks = 0, walkKm = 0;
+    rows.forEach((r) => {
+      if (String(r[col.client] || "").trim().toLowerCase() !== clientSlug) return;
+      const type = String(r[col.type] || "").trim().toLowerCase();
+      if (type !== "run" && type !== "walk") return;
+      const key = dateKeyNum(col.date >= 0 ? r[col.date] : "");
+      if (!Number.isFinite(key) || key < mondayKey) return;
+      const km = Number(r[col.distance]) || 0;
+      if (type === "run") { runs++; runKm += km; } else { walks++; walkKm += km; }
+    });
+    const parts = [];
+    if (runs) parts.push(`${runs} run${runs === 1 ? "" : "s"} · ${runKm.toFixed(1)} km`);
+    if (walks) parts.push(`${walks} walk${walks === 1 ? "" : "s"} · ${walkKm.toFixed(1)} km`);
+    return parts.length ? `Also this week: ${parts.join(" · ")}` : "";
+  } catch (err) {
+    return "";
+  }
+}
+
+/** Renders the week panel from an accumulator (planned, with an optional savedAcc for the "+2/-3" diff) or from heatmapMuscleData's own shape (done). */
+function renderWeekPanel_(acc, savedAcc, cardioLine) {
+  if (!els.weekFigs) return;
+  muscleTooltipHide_();
+
+  const frontSvg = muscleFigureSvg("front", "weekFigFrontTitle");
+  const backSvg = muscleFigureSvg("back", "weekFigBackTitle");
+  els.weekFigs.innerHTML =
+    `<div class="builder__side-fig-col">${frontSvg}<span class="builder__side-fig-caption">Front</span></div>` +
+    `<div class="builder__side-fig-col">${backSvg}<span class="builder__side-fig-caption">Back</span></div>`;
+  const svgs = els.weekFigs.querySelectorAll("svg.muscle-figure");
+  svgs.forEach((svg) => paintMuscleHeatWeek_(svg, acc.weighted));
+  svgs.forEach((svg) =>
+    wireMuscleTooltips_(svg, (key) => {
+      if (!acc.weighted[key] || acc.weighted[key] <= 0) return null;
+      return muscleTooltipContentHtml_(key, acc.weighted[key], acc.primaryCount[key], acc.secondaryCount[key], muscleTopContributions_(acc.contributionsByMuscle[key]), null);
+    })
+  );
+
+  const families = muscleTree_(Object.keys(acc.weighted).filter((k) => acc.weighted[k] > 0))
+    .flatMap((s) => s.families)
+    .sort((a, b) => (acc.primaryCount[b.name] || 0) - (acc.primaryCount[a.name] || 0) || (acc.secondaryCount[b.name] || 0) - (acc.secondaryCount[a.name] || 0));
+  const scale = Math.max(1, ...families.map((f) => (acc.primaryCount[f.name] || 0) + (acc.secondaryCount[f.name] || 0)));
+
+  const diffFor = (familyOrKeyName, isHead, keys) => {
+    if (!savedAcc) return "";
+    const now = isHead ? acc.weighted[familyOrKeyName] || 0 : (keys || []).reduce((t, k) => t + (acc.weighted[k] || 0), 0);
+    const before = isHead ? savedAcc.weighted[familyOrKeyName] || 0 : (keys || []).reduce((t, k) => t + (savedAcc.weighted[k] || 0), 0);
+    const diff = Math.round(now - before);
+    if (!diff) return "";
+    return `<span class="builder__week-diff ${diff > 0 ? "builder__week-diff--up" : "builder__week-diff--down"}">${diff > 0 ? "+" : ""}${diff}</span>`;
+  };
+
+  els.weekHeatList.innerHTML = families.length
+    ? families
+        .map((f) => {
+          const row = builderHeatRowHtml_(f.name, acc.primaryCount[f.name] || 0, acc.secondaryCount[f.name] || 0, scale) + diffFor(f.name, true);
+          if (f.plain) return `<div class="builder__week-row">${row}</div>`;
+          const heads = f.keys
+            .slice()
+            .sort((a, b) => acc.weighted[b] - acc.weighted[a])
+            .map((k) => `<div class="builder__week-row">${builderHeatRowHtml_(muscleLabel_(k), acc.primaryCount[k] || 0, acc.secondaryCount[k] || 0, scale)}${diffFor(k, true)}</div>`)
+            .join("");
+          const open = weekOpenFamilies_.has(f.name) ? " open" : "";
+          return (
+            `<details class="builder__side-fam"${open} data-family="${f.name}">` +
+            `<summary class="builder__side-fam-head builder__week-row">${row}<svg class="builder__side-fam-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></summary>` +
+            `<div class="builder__side-fam-body">${heads}</div>` +
+            "</details>"
+          );
+        })
+        .join("")
+    : '<p class="builder__side-empty">Add a workout to see the week.</p>';
+  els.weekHeatList.querySelectorAll("details[data-family]").forEach((el) => {
+    el.addEventListener("toggle", () => (el.open ? weekOpenFamilies_.add(el.dataset.family) : weekOpenFamilies_.delete(el.dataset.family)));
+  });
+
+  const notInPlan = weekMode_ === "planned" ? weekNotInPlan_(acc.weighted) : [];
+  els.weekNotInPlan.textContent = notInPlan.length ? `Not in this week's plan: ${notInPlan.join(", ")}` : "";
+  els.weekNotInPlan.hidden = !notInPlan.length;
+
+  els.weekNotCounted.textContent = acc.notCounted.size ? `Not counted: ${Array.from(acc.notCounted).join(", ")}` : "";
+  els.weekNotCounted.hidden = !acc.notCounted.size;
+
+  els.weekCardioLine.textContent = cardioLine || "";
+  els.weekCardioLine.hidden = !cardioLine;
+
+  els.weekNoDaysNote.hidden = weekMode_ !== "planned";
+
+  const topFamilies = families.slice(0, 3).map((f) => f.name).join(", ");
+  els.weekSummaryText.textContent = families.length ? `${Math.round(acc.totalSets)} sets · top: ${topFamilies}` : "This week";
+}
+
+function renderWeekEmpty_() {
+  if (!els.weekFigs) return;
+  els.weekFigs.innerHTML = "";
+  els.weekHeatList.innerHTML = '<p class="builder__side-empty">Add a workout to see the week.</p>';
+  els.weekNotInPlan.hidden = true;
+  els.weekNotCounted.hidden = true;
+  els.weekCardioLine.hidden = true;
+  els.weekSummaryText.textContent = "This week";
+}
+
+let weekRefreshSeq_ = 0;
+
+async function updateWeekPanel_() {
+  if (!els.weekFigs) return;
+  const clientSlug = els.clientSelect.value;
+  if (!clientSlug) {
+    renderWeekEmpty_();
+    return;
+  }
+  const seq = ++weekRefreshSeq_; // an older, slower refresh (client switched mid-flight) must never overwrite a newer one
+
+  if (weekMode_ === "done") {
+    let data;
+    try {
+      data = await heatmapMuscleData(clientSlug, "week");
+    } catch (err) {
+      data = { weighted: {}, primaryCount: {}, secondaryCount: {}, contributionsByMuscle: {}, setsCounted: 0, unmatchedByName: {} };
+    }
+    const cardioLine = await weekCardioLine_(clientSlug);
+    if (seq !== weekRefreshSeq_) return;
+    const acc = {
+      weighted: data.weighted, primaryCount: data.primaryCount, secondaryCount: data.secondaryCount,
+      contributionsByMuscle: data.contributionsByMuscle, notCounted: new Set(Object.keys(data.unmatchedByName || {})),
+      totalSets: data.setsCounted || 0,
+    };
+    if (!data.setsCounted && !Object.keys(data.unmatchedByName || {}).length) {
+      els.weekFigs.innerHTML = "";
+      els.weekHeatList.innerHTML = '<p class="builder__side-empty">Nothing logged yet this week.</p>';
+      els.weekNotInPlan.hidden = true;
+      els.weekNotCounted.hidden = true;
+      els.weekCardioLine.textContent = cardioLine || "";
+      els.weekCardioLine.hidden = !cardioLine;
+      els.weekNoDaysNote.hidden = true;
+      els.weekSummaryText.textContent = "This week";
+      return;
+    }
+    renderWeekPanel_(acc, null, cardioLine);
+    return;
+  }
+
+  const index = await loadExerciseIndex_();
+  if (seq !== weekRefreshSeq_) return;
+  const currentWorkoutKey = (els.workoutNameInput.value || "").trim().toLowerCase();
+
+  const plannedAcc = emptyWeekAcc_();
+  const savedAcc = emptyWeekAcc_();
+  let anyNoDays = false;
+
+  Object.keys(clientWorkouts).forEach((key) => {
+    const w = clientWorkouts[key];
+    const mult = w.days && w.days.length ? w.days.length : 1;
+    if (!w.days || !w.days.length) anyNoDays = true;
+    addSavedWeekWorkout_(savedAcc, w.exercises, mult);
+    if (key !== currentWorkoutKey) addSavedWeekWorkout_(plannedAcc, w.exercises, mult);
+  });
+
+  const currentDays = getSelectedDays();
+  const currentMult = currentDays.length ? currentDays.length : 1;
+  if (!currentDays.length) anyNoDays = true;
+  const currentExercises = currentEditorWeekExercises_(index);
+  currentExercises.forEach((ex) => addWeekContribution_(plannedAcc, ex.name, ex.primaryMuscles, ex.secondaryMuscles, ex.muscleWeights, ex.sets * currentMult));
+
+  renderWeekPanel_(plannedAcc, savedAcc, "");
+  els.weekNoDaysNote.hidden = !anyNoDays;
 }
 
 function addRow(exercise) {
@@ -1134,7 +1427,10 @@ function buildDaysPicker() {
     chip.textContent = day[0];
     chip.setAttribute("aria-label", day);
     chip.dataset.day = day;
-    chip.addEventListener("click", () => chip.classList.toggle("builder__day--active"));
+    chip.addEventListener("click", () => {
+      chip.classList.toggle("builder__day--active");
+      updateWeekPanel_(); // days scheduled change this workout's week-panel multiplier
+    });
     els.daysPicker.appendChild(chip);
   }
 }
@@ -1539,6 +1835,17 @@ els.workoutNameInput.addEventListener("change", () => {
 });
 
 els.addButton.addEventListener("click", () => addRow());
+
+if (els.weekToggle) {
+  els.weekToggle.querySelectorAll("button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.dataset.mode === weekMode_) return;
+      weekMode_ = btn.dataset.mode;
+      els.weekToggle.querySelectorAll("button").forEach((b) => b.classList.toggle("is-active", b === btn));
+      updateWeekPanel_();
+    });
+  });
+}
 
 els.saveButton.addEventListener("click", async () => {
   const clientSlug = els.clientSelect.value;

@@ -92,6 +92,26 @@
       </div>
       <div class="builder__side-figs" id="builderSideFigs"></div>
       <div class="builder__side-heat-list" id="builderSideHeatList"></div>
+
+      <details class="builder__week" id="weekPanel" open>
+        <summary class="builder__week-summary">
+          <span class="card__label">This week</span>
+          <span class="builder__week-summary-text" id="weekSummaryText">This week</span>
+          <svg class="builder__side-fam-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+        </summary>
+        <div class="builder__week-body">
+          <div class="builder__week-toggle" id="weekToggle" role="group" aria-label="Planned or done this week">
+            <button type="button" class="is-active" data-mode="planned">Planned</button>
+            <button type="button" data-mode="done">Done this week</button>
+          </div>
+          <p class="builder__week-no-days" id="weekNoDaysNote" hidden>Workouts with no days set are counted once a week.</p>
+          <div class="builder__side-figs" id="weekFigs"></div>
+          <div class="builder__side-heat-list builder__week-heat-list" id="weekHeatList"></div>
+          <p class="builder__week-note" id="weekNotInPlan" hidden></p>
+          <p class="builder__week-note" id="weekNotCounted" hidden></p>
+          <p class="builder__week-note" id="weekCardioLine" hidden></p>
+        </div>
+      </details>
     </aside>
   </div>
   </div>
@@ -105,6 +125,7 @@
 
 <script src="../card/sheet.js?v=20261107b"></script>
 <script src="../card/muscle-map.js?v=20261107b"></script>
+<script src="heatmap.js?v=20261108a"></script>
 <script src="builder.js?v=20261107a"></script>
 <script src="exercise-picker.js?v=20261107b"></script>
 <script src="exercise-manager.js?v=20261107b"></script>

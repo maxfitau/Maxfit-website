@@ -2569,3 +2569,435 @@ body {
     font-size: 28px;
   }
 }
+
+/* ---- "Log something else" (2026-11-08) ---------------------------------- */
+
+.workout__log-else {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.workout__log-else-label {
+  margin: 0;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 14px;
+  color: var(--dim);
+}
+
+.workout__log-else-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.workout__log-else-btn {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 64px;
+  text-align: left;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px 16px;
+  cursor: pointer;
+}
+
+.workout__log-else-btn:active {
+  border-color: var(--red);
+  background: rgba(224, 0, 0, 0.08);
+}
+
+.workout__log-else-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--red);
+}
+
+.workout__log-else-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.workout__log-else-title {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: 16px;
+  color: var(--white);
+}
+
+.workout__log-else-sub {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--dim);
+}
+
+.workout__add-exercise-toggle--custom {
+  font-size: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--red);
+  border-style: solid;
+  border-color: var(--red);
+  font-weight: 800;
+}
+
+.workout__add-exercise-typelink {
+  align-self: center;
+  background: none;
+  border: none;
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--dim);
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 6px;
+}
+
+.workout__add-exercise-typelink[hidden] {
+  display: none;
+}
+
+/* A shared full-screen overlay for every setup sheet, the run timer and the
+   two quick "done" screens — same base look as .workout__timer-screen,
+   just its own class so the two never interact. */
+.workout__else-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom));
+  overflow-y: auto;
+}
+
+.workout__else-overlay[hidden] {
+  display: none;
+}
+
+.workout__else-close {
+  align-self: flex-end;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--dim);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.workout__else-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 8px;
+}
+
+.workout__else-title {
+  margin: 0;
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 22px;
+  color: var(--white);
+}
+
+.workout__else-field-label {
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 14px;
+  color: var(--dim);
+}
+
+.workout__else-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.workout__else-seg {
+  display: flex;
+  gap: 8px;
+}
+
+.workout__else-seg button {
+  flex: 1;
+  min-height: 48px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: 15px;
+  color: var(--grey);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.workout__else-seg button.is-active {
+  color: var(--on-red);
+  background: var(--red);
+  border-color: var(--red);
+}
+
+.workout__else-stepper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.workout__else-step {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 22px;
+  color: var(--white);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.workout__else-step:active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.workout__else-step-value,
+.workout__else-number-input {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 28px;
+  color: var(--white);
+}
+
+.workout__else-number-input {
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+}
+
+.workout__else-number-input:focus {
+  outline: none;
+  border-color: var(--red);
+}
+
+.workout__else-time-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.workout__else-time-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 48px;
+  text-align: center;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 22px;
+  color: var(--white);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.workout__else-time-input:focus {
+  outline: none;
+  border-color: var(--red);
+}
+
+.workout__else-time-colon {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 22px;
+  color: var(--dim);
+}
+
+.workout__else-pace {
+  margin: -6px 0 0;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 16px;
+  color: var(--grey);
+  min-height: 20px;
+}
+
+.workout__else-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.workout__else-chip {
+  min-height: 44px;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--grey);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+
+.workout__else-chip.is-on {
+  color: var(--on-red);
+  background: var(--red);
+  border-color: var(--red);
+}
+
+.workout__else-text-input {
+  min-height: 48px;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 16px;
+  color: var(--white);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+}
+
+.workout__else-text-input:focus {
+  outline: none;
+  border-color: var(--red);
+}
+
+.workout__else-notes {
+  min-height: 72px;
+  font-family: var(--font-body);
+  font-size: 16px;
+  color: var(--white);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  resize: vertical;
+}
+
+.workout__else-notes:focus {
+  outline: none;
+  border-color: var(--red);
+}
+
+.workout__else-error {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--red);
+}
+
+.workout__else-error[hidden] {
+  display: none;
+}
+
+.workout__else-primary-btn {
+  width: 100%;
+  min-height: 56px;
+  font-family: var(--font-head);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 17px;
+  color: var(--on-red);
+  background: var(--red);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.workout__else-primary-btn:active {
+  background: var(--red-dim);
+}
+
+.workout__else-primary-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.workout__else-secondary-btn {
+  width: 100%;
+  min-height: 52px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: 15px;
+  color: var(--white);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.workout__else-secondary-btn:active {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.workout__else-secondary-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* The run/walk count-up timer — same full-screen family as the boxing round
+   timer, simplified (no rounds, no rest, no sound): one continuous block. */
+.workout__else-timer {
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 24px;
+}
+
+.workout__else-timer-tag {
+  font-family: var(--font-head);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  font-size: 15px;
+  color: var(--red);
+}
+
+.workout__else-timer-digits {
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 72px;
+  color: var(--white);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 360px) {
+  .workout__else-timer-digits {
+    font-size: 56px;
+  }
+}

@@ -1077,15 +1077,59 @@ function buildSavedByExercise_(sets) {
 
 // ---- "+ Add Exercise" ------------------------------------------------
 
-/** "+ Add Exercise" — collapsed button that expands into a name field + confirm, for whatever the client ends up doing instead of what was planned. Adds straight into ctx.items and re-lays-out the current view (relayoutCurrentView_), so it works the same from any of the three views. */
+/** Adds an exercise by name straight into ctx.items (a new set if it's already in this workout) and re-lays-out the current view — the one path both the free-text form and the real exercise picker below feed into. */
+function addExerciseToWorkout_(ctx, exerciseName) {
+  const existing = ctx.items.find((it) => it.type === "exercise" && it.exercise.name.toLowerCase() === exerciseName.toLowerCase());
+  if (existing) {
+    existing.sets.addRow(true);
+    relayoutCurrentView_(ctx);
+    flashStatus(`${existing.exercise.name} is already in this workout — added a set to it.`, false);
+    return;
+  }
+  const exercise = { name: exerciseName, sets: 1, reps: "" };
+  const item = { type: "exercise", exercise, isExtra: true };
+  item.sets = buildExerciseSets_(ctx, exercise, new Map(), (row) => {
+    if (!ctx.saveSet(row)) return;
+    if (ctx.onItemChanged) ctx.onItemChanged(item);
+  }, ctx.rowOptions);
+  ctx.items.push(item);
+  relayoutCurrentView_(ctx);
+}
+
+/**
+ * Drops a picked exercise's own muscle data into this page's exerciseIndex_
+ * so it resolves correctly for the rest of THIS session (muscle figures,
+ * PBs) without a reload — only matters for a brand-new exercise typed into
+ * the picker just now; an existing catalog exercise is already indexed.
+ */
+function mergePickedExerciseIntoIndex_(picked) {
+  const name = (picked && picked.name || "").trim();
+  if (!name || exerciseIndex_.byExact[name.toLowerCase()]) return;
+  const entry = {
+    catalogName: name,
+    primary: picked.primaryMuscles || [],
+    secondary: picked.secondaryMuscles || [],
+    movement: picked.movement || "",
+    bodyPart: picked.bodyPart || "",
+    bestView: picked.bestView || "",
+    muscleWeights: picked.muscleWeights || "",
+  };
+  exerciseIndex_.byExact[name.toLowerCase()] = entry;
+  exerciseIndex_.byNormalized[normalizeExerciseName_(name)] = entry;
+}
+
+/** "+ Add Exercise" — collapsed button that expands into a name field + confirm, for whatever the client ends up doing instead of what was planned. Adds straight into ctx.items and re-lays-out the current view (relayoutCurrentView_), so it works the same from any of the three views. A one-off custom workout (ctx.isCustomWorkout — "Log my own workout") instead opens the real exercise picker first, with typing a name still there as a fallback. */
 function buildAddExerciseControl(ctx) {
   const wrap = document.createElement("div");
   wrap.className = "workout__add-exercise";
 
+  const isCustom = ctx.isCustomWorkout && typeof ExercisePicker !== "undefined";
+
   const toggleBtn = document.createElement("button");
   toggleBtn.type = "button";
   toggleBtn.className = "workout__add-exercise-toggle";
-  toggleBtn.textContent = "+ Add Exercise";
+  toggleBtn.textContent = isCustom ? "+ ADD EXERCISE" : "+ Add Exercise";
+  if (isCustom) toggleBtn.classList.add("workout__add-exercise-toggle--custom");
   wrap.appendChild(toggleBtn);
 
   const form = document.createElement("div");
@@ -1118,11 +1162,11 @@ function buildAddExerciseControl(ctx) {
 
   wrap.appendChild(form);
 
-  toggleBtn.addEventListener("click", () => {
+  function openForm() {
     form.hidden = false;
     toggleBtn.hidden = true;
     input.focus();
-  });
+  }
 
   function submit() {
     const exerciseName = input.value.trim();
@@ -1130,24 +1174,32 @@ function buildAddExerciseControl(ctx) {
       input.focus();
       return;
     }
-    const existing = ctx.items.find((it) => it.type === "exercise" && it.exercise.name.toLowerCase() === exerciseName.toLowerCase());
-    if (existing) {
-      existing.sets.addRow(true);
-      relayoutCurrentView_(ctx);
-      flashStatus(`${existing.exercise.name} is already in this workout — added a set to it.`, false);
-    } else {
-      const exercise = { name: exerciseName, sets: 1, reps: "" };
-      const item = { type: "exercise", exercise, isExtra: true };
-      item.sets = buildExerciseSets_(ctx, exercise, new Map(), (row) => {
-        if (!ctx.saveSet(row)) return;
-        if (ctx.onItemChanged) ctx.onItemChanged(item);
-      }, ctx.rowOptions);
-      ctx.items.push(item);
-      relayoutCurrentView_(ctx);
-    }
+    addExerciseToWorkout_(ctx, exerciseName);
     input.value = "";
     form.hidden = true;
     toggleBtn.hidden = false;
+  }
+
+  if (isCustom) {
+    toggleBtn.addEventListener("click", () => {
+      ExercisePicker.open({
+        onChoose: (picked) => {
+          mergePickedExerciseIntoIndex_(picked);
+          addExerciseToWorkout_(ctx, picked.name);
+        },
+      });
+    });
+    const typeLink = document.createElement("button");
+    typeLink.type = "button";
+    typeLink.className = "workout__add-exercise-typelink";
+    typeLink.textContent = "Type a name instead";
+    typeLink.addEventListener("click", () => {
+      typeLink.hidden = true;
+      openForm();
+    });
+    wrap.appendChild(typeLink);
+  } else {
+    toggleBtn.addEventListener("click", openForm);
   }
 
   confirmBtn.addEventListener("click", submit);
@@ -2880,7 +2932,7 @@ function changeDate(shared, value) {
 
   shared.date = next;
   shared.syncDate();
-  if (shared.current) renderWorkout(shared, shared.current.workoutName, shared.current.exercises);
+  if (shared.current) renderWorkout(shared, shared.current.workoutName, shared.current.exercises, shared.current.opts);
 }
 
 // ---- Top-level render ---------------------------------------------------
@@ -2891,12 +2943,12 @@ function changeDate(shared, value) {
 // saved set's exercise name to its muscles — without an extra fetch.
 let exerciseIndex_ = { byExact: {}, byNormalized: {} };
 
-function renderWorkout(shared, workoutName, exercises) {
+function renderWorkout(shared, workoutName, exercises, opts) {
   const { clientSlug, setRows, setCol, startingWeights, exerciseNameOptions } = shared;
   const dateStr = shared.date;
   const isToday = dateStr === sydneyDateStr();
   if (shared.currentCtx) shared.currentCtx.dead = true; // whatever was on screen before is finished with
-  shared.current = { workoutName, exercises };
+  shared.current = { workoutName, exercises, opts };
 
   els.status.hidden = true;
   els.list.innerHTML = "";
@@ -2931,6 +2983,12 @@ function renderWorkout(shared, workoutName, exercises) {
     alreadyLoggedCount: draft ? 0 : existingLogCount(setRows, setCol, clientSlug, workoutName, dateStr),
     dead: false,
     finalElapsed: undefined,
+    // "Log something else" (2026-11-08): a one-off workout the client typed
+    // a name for, or set up on the spot (a solo boxing session) — same
+    // rendering, saving and review pipeline as an assigned workout in every
+    // way; the only thing this flag changes is "+ Add Exercise" offering the
+    // real exercise picker instead of free text (addExerciseToWorkout_).
+    isCustomWorkout: !!(opts && opts.isCustom),
   };
   shared.currentCtx = ctx;
 
@@ -3103,7 +3161,680 @@ function buildCoachNote(text) {
   return box;
 }
 
-function showPicker(shared, workoutGroups, workoutNames) {
+// ---- Log something else (2026-11-08) -------------------------------------
+//
+// Three extra entry points below the client's assigned workouts, on the
+// picker screen: a run or walk, a one-off custom workout, or a solo boxing
+// session. None of them change how an assigned workout behaves.
+//
+// - A run/walk and a solo boxing session (the "I've already done it" path)
+//   are quick, single-screen saves: saveSimpleSession_ writes a draft and
+//   posts it straight away, the same draft-first/offline pipeline every
+//   normal workout uses (ctx.persist/postSession in renderWorkout above),
+//   just without a whole ctx/renderWorkout around one or two rows.
+// - "Log my own workout" and a solo boxing session's "START" path instead
+//   go straight through the real renderWorkout — a custom workout is
+//   nothing but an assigned workout with an empty exercise list, and a solo
+//   boxing session is nothing but an assigned workout with exactly one
+//   boxing block in it, so both get every existing view, the real round
+//   timer, Finish -> review -> Save & Close for free. Neither ever writes a
+//   Workout Exercises row — renderWorkout only ever reads its `exercises`
+//   argument, the Sheet is never touched until a set is actually logged.
+
+const RUN_ICON_SVG = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="16.3" cy="4.6" r="1.8" fill="currentColor" stroke="none"/><path d="M13.2 8.3l1.8 2.9 3 1.3M10 21l2.6-4.8 2-2.1-1.4-3.8-3.6 1.4M6.2 14.2l2.4-2.1M14.6 11.2l2.8 1.5 3-1"/></svg>';
+const CUSTOM_WORKOUT_ICON_SVG = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16M4 9v6M8 7v10M16 7v10M20 9v6"/></svg>';
+const LOG_BOXING_ICON_SVG = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V8.3a3 3 0 0 1 6 0v.9a3 3 0 0 1 3 3V15a4.3 4.3 0 0 1-4.3 4.3h-1.4A5.3 5.3 0 0 1 6 14V12a2 2 0 0 1 2-2z"/><path d="M8 12.3V9"/></svg>';
+
+/** The "LOG SOMETHING ELSE" buttons, appended at the bottom of the picker's option list (so showPicker's own `els.pickerList.innerHTML = ""` clears a stale copy for free — no separate cleanup needed here). */
+function buildLogElseSection_(shared) {
+  const wrap = document.createElement("div");
+  wrap.className = "workout__log-else";
+
+  const label = document.createElement("p");
+  label.className = "workout__log-else-label";
+  label.textContent = "Log something else";
+  wrap.appendChild(label);
+
+  const list = document.createElement("div");
+  list.className = "workout__log-else-list";
+  [
+    { title: "Log a run or walk", sub: "Distance, time and pace", icon: RUN_ICON_SVG, onPick: () => openRunWalkSetup_(shared) },
+    { title: "Log my own workout", sub: "Pick your own exercises", icon: CUSTOM_WORKOUT_ICON_SVG, onPick: () => openCustomWorkoutPrompt_(shared) },
+    { title: "Log a boxing session", sub: "Heavy bag, shadow boxing or skipping", icon: LOG_BOXING_ICON_SVG, onPick: () => openBoxingSessionSetup_(shared) },
+  ].forEach((opt) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "workout__log-else-btn";
+    btn.innerHTML =
+      `<span class="workout__log-else-icon">${opt.icon}</span>` +
+      `<span class="workout__log-else-text"><span class="workout__log-else-title">${opt.title}</span><span class="workout__log-else-sub">${opt.sub}</span></span>`;
+    btn.addEventListener("click", opt.onPick);
+    list.appendChild(btn);
+  });
+  wrap.appendChild(list);
+  return wrap;
+}
+
+// ---- A shared full-screen overlay (setup sheets, the run timer, the two
+// quick "done" screens) — one lazily-created element reused by all of them,
+// same singleton pattern as roundTimerEl_ above.
+
+let elseOverlayEl_ = null;
+function elseOverlay_() {
+  if (!elseOverlayEl_) {
+    elseOverlayEl_ = document.createElement("div");
+    elseOverlayEl_.className = "workout__else-overlay";
+    elseOverlayEl_.hidden = true;
+    document.body.appendChild(elseOverlayEl_);
+  }
+  return elseOverlayEl_;
+}
+function closeElseOverlay_() {
+  if (elseOverlayEl_) elseOverlayEl_.hidden = true;
+}
+/** options.onClose, when given, replaces the default close behaviour (e.g. to confirm before discarding a running timer) — it's responsible for calling closeElseOverlay_() itself if it decides to go ahead. options.hideClose skips the X entirely (the "done" screens — "Back to my card" is the only way out). */
+function showElseOverlay_(innerNode, options) {
+  const el = elseOverlay_();
+  el.innerHTML = "";
+  if (!(options && options.hideClose)) {
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "workout__else-close";
+    closeBtn.setAttribute("aria-label", "Close");
+    closeBtn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5l14 14M19 5L5 19"/></svg>';
+    closeBtn.addEventListener("click", () => {
+      if (options && options.onClose) options.onClose();
+      else closeElseOverlay_();
+    });
+    el.appendChild(closeBtn);
+  }
+  el.appendChild(innerNode);
+  el.hidden = false;
+}
+
+function elseFieldLabel_(text) {
+  const el = document.createElement("span");
+  el.className = "workout__else-field-label";
+  el.textContent = text;
+  return el;
+}
+
+/** A labelled ± stepper reading/writing through get/set rather than its own state — used for the run/walk distance box and the boxing setup's rounds/work/rest. */
+function elseStepperField_(labelText, get, set, step, min, max, format) {
+  const field = document.createElement("div");
+  field.className = "workout__else-field";
+  field.appendChild(elseFieldLabel_(labelText));
+  const row = document.createElement("div");
+  row.className = "workout__else-stepper";
+  const minus = document.createElement("button");
+  minus.type = "button";
+  minus.className = "workout__else-step";
+  minus.setAttribute("aria-label", `Less ${labelText.toLowerCase()}`);
+  minus.textContent = "−";
+  const value = document.createElement("span");
+  value.className = "workout__else-step-value";
+  const plus = document.createElement("button");
+  plus.type = "button";
+  plus.className = "workout__else-step";
+  plus.setAttribute("aria-label", `More ${labelText.toLowerCase()}`);
+  plus.textContent = "+";
+  function paint() {
+    value.textContent = format(get());
+  }
+  minus.addEventListener("click", () => {
+    set(Math.max(min, Math.round((get() - step) * 100) / 100));
+    paint();
+  });
+  plus.addEventListener("click", () => {
+    set(Math.min(max, Math.round((get() + step) * 100) / 100));
+    paint();
+  });
+  paint();
+  row.append(minus, value, plus);
+  field.appendChild(row);
+  return field;
+}
+
+/** Writes a draft (same shape ctx.persist builds) and tries to send it immediately — the one-or-two-row equivalent of ctx.persist + postSession, for a flow with no exercise rows and no ctx around it. Returns whether it reached the server; either way the draft is on the phone, so a failure here isn't a lost session — reopening this same log and tapping Save again will retry (and a later day's page load flushes it like any other unsent draft, see flushOldDrafts). */
+async function saveSimpleSession_(shared, workoutName, sets, notes) {
+  const key = draftKey(shared.clientSlug, workoutName, shared.date);
+  const previous = readDraft(key);
+  const draft = {
+    schema: DRAFT_SCHEMA,
+    clientSlug: shared.clientSlug,
+    workoutName,
+    date: shared.date,
+    sets,
+    notes: notes || "",
+    rev: (previous ? previous.rev || 0 : 0) + 1,
+    pending: true,
+    updatedAt: Date.now(),
+  };
+  writeDraft(key, draft);
+  try {
+    await postSession(draft);
+    const latest = readDraft(key);
+    if (latest && latest.rev === draft.rev) writeDraft(key, { ...latest, pending: false });
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+function elseFirstName_() {
+  return (coachClientName || memberId || "").split(/\s+/)[0] || "there";
+}
+
+function paceText_(distanceKm, totalSeconds) {
+  if (!(distanceKm > 0) || !(totalSeconds > 0)) return "—:— /km";
+  const perKm = totalSeconds / distanceKm;
+  const m = Math.floor(perKm / 60);
+  const s = Math.round(perKm % 60);
+  return `${m}:${String(s).padStart(2, "0")} /km`;
+}
+
+// ---- Run / walk -----------------------------------------------------------
+
+function openRunWalkSetup_(shared) {
+  const wrap = document.createElement("div");
+  wrap.className = "workout__else-body";
+
+  const title = document.createElement("h2");
+  title.className = "workout__else-title";
+  title.textContent = "Log a run or walk";
+  wrap.appendChild(title);
+
+  let kind = "Run";
+  const seg = document.createElement("div");
+  seg.className = "workout__else-seg";
+  seg.setAttribute("role", "group");
+  seg.setAttribute("aria-label", "Run or walk");
+  const runBtn = document.createElement("button");
+  runBtn.type = "button";
+  runBtn.className = "is-active";
+  runBtn.textContent = "Run";
+  const walkBtn = document.createElement("button");
+  walkBtn.type = "button";
+  walkBtn.textContent = "Walk";
+  runBtn.addEventListener("click", () => {
+    kind = "Run";
+    runBtn.classList.add("is-active");
+    walkBtn.classList.remove("is-active");
+  });
+  walkBtn.addEventListener("click", () => {
+    kind = "Walk";
+    walkBtn.classList.add("is-active");
+    runBtn.classList.remove("is-active");
+  });
+  seg.append(runBtn, walkBtn);
+  wrap.appendChild(seg);
+
+  const startBtn = document.createElement("button");
+  startBtn.type = "button";
+  startBtn.className = "workout__else-primary-btn";
+  startBtn.textContent = "Start timer";
+  startBtn.addEventListener("click", () => openRunWalkTimer_(shared, kind));
+  wrap.appendChild(startBtn);
+
+  const doneBtn = document.createElement("button");
+  doneBtn.type = "button";
+  doneBtn.className = "workout__else-secondary-btn";
+  doneBtn.textContent = "I've already done it";
+  doneBtn.addEventListener("click", () => openRunWalkForm_(shared, kind, null));
+  wrap.appendChild(doneBtn);
+
+  showElseOverlay_(wrap);
+}
+
+/** Full-screen count-up, same visual family as the boxing round timer, just no rounds/rest/sound — a run or walk is one continuous block. Wall-clock based (startedAt), same reason as the round timer: stays right through throttling with the screen locked. */
+function openRunWalkTimer_(shared, kind) {
+  const wrap = document.createElement("div");
+  wrap.className = "workout__else-body workout__else-timer";
+
+  const tag = document.createElement("span");
+  tag.className = "workout__else-timer-tag";
+  tag.textContent = kind === "Walk" ? "WALK" : "RUN";
+  wrap.appendChild(tag);
+
+  const digits = document.createElement("div");
+  digits.className = "workout__else-timer-digits";
+  digits.textContent = "0:00";
+  wrap.appendChild(digits);
+
+  const pauseBtn = document.createElement("button");
+  pauseBtn.type = "button";
+  pauseBtn.className = "workout__else-secondary-btn";
+  pauseBtn.textContent = "Pause";
+  wrap.appendChild(pauseBtn);
+
+  const finishBtn = document.createElement("button");
+  finishBtn.type = "button";
+  finishBtn.className = "workout__else-primary-btn";
+  finishBtn.textContent = "Finish";
+  wrap.appendChild(finishBtn);
+
+  const startedAt = Date.now();
+  let pausedAt = null;
+  let pausedMs = 0;
+  function elapsedMs() {
+    return (pausedAt || Date.now()) - startedAt - pausedMs;
+  }
+  function tick() {
+    digits.textContent = formatElapsed(elapsedMs());
+  }
+  const handle = setInterval(tick, 500);
+  tick();
+
+  pauseBtn.addEventListener("click", () => {
+    if (pausedAt) {
+      pausedMs += Date.now() - pausedAt;
+      pausedAt = null;
+      pauseBtn.textContent = "Pause";
+    } else {
+      pausedAt = Date.now();
+      pauseBtn.textContent = "Resume";
+    }
+  });
+
+  function stop() {
+    clearInterval(handle);
+    releaseWakeLock_();
+  }
+
+  finishBtn.addEventListener("click", () => {
+    const ms = elapsedMs();
+    stop();
+    openRunWalkForm_(shared, kind, ms);
+  });
+
+  acquireWakeLock_();
+  showElseOverlay_(wrap, {
+    onClose: () => {
+      if (!window.confirm("Stop the timer? This run won't be saved.")) return;
+      stop();
+      closeElseOverlay_();
+    },
+  });
+}
+
+function openRunWalkForm_(shared, kind, elapsedMsFromTimer) {
+  const wrap = document.createElement("div");
+  wrap.className = "workout__else-body";
+
+  const title = document.createElement("h2");
+  title.className = "workout__else-title";
+  title.textContent = kind === "Walk" ? "Log your walk" : "Log your run";
+  wrap.appendChild(title);
+
+  let distanceKm = 0;
+  const distField = document.createElement("div");
+  distField.className = "workout__else-field";
+  distField.appendChild(elseFieldLabel_("Distance (km)"));
+  const distRow = document.createElement("div");
+  distRow.className = "workout__else-stepper";
+  const distMinus = document.createElement("button");
+  distMinus.type = "button";
+  distMinus.className = "workout__else-step";
+  distMinus.textContent = "−";
+  const distInput = document.createElement("input");
+  distInput.type = "text";
+  distInput.inputMode = "decimal";
+  distInput.className = "workout__else-number-input";
+  distInput.value = "0.0";
+  const distPlus = document.createElement("button");
+  distPlus.type = "button";
+  distPlus.className = "workout__else-step";
+  distPlus.textContent = "+";
+  distRow.append(distMinus, distInput, distPlus);
+  distField.appendChild(distRow);
+  wrap.appendChild(distField);
+
+  function readDistanceInput() {
+    const n = Number(distInput.value);
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  }
+  function setDistance(n) {
+    distanceKm = Math.max(0, Math.round(n * 10) / 10);
+    distInput.value = distanceKm.toFixed(1);
+    updatePace();
+  }
+  distMinus.addEventListener("click", () => setDistance(readDistanceInput() - 0.1));
+  distPlus.addEventListener("click", () => setDistance(readDistanceInput() + 0.1));
+  distInput.addEventListener("input", () => { distanceKm = readDistanceInput(); updatePace(); });
+  distInput.addEventListener("blur", () => setDistance(readDistanceInput()));
+
+  const timeField = document.createElement("div");
+  timeField.className = "workout__else-field";
+  timeField.appendChild(elseFieldLabel_("Time"));
+  const timeRow = document.createElement("div");
+  timeRow.className = "workout__else-time-row";
+  function timeBox(placeholder) {
+    const inp = document.createElement("input");
+    inp.type = "text";
+    inp.inputMode = "numeric";
+    inp.maxLength = 2;
+    inp.className = "workout__else-time-input";
+    inp.placeholder = placeholder;
+    return inp;
+  }
+  const hInput = timeBox("h");
+  const mInput = timeBox("mm");
+  const sInput = timeBox("ss");
+  const colon = () => { const s = document.createElement("span"); s.className = "workout__else-time-colon"; s.textContent = ":"; return s; };
+  timeRow.append(hInput, colon(), mInput, colon(), sInput);
+  timeField.appendChild(timeRow);
+  wrap.appendChild(timeField);
+
+  function totalSeconds() {
+    return (Number(hInput.value) || 0) * 3600 + (Number(mInput.value) || 0) * 60 + (Number(sInput.value) || 0);
+  }
+  [hInput, mInput, sInput].forEach((inp) => inp.addEventListener("input", updatePace));
+
+  if (elapsedMsFromTimer != null) {
+    const totalSec = Math.round(elapsedMsFromTimer / 1000);
+    const h = Math.floor(totalSec / 3600);
+    hInput.value = h > 0 ? String(h) : "";
+    mInput.value = String(Math.floor((totalSec % 3600) / 60)).padStart(2, "0");
+    sInput.value = String(totalSec % 60).padStart(2, "0");
+  }
+
+  const paceLine = document.createElement("p");
+  paceLine.className = "workout__else-pace";
+  wrap.appendChild(paceLine);
+  function updatePace() {
+    paceLine.textContent = totalSeconds() > 0 && readDistanceInput() > 0 ? paceText_(readDistanceInput(), totalSeconds()) : "";
+  }
+  updatePace();
+
+  wrap.appendChild(elseFieldLabel_("Effort (optional)"));
+  const effortRow = document.createElement("div");
+  effortRow.className = "workout__else-chip-row";
+  let effort = "";
+  ["Easy", "Moderate", "Hard"].forEach((e) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "workout__else-chip";
+    chip.textContent = e;
+    chip.addEventListener("click", () => {
+      effort = effort === e ? "" : e;
+      effortRow.querySelectorAll(".workout__else-chip").forEach((c) => c.classList.toggle("is-on", c.textContent === effort));
+    });
+    effortRow.appendChild(chip);
+  });
+  wrap.appendChild(effortRow);
+
+  const notesInput = document.createElement("textarea");
+  notesInput.className = "workout__else-notes";
+  notesInput.placeholder = "Notes (optional)";
+  wrap.appendChild(notesInput);
+
+  const errorEl = document.createElement("p");
+  errorEl.className = "workout__else-error";
+  errorEl.hidden = true;
+  wrap.appendChild(errorEl);
+
+  const saveBtn = document.createElement("button");
+  saveBtn.type = "button";
+  saveBtn.className = "workout__else-primary-btn";
+  const saveLabel = kind === "Walk" ? "SAVE WALK" : "SAVE RUN";
+  saveBtn.textContent = saveLabel;
+  wrap.appendChild(saveBtn);
+
+  saveBtn.addEventListener("click", async () => {
+    const dist = readDistanceInput();
+    const secs = totalSeconds();
+    if (dist <= 0 || secs <= 0) {
+      errorEl.textContent = "Add a distance and a time first.";
+      errorEl.hidden = false;
+      return;
+    }
+    errorEl.hidden = true;
+    saveBtn.disabled = true;
+    saveBtn.textContent = "Saving…";
+    const notes = [effort, notesInput.value.trim()].filter(Boolean).join(" — ");
+    const sets = [{ exercise: kind, setNumber: 1, weight: 0, reps: 0, duration: secs, type: kind.toLowerCase(), distance: dist }];
+    const ok = await saveSimpleSession_(shared, kind, sets, notes);
+    if (ok) {
+      showRunWalkDone_(kind, dist, secs);
+    } else {
+      saveBtn.disabled = false;
+      saveBtn.textContent = saveLabel;
+      errorEl.textContent = "Couldn't reach the server — saved on this phone. Tap Save again when you have signal.";
+      errorEl.hidden = false;
+    }
+  });
+
+  showElseOverlay_(wrap);
+}
+
+function showRunWalkDone_(kind, distanceKm, totalSeconds) {
+  const wrap = document.createElement("div");
+  wrap.className = "workout__review workout__review-inner";
+
+  const head = document.createElement("div");
+  head.className = "workout__review-head";
+  head.innerHTML =
+    `<div class="workout__review-tick">${CHECK_CIRCLE_SVG}</div>` +
+    `<p class="workout__review-title">${kind === "Walk" ? "WALK SAVED" : "RUN SAVED"}</p>` +
+    `<p class="workout__review-sub">Nice work, ${libEscApp_(elseFirstName_())}.</p>`;
+  wrap.appendChild(head);
+
+  const tiles = document.createElement("div");
+  tiles.className = "workout__review-tiles";
+  tiles.innerHTML = [
+    ["DISTANCE", `${distanceKm.toFixed(1)} km`],
+    ["TIME", formatElapsed(totalSeconds * 1000)],
+    ["PACE", paceText_(distanceKm, totalSeconds)],
+  ].map(([lab, val]) => `<div class="workout__review-tile"><span class="workout__review-tile-label">${lab}</span><span class="workout__review-tile-value">${val}</span></div>`).join("");
+  wrap.appendChild(tiles);
+
+  const backBtn = document.createElement("button");
+  backBtn.type = "button";
+  backBtn.className = "workout__review-save";
+  backBtn.textContent = "Back to my card";
+  backBtn.addEventListener("click", () => { window.location.href = homeHref(); });
+  wrap.appendChild(backBtn);
+
+  showElseOverlay_(wrap, { hideClose: true });
+}
+
+// ---- Log my own workout ----------------------------------------------------
+
+function openCustomWorkoutPrompt_(shared) {
+  const wrap = document.createElement("div");
+  wrap.className = "workout__else-body";
+
+  const title = document.createElement("h2");
+  title.className = "workout__else-title";
+  title.textContent = "Log my own workout";
+  wrap.appendChild(title);
+
+  wrap.appendChild(elseFieldLabel_("Name it (optional)"));
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "workout__else-text-input";
+  input.placeholder = "My workout";
+  wrap.appendChild(input);
+
+  const startBtn = document.createElement("button");
+  startBtn.type = "button";
+  startBtn.className = "workout__else-primary-btn";
+  startBtn.textContent = "Start";
+  function go() {
+    const name = input.value.trim() || "My workout";
+    closeElseOverlay_();
+    els.picker.hidden = true;
+    els.backLink.href = "#";
+    els.backLink.onclick = (event) => {
+      event.preventDefault();
+      showPicker(shared);
+    };
+    renderWorkout(shared, name, [], { isCustom: true });
+  }
+  startBtn.addEventListener("click", go);
+  input.addEventListener("keydown", (event) => { if (event.key === "Enter") go(); });
+  wrap.appendChild(startBtn);
+
+  showElseOverlay_(wrap);
+  input.focus();
+}
+
+// ---- Log a boxing session ---------------------------------------------------
+
+const BOXING_SESSION_COMBO_CHIPS_ = [["1", "Jab"], ["2", "Cross"], ["3", "Lead hook"], ["4", "Rear hook"], ["5", "Lead upper"], ["6", "Rear upper"], ["Slip", "Slip"], ["Roll", "Roll"]];
+
+function openBoxingSessionSetup_(shared) {
+  const wrap = document.createElement("div");
+  wrap.className = "workout__else-body";
+
+  const title = document.createElement("h2");
+  title.className = "workout__else-title";
+  title.textContent = "Log a boxing session";
+  wrap.appendChild(title);
+
+  let exerciseName = "Heavy Bag";
+  wrap.appendChild(elseFieldLabel_("Exercise"));
+  const exRow = document.createElement("div");
+  exRow.className = "workout__else-chip-row";
+  ["Heavy Bag", "Shadow Boxing", "Skipping"].forEach((name) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "workout__else-chip" + (name === exerciseName ? " is-on" : "");
+    chip.textContent = name;
+    chip.addEventListener("click", () => {
+      exerciseName = name;
+      exRow.querySelectorAll(".workout__else-chip").forEach((c) => c.classList.toggle("is-on", c === chip));
+    });
+    exRow.appendChild(chip);
+  });
+  wrap.appendChild(exRow);
+
+  // Same stepper ranges as the builder's boxing block editor (workout/builder.js).
+  let rounds = 3, workSeconds = 120, restSeconds = 60;
+  wrap.appendChild(elseStepperField_("Rounds", () => rounds, (v) => (rounds = v), 1, 1, 12, (v) => String(v)));
+  wrap.appendChild(elseStepperField_("Work", () => workSeconds, (v) => (workSeconds = v), 15, 30, 300, workSecondsText_));
+  wrap.appendChild(elseStepperField_("Rest", () => restSeconds, (v) => (restSeconds = v), 15, 15, 180, workSecondsText_));
+
+  wrap.appendChild(elseFieldLabel_("Combo (optional, same every round)"));
+  const comboInput = document.createElement("input");
+  comboInput.type = "text";
+  comboInput.className = "workout__else-text-input";
+  comboInput.placeholder = "Freestyle";
+  wrap.appendChild(comboInput);
+  const comboChipRow = document.createElement("div");
+  comboChipRow.className = "workout__else-chip-row";
+  BOXING_SESSION_COMBO_CHIPS_.forEach(([token, label]) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "workout__else-chip";
+    chip.textContent = label;
+    chip.addEventListener("click", () => {
+      comboInput.value = comboInput.value ? `${comboInput.value}-${token}` : token;
+    });
+    comboChipRow.appendChild(chip);
+  });
+  wrap.appendChild(comboChipRow);
+
+  const errorEl = document.createElement("p");
+  errorEl.className = "workout__else-error";
+  errorEl.hidden = true;
+  wrap.appendChild(errorEl);
+
+  const startBtn = document.createElement("button");
+  startBtn.type = "button";
+  startBtn.className = "workout__else-primary-btn";
+  startBtn.textContent = "START";
+  startBtn.addEventListener("click", () => {
+    const combo = comboInput.value.trim();
+    const exercise = {
+      workoutName: "Boxing", name: exerciseName, sets: rounds, reps: "",
+      order: 0, workoutOrder: NaN, note: "", workoutNote: "",
+      superset: false, supersetRest: NaN,
+      blockType: "Rounds", workSeconds, restSeconds,
+      combos: combo ? [combo] : [], runBy: "Client", easierOption: false,
+    };
+    closeElseOverlay_();
+    els.picker.hidden = true;
+    els.backLink.href = "#";
+    els.backLink.onclick = (event) => {
+      event.preventDefault();
+      showPicker(shared);
+    };
+    renderWorkout(shared, "Boxing", [exercise], { isCustom: true });
+  });
+  wrap.appendChild(startBtn);
+
+  const alreadyBtn = document.createElement("button");
+  alreadyBtn.type = "button";
+  alreadyBtn.className = "workout__else-secondary-btn";
+  alreadyBtn.textContent = "I've already done it";
+  alreadyBtn.addEventListener("click", async () => {
+    errorEl.hidden = true;
+    alreadyBtn.disabled = true;
+    alreadyBtn.textContent = "Saving…";
+    const sets = [];
+    for (let n = 1; n <= rounds; n++) {
+      sets.push({ exercise: exerciseName, setNumber: n, weight: 0, reps: 0, duration: workSeconds, type: "round" });
+    }
+    const ok = await saveSimpleSession_(shared, "Boxing", sets, "");
+    if (ok) {
+      showBoxingDone_(exerciseName, rounds, workSeconds);
+    } else {
+      alreadyBtn.disabled = false;
+      alreadyBtn.textContent = "I've already done it";
+      errorEl.textContent = "Couldn't reach the server — saved on this phone. Try again when you have signal.";
+      errorEl.hidden = false;
+    }
+  });
+  wrap.appendChild(alreadyBtn);
+
+  showElseOverlay_(wrap);
+}
+
+function showBoxingDone_(exerciseName, rounds, workSeconds) {
+  const wrap = document.createElement("div");
+  wrap.className = "workout__review workout__review-inner";
+
+  const head = document.createElement("div");
+  head.className = "workout__review-head";
+  head.innerHTML =
+    `<div class="workout__review-tick">${CHECK_CIRCLE_SVG}</div>` +
+    `<p class="workout__review-title">BOXING DONE</p>` +
+    `<p class="workout__review-sub">Nice work, ${libEscApp_(elseFirstName_())}.</p>`;
+  wrap.appendChild(head);
+
+  const tiles = document.createElement("div");
+  tiles.className = "workout__review-tiles";
+  const minutes = Math.round(((rounds * workSeconds) / 60) * 10) / 10;
+  tiles.innerHTML = [["ROUNDS", String(rounds)], ["MINUTES", String(minutes)]]
+    .map(([lab, val]) => `<div class="workout__review-tile"><span class="workout__review-tile-label">${lab}</span><span class="workout__review-tile-value">${val}</span></div>`).join("");
+  wrap.appendChild(tiles);
+
+  const muscleSection = document.createElement("div");
+  muscleSection.className = "workout__review-section";
+  const muscleLabel = document.createElement("span");
+  muscleLabel.className = "workout__review-section-label";
+  muscleLabel.textContent = "Muscles Worked";
+  const figsEl = document.createElement("div");
+  const listEl = document.createElement("div");
+  const sets = [];
+  for (let n = 0; n < rounds; n++) sets.push({ exercise: exerciseName, type: "round" });
+  renderMuscleReview_(figsEl, listEl, sets);
+  muscleSection.append(muscleLabel, figsEl, listEl);
+  wrap.appendChild(muscleSection);
+
+  const backBtn = document.createElement("button");
+  backBtn.type = "button";
+  backBtn.className = "workout__review-save";
+  backBtn.textContent = "Back to my card";
+  backBtn.addEventListener("click", () => { window.location.href = homeHref(); });
+  wrap.appendChild(backBtn);
+
+  showElseOverlay_(wrap, { hideClose: true });
+}
+
+function showPicker(shared) {
+  const { workoutGroups, workoutNames } = shared;
   if (shared.currentCtx) shared.currentCtx.dead = true;
   shared.current = null;
   shared.currentCtx = null;
@@ -3119,7 +3850,11 @@ function showPicker(shared, workoutGroups, workoutNames) {
   els.picker.hidden = false;
   els.pickerList.innerHTML = "";
   const pickerHint = els.picker.querySelector(".workout__picker-hint");
-  if (pickerHint) pickerHint.textContent = coachMode ? "Which workout did they do?" : "Which one are you doing today?";
+  if (pickerHint) {
+    pickerHint.textContent = workoutNames.length
+      ? (coachMode ? "Which workout did they do?" : "Which one are you doing today?")
+      : (coachMode ? "Nothing assigned yet — log something below." : "No workout assigned yet — check with Max, or log something below.");
+  }
   els.backLink.href = homeHref();
   els.backLink.onclick = null;
 
@@ -3146,13 +3881,15 @@ function showPicker(shared, workoutGroups, workoutNames) {
       els.backLink.href = "#";
       els.backLink.onclick = (event) => {
         event.preventDefault();
-        showPicker(shared, workoutGroups, workoutNames);
+        showPicker(shared);
       };
       renderWorkout(shared, name, workoutGroups[name]);
     });
 
     els.pickerList.appendChild(button);
   }
+
+  els.pickerList.appendChild(buildLogElseSection_(shared));
 }
 
 async function init() {
@@ -3253,10 +3990,8 @@ async function init() {
   const workoutNames = Object.keys(workoutGroups).sort(
     (a, b) => (workoutOrderByName[a] ?? UNORDERED) - (workoutOrderByName[b] ?? UNORDERED)
   );
-  if (!workoutNames.length) {
-    showStatus("No workout assigned yet — check with Max.", false);
-    return;
-  }
+  // No early return for an empty list any more (2026-11-08) — "Log
+  // something else" below still needs to show even with nothing assigned.
 
   // date = the day being logged (today unless changed); current/currentCtx =
   // whichever workout is open, so changing the date can reload it for the
@@ -3264,6 +3999,7 @@ async function init() {
   // views or re-rendering for a new date doesn't reset it.
   const shared = {
     clientSlug, setRows, setCol, startingWeights, exerciseNameOptions, workoutNotes,
+    workoutGroups, workoutNames,
     date: sydneyDateStr(), current: null, currentCtx: null, currentView: readViewPref_(),
   };
   if (coachMode) document.querySelector(".card__top").insertAdjacentElement("afterend", buildCoachBanner(coachClientName || memberId));
@@ -3278,12 +4014,11 @@ async function init() {
     return;
   }
 
-  if (workoutNames.length === 1) {
-    renderWorkout(shared, workoutNames[0], workoutGroups[workoutNames[0]]);
-    return;
-  }
-
-  showPicker(shared, workoutGroups, workoutNames);
+  // Always the picker now (2026-11-08), even for a client with exactly one
+  // assigned workout — "Log something else" lives there, and skipping
+  // straight past it (the old single-workout shortcut) would hide it from
+  // exactly the clients who only have one program.
+  showPicker(shared);
 }
 
 // The version number used to be printed at the bottom of the page; clients don't need it, so it's hidden (APP_VERSION stays for debugging).
