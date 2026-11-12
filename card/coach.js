@@ -133,6 +133,11 @@
         ${c.hasKey && aiEnabled ? `<span class="coach-client__meta">${esc(planText(c.plan))}${c.credits ? ` · ${esc(c.credits)} pay-as-you-go AI uses` : ""}</span>` : ""}
         ${c.hasKey ? `<span class="coach-client__meta">${esc(progressText(c))}</span>` : ""}
         ${c.lastScan ? `<span class="coach-client__meta">${esc(scanText(c.lastScan))}</span>` : ""}
+        ${
+          c.hasKey
+            ? `<label class="fuel-toggle">Full access, no client guardrails (only for people this can't come back on you — you, family) <input type="checkbox" data-exempt ${c.scopeExempt ? "checked" : ""} /></label>`
+            : ""
+        }
         ${goalHtml(c)}
         ${c.link ? `<div class="coach-link">${esc(c.link)}</div>` : ""}
         <div class="coach-actions">
@@ -286,6 +291,28 @@
       img.src = url;
     });
   }
+
+  // Full access toggle (2026-11-09): only for a client Max trusts with the
+  // scope-of-practice limits off — himself, family, never a real client.
+  body.addEventListener("change", async (e) => {
+    const exemptBox = e.target.closest("[data-exempt]");
+    if (exemptBox) {
+      const slug = exemptBox.closest("[data-slug]").dataset.slug;
+      const c = clients.find((x) => x.slug === slug);
+      const want = exemptBox.checked;
+      exemptBox.disabled = true;
+      try {
+        await MacroApi.coach("coachSetScopeExempt", pin, { slug: slug, exempt: want });
+        c.scopeExempt = want;
+        toast(want ? `${c.name} now has full access, no guardrails` : `${c.name} is back on Fuel's normal client limits`);
+      } catch (err) {
+        exemptBox.checked = !want;
+        toast(err.message);
+      }
+      exemptBox.disabled = false;
+      return;
+    }
+  });
 
   // A photo of the report: the AI reads it, and the numbers land in the form to check.
   body.addEventListener("change", async (e) => {

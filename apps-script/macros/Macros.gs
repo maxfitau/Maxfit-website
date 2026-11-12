@@ -79,7 +79,7 @@
  * or change rows carrying their own id.
  */
 
-const MACROS_VERSION = "2026-11-03a";
+const MACROS_VERSION = "2026-11-09a";
 const TIMEZONE = "Australia/Sydney";
 const MAIN_SESSIONS_GID = 1169726169; // "Sessions Remaining" in the CRM sheet
 const CARD_URL = "https://maxfit.now/card/";
@@ -106,6 +106,10 @@ const TABS = {
       "hide_weight", "plan_tier", "comp_tier", "plan_interval",
       // The date the client tapped "I understand" on Fuel's first-open note (2026-10-29).
       "disclaimer_accepted",
+      // Max personally exempts this client from Fuel's scope-of-practice limits
+      // (2026-11-09) — only for people he trusts with full control of their own
+      // numbers (himself, family), never a real client. Set from My clients.
+      "scope_exempt",
     ],
     text: ["slug", "key", "trial_started", "plan_until", "comp_until", "disclaimer_accepted"],
   },
@@ -287,6 +291,7 @@ const COACH_ACTIONS = {
   coachSetTargets: actionCoachSetTargets_,
   issueKey: actionIssueKey_,
   coachGiveMonth: actionCoachGiveMonth_,
+  coachSetScopeExempt: actionCoachSetScopeExempt_,
   coachAddCredits: actionCoachAddCredits_,
   coachSyncStripe: actionCoachSyncStripe_,
   coachLogWeight: actionCoachLogWeight_,
@@ -942,12 +947,13 @@ function actionDeleteEntry_(payload, member) {
  * The client's own daily targets (2026-10-29, scope of practice): they type
  * calories, protein, carbs and fat themselves; Fuel never works them out.
  * MacroCore.checkTargets refuses anything under 1,200 kcal (Max's call),
- * pointing them to their GP or an Accredited Practising Dietitian. A goal
- * weight and pace already on the row (from Max's goal-weight button) stay.
+ * pointing them to their GP or an Accredited Practising Dietitian — unless
+ * Max has exempted this client (2026-11-09), who can go under that floor.
+ * A goal weight and pace already on the row (from Max's goal-weight button) stay.
  */
 function actionSaveTargets_(payload, member) {
   const slug = String(member.slug);
-  const check = MacroCore.checkTargets(payload.targets || {});
+  const check = MacroCore.checkTargets(payload.targets || {}, { exempt: member.scope_exempt === "Y" });
   if (!check.ok) throw userError_("bad_targets", check.errors.join(" "));
   withLock_(() => {
     const existing = readRows_("targets").find((t) => String(t.slug) === slug);
@@ -1074,6 +1080,7 @@ function memberPayload_(member) {
     hide_kcal: member.hide_kcal === "Y",
     hide_weight: member.hide_weight === "Y",
     disclaimer_accepted: String(member.disclaimer_accepted || ""),
+    scope_exempt: member.scope_exempt === "Y",
   };
 }
 
@@ -1586,6 +1593,7 @@ function actionCoachList_() {
       sex: m.sex,
       link: m.key ? CARD_URL + "?id=" + encodeURIComponent(s) + "&k=" + encodeURIComponent(m.key) : "",
       plan: planFor_(m),
+      scopeExempt: m.scope_exempt === "Y",
     });
   });
   targets.forEach((t) => {
@@ -2479,6 +2487,23 @@ function actionCoachGiveMonth_(payload) {
   return { slug: slug, plan: plan };
 }
 
+/**
+ * Max exempts a client from Fuel's scope-of-practice limits (2026-11-09):
+ * the 1,200 kcal target floor, and Food Q&A's refusal to give personalised
+ * or supplement/medical/diet advice. Only for people giving them that isn't
+ * a real liability risk — himself, family — never a real client.
+ */
+function actionCoachSetScopeExempt_(payload) {
+  const slug = slugify_(payload.slug);
+  return withLock_(() => {
+    const member = readRows_("members").find((m) => String(m.slug) === slug);
+    if (!member) throw userError_("no_member", "Create this client's Fuel link first.");
+    const exempt = payload.exempt ? "Y" : "N";
+    updateRow_("members", member._row, { scope_exempt: exempt });
+    return { slug: slug, scopeExempt: exempt === "Y" };
+  });
+}
+
 /** Max adds (or, negative, takes back) pay-as-you-go uses, e.g. paid in cash or a refund. */
 function actionCoachAddCredits_(payload) {
   const slug = slugify_(payload.slug);
@@ -2898,6 +2923,30 @@ const CHAT_SYSTEM_PROMPT = [
   "- Never invent facts about the client.",
 ].join("\n");
 
+// Full-power variant (2026-11-09): for a client Max has personally exempted
+// from the scope-of-practice limits above — someone he knows well enough
+// outside the normal client relationship that personalised advice isn't the
+// liability risk it would be with a real client (himself, family). Keeps
+// only the disordered-eating safety net, since that one is about their
+// safety, not Max's scope of practice.
+const CHAT_SYSTEM_PROMPT_EXEMPT = [
+  "You are Food Q&A inside MaxFit, the app of Max, an Australian personal trainer (Certificate IV in Fitness, not a dietitian). This client is someone Max has personally exempted from Fuel's usual limits, so you can go further for them than for a normal client.",
+  "",
+  "What you can help with",
+  "- Everything a normal client gets: the Australian Dietary Guidelines, food labels, recipe and snack ideas, cooking/shopping tips, and how to use Fuel.",
+  "- Personalised calorie and macro guidance, protein targets, and meal or portion suggestions sized to what they tell you about themselves.",
+  "- General information on supplements (protein powder, creatine, vitamins, fish oil and so on) and on common diets (vegetarian, vegan, low-carb, keto, intermittent fasting and similar).",
+  "- General information about a health condition, medication, pregnancy or allergy they mention, while making clear you're not their doctor and anything specific or serious belongs with their GP, specialist or pharmacist.",
+  "",
+  "Disordered eating",
+  "- If the client mentions restricting, skipping meals to lose weight, bingeing, purging or making themselves sick, compensating for food, or guilt or fear around eating: respond warmly and without judgement, give no numbers and no diet advice (don't tell them what to eat, skip or 'get back to', and don't lecture about what is or isn't safe), thank them for sharing, and encourage them to talk to their GP. Mention the Butterfly Foundation National Helpline on 1800 33 4673 (8am to midnight AEST/AEDT, 7 days) or butterfly.org.au. If they might be in danger right now, tell them to call 000 or Lifeline on 13 11 14.",
+  "",
+  "Style",
+  "- Brief, warm and practical: plain Australian English, a short list if the answer genuinely needs one. Never shame anyone about food.",
+  "- If the client hides calories, don't mention calorie numbers at all.",
+  "- Never invent facts about the client.",
+].join("\n");
+
 const CHAT_SCHEMA = {
   type: "object",
   properties: { reply: { type: "string" } },
@@ -2945,6 +2994,7 @@ function actionChat_(payload, member) {
   const history = cleanHistory_(payload.messages);
   const context = chatContext_(member, validDate_(payload.date));
   const usageRow = reserveAi_(member, "chat", TEXT_MODEL, { diamond: true });
+  const systemPrompt = member.scope_exempt === "Y" ? CHAT_SYSTEM_PROMPT_EXEMPT : CHAT_SYSTEM_PROMPT;
 
   let res;
   try {
@@ -2956,7 +3006,7 @@ function actionChat_(payload, member) {
         model: TEXT_MODEL,
         max_tokens: 1200,
         system: [
-          { type: "text", text: CHAT_SYSTEM_PROMPT },
+          { type: "text", text: systemPrompt },
           { type: "text", text: context },
         ],
         output_config: { format: { type: "json_schema", schema: CHAT_SCHEMA } },

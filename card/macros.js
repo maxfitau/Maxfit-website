@@ -130,6 +130,11 @@
     return !!(state.member && state.member.hide_kcal);
   }
 
+  /** Max has personally exempted this client from Fuel's scope-of-practice limits (2026-11-09, coach clients page). */
+  function scopeExempt() {
+    return !!(state.member && state.member.scope_exempt);
+  }
+
   /** "32P · 45C · 12F · 420 kcal" (kcal left off when the client hides calories). */
   function macroLine(m, { bold = false } = {}) {
     const b = (v) => (bold ? `<b>${v}</b>` : v);
@@ -2406,7 +2411,9 @@
 
   function chatHtml() {
     if (!state.chat.length) {
-      return `<p class="fuel-disclaimer">Ask general questions about healthy eating: the food groups and serves, reading labels, recipe and snack ideas, cooking and shopping tips, or how to use Fuel.</p>
+      return `<p class="fuel-disclaimer">${
+        scopeExempt() ? "Ask anything about food and nutrition." : "Ask general questions about healthy eating: the food groups and serves, reading labels, recipe and snack ideas, cooking and shopping tips, or how to use Fuel."
+      }</p>
         <div class="fuel-serves">${CHAT_STARTERS.map((q) => `<button type="button" data-starter="${esc(q)}">${esc(q)}</button>`).join("")}</div>`;
     }
     return state.chat
@@ -2414,7 +2421,7 @@
         if (m.role === "user") return `<div class="fuel-msg fuel-msg--me">${esc(m.content)}</div>`;
         if (m.pending) return `<div class="fuel-msg"><span class="fuel-typing"><i></i><i></i><i></i></span></div>`;
         return `<div class="fuel-msg${m.error ? " fuel-msg--error" : ""}">${esc(m.content).replace(/\n/g, "<br>")}${
-          m.error ? "" : `<span class="fuel-msg__guide">${esc(GUIDANCE_LINE)}</span>`
+          m.error || scopeExempt() ? "" : `<span class="fuel-msg__guide">${esc(GUIDANCE_LINE)}</span>`
         }</div>`;
       })
       .join("");
@@ -2433,7 +2440,11 @@
          <input class="fuel-input" name="q" maxlength="500" placeholder="Ask a healthy-eating question…" aria-label="Your question" />
          <button class="fuel-btn" type="submit">Send</button>
        </form>
-       <p class="fuel-disclaimer">General information only, based on the Australian Dietary Guidelines. For anything about a health condition, medication, pregnancy, allergies or a special diet, please see your GP or an Accredited Practising Dietitian.</p>`,
+       ${
+         scopeExempt()
+           ? ""
+           : `<p class="fuel-disclaimer">General information only, based on the Australian Dietary Guidelines. For anything about a health condition, medication, pregnancy, allergies or a special diet, please see your GP or an Accredited Practising Dietitian.</p>`
+       }`,
       (body) => {
         const box = body.querySelector("[data-chat]");
         const form = body.querySelector("[data-chat-form]");
@@ -3271,6 +3282,37 @@
   const EAT_FOR_HEALTH_CALCULATOR = "https://www.eatforhealth.gov.au/nutrition-calculators/daily-energy-requirements-calculator";
 
   /**
+   * "Calculate for me" (2026-11-09): only ever shown to a client Max has
+   * personally exempted from the scope-of-practice rule (himself, family).
+   * A plain Mifflin-St Jeor + activity estimate that fills the same target
+   * fields below — nothing here is saved or sent anywhere by itself, and
+   * the normal checkTargets save path (with the exempt floor waived) still
+   * runs when they tap Save.
+   */
+  const CALC_ACTIVITY = [
+    { v: "sedentary", label: "Little to no exercise", mult: 1.2 },
+    { v: "light", label: "Light exercise, 1–3x/week", mult: 1.375 },
+    { v: "moderate", label: "Moderate exercise, 3–5x/week", mult: 1.55 },
+    { v: "active", label: "Hard exercise, 6–7x/week", mult: 1.725 },
+    { v: "veryActive", label: "Very hard exercise + physical job", mult: 1.9 },
+  ];
+  const CALC_GOAL = [
+    { v: "lose", label: "Lose weight", pct: -0.2 },
+    { v: "maintain", label: "Maintain", pct: 0 },
+    { v: "gain", label: "Gain weight", pct: 0.15 },
+  ];
+  function calcEstimate_(f) {
+    const bmr = f.sex === "female" ? 10 * f.weightKg + 6.25 * f.heightCm - 5 * f.age - 161 : 10 * f.weightKg + 6.25 * f.heightCm - 5 * f.age + 5;
+    const act = CALC_ACTIVITY.find((a) => a.v === f.activity) || CALC_ACTIVITY[1];
+    const goal = CALC_GOAL.find((g) => g.v === f.goal) || CALC_GOAL[1];
+    const kcal = Math.max(1, Math.round(bmr * act.mult * (1 + goal.pct)));
+    const protein_g = Math.round(f.weightKg * 2);
+    const fat_g = Math.round((kcal * 0.25) / 9);
+    const carbs_g = Math.max(0, Math.round((kcal - protein_g * 4 - fat_g * 9) / 4));
+    return { kcal, protein_g, carbs_g, fat_g };
+  }
+
+  /**
    * Your targets (2026-10-29, scope of practice): the client types their own
    * daily calories, protein, carbs and fat. Beside them, what their numbers
    * work out to as a share of their calories, against the general adult
@@ -3289,6 +3331,37 @@
     openSheet(
       `<h2 class="fuel-sheet__title" id="fuelSheetTitle">Your targets</h2>
        <p class="tg-info">Your own daily numbers. Change them any time.</p>
+       ${
+         scopeExempt()
+           ? `<div class="fuel-panel tg-calc">
+                <span class="card__label card__label--red">Calculate for me</span>
+                <p class="fuel-disclaimer">Fuel's usual client guardrails are off for this account. A quick Mifflin-St Jeor estimate — check it, then adjust anything below before saving.</p>
+                <div class="fuel-fields2">
+                  <label class="fuel-field"><span class="card__label">Weight (kg)</span><input class="fuel-input" data-calc="weightKg" type="number" inputmode="decimal" step="0.1" /></label>
+                  <label class="fuel-field"><span class="card__label">Height (cm)</span><input class="fuel-input" data-calc="heightCm" type="number" inputmode="decimal" step="0.1" /></label>
+                  <label class="fuel-field"><span class="card__label">Age</span><input class="fuel-input" data-calc="age" type="number" inputmode="numeric" step="1" /></label>
+                  <label class="fuel-field"><span class="card__label">Sex</span>
+                    <select class="fuel-input" data-calc="sex">
+                      <option value="male" ${state.member.sex !== "F" ? "selected" : ""}>Male</option>
+                      <option value="female" ${state.member.sex === "F" ? "selected" : ""}>Female</option>
+                    </select>
+                  </label>
+                </div>
+                <label class="fuel-field"><span class="card__label">Activity</span>
+                  <select class="fuel-input" data-calc="activity">
+                    ${CALC_ACTIVITY.map((a) => `<option value="${a.v}"${a.v === "light" ? " selected" : ""}>${esc(a.label)}</option>`).join("")}
+                  </select>
+                </label>
+                <label class="fuel-field"><span class="card__label">Goal</span>
+                  <select class="fuel-input" data-calc="goal">
+                    ${CALC_GOAL.map((g) => `<option value="${g.v}"${g.v === "maintain" ? " selected" : ""}>${esc(g.label)}</option>`).join("")}
+                  </select>
+                </label>
+                <p class="fuel-error" data-calc-error hidden></p>
+                <button class="fuel-btn fuel-btn--ghost" type="button" data-calc-fill>Fill in targets below</button>
+              </div>`
+           : ""
+       }
        <form class="tg-form" data-targets-form autocomplete="off" novalidate>
          ${rows
            .map(
@@ -3331,6 +3404,31 @@
           sum.hidden = !all || Math.abs(shares.macroKcal - Number(t.kcal)) <= Number(t.kcal) * 0.05;
           if (!sum.hidden) sum.textContent = `Your protein, carbs and fat add up to about ${int(shares.macroKcal)} kcal.`;
         };
+        const calcFill = body.querySelector("[data-calc-fill]");
+        if (calcFill) {
+          calcFill.addEventListener("click", () => {
+            const getCalc = (k) => body.querySelector(`[data-calc="${k}"]`).value;
+            const f = {
+              weightKg: Number(getCalc("weightKg")),
+              heightCm: Number(getCalc("heightCm")),
+              age: Number(getCalc("age")),
+              sex: getCalc("sex"),
+              activity: getCalc("activity"),
+              goal: getCalc("goal"),
+            };
+            const calcErr = body.querySelector("[data-calc-error]");
+            if (!f.weightKg || !f.heightCm || !f.age) {
+              calcErr.textContent = "Enter weight, height and age first.";
+              calcErr.hidden = false;
+              return;
+            }
+            calcErr.hidden = true;
+            const est = calcEstimate_(f);
+            Object.keys(est).forEach((k) => (form.elements[k].value = est[k]));
+            err.hidden = true;
+            paint();
+          });
+        }
         form.addEventListener("input", () => {
           err.hidden = true;
           paint();
@@ -3338,7 +3436,7 @@
         form.addEventListener("submit", async (e) => {
           e.preventDefault();
           const t = read();
-          const check = MacroCore.checkTargets(t);
+          const check = MacroCore.checkTargets(t, { exempt: scopeExempt() });
           if (!check.ok) {
             err.textContent = check.errors.join(" ");
             err.hidden = false;
@@ -3383,7 +3481,7 @@
   }
 
   function maybeFirstOpen() {
-    if (!state.member || state.member.disclaimer_accepted) return;
+    if (!state.member || state.member.disclaimer_accepted || scopeExempt()) return;
     openSheet(
       `${disclaimerHtml(false)}
        <button class="fuel-btn" type="button" data-understand>I understand</button>
@@ -3452,8 +3550,8 @@
               </div>`
            : ""
        }
-       <button class="fuel-btn fuel-btn--ghost" type="button" data-s="note">About Fuel's numbers</button>
-       <p class="fuel-disclaimer">${esc(DISCLAIMER_TEXT[1])}</p>
+       ${scopeExempt() ? "" : `<button class="fuel-btn fuel-btn--ghost" type="button" data-s="note">About Fuel's numbers</button>
+       <p class="fuel-disclaimer">${esc(DISCLAIMER_TEXT[1])}</p>`}
        <button class="fuel-btn fuel-btn--quiet" type="button" data-close>Done</button>`,
       (body) => {
         body.querySelector("[data-hide]").addEventListener("change", async (e) => {
@@ -3490,9 +3588,11 @@
         const up = body.querySelector('[data-s="upgrade"]');
         if (up) up.addEventListener("click", openUpsell);
         body.querySelector('[data-s="favs"]').addEventListener("click", openFavourites);
-        body.querySelector('[data-s="note"]').addEventListener("click", () =>
-          openSheet(`${disclaimerHtml(true)}<button class="fuel-btn" type="button" data-close>Close</button>`)
-        );
+        const note = body.querySelector('[data-s="note"]');
+        if (note)
+          note.addEventListener("click", () =>
+            openSheet(`${disclaimerHtml(true)}<button class="fuel-btn" type="button" data-close>Close</button>`)
+          );
       }
     );
   }

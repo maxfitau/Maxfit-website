@@ -83,6 +83,13 @@
   eq("targets: exactly 1,200 is fine", C.checkTargets({ kcal: 1200, protein_g: 90, carbs_g: 130, fat_g: 35 }).ok, true);
   eq("targets: a blank one is asked for", C.checkTargets({ kcal: 2000, protein_g: "", carbs_g: 200, fat_g: 60 }).errors, ["Enter your protein."]);
   eq("targets: silly numbers are refused", C.checkTargets({ kcal: 2000, protein_g: 900, carbs_g: 200, fat_g: 60 }).ok, false);
+
+  // --- an exempted client (Max's call per client, 2026-11-09) ----------------------
+  eq("targets: exempt client can go under 1,200 kcal", C.checkTargets({ kcal: 900, protein_g: 90, carbs_g: 70, fat_g: 30 }, { exempt: true }).ok, true);
+  eq("targets: exempt client still needs a real number", C.checkTargets({ kcal: 0, protein_g: 90, carbs_g: 70, fat_g: 30 }, { exempt: true }).ok, false);
+  eq("targets: exempt client still can't skip a field", C.checkTargets({ kcal: 900, protein_g: "", carbs_g: 70, fat_g: 30 }, { exempt: true }).errors, ["Enter your protein."]);
+  eq("targets: exempt client still has the other ranges checked", C.checkTargets({ kcal: 900, protein_g: 900, carbs_g: 70, fat_g: 30 }, { exempt: true }).ok, false);
+  eq("targets: a normal client under 1,200 is still refused", C.checkTargets({ kcal: 900, protein_g: 90, carbs_g: 70, fat_g: 30 }, { exempt: false }).ok, false);
   const sh = C.macroShares({ kcal: 2000, protein_g: 120, carbs_g: 230, fat_g: 67 });
   eq("shares: % of the client's calories", [sh.protein_g.pct, sh.carbs_g.pct, sh.fat_g.pct], [24, 46, 30]);
   eq("shares: inside the general ranges", [sh.protein_g.within, sh.carbs_g.within, sh.fat_g.within], [true, true, true]);

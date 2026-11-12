@@ -114,8 +114,12 @@ const MacroCore = (function () {
   /**
    * The client's own daily targets, checked: whole numbers, within sensible
    * limits, and calories at least MIN_TARGET_KCAL. { ok, targets, errors }.
+   * opts.exempt (2026-11-09, Max's call per client) waives the calorie
+   * floor for a client he's personally exempted from the scope-of-practice
+   * rule — everything else (the other ranges) still applies either way.
    */
-  function checkTargets(raw) {
+  function checkTargets(raw, opts) {
+    const exempt = !!(opts && opts.exempt);
     const t = {};
     const errors = [];
     const names = { kcal: "Calories", protein_g: "Protein", carbs_g: "Carbs", fat_g: "Fat" };
@@ -126,8 +130,10 @@ const MacroCore = (function () {
         return;
       }
       const [lo, hi] = TARGET_LIMITS[k];
-      if (k === "kcal" && v < lo) errors.push(`Fuel can't save a target under ${lo.toLocaleString("en-AU")} calories. If you're aiming that low, please talk to your GP or an Accredited Practising Dietitian first.`);
-      else if (v < lo || v > hi) errors.push(`${names[k]} should be between ${lo.toLocaleString("en-AU")} and ${hi.toLocaleString("en-AU")}.`);
+      if (k === "kcal" && v < lo) {
+        if (!exempt) errors.push(`Fuel can't save a target under ${lo.toLocaleString("en-AU")} calories. If you're aiming that low, please talk to your GP or an Accredited Practising Dietitian first.`);
+        else if (v < 1) errors.push("Enter your calories.");
+      } else if (v < lo || v > hi) errors.push(`${names[k]} should be between ${lo.toLocaleString("en-AU")} and ${hi.toLocaleString("en-AU")}.`);
       t[k] = v;
     });
     return { ok: !errors.length, targets: errors.length ? null : t, errors: errors };
