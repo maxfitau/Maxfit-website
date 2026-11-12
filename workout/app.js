@@ -1241,6 +1241,84 @@ function refreshCurrentView_(ctx) {
 
 function maybeAppendCoachNote_(ctx) {
   if (ctx.coachNote) els.list.appendChild(buildCoachNote(ctx.coachNote));
+  const last = lastSessionNote_(ctx);
+  if (last) els.list.appendChild(buildLastSessionNote_(last));
+}
+
+/**
+ * The note left at the bottom of the most recent EARLIER session of this same
+ * workout ("knee was feeling dodgy"), so it's in front of them next time.
+ * Notes ride along on every row of a saved session (Logged Sets "Notes"), so
+ * any row on that day will do. Only the latest earlier session counts: if it
+ * has no note, nothing shows (an old note isn't pinned forever). Mix it up's
+ * own auto-written notes ("Mix it up · Boxing · 30 min ...") are ignored.
+ */
+function lastSessionNote_(ctx) {
+  if (ctx.lastNoteChecked) return ctx.lastNote;
+  ctx.lastNoteChecked = true;
+  ctx.lastNote = null;
+  const col = ctx.setCol;
+  if (!col || col.notes < 0 || col.date < 0 || col.workoutName < 0) return null;
+  const wanted = ctx.workoutName.trim().toLowerCase();
+  let bestKey = -1;
+  let bestDate = "";
+  let bestNote = "";
+  for (const row of ctx.setRows) {
+    if (String(row[col.client] || "").trim().toLowerCase() !== ctx.clientSlug) continue;
+    if (String(row[col.workoutName] || "").trim().toLowerCase() !== wanted) continue;
+    const key = dateSortKey(row[col.date]);
+    if (!Number.isFinite(key) || key >= ctx.beforeKey) continue;
+    const note = String(row[col.notes] || "").trim();
+    if (key > bestKey) { bestKey = key; bestDate = String(row[col.date]).trim(); bestNote = note; }
+    else if (key === bestKey && note && !bestNote) bestNote = note;
+  }
+  if (bestKey < 0 || !bestNote || /^mix it up ·/i.test(bestNote)) return null;
+  ctx.lastNote = { date: bestDate, text: bestNote };
+  return ctx.lastNote;
+}
+
+function buildLastSessionNote_(last) {
+  const box = document.createElement("div");
+  box.className = "workout__coach-note workout__last-note";
+  const label = document.createElement("span");
+  label.className = "workout__coach-note-label";
+  label.textContent = `Your note from last time (${friendlyDate(last.date)})`;
+  const body = document.createElement("p");
+  body.className = "workout__coach-note-text";
+  body.textContent = last.text;
+  box.append(label, body);
+  return box;
+}
+
+/** The notes box at the bottom of the workout (all three views). One textarea per workout, moved into each layout as it's rebuilt, saved to the draft as they type and sent with the session; it comes back as "Your note from last time" on their next one. */
+function buildNotesBox_(ctx) {
+  const box = document.createElement("div");
+  box.className = "workout__notes";
+  const label = document.createElement("label");
+  label.className = "workout__notes-label";
+  label.textContent = "Notes for next time";
+  if (!ctx.workoutNotesEl) {
+    const input = document.createElement("textarea");
+    input.className = "workout__notes-input";
+    input.rows = 3;
+    input.maxLength = 500;
+    input.placeholder = "e.g. knee was feeling dodgy, add weight next time";
+    const draft = readDraft(ctx.draftKey);
+    input.value = (ctx.notesInput && ctx.notesInput.value) || (draft && draft.notes) || "";
+    let timer = null;
+    const save = () => { clearTimeout(timer); if (!ctx.dead) ctx.persist(); };
+    input.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(save, 600); });
+    input.addEventListener("blur", save);
+    ctx.workoutNotesEl = input;
+    ctx.notesInput = input;
+  }
+  ctx.workoutNotesEl.id = "workoutNotesInput";
+  label.htmlFor = "workoutNotesInput";
+  const hint = document.createElement("p");
+  hint.className = "workout__notes-hint";
+  hint.textContent = "You'll see this at the top next time you do this workout.";
+  box.append(label, ctx.workoutNotesEl, hint);
+  return box;
 }
 
 function updateProgress_(ctx) {
@@ -2115,6 +2193,7 @@ function layoutShowAll_(ctx) {
 
   ctx.addExerciseWrap = buildAddExerciseControl(ctx);
   els.list.appendChild(ctx.addExerciseWrap);
+  els.list.appendChild(buildNotesBox_(ctx));
   els.list.appendChild(buildFinishBar_(ctx));
   updateProgress_(ctx);
 }
@@ -2241,6 +2320,7 @@ function layoutChecklist_(ctx) {
 
   ctx.addExerciseWrap = buildAddExerciseControl(ctx);
   els.list.appendChild(ctx.addExerciseWrap);
+  els.list.appendChild(buildNotesBox_(ctx));
   els.list.appendChild(buildFinishBar_(ctx));
   updateProgress_(ctx);
 }
@@ -2450,6 +2530,7 @@ function layoutSimple_(ctx) {
   els.list.appendChild(container);
   ctx.addExerciseWrap = buildAddExerciseControl(ctx);
   els.list.appendChild(ctx.addExerciseWrap);
+  els.list.appendChild(buildNotesBox_(ctx));
   els.list.appendChild(buildFinishBar_(ctx));
   updateProgress_(ctx);
 }
@@ -2637,6 +2718,11 @@ function showReview_(ctx, unfinished) {
   backBtn.className = "workout__review-back";
   backBtn.textContent = "Back to workout";
   backBtn.addEventListener("click", () => {
+    // Whatever was typed on the review screen goes back into the workout's own notes box.
+    if (ctx.workoutNotesEl) {
+      ctx.workoutNotesEl.value = notesInput.value;
+      ctx.notesInput = ctx.workoutNotesEl;
+    }
     els.review.hidden = true;
     els.list.hidden = false;
     if (ctx.isToday && !coachMode && ctx.finalElapsed !== undefined) {

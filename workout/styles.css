@@ -474,6 +474,60 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* The notes box at the bottom of the workout, and last time's note at the top (2026-11-12). */
+.workout__last-note {
+  border-color: var(--red);
+}
+
+.workout__last-note .workout__coach-note-text {
+  font-size: 16px;
+  color: var(--white);
+}
+
+.workout__notes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.workout__notes-label {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--white);
+}
+
+.workout__notes-input {
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 16px;
+  line-height: 1.4;
+  color: var(--white);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  resize: vertical;
+  min-height: 84px;
+}
+
+.workout__notes-input::placeholder {
+  color: var(--dim);
+}
+
+.workout__notes-input:focus {
+  outline: none;
+  border-color: var(--red);
+}
+
+.workout__notes-hint {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--grey);
+}
+
 .workout__exercise-tip {
   font-family: var(--font-body);
   font-size: 14px;
