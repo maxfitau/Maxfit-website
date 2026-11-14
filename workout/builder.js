@@ -968,15 +968,14 @@ function addRow(exercise) {
 // (rowLinksToNext_/refreshSupersets_ above both guard this).
 
 const BOXING_EXERCISE_OPTIONS_ = ["Heavy Bag", "Shadow Boxing", "Pad Work", "Skipping"];
+// Max's letters (2026-11-14): L Left, R Right, U Uppercut, B Body, S Slip, D Duck. A tap adds the letter straight onto the combo.
 const BOXING_COMBO_CHIPS_ = [
-  { label: "1 Jab", insert: "1" },
-  { label: "2 Cross", insert: "2" },
-  { label: "3 Lead hook", insert: "3" },
-  { label: "4 Rear hook", insert: "4" },
-  { label: "5 Lead upper", insert: "5" },
-  { label: "6 Rear upper", insert: "6" },
-  { label: "Slip", insert: "slip" },
-  { label: "Roll", insert: "roll" },
+  { label: "Left (L)", insert: "L" },
+  { label: "Right (R)", insert: "R" },
+  { label: "Uppercut (U)", insert: "U" },
+  { label: "Body (B)", insert: "B" },
+  { label: "Slip (S)", insert: "S" },
+  { label: "Duck (D)", insert: "D" },
 ];
 
 function defaultBoxingBlock_() {
@@ -1240,9 +1239,7 @@ function openBoxingEditor_(existingRow) {
     chip.addEventListener("click", () => {
       const input = activeRoundInput || roundsList.querySelector(".builder__boxing-round-input");
       if (!input) return;
-      const isNumber = /^[1-6]$/.test(c.insert);
-      const sep = input.value.trim() ? (isNumber ? "-" : ", ") : "";
-      input.value = input.value.trim() + sep + c.insert;
+      input.value = input.value.trim() + c.insert;
       input.dispatchEvent(new Event("input"));
       input.focus();
     });
@@ -1267,7 +1264,7 @@ function openBoxingEditor_(existingRow) {
       const input = document.createElement("input");
       input.type = "text";
       input.className = "builder__boxing-round-input";
-      input.placeholder = "e.g. 1-2-3, slip (blank = freestyle)";
+      input.placeholder = "e.g. LRUR, or type words like Freestyle (blank = freestyle)";
       input.value = draft.combos[i] || "";
       input.addEventListener("focus", () => {
         roundsList.querySelectorAll(".builder__boxing-round-input").forEach((el) => el.classList.remove("builder__boxing-round-input--active"));

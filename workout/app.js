@@ -1010,21 +1010,53 @@ function buildItems_(ctx, exercises, savedByExercise, rowOptions) {
 // rounds flow through the exact same draft/persist/postSession pipeline
 // every normal set does, just with an extra _duration/_type on the entry.
 
-const COMBO_WORDS_ = { 1: "Jab", 2: "Cross", 3: "Lead hook", 4: "Rear hook", 5: "Lead uppercut", 6: "Rear uppercut" };
+// Max coaches with letters (2026-11-14): L Left, R Right, U Uppercut, S Slip, D Duck, B Body shot.
+const COMBO_WORDS_ = { L: "Left", R: "Right", U: "Uppercut", S: "Slip", D: "Duck", B: "Body" };
+// The old 1-6 numbering, kept ONLY so a combo saved before the letters still shows correctly.
+const OLD_COMBO_WORDS_ = { 1: "Jab", 2: "Cross", 3: "Lead hook", 4: "Rear hook", 5: "Lead uppercut", 6: "Rear uppercut" };
 
-/** "1-2-3" -> nums "1 - 2 - 3", words "Jab · Cross · Lead hook". A non-number token (slip, roll, freestyle...) is shown as written, capitalised, in both lines. */
+/**
+ * "LRSSDUR" (also "L-R-S", "l r s", "LR, pivot") -> nums "L - R - S - S - D - U - R", words
+ * "Left · Right · Slip · Slip · Duck · Uppercut · Right". A token made only of the letters L R U S D B is
+ * split letter by letter; an old number 1-6 (a combo saved before the letters) shows with the old words;
+ * anything else (Freestyle, pivot, step back) is kept as a word, capitalised, in both lines.
+ */
 function formatCombo_(raw) {
   const text = String(raw || "").trim();
   if (!text) return { nums: "Freestyle", words: "" };
-  // The builder joins punch numbers with "-" and words with ", " (buildBoxingEditor_'s
-  // chip-insert rule) — split on either, plus plain whitespace, so "1-2-3" and
-  // "1-2, slip" both break into their real tokens instead of surviving as one.
-  const tokens = text.split(/[\s,\-]+/).filter(Boolean);
-  const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
-  return {
-    nums: tokens.map((t) => (COMBO_WORDS_[t] ? t : cap(t))).join(" - "),
-    words: tokens.map((t) => COMBO_WORDS_[t] || cap(t)).join(" · "),
-  };
+  const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase();
+  const shown = [];
+  const spoken = [];
+  text.split(/[\s,\-]+/).filter(Boolean).forEach((tok) => {
+    if (/^[lrusdb]+$/i.test(tok)) {
+      tok.toUpperCase().split("").forEach((ch) => { shown.push(ch); spoken.push(COMBO_WORDS_[ch]); });
+    } else if (OLD_COMBO_WORDS_[tok]) {
+      shown.push(tok);
+      spoken.push(OLD_COMBO_WORDS_[tok]);
+    } else {
+      shown.push(cap(tok));
+      spoken.push(cap(tok));
+    }
+  });
+  return { nums: shown.join(" - "), words: spoken.join(" · ") };
+}
+
+/** Shrinks any [data-fit-combo] text inside `root` until it fits on one line, so a long combo ("L - R - S - S - D - U - R") never wraps mid-combo on a narrow phone. Runs after layout. */
+function fitComboText_(root) {
+  (root || document).querySelectorAll("[data-fit-combo]").forEach((el) => {
+    el.style.whiteSpace = "nowrap";
+    el.style.fontSize = "";
+    let size = parseFloat(getComputedStyle(el).fontSize) || 20;
+    // Room is the parent's inside width: the text's own box can be as wide as the text (a card that grew), so it can't be the yardstick.
+    const parent = el.parentElement;
+    const pcs = parent ? getComputedStyle(parent) : null;
+    const room = parent ? parent.clientWidth - parseFloat(pcs.paddingLeft) - parseFloat(pcs.paddingRight) : el.clientWidth;
+    let guard = 0;
+    while (el.scrollWidth > room + 1 && room > 0 && size > 12 && guard++ < 40) {
+      size -= 1;
+      el.style.fontSize = size + "px";
+    }
+  });
 }
 
 /** The combo for a given round: set-for-set against the block's combo list (one value in the list already means "every round" this way), repeating the last one if there are more rounds than combos. */
@@ -1495,6 +1527,7 @@ function renderBoxingCard_(ctx, item) {
       text.className = "workout__boxing-combo-text";
       const n = document.createElement("p");
       n.className = "workout__boxing-combo-nums";
+      n.dataset.fitCombo = "1";
       n.textContent = nums;
       text.appendChild(n);
       if (words) {
@@ -1506,6 +1539,7 @@ function renderBoxingCard_(ctx, item) {
       line.append(rn, text);
       combosWrap.appendChild(line);
     });
+    requestAnimationFrame(() => fitComboText_(combosWrap)); // after the card is in the page, so widths are real
 
     const allDone = itemDone_(item);
     startBtn.textContent = allDone ? "Rounds done" : `Start Round ${(firstUnsavedIdx >= 0 ? firstUnsavedIdx : 0) + 1}`;
@@ -1859,10 +1893,10 @@ function layoutRoundTimer_() {
     next.className = "workout__timer-card";
     if (nextRound) {
       if (isCoach) {
-        next.innerHTML = `<span class="workout__timer-card-label">Up next · Round ${roundIndex + 2}</span><div class="workout__timer-calls-chips">${comboChipsHtml_(nextRound.combo)}</div>`;
+        next.innerHTML = `<span class="workout__timer-card-label">Up next · Round ${roundIndex + 2}</span><div class="workout__timer-calls-chips" data-fit-combo="1">${comboChipsHtml_(nextRound.combo)}</div>`;
       } else {
         const { nums, words } = formatCombo_(nextRound.combo);
-        next.innerHTML = `<span class="workout__timer-card-label">Up next · Round ${roundIndex + 2}</span><p class="workout__timer-card-combo">${libEscApp_(nums)}</p>${words ? `<p class="workout__timer-card-words">${libEscApp_(words)}</p>` : ""}`;
+        next.innerHTML = `<span class="workout__timer-card-label">Up next · Round ${roundIndex + 2}</span><p class="workout__timer-card-combo" data-fit-combo="1">${libEscApp_(nums)}</p>${words ? `<p class="workout__timer-card-words">${libEscApp_(words)}</p>` : ""}`;
       }
     }
     mid.appendChild(next);
@@ -1870,10 +1904,10 @@ function layoutRoundTimer_() {
     const card = document.createElement("div");
     card.className = "workout__timer-card";
     if (isCoach) {
-      card.innerHTML = `<span class="workout__timer-card-label">Your calls this round</span><div class="workout__timer-calls-chips">${comboChipsHtml_(round.combo)}</div>`;
+      card.innerHTML = `<span class="workout__timer-card-label">Your calls this round</span><div class="workout__timer-calls-chips" data-fit-combo="1">${comboChipsHtml_(round.combo)}</div>`;
     } else {
       const { nums, words } = formatCombo_(round.combo);
-      card.innerHTML = `<span class="workout__timer-card-label">This round</span><p class="workout__timer-card-combo">${libEscApp_(nums)}</p>${words ? `<p class="workout__timer-card-words">${libEscApp_(words)}</p>` : ""}`;
+      card.innerHTML = `<span class="workout__timer-card-label">This round</span><p class="workout__timer-card-combo" data-fit-combo="1">${libEscApp_(nums)}</p>${words ? `<p class="workout__timer-card-words">${libEscApp_(words)}</p>` : ""}`;
     }
     mid.appendChild(card);
   }
@@ -1916,6 +1950,7 @@ function layoutRoundTimer_() {
   }
   roundTimerEl_.appendChild(bottom);
 
+  fitComboText_(roundTimerEl_); // a long combo shrinks to one line instead of wrapping
   updateRoundTimerDisplay_(st.remainingMs, st.phaseTotalMs);
 }
 
@@ -3779,7 +3814,8 @@ function openCustomWorkoutPrompt_(shared) {
 
 // ---- Log a boxing session ---------------------------------------------------
 
-const BOXING_SESSION_COMBO_CHIPS_ = [["1", "Jab"], ["2", "Cross"], ["3", "Lead hook"], ["4", "Rear hook"], ["5", "Lead upper"], ["6", "Rear upper"], ["Slip", "Slip"], ["Roll", "Roll"]];
+// Max's letters (2026-11-14): tapping one adds its letter straight onto the combo ("LRBBUR"), no hyphens needed.
+const BOXING_SESSION_COMBO_CHIPS_ = [["L", "Left (L)"], ["R", "Right (R)"], ["U", "Uppercut (U)"], ["B", "Body (B)"], ["S", "Slip (S)"], ["D", "Duck (D)"]];
 
 function openBoxingSessionSetup_(shared) {
   const wrap = document.createElement("div");
@@ -3817,7 +3853,7 @@ function openBoxingSessionSetup_(shared) {
   const comboInput = document.createElement("input");
   comboInput.type = "text";
   comboInput.className = "workout__else-text-input";
-  comboInput.placeholder = "Freestyle";
+  comboInput.placeholder = "e.g. LRUR (blank = Freestyle)";
   wrap.appendChild(comboInput);
   const comboChipRow = document.createElement("div");
   comboChipRow.className = "workout__else-chip-row";
@@ -3827,7 +3863,7 @@ function openBoxingSessionSetup_(shared) {
     chip.className = "workout__else-chip";
     chip.textContent = label;
     chip.addEventListener("click", () => {
-      comboInput.value = comboInput.value ? `${comboInput.value}-${token}` : token;
+      comboInput.value = comboInput.value + token;
     });
     comboChipRow.appendChild(chip);
   });

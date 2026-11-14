@@ -32,7 +32,7 @@ const GROCERY_SHEET_NAME = "Grocery Items";
 // Changes whenever this file does, and is shown when you open the deployed
 // URL in a browser (see doGet) — the quick way to tell whether a redeploy
 // actually took, instead of guessing from behaviour.
-const BACKEND_VERSION = "2026-11-09a";
+const BACKEND_VERSION = "2026-11-14a";
 
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -513,9 +513,9 @@ const EXERCISE_MUSCLE_DATA_ = [
 
   // Mix it up (2026-11-09): exercises Max's 14 Mix It Up workouts use that weren't on the sheet yet.
   // seedMixItUp() runs seedExerciseMuscleData(), so these land on the Exercises tab (only blank cells are ever filled).
-  ["Bag: fast 1-2s", "Full Body & Conditioning", "Heavy bag", ["delts", "obliques"], ["triceps", "chest", "abs", "calves"], "front"],
-  ["Bag: hooks (3-4)", "Full Body & Conditioning", "Heavy bag", ["delts", "obliques"], ["triceps", "chest", "abs", "calves"], "front"],
-  ["Bag: uppercuts (5-6)", "Full Body & Conditioning", "Heavy bag", ["delts", "obliques"], ["biceps", "abs", "quads", "glutes"], "front"],
+  ["Bag: fast L-Rs", "Full Body & Conditioning", "Heavy bag", ["delts", "obliques"], ["triceps", "chest", "abs", "calves"], "front"],
+  ["Bag: hooks", "Full Body & Conditioning", "Heavy bag", ["delts", "obliques"], ["triceps", "chest", "abs", "calves"], "front"],
+  ["Bag: uppercuts", "Full Body & Conditioning", "Heavy bag", ["delts", "obliques"], ["biceps", "abs", "quads", "glutes"], "front"],
   ["Bag: speed punches", "Full Body & Conditioning", "Heavy bag", ["delts", "obliques"], ["triceps", "chest", "abs", "calves"], "front"],
   ["Bag: power hooks and uppercuts", "Full Body & Conditioning", "Heavy bag", ["delts", "obliques"], ["triceps", "chest", "biceps", "abs"], "front"],
   ["Shadow boxing speed punches", "Full Body & Conditioning", "Bodyweight", ["delts", "obliques"], ["triceps", "abs", "calves"], "front"],
@@ -4189,9 +4189,72 @@ function bookingIsOurs_(session) {
     && /^pt-[a-z0-9]+$/.test(String(session.client_reference_id || "")));
 }
 
+/**
+ * A paid, finished, one-off Checkout Session with NO client reference at all: a Payment Link opened
+ * directly (for example one Max texted from the handbook) instead of through the Book page. Anything
+ * carrying a reference of its own (FUEL's "fuel-...", or anything else) is never an orphan.
+ */
+function bookingIsOrphan_(session) {
+  return Boolean(session && session.mode === "payment" && session.status === "complete" && session.payment_status === "paid"
+    && !String(session.client_reference_id || "").trim());
+}
+
+/** Whether any line of a paid session is a price on the Prices tab (by lookup key): the only thing that makes an orphan payment ours. */
+function bookingLinesAreOurs_(lines, prices) {
+  return lines.some(function (l) {
+    const lookup = String((l.price && l.price.lookup_key) || "").trim().toLowerCase();
+    return lookup && prices.some(function (p) { return p.lookup.toLowerCase() === lookup; });
+  });
+}
+
+/**
+ * Which client an email address belongs to: { state: "one", slug, source } for exactly one client,
+ * { state: "none" } or { state: "many" } otherwise. The private Clients tab's Email column is
+ * asked first, then the CRM's Email column. Exact address only, capitals ignored; never a guess by name.
+ */
+function bookingClientsByEmail_(ss, email) {
+  const want = String(email || "").trim().toLowerCase();
+  if (!want) return { state: "none" };
+  const found = function (slugs) {
+    const distinct = [];
+    slugs.forEach(function (sl) { if (sl && distinct.indexOf(sl) < 0) distinct.push(sl); });
+    return distinct;
+  };
+  const table = bookingTable_(ss.getSheetByName(BOOKING_TABS.clients));
+  const slugCol = findColumn_(table.header, "Slug");
+  const emailCol = findColumn_(table.header, "Email");
+  const nameCol = findColumn_(table.header, "Name");
+  if (emailCol >= 0) {
+    const hits = found(table.rows
+      .filter(function (r) { return String(r[emailCol] || "").trim().toLowerCase() === want; })
+      .map(function (r) { return slugCol >= 0 && String(r[slugCol] || "").trim() ? slugify_(r[slugCol]) : (nameCol >= 0 ? slugify_(r[nameCol]) : ""); }));
+    if (hits.length === 1) return { state: "one", slug: hits[0], source: "the Clients tab" };
+    if (hits.length > 1) return { state: "many" };
+  }
+  const crm = getSheetByGid_(SESSIONS_SHEET_GID);
+  const data = crm ? crm.getDataRange().getValues() : [];
+  const header = data.length ? data[0] : [];
+  const crmName = findColumn_(header, "Name");
+  const crmEmail = findColumn_(header, "Email");
+  if (crmName >= 0 && crmEmail >= 0) {
+    const hits = found(data.slice(1)
+      .filter(function (r) { return String(r[crmEmail] || "").trim().toLowerCase() === want; })
+      .map(function (r) { return slugify_(r[crmName]); }));
+    if (hits.length === 1) return { state: "one", slug: hits[0], source: "the CRM" };
+    if (hits.length > 1) return { state: "many" };
+  }
+  return { state: "none" };
+}
+
+/** A dollar amount for a subject line: "$90" or "$90.50". */
+function bookingMoneyText_(session) {
+  const n = Number(session.amount_total) / 100;
+  return "$" + (n % 1 === 0 ? String(n) : n.toFixed(2));
+}
+
 /** What a paid session bought: { slug, sessions, item }, or { slug, problem } saying why it can't be credited automatically. */
-function bookingPurchaseOf_(session, lines, prices) {
-  const slug = String(session.client_reference_id || "").slice(BOOKING_PAY_REF_PREFIX.length);
+function bookingPurchaseOf_(session, lines, prices, slugOverride) {
+  const slug = slugOverride !== undefined ? slugOverride : String(session.client_reference_id || "").slice(BOOKING_PAY_REF_PREFIX.length);
   let sessions = 0;
   let kind = "";
   const names = [];
@@ -4342,7 +4405,7 @@ function bookingRecordPayment_(ss, session, purchase) {
   }
 
   if (problem) {
-    const cols = { id: session.id, paidAt: paidAt, slug: purchase.slug || "", item: purchase.item || "", amount: amount, status: "Unmatched", note: problem };
+    const cols = { id: session.id, paidAt: paidAt, slug: purchase.slug || "", item: purchase.item || "", sessions: purchase.sessions ? String(purchase.sessions) : "", amount: amount, status: "Unmatched", note: problem };
     if (known) bookingLedgerUpdate_(led, known.row, { status: "Unmatched", note: problem });
     else bookingLedgerAppend_(led, cols);
     SpreadsheetApp.flush();
@@ -4352,7 +4415,7 @@ function bookingRecordPayment_(ss, session, purchase) {
   let ledgerRow = known ? known.row : 0;
   if (known && known.status === "Crediting" && crm.current !== known.before) {
     // An earlier run wrote this row and moved the balance, then stopped before it could say so. Don't pay it twice.
-    bookingLedgerUpdate_(led, known.row, { after: String(crm.current), status: "Credited", note: "finished on a retry" });
+    bookingLedgerUpdate_(led, known.row, { after: String(crm.current), status: "Credited", note: (purchase.matchedBy ? purchase.matchedBy + "; " : "") + "finished on a retry" });
     SpreadsheetApp.flush();
     return { state: "credited", slug: purchase.slug, sessions: purchase.sessions, after: crm.current, name: crm.name, fresh: true };
   }
@@ -4360,7 +4423,7 @@ function bookingRecordPayment_(ss, session, purchase) {
     // The ledger row goes in first, with the balance as it is right now.
     ledgerRow = bookingLedgerAppend_(led, {
       id: session.id, paidAt: paidAt, client: cleanNote_(crm.name, 80), slug: purchase.slug, item: purchase.item,
-      sessions: String(purchase.sessions), amount: amount, before: String(crm.current), status: "Crediting",
+      sessions: String(purchase.sessions), amount: amount, before: String(crm.current), status: "Crediting", note: purchase.matchedBy || "",
     });
     SpreadsheetApp.flush();
   }
@@ -4368,7 +4431,7 @@ function bookingRecordPayment_(ss, session, purchase) {
   const after = crm.current + purchase.sessions;
   crm.sheet.getRange(crm.row, crm.col + 1).setValue(after);
   SpreadsheetApp.flush();
-  bookingLedgerUpdate_(led, ledgerRow, { after: String(after), status: "Credited", note: "" });
+  bookingLedgerUpdate_(led, ledgerRow, { after: String(after), status: "Credited", note: purchase.matchedBy || "" });
   SpreadsheetApp.flush();
   return { state: "credited", slug: purchase.slug, sessions: purchase.sessions, after: after, name: crm.name, kind: purchase.kind, fresh: true };
 }
@@ -4394,6 +4457,51 @@ function bookingHandlePaidSession_(ss, session) {
   return result;
 }
 
+/**
+ * A paid session with no client reference. Ours only if an item on it is on the Prices tab; anything
+ * else is ignored (and remembered for six hours so the 10-minute check doesn't ask Stripe about it
+ * every time). Ours: matched to a client by the payer's email, and credited exactly like a "pt-"
+ * payment; no match, or more than one, is recorded as Unmatched and Max is told. Never credits a guess.
+ */
+function bookingHandleOrphanSession_(ss, session) {
+  const led = bookingLedger_(ss);
+  const known = bookingLedgerFind_(led, session.id);
+  if (known && known.status === "Credited") return { state: "already", slug: known.slug, sessions: known.sessions, after: known.after, fresh: false };
+  if (known && known.status === "Unmatched") return { state: "unmatched", slug: known.slug, sessions: 0, note: known.note, fresh: false };
+
+  const cache = CacheService.getScriptCache();
+  const ignoreKey = "bookignore:" + session.id;
+  if (!known && cache.get(ignoreKey)) return { state: "ignored", fresh: false };
+
+  const lines = bookingStripeList_("checkout/sessions/" + encodeURIComponent(session.id) + "/line_items", {}, 1);
+  const prices = bookingPrices_(ss);
+  if (!known && !bookingLinesAreOurs_(lines, prices)) {
+    cache.put(ignoreKey, "1", 21600);
+    return { state: "ignored", fresh: false };
+  }
+
+  const payerEmail = session.customer_details ? String(session.customer_details.email || "").trim() : "";
+  const match = bookingClientsByEmail_(ss, payerEmail);
+  let purchase;
+  if (match.state === "one") {
+    purchase = bookingPurchaseOf_(session, lines, prices, match.slug);
+    purchase.matchedBy = "matched by email (" + match.source + ")";
+  } else {
+    purchase = bookingPurchaseOf_(session, lines, prices, "");
+    purchase.slug = "";
+    purchase.problem = !payerEmail
+      ? "Stripe didn't give an email address for the payer"
+      : match.state === "many"
+        ? "more than one client has the email address " + payerEmail
+        : "no client has the email address " + payerEmail;
+  }
+  const locked = bookingWithLock_(function () { return bookingRecordPayment_(ss, session, purchase); });
+  if (!locked.ok) throw new Error("the script was busy, so this payment will be tried again");
+  const result = locked.value;
+  if (result.fresh) bookingAnnouncePayment_(ss, session, purchase, result);
+  return result;
+}
+
 /** Tells Max (and the client) about a payment that was just credited, or that couldn't be. Never throws: the sheet is already right. */
 function bookingAnnouncePayment_(ss, session, purchase, result) {
   try {
@@ -4401,28 +4509,36 @@ function bookingAnnouncePayment_(ss, session, purchase, result) {
     const tag = session.livemode === false ? "[TEST] " : "";
     const amount = (Number(session.amount_total) / 100).toFixed(2) + " " + String(session.currency || "").toUpperCase();
     const payerEmail = session.customer_details ? bookingCleanEmail_(session.customer_details.email) : "";
+    const payerName = session.customer_details ? bookingOneLine_(session.customer_details.name, 80) : "";
 
     if (result.state === "unmatched") {
+      const column = purchase.kind === "duo" ? DUO_COLUMN : "1 on 1 Remaining";
       const lines = ["A payment came in that wasn't added to anyone's sessions, because " + result.note + ".", "", "Amount: " + amount];
       if (purchase.item) lines.push("Item: " + purchase.item);
+      if (purchase.sessions) lines.push("Sessions bought: " + purchase.sessions + (purchase.kind === "duo" ? " (duo)" : " (1-on-1)"));
       if (payerEmail) lines.push("Paid by: " + payerEmail);
+      if (payerName) lines.push("Name on the payment: " + payerName);
       lines.push(
         "Stripe session: " + session.id,
         "",
-        "Please add the sessions by hand on the Sessions Remaining tab if that's what they bought. It's listed on the Payments tab as Unmatched, and won't be tried again."
+        "To add the sessions by hand: open the Sessions Remaining tab of your CRM sheet, find the client's row, and add " + (purchase.sessions || "the number of sessions they bought") + " to their \"" + column + "\" cell. It's listed on the Payments tab as Unmatched and won't be tried again, so nothing else needs doing."
       );
-      bookingNotify_(settings, tag + "A Stripe payment I couldn't match to a client", lines);
+      bookingNotify_(settings, tag + "A Stripe payment I couldn't match", lines);
       return;
     }
 
-    bookingNotify_(settings, tag + "Payment: " + result.name + " bought " + result.sessions + " session" + (result.sessions === 1 ? "" : "s"), [
+    const lines = [
       result.name + " paid " + amount + " for " + purchase.item + ".",
       "",
       result.sessions + " added to their " + (purchase.kind === "duo" ? DUO_COLUMN : "1 on 1 Remaining") + ". They now have " + result.after + ".",
+    ];
+    if (purchase.matchedBy) lines.push("They paid through a link opened directly, so this was " + purchase.matchedBy + (payerEmail ? ": " + payerEmail : "") + ".");
+    lines.push(
       "Stripe session: " + session.id,
       "",
-      "Nothing else was changed: Paid sessions and referral rewards happen at check-in, as usual.",
-    ]);
+      "Nothing else was changed: Paid sessions and referral rewards happen at check-in, as usual."
+    );
+    bookingNotify_(settings, tag + "Paid: " + result.name + " — " + purchase.item + " (" + bookingMoneyText_(session) + ")", lines);
 
     if (!settings.emailClients) return;
     let to = bookingClientEmail_(ss, purchase.slug);
@@ -4489,6 +4605,12 @@ function handlePaymentReturn_(payload) {
       return bookingFail_("stripe", "We couldn't check your payment just now. Please try again in a minute.");
     }
     const ref = /^pt-([a-z0-9]+)$/.exec(String(session.client_reference_id || ""));
+    if (!ref && bookingIsOrphan_(session)) {
+      // Paid through a link opened directly: matched by email, same as the background check.
+      const direct = bookingHandleOrphanSession_(ss, session);
+      if (direct.state === "ignored") return bookingFail_("not-ours", "That payment isn't for a 1-on-1 booking. Please message Max.");
+      return jsonResponse_({ status: "success", state: direct.state, slug: direct.slug || "", sessions: direct.sessions });
+    }
     if (!ref || session.mode !== "payment") return bookingFail_("not-ours", "That payment isn't for a 1-on-1 booking. Please message Max.");
     if (session.status !== "complete" || session.payment_status !== "paid") return jsonResponse_({ status: "success", state: "waiting", slug: ref[1] });
 
@@ -4514,10 +4636,11 @@ function syncBookingPayments_() {
 
   const out = { checked: 0, credited: 0, unmatched: 0, errors: 0 };
   sessions.forEach(function (session) {
-    if (!bookingIsOurs_(session)) return;
-    out.checked++;
+    const orphan = bookingIsOrphan_(session);
+    if (!bookingIsOurs_(session) && !orphan) return;
     try {
-      const r = bookingHandlePaidSession_(ss, session);
+      const r = orphan ? bookingHandleOrphanSession_(ss, session) : bookingHandlePaidSession_(ss, session);
+      if (r.state !== "ignored") out.checked++;
       if (r.fresh && r.state === "credited") out.credited++;
       if (r.fresh && r.state === "unmatched") out.unmatched++;
     } catch (err) {
@@ -5505,8 +5628,8 @@ function mixItUpWorkouts_() {
     { name: "Fight Night", style: "Boxing", equipment: "Bag", minutes: 30, blocks: [
       box(),
       mixIntervals_("Bag circuit", 3, 60, 15, 60, [
-        ["Bag: fast 1-2s"], ["Bodyweight squat / Goblet squat"], ["Bag: hooks (3-4)"],
-        ["Mountain climbers / Plank knee-ins", "Standing knee drives"], ["Bag: uppercuts (5-6)"], pushups ]),
+        ["Bag: fast L-Rs"], ["Bodyweight squat / Goblet squat"], ["Bag: hooks"],
+        ["Mountain climbers / Plank knee-ins", "Standing knee drives"], ["Bag: uppercuts"], pushups ]),
       cool() ] },
     { name: "Shadow & Burn", style: "Boxing", equipment: "None", minutes: 25, blocks: [
       box(),
@@ -5522,7 +5645,7 @@ function mixItUpWorkouts_() {
     { name: "Footwork & Core", style: "Boxing", equipment: "Bag", minutes: 30, blocks: [
       box(),
       mixIntervals_("Skipping", 3, 120, 60, "", [["Skipping", "Step jacks"]]),
-      mixRounds_("Bag rounds", 3, 120, 60, "Heavy Bag", "1-2, pivot | 1-2-3, step back | Freestyle"),
+      mixRounds_("Bag rounds", 3, 120, 60, "Heavy Bag", "LR, pivot | LRUR, step back | Freestyle"),
       mixIntervals_("Core", 2, 40, 20, "", [["Dead bug"], ["Bicycle crunch", "Heel taps"], ["Plank"]]),
       cool() ] },
     { name: "Twelve Rounds", style: "Boxing", equipment: "Bag", minutes: 35, blocks: [

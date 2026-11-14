@@ -24,7 +24,8 @@
   // Pure logic
   // ===========================================================================
 
-  const COMBO_POOL = ["1-2", "1-2-3", "1-1-2", "2-3-2", "1-2-3-2", "1-2, slip, 2", "3-4", "5-6", "1-6-3-2", "1-2, roll, 3-2"];
+  // Max's combos (2026-11-14): L Left, R Right, U Uppercut, S Slip, D Duck, B Body shot.
+  const COMBO_POOL = ["LLLR", "LRUR", "LRLLR", "LRSSDUR", "LRDR", "LRBBB", "LRBBUR", "LRSR", "LRLR"];
   const BETWEEN_BLOCKS_SECONDS = 60;
   const LEVELS = ["Gentle", "Steady", "Push"];
   const STYLES = ["Boxing", "Bootcamp", "Surprise me"];
@@ -636,7 +637,9 @@
     if (seg.kind === "work" && seg.combo) {
       const f = typeof formatCombo_ === "function" ? formatCombo_(seg.combo) : { nums: seg.combo, words: "" };
       const card = h("div", "mix__combo");
-      card.appendChild(h("p", "mix__combo-nums", f.nums));
+      const nums = h("p", "mix__combo-nums", f.nums);
+      nums.dataset.fitCombo = "1"; // shrinks to one line, never wraps mid-combo
+      card.appendChild(nums);
       if (f.words) card.appendChild(h("p", "mix__combo-words", f.words));
       body.appendChild(card);
     }
@@ -676,6 +679,7 @@
     controls.appendChild(btn("mix__main-btn", s.paused ? "RESUME" : "PAUSE", () => togglePause()));
     controls.appendChild(btn("mix__skip-btn", seg.between || seg.kind === "rest" ? "Skip rest" : "Skip", () => skip()));
     el.appendChild(controls);
+    if (typeof fitComboText_ === "function") fitComboText_(el);
     updateTime();
   }
 

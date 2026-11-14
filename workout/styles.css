@@ -2165,6 +2165,7 @@ body {
 }
 
 .workout__boxing-combo-nums {
+  white-space: nowrap;
   font-family: var(--font-head);
   font-weight: 800;
   font-size: 18px;
@@ -2419,6 +2420,7 @@ body {
 
 .workout__timer-card-combo {
   margin: 0;
+  white-space: nowrap; /* a long combo is shrunk to fit by fitComboText_, never wrapped */
   font-family: var(--font-head);
   font-weight: 800;
   font-size: 34px;
@@ -2574,20 +2576,22 @@ body {
 
 .workout__timer-calls-chips {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap; /* one line; fitComboText_ shrinks the row's font size for a long combo */
   justify-content: center;
-  gap: 10px;
+  gap: 0.4em;
+  font-size: 22px;
 }
 
 .workout__timer-call-chip {
   font-family: var(--font-head);
   font-weight: 800;
-  font-size: 22px;
+  font-size: 1em;
   color: var(--white);
   background: var(--bg);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  padding: 10px 16px;
+  padding: 0.45em 0.7em;
+  white-space: nowrap;
 }
 
 .workout__timer-finish-btn {
