@@ -44,9 +44,15 @@
   // simply safer than assuming a load order.
   //
   // `.bottom-nav__item:nth-of-type(N)` depends on bottom-nav.js's item
-  // order (Profile, Train, Muscles, Macros — "Max's own convention for
+  // order (Home, Train, Muscles, Macros — "Max's own convention for
   // where home sits", per that file's comments). If that order ever
   // changes, update the N here to match.
+  //
+  // 2026-11-16 (home redesign): the Check In step is gone (the QR tile was
+  // removed); Book points at the BOOK button (#bookBtn), Refer at the Refer
+  // button (#referLink) and Loyalty at the pegs in the Sessions card
+  // (#loyaltyBlock). Every target must still exist on the card — a step
+  // whose target isn't on screen is skipped automatically.
   const STEPS = [
     {
       eyebrow: "Welcome",
@@ -73,13 +79,7 @@
       html: "Snap a photo of a meal or scan a barcode and it's logged. Training builds the signal to grow — <b>what you eat is what you actually grow with</b>.",
     },
     {
-      target: () => document.getElementById("checkinTile"),
-      eyebrow: "Check In",
-      headline: "Show This When You Arrive",
-      html: "Tap here to pull up your QR code — scan it and you're checked in.",
-    },
-    {
-      target: () => document.getElementById("bookLink"),
+      target: () => document.getElementById("bookBtn"),
       eyebrow: "1-on-1 Sessions",
       headline: "Book Straight From Here",
       html: "See your real open times and book a session, any time — no need to text me for it.",
@@ -91,7 +91,7 @@
       html: "Your own link and QR code — send it on, and you'll both benefit.",
     },
     {
-      target: () => document.querySelector(".card__loyalty"),
+      target: () => document.getElementById("loyaltyBlock"),
       eyebrow: "Loyalty",
       headline: "Every Session Counts",
       html: "This fills up with every paid session — <b>the 10th one's on me</b>.",
@@ -99,7 +99,7 @@
     {
       eyebrow: "All set",
       headline: "You're Ready",
-      html: "That's the whole tour. Jump in — and you can always find this again from your Profile if you want a refresher.",
+      html: "That's the whole tour. Jump in — and you can always find this again with the Help button on your Home screen if you want a refresher.",
       next: "Get started",
     },
   ];
@@ -239,7 +239,9 @@
       next.textContent = s.next || "Next";
       skip.hidden = i === STEPS.length - 1;
 
-      const el = s.target ? s.target() : null;
+      let el = s.target ? s.target() : null;
+      // An element that exists but isn't on screen (hidden, or inside something hidden — e.g. the Book button on a card with no booking row) counts as missing.
+      if (el && !el.getClientRects().length) el = null;
       if (s.target && !el) {
         // This client's page doesn't have this element right now (e.g. a
         // tile stayed hidden for some reason) — don't point at nothing,

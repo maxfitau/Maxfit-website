@@ -3,11 +3,12 @@
    Green marks goal progress and "on track", the same green Fuel uses for
    green days; red stays the accent everywhere else. */
 
+/* The two home tiles (2026-11-16): Last week | Monthly goal, side by side. */
 .week-tiles {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 12px;
-  margin: 0 0 12px;
+  margin: 0;
 }
 
 .week-tiles:empty {
@@ -16,67 +17,83 @@
 
 .week-tile {
   display: flex;
-  align-items: center;
-  gap: 14px;
-  width: 100%;
-  padding: 16px;
-  border-radius: var(--radius-glass-md);
-  background: var(--glass-bg-strong);
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--shadow-glass-sm);
-  color: inherit;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  min-height: 118px;
+  padding: 14px;
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  color: var(--white);
   font: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+.week-tile:active {
+  opacity: 0.85;
+}
+
+/* alone in its row (nothing logged last week, so no Last week tile) */
+.week-tile--wide {
+  grid-column: 1 / -1;
 }
 
 .week-tile--quiet {
   cursor: default;
 }
 
-.week-tile__emoji {
-  font-size: 40px;
-  line-height: 1;
-  flex-shrink: 0;
-}
-
-.week-tile__text {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-  flex: 1;
-}
-
 .week-tile__label {
-  font-family: var(--font-head);
-  font-weight: 700;
-  text-transform: none;
-  letter-spacing: 0;
-  font-size: 14px;
-  color: var(--red);
-}
-
-.week-tile--goal .week-tile__label {
-  color: #ffffff;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--grey);
 }
 
 .week-tile__big {
   font-family: var(--font-head);
   font-weight: 800;
-  font-size: 30px;
+  font-size: 28px;
   line-height: 1.05;
   color: var(--white);
 }
 
-.week-tile__big--goal {
-  font-size: 24px;
+.week-tile__goal {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--white);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .week-tile__sub {
-  font-size: 16px;
-  line-height: 1.35;
+  font-size: 15px;
+  line-height: 1.3;
   color: var(--grey);
+}
+
+/* the goal tile keeps its progress line at the bottom */
+.week-tile--goal .week-tile__sub {
+  margin-top: auto;
+}
+
+/* Shopping list (Gold and Diamond, only while something's left to buy): a slim full-width row */
+.week-tile--shop {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 56px;
+  padding: 10px 16px;
+}
+
+.week-tile--shop .week-tile__goal {
+  display: block;
 }
 
 .week-tile__chev {
@@ -88,17 +105,17 @@
 
 .week-bar {
   display: block;
-  height: 10px;
+  height: 8px;
   margin: 6px 0 2px;
-  border-radius: 5px;
-  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
   overflow: hidden;
 }
 
 .week-bar > span {
   display: block;
   height: 100%;
-  border-radius: 5px;
+  border-radius: 4px;
   background: #e00000;
 }
 
@@ -594,7 +611,6 @@ body.week-sheet-open {
   height: 1.15em;
 }
 
-.week-tile__emoji,
 .week-opt__emoji,
 .week-hero__emoji,
 .mp-meal__emoji,
@@ -605,7 +621,6 @@ body.week-sheet-open {
   justify-content: center;
 }
 
-.week-tile__emoji .mi svg { width: 36px; height: 36px; }
 .week-opt__emoji .mi svg,
 .mp-meal__emoji .mi svg,
 .mp-snack__emoji .mi svg { width: 28px; height: 28px; }

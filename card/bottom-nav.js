@@ -1,6 +1,6 @@
 /*
- * Self-mounting bottom nav for client-facing pages — Train / Muscles /
- * Macros / Profile — same self-mounting pattern as exercise-picker.js, so
+ * Self-mounting bottom nav for client-facing pages — Home / Train / Muscles /
+ * Macros — same self-mounting pattern as exercise-picker.js, so
  * no host page needs any markup of its own, just this script loaded
  * (plus its styles, in card/styles.css, already shared everywhere).
  *
@@ -20,8 +20,8 @@
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 20c0-4 1-6 3-7-2-2-2-5 1-7 1 2 3 2 4 0 3 2 3 5 1 7 2 1 3 3 3 7"/></svg>',
     macros:
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3c-1 3-5 5-5 10a5 5 0 0 0 10 0c0-2-1-3-2-2 .5 2-1 3-2 2-1.5-1-1-5-1-10z"/></svg>',
-    profile:
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>',
+    home:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 11 12 4l8.5 7"/><path d="M5.5 9.5V20h13V9.5"/><path d="M10 20v-5.5h4V20"/></svg>',
   };
 
   /** The client's id for building nav links: the URL first, else whatever the card itself last saved on this phone. */
@@ -39,7 +39,7 @@
     const path = window.location.pathname;
     if (/\/workout\/library\.html$/.test(path)) return "muscles";
     if (/\/workout\/(index\.html)?$/.test(path)) return "train";
-    if (/\/card\/(index\.html)?$/.test(path)) return window.location.hash === "#fuel" ? "macros" : "profile";
+    if (/\/card\/(index\.html)?$/.test(path)) return window.location.hash === "#fuel" ? "macros" : "home";
     return "";
   }
 
@@ -48,9 +48,9 @@
     const id = memberId_();
     const qs = id ? `?id=${encodeURIComponent(id)}` : "";
     const active = activeKey_();
-    // Home (Profile) leftmost — Max's own convention for where "home" sits.
+    // Home (was "Profile" until 2026-11-16) leftmost — Max's own convention for where "home" sits.
     const items = [
-      { key: "profile", label: "Profile", href: `/card/${qs}` },
+      { key: "home", label: "Home", href: `/card/${qs}` },
       { key: "train", label: "Train", href: `/workout/${qs}` },
       { key: "muscles", label: "Muscles", href: `/workout/library.html${qs}` },
       { key: "macros", label: "Macros", href: `/card/${qs}#fuel` },

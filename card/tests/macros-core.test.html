@@ -221,6 +221,10 @@
   const nSets = ["2026-10-13", "2026-10-15", "2026-10-16", "2026-10-20"].map((d) => ({ date: d, exercise: "Squat", kg: 60, reps: 5 }));
   const np = C.goalProgress(nGoal, { sets: nSets }, "2026-10-21");
   eq("goal: sessions progress", [np.statusText, np.nowValue, np.status], ["On track: 1 of 1 week hit", "1 so far", "on track"]);
+  eq("goal: small tile text (weight)", [wp.short, wp.lead], ["0.8 of 2 kg", "On track"]);
+  eq("goal: small tile text (strength)", sp.short, "85 of 85 kg");
+  eq("goal: small tile text (sessions)", np.short, "4 of 13");
+  eq("goal: small tile text (strength, nothing logged yet starts at the start weight)", C.goalProgress(sGoal, { sets: [] }, "2026-10-13").short, "80 of 85 kg");
   eq("goal: ended month", C.goalProgress(nGoal, { sets: nSets }, "2026-11-20").ended, true);
   eq("goal: day one says just started", C.goalProgress(sGoal, { sets: [] }, "2026-10-13").statusText, "Just started: no Barbell Bench Press logged yet");
   eq("recap: same lift whatever the spelling", C.liftKey("Calf Raises"), C.liftKey("calf raise"));

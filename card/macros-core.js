@@ -581,6 +581,7 @@ const MacroCore = (function () {
     let nowLabel = "Now";
     let nowValue = "";
     let next = "";
+    let short = ""; // "6 of 13": the card's small goal tile
 
     if (goal.type === "weight") {
       const startKg = Number(goal.start_value);
@@ -592,6 +593,7 @@ const MacroCore = (function () {
       startValue = `${fmtNum_(startKg)} kg`;
       nowValue = `${fmtNum_(latest)} kg`;
       detail = lost > 0 ? `${fmtNum_(lost)} kg down so far` : "no change on the scales yet";
+      short = `${fmtNum_(Math.max(0, lost))} of ${fmtNum_(target)} kg`;
       const k = data.kcal;
       if (k && k.target > 0 && k.avg > k.target * 1.03) {
         quicker.push(`You've averaged ${thousands(k.avg)} calories a day against your ${thousands(k.target)} target. Closing that gap gets you there sooner.`);
@@ -618,6 +620,7 @@ const MacroCore = (function () {
       nowLabel = "Best since";
       nowValue = best ? `${fmtNum_(best.kg)} kg × ${best.reps}` : "Not done yet";
       detail = best ? `best so far ${fmtNum_(best.kg)} kg × ${best.reps}` : `no ${goal.exercise} logged yet`;
+      short = `${fmtNum_(best ? Number(best.kg) : Number(goal.start_value))} of ${fmtNum_(target)} kg`;
       const recentDays = new Set(mine.filter((s) => s.date >= addDays(today, -13)).map((s) => s.date)).size;
       if (recentDays < 4) {
         quicker.push(`You did ${goal.exercise} on ${recentDays} day${recentDays === 1 ? "" : "s"} in the last 2 weeks. Twice a week gets you there faster.`);
@@ -652,6 +655,7 @@ const MacroCore = (function () {
       startValue = `${fmtNum_(target)} a week`;
       nowLabel = "This week";
       nowValue = `${thisWeek} so far`;
+      short = `${counts.reduce((t, c) => t + c, 0)} of ${Math.max(1, Math.round((target * total) / 7))}`;
       detail = fullWeeks ? `${hit} of ${fullWeeks} week${fullWeeks === 1 ? "" : "s"} hit` : `${thisWeek} of ${fmtNum_(target)} this week`;
       if (goal.type === "sessions") {
         if (!ended && thisWeek < target) quicker.push(`${target - thisWeek} more this week keeps you on track.`);
@@ -674,6 +678,8 @@ const MacroCore = (function () {
       pct: Math.round(pct * 100),
       status: status,
       statusText: `${lead}: ${detail}`,
+      lead: lead,
+      short: short,
       startLabel: startLabel,
       startValue: startValue,
       nowLabel: nowLabel,

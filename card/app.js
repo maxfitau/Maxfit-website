@@ -191,6 +191,8 @@ if (memberId) {
  * book.js reads this same entry.
  */
 const BOOK_CODE_STORAGE_KEY = "maxfitBookCode"; // { id, code }, shared with card/book.js
+const BOOK_CODE_REFUSED_KEY = "maxfitCardCodeRefused"; // "slug|code" the backend turned down, so the card doesn't keep trying it
+const BOOKING_API_URL = "https://script.google.com/macros/s/AKfycbya8dm8g5eC4ldAbNYmMCccDCZ6K7encj_q4IzXtKMOpd007RMYhnR3_PJ2eL2gjVDQ/exec"; // same backend as book.js
 const linkBookCode = String(params.get("b") || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 if (memberId && linkBookCode) {
   try {
@@ -214,24 +216,34 @@ function keepIdInAddress(id) {
 }
 
 const els = {
-  groupSessions: document.getElementById("groupSessionsNum"),
-  oneOnOneSessions: document.getElementById("oneOnOneSessionsNum"),
-  duoStat: document.getElementById("duoSessionsStat"),
-  duoSessions: document.getElementById("duoSessionsNum"),
-  name: document.getElementById("memberName"),
-  tier: document.getElementById("memberTier"),
+  greeting: document.getElementById("homeGreeting"),
+  dateLine: document.getElementById("homeDate"),
+  todayCard: document.getElementById("todayCard"),
+  todayLabel: document.getElementById("todayLabel"),
+  todayTitle: document.getElementById("todayTitle"),
+  todayDone: document.getElementById("todayDone"),
+  todayMeta: document.getElementById("todayMeta"),
+  todayBtn: document.getElementById("todayBtn"),
+  todayBtnText: document.getElementById("todayBtnText"),
+  coachRow: document.getElementById("coachRow"),
+  clientsTile: document.getElementById("clientsTile"),
+  sessionsCard: document.getElementById("sessionsCard"),
+  balanceRows: document.getElementById("balanceRows"),
+  loyaltyBlock: document.getElementById("loyaltyBlock"),
+  loyaltyText: document.getElementById("loyaltyText"),
+  loyaltyBar: document.getElementById("loyaltyBar"),
+  nextRow: document.getElementById("nextRow"),
+  nextWhen: document.getElementById("nextWhen"),
+  bookBtn: document.getElementById("bookBtn"),
+  becomeBlock: document.getElementById("becomeBlock"),
+  homeActions: document.getElementById("homeActions"),
+  referLink: document.getElementById("referLink"),
+  progressLink: document.getElementById("progressLink"),
+  replayTourLink: document.getElementById("replayTourLink"),
   qr: document.getElementById("qrCode"),
   status: document.getElementById("status"),
   cardLoading: document.getElementById("cardLoading"),
   cardLoadingBarFill: document.getElementById("cardLoadingBarFill"),
-  upcomingLabel: document.getElementById("upcomingLabel"),
-  upcomingValue: document.getElementById("upcomingValue"),
-  upcomingLink: document.getElementById("upcomingLink"),
-  bookLink: document.getElementById("bookLink"),
-  referLink: document.getElementById("referLink"),
-  progressLink: document.getElementById("progressLink"),
-  replayTourLink: document.getElementById("replayTourLink"),
-  checkinTile: document.getElementById("checkinTile"),
   qrModal: document.getElementById("qrModal"),
   qrModalBackdrop: document.getElementById("qrModalBackdrop"),
   qrModalClose: document.getElementById("qrModalClose"),
@@ -239,22 +251,19 @@ const els = {
   coachToolsModal: document.getElementById("coachToolsModal"),
   coachToolsBackdrop: document.getElementById("coachToolsBackdrop"),
   coachToolsClose: document.getElementById("coachToolsClose"),
-  loyaltyCount: document.getElementById("loyaltyCount"),
-  loyaltyBar: document.getElementById("loyaltyBar"),
   picker: document.getElementById("picker"),
   pickerForm: document.getElementById("pickerForm"),
   pickerInput: document.getElementById("pickerInput"),
   pickerError: document.getElementById("pickerError"),
-  completeButton: document.getElementById("completeButton"),
-  completeBox: document.getElementById("completeBox"),
   celebrate: document.getElementById("celebrate"),
   confetti: document.getElementById("confetti"),
 };
 
 /**
- * Pure client-side celebration for the "Workout Completed" button — no
- * sheet write, nothing tracked. Just a dopamine hit for tapping through
- * after a session.
+ * Pure client-side celebration — no sheet write, nothing tracked. The
+ * "Workout Completed" button that used to call this was removed on
+ * 2026-11-16 (logging a workout already marks today as done), so nothing
+ * calls it now; it stays so confetti can be hooked up to something else.
  */
 const CONFETTI_COLORS = ["#e00000", "#ffffff", "#cccccc", "#a80000"];
 
@@ -279,10 +288,11 @@ function celebrate() {
 }
 
 /**
- * "Workout Completed" is a checkbox in disguise — ticked state persists in
- * localStorage against today's date, so it stays checked through the rest
- * of the day but starts blank again tomorrow with no explicit reset logic
- * needed. Confetti only fires on the tick, not the untick.
+ * Logging a workout (workout/app.js) stores today's date under this key.
+ * The Today card reads it to show "Done today ✓" — it stays through the rest
+ * of the day and is simply not equal to the date tomorrow, so there's no
+ * reset logic. (The old "Workout Completed" tick box that also wrote this
+ * key was removed 2026-11-16.)
  */
 const WORKOUT_COMPLETE_STORAGE_KEY = "maxfitWorkoutCompleteDate";
 
@@ -291,32 +301,15 @@ function todayString() {
   return `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
 }
 
-function setCompleteChecked(checked) {
-  els.completeButton.classList.toggle("card__complete--checked", checked);
+function workoutDoneToday() {
   try {
-    if (checked) {
-      localStorage.setItem(WORKOUT_COMPLETE_STORAGE_KEY, todayString());
-    } else {
-      localStorage.removeItem(WORKOUT_COMPLETE_STORAGE_KEY);
-    }
+    return localStorage.getItem(WORKOUT_COMPLETE_STORAGE_KEY) === todayString();
   } catch (err) {
-    // Storage unavailable — the checked state just won't survive a reload.
+    return false;
   }
 }
 
-try {
-  setCompleteChecked(localStorage.getItem(WORKOUT_COMPLETE_STORAGE_KEY) === todayString());
-} catch (err) {
-  // Ignore — starts unchecked.
-}
-
-els.completeButton.addEventListener("click", () => {
-  const nowChecked = !els.completeButton.classList.contains("card__complete--checked");
-  setCompleteChecked(nowChecked);
-  if (nowChecked) celebrate();
-});
-
-/** The check-in QR used to sit on the card at all times; it now opens in a focused modal from the Check In tile — bigger and easier to scan, one tap away. */
+/** The check-in QR modal. Nothing on the card opens it any more (the Check In tile was removed 2026-11-16, Max doesn't use it) — to bring it back, add a button that calls openQrModal(). */
 function openQrModal() {
   els.qrModal.hidden = false;
 }
@@ -325,7 +318,6 @@ function closeQrModal() {
   els.qrModal.hidden = true;
 }
 
-els.checkinTile.addEventListener("click", openQrModal);
 els.qrModalBackdrop.addEventListener("click", closeQrModal);
 els.qrModalClose.addEventListener("click", closeQrModal);
 document.addEventListener("keydown", (event) => {
@@ -417,11 +409,13 @@ function renderQR(value) {
  * 1-in-10 loyalty punchcard — mirrors the auto-tick logic on checkin.html.
  * `punches` is class visits plus nutrition punches (5 green days in FUEL =
  * 1). `freeOwed` means a nutrition punch just completed a card, so the
- * free session is waiting for their next check-in.
+ * free session is waiting for their next check-in. The pegs stay as they
+ * were; the sentence under them replaces the old "9/10".
  */
 function renderLoyalty(punches, freeOwed) {
   const progress = freeOwed ? 10 : punches % 10;
-  els.loyaltyCount.textContent = freeOwed ? "Free session ready" : `${progress}/10`;
+  const left = 10 - progress;
+  els.loyaltyText.textContent = freeOwed ? "Your next session is free!" : `${left} more and your next one's free`;
   els.loyaltyBar.innerHTML = "";
   for (let i = 0; i < 10; i++) {
     const peg = document.createElement("div");
@@ -459,10 +453,10 @@ const DAY_ABBR = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
  * null and the card falls back to letting them choose.
  */
 async function assignedWorkoutSummary_(clientSlug) {
-  if (!clientSlug) return { count: 0, names: [], todayName: null };
+  if (!clientSlug) return { count: 0, names: [], todayName: null, counts: {} };
   try {
     const { rows, col } = await fetchWorkoutExercises();
-    if (col.client < 0) return { count: 0, names: [], todayName: null };
+    if (col.client < 0) return { count: 0, names: [], todayName: null, counts: {} };
     const mine = rows.filter((r) => String(r[col.client] || "").trim().toLowerCase() === clientSlug);
     const names = [
       ...new Set(
@@ -485,9 +479,16 @@ async function assignedWorkoutSummary_(clientSlug) {
       if (scheduledToday.length === 1) todayName = scheduledToday[0];
     }
 
-    return { count: mine.length, names, todayName };
+    // Exercises per named workout, for the Today card's "6 exercises".
+    const counts = {};
+    mine.forEach((r) => {
+      const name = col.workoutName >= 0 ? String(r[col.workoutName] || "").trim() : "";
+      counts[name] = (counts[name] || 0) + 1;
+    });
+
+    return { count: mine.length, names, todayName, counts };
   } catch (err) {
-    return { count: 0, names: [], todayName: null };
+    return { count: 0, names: [], todayName: null, counts: {} };
   }
 }
 
@@ -496,14 +497,15 @@ async function assignedWorkoutSummary_(clientSlug) {
  * own card, for the demo card, or before the Client column exists. The button
  * opens a ready-written text to Max (which they can edit) and quietly logs the
  * tap so it shows on Max's App members page; "Message Max" is the same chat with
- * nothing typed. No pop-ups.
+ * nothing typed. No pop-ups. (2026-11-16: it now takes the sessions card's place.)
  */
 const MAX_SMS_NUMBER = "+61490952388";
 const MEMBER_REQUEST_URL = "https://script.google.com/macros/s/AKfycbya8dm8g5eC4ldAbNYmMCccDCZ6K7encj_q4IzXtKMOpd007RMYhnR3_PJ2eL2gjVDQ/exec";
 function renderBecomeMember(data) {
-  const block = document.getElementById("becomeBlock");
-  const show = data.hasClientColumn && !data.isClient && data.clientSlug !== "maxfrench";
+  const block = els.becomeBlock;
+  const show = !data.isDemo && data.hasClientColumn && !data.isClient && data.clientSlug !== "maxfrench";
   block.hidden = !show;
+  els.sessionsCard.hidden = show;
   if (!show) return;
   const body = `Hi Max, it's ${data.memberName} from the MaxFit app. I'd like to find out about training with you.`;
   const btn = document.getElementById("becomeBtn");
@@ -525,26 +527,211 @@ function renderBecomeMember(data) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Home screen (redesigned 2026-11-16)
+// ---------------------------------------------------------------------------
+
+/** "Monday 16 November", in Sydney time whatever the phone's own zone says. */
+function sydneyDateLine_() {
+  try {
+    const parts = {};
+    new Intl.DateTimeFormat("en-AU", { timeZone: "Australia/Sydney", weekday: "long", day: "numeric", month: "long" })
+      .formatToParts(new Date())
+      .forEach((p) => (parts[p.type] = p.value));
+    return `${parts.weekday} ${parts.day} ${parts.month}`;
+  } catch (err) {
+    return `${DAY_NAMES[new Date().getDay()]} ${new Date().getDate()}`;
+  }
+}
+
+/** Shrinks a single-line heading until it fits its box (never below minPx); if it still can't, it's allowed to wrap rather than be cut off. */
+function fitHeading_(el, minPx) {
+  if (!el || !el.isConnected) return;
+  el.style.fontSize = "";
+  el.classList.remove("home__today-title--wrap");
+  let px = parseFloat(getComputedStyle(el).fontSize) || 34;
+  while (el.scrollWidth > el.clientWidth + 1 && px > minPx) {
+    px -= 1;
+    el.style.fontSize = px + "px";
+  }
+  if (el.scrollWidth > el.clientWidth + 1) el.classList.add("home__today-title--wrap");
+}
+
+function refitHeadings_() {
+  fitHeading_(els.todayTitle, 26);
+}
+window.addEventListener("resize", refitHeadings_);
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(refitHeadings_);
+
+/** Sets the Today card. `done` shows "Done today ✓" and turns the red button into an outlined one. */
+function setToday_(opts) {
+  els.todayLabel.textContent = opts.label || "Today's workout";
+  els.todayTitle.textContent = opts.title;
+  els.todayMeta.textContent = opts.meta || "";
+  els.todayDone.hidden = !opts.done;
+  els.todayMeta.hidden = !!opts.done || !opts.meta;
+  els.todayBtnText.textContent = opts.done ? "View workout" : opts.button;
+  els.todayBtn.href = opts.href;
+  els.todayBtn.target = opts.external ? "_blank" : "_self";
+  els.todayBtn.rel = opts.external ? "noopener" : "";
+  els.todayBtn.classList.toggle("home__start--outline", !!opts.done);
+  refitHeadings_();
+}
+
+const pluralEx_ = (n) => `${n} exercise${n === 1 ? "" : "s"}`;
+
+/** The big "Today" card: which workout, how many exercises, and one button into it. */
+async function renderToday_(data, workoutSummary) {
+  const { count: assignedCount, names: workoutNames, todayName, counts } = workoutSummary;
+  if (assignedCount > 0) {
+    const href = `../workout/?id=${encodeURIComponent(data.clientSlug)}`;
+    const pick = workoutNames.length > 1 && !todayName;
+    if (pick) {
+      setToday_({ title: "Pick today's workout", button: "Choose workout", href });
+      return;
+    }
+    const name = workoutNames.length === 1 ? workoutNames[0] : todayName;
+    const n = name ? counts[name] || assignedCount : assignedCount;
+    setToday_({ title: name || "Your workout", meta: pluralEx_(n), button: "Start workout", href, done: workoutDoneToday() });
+    return;
+  }
+
+  if (data.programType === "self-guided" && data.programDoc) {
+    setToday_({ title: "Loading…", button: "Open program", href: data.programDoc, external: true });
+    const workout = await fetchTodaysWorkout(data.programDoc);
+    setToday_({ title: workout || "Your program", button: "Open program", href: data.programDoc, external: true });
+    return;
+  }
+
+  const next = findNextGroupSession(data.classLabel);
+  const when = next
+    ? `${next.when.getDate() === new Date().getDate() && next.when.getMonth() === new Date().getMonth() ? "Today" : DAY_SHORT[next.when.getDay()]} ${next.when
+        .toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", hour12: true })
+        .replace(/\s/g, "")
+        .toLowerCase()}`
+    : "";
+  setToday_({
+    label: "Next class",
+    title: next ? next.entry.label : "Group classes",
+    meta: when,
+    button: "See schedule",
+    href: "https://www.maxfit.now/#programs",
+    external: true,
+  });
+}
+
+/** Sessions card's balance rows: only balances the person has above 0 (or Unlimited), one row each; "No sessions left" when there's nothing. */
+function renderBalances_(data) {
+  const has = (n) => typeof n === "number" && Number.isFinite(n) && n > 0;
+  const rows = [];
+  if (data.unlimited) rows.push({ num: "Unlimited", label: "1-on-1 sessions" });
+  else if (has(data.oneOnOneSessionsRemaining)) {
+    const n = data.oneOnOneSessionsRemaining;
+    rows.push({ num: n, label: n === 1 ? "1-on-1 session left" : "1-on-1 sessions left" });
+  }
+  if (has(data.groupSessionsRemaining)) {
+    const n = data.groupSessionsRemaining;
+    rows.push({ num: n, label: n === 1 ? "Group class left" : "Group classes left" });
+  }
+  if (has(data.duoSessionsRemaining)) {
+    const n = data.duoSessionsRemaining;
+    rows.push({ num: n, label: n === 1 ? "Duo session left" : "Duo sessions left" });
+  }
+  if (!rows.length) rows.push({ num: 0, label: "No sessions left" });
+  els.balanceRows.innerHTML = "";
+  rows.forEach((r) => {
+    const row = document.createElement("div");
+    row.className = "home__balance";
+    const num = document.createElement("span");
+    num.className = "home__balance-num" + (typeof r.num === "string" ? " home__balance-num--word" : "");
+    num.textContent = r.num;
+    const label = document.createElement("span");
+    label.className = "home__balance-label";
+    label.textContent = r.label;
+    row.appendChild(num);
+    row.appendChild(label);
+    els.balanceRows.appendChild(row);
+  });
+}
+
+/** The client's booking code on this phone (card/book.js and the Card Link save the same entry), or "" when there isn't one for this client. */
+function savedBookCode_(clientSlug) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(BOOK_CODE_STORAGE_KEY) || "null");
+    if (saved && saved.id === clientSlug && saved.code) return String(saved.code);
+  } catch (err) {
+    // No storage: same as no code.
+  }
+  return "";
+}
+
+/** "Thu 20 Nov · 9:00am" from the backend's "2026-11-20" and "09:00". */
+function formatBookingWhen_(dateKey, hhmm) {
+  const d = String(dateKey).split("-").map(Number);
+  const t = String(hhmm).split(":").map(Number);
+  if (d.length !== 3 || !d[0] || t.length < 2 || isNaN(t[0])) return "";
+  const date = new Date(Date.UTC(d[0], d[1] - 1, d[2], 12));
+  const day = date.toLocaleDateString("en-AU", { timeZone: "UTC", weekday: "short", day: "numeric", month: "short" }).replace(",", "");
+  const h = t[0] % 12 || 12;
+  return `${day} · ${h}:${String(t[1]).padStart(2, "0")}${t[0] < 12 ? "am" : "pm"}`;
+}
+
+/**
+ * The next booking, from the existing read-only "bookingInfo" action (it
+ * hands back this client's upcoming bookings soonest first). Needs the
+ * booking code saved on this phone; without one, or when nothing is booked,
+ * or on any error, the row just says "None booked". It runs after the rest
+ * of the page is drawn and never blocks it (2026-11-16).
+ */
+async function loadNextBooking_(data) {
+  const code = savedBookCode_(data.clientSlug);
+  // The backend locks booking for 15 minutes after 5 wrong codes, so a code that was refused once is never tried again from here until the saved code changes.
+  let refused = "";
+  try { refused = localStorage.getItem(BOOK_CODE_REFUSED_KEY) || ""; } catch (err) { /* no storage: just tries */ }
+  if (!code || refused === data.clientSlug + "|" + code) {
+    els.nextWhen.textContent = "None booked";
+    return;
+  }
+  els.nextWhen.textContent = "Checking…";
+  let text = "None booked";
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(BOOKING_API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action: "bookingInfo", clientSlug: data.clientSlug, token: data.token, code: code }),
+      signal: controller.signal,
+    });
+    const info = await res.json();
+    if (!info || info.status !== "success") {
+      try { localStorage.setItem(BOOK_CODE_REFUSED_KEY, data.clientSlug + "|" + code); } catch (err) { /* fine */ }
+    }
+    const first = info && info.status === "success" && Array.isArray(info.bookings) ? info.bookings[0] : null;
+    const when = first ? formatBookingWhen_(first.date, first.start) : "";
+    if (when) text = when;
+  } catch (err) {
+    // Offline, slow or a wrong code: "None booked" is the safe thing to say.
+  } finally {
+    clearTimeout(timer);
+  }
+  els.nextWhen.textContent = text;
+}
+
 async function render(data, workoutSummary) {
-  els.groupSessions.textContent = data.groupSessionsRemaining;
-  els.oneOnOneSessions.textContent = data.oneOnOneSessionsRemaining;
-  // Duo sessions are only shown to a client who has some, so nobody else sees a "Duo left 0".
-  els.duoStat.hidden = !(data.duoSessionsRemaining > 0);
-  els.duoSessions.textContent = data.duoSessionsRemaining || 0;
-  els.name.textContent = data.memberName;
-  els.tier.textContent = data.tier;
-  renderQR(data.checkInUrl);
+  els.greeting.textContent = `Hi ${String(data.memberName || "").trim().split(/\s+/)[0] || "there"}`;
+  els.dateLine.textContent = sydneyDateLine_();
+  renderBalances_(data);
+  renderQR(data.checkInUrl); // not shown on the card any more, kept ready for when the QR comes back
   renderLoyalty(data.totalAttended + (data.nutritionPunches || 0) + (data.referralPunches || 0) + (data.manualPunches || 0), !!data.freeOwed);
 
   // Booking and referring are for real members: the demo card has no membership behind either.
+  els.nextRow.hidden = !!data.isDemo;
   if (!data.isDemo) {
-    els.bookLink.href = `book.html?id=${encodeURIComponent(data.clientSlug)}${linkBookCode ? "&b=" + linkBookCode : ""}`;
-    els.bookLink.hidden = false;
+    els.bookBtn.href = `book.html?id=${encodeURIComponent(data.clientSlug)}${linkBookCode ? "&b=" + linkBookCode : ""}`;
     els.referLink.href = `refer.html?id=${encodeURIComponent(data.clientSlug)}`;
-    els.referLink.hidden = false;
     els.progressLink.href = `../workout/progress.html?id=${encodeURIComponent(data.clientSlug)}`;
-    els.progressLink.hidden = false;
-    els.replayTourLink.hidden = false;
+    els.homeActions.hidden = false;
     renderBecomeMember(data);
     // Last week's recap and this month's goal (week.js, 2026-10-13). A
     // first-time client sees the welcome tour first — it's also a
@@ -561,8 +748,9 @@ async function render(data, workoutSummary) {
     }
     // "Coach Tools" (2026-10-13) — Max's own card only, never a client's.
     if (data.clientSlug === "maxfrench") {
+      els.coachRow.hidden = false;
       els.coachToolsTile.hidden = false;
-      document.getElementById("clientsTile").hidden = false;
+      els.clientsTile.hidden = false;
     }
   }
 
@@ -570,37 +758,8 @@ async function render(data, workoutSummary) {
   // loading screen wait on the slower "Today's Workout" lookup below too.
   hideCardLoading();
 
-  const { count: assignedCount, names: workoutNames, todayName } = workoutSummary;
-  if (assignedCount > 0) {
-    els.upcomingLabel.textContent = "Today's Workout";
-    els.upcomingLink.href = `../workout/?id=${encodeURIComponent(data.clientSlug)}`;
-    els.upcomingLink.target = "_self"; // this is our own page, not an external doc — no reason to leave a tab behind
-    els.upcomingValue.textContent =
-      workoutNames.length === 1
-        ? `${workoutNames[0]} — tap to start`
-        : todayName
-        ? `${todayName} — tap to start`
-        : workoutNames.length > 1
-        ? "Tap to choose your workout"
-        : `${assignedCount} exercise${assignedCount === 1 ? "" : "s"} — tap to start`;
-    return;
-  }
-
-  if (data.programType === "self-guided" && data.programDoc) {
-    els.upcomingLabel.textContent = "Today's Workout";
-    els.upcomingLink.href = data.programDoc;
-    els.upcomingValue.textContent = "Loading…"; // never leave the old placeholder showing while this fetch is in flight
-    const workout = await fetchTodaysWorkout(data.programDoc);
-    els.upcomingValue.textContent = workout || "View your program";
-    return;
-  }
-
-  els.upcomingLabel.textContent = "Upcoming Session";
-  els.upcomingLink.href = "https://www.maxfit.now/#programs";
-  const next = findNextGroupSession(data.classLabel);
-  els.upcomingValue.textContent = next
-    ? formatUpcoming(next.when, next.entry.label)
-    : "See full schedule";
+  await renderToday_(data, workoutSummary);
+  if (!data.isDemo) loadNextBooking_(data); // last of all, and not awaited
 }
 
 const DEMO_MEMBER = {
@@ -643,7 +802,11 @@ async function fetchMemberData(id) {
   return {
     memberName: match[col.name],
     clientSlug: wantedSlug || slugify(match[col.name]),
+    // What the booking page sends as "who is asking": the sheet's Check-in Token, or the slug when there isn't one (same as book.js).
+    token: (col.checkInToken >= 0 ? String(match[col.checkInToken] || "").trim() : "") || wantedSlug || slugify(match[col.name]),
     tier: match[col.package] || "Member",
+    // An unlimited plan (Code.gs treats any Package containing "unlimited" so) shows "Unlimited" instead of a count.
+    unlimited: /unlimited/i.test(String(match[col.package] || "")),
     groupSessionsRemaining: parseSessions(match[col.groupSessions], "N/A"),
     oneOnOneSessionsRemaining: parseSessions(match[col.oneOnOneSessions], "N/A"),
     duoSessionsRemaining: col.duoSessions >= 0 ? parseSessions(match[col.duoSessions], 0) : 0,

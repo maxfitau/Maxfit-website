@@ -1,10 +1,12 @@
 /*
- * The card's weekly recap and monthly goal (2026-10-13, Max).
+ * The card's weekly recap and monthly goal (2026-10-13, Max). Since the
+ *   2026-11-16 home redesign they're two small tiles side by side in
+ *   #weekTiles (card/index.html), not stacked rows above a tile grid.
  *
  *   - "Last week" tile: kilos moved, a fun comparison ("about 5 elephants")
  *     and new personal bests. Tap for the whole week: where the kilos went,
  *     bests, workouts, green days, the goal, and a tip of the week.
- *   - "Your goal" tile: this month's SMART goal and how it's going. Tap for
+ *   - "Monthly goal" tile: this month's SMART goal and how it's going. Tap for
  *     progress, "get there quicker", the next goal and Change my goal.
  *   - Goal setup opens by itself the first time a client opens their card,
  *     and again when their month ends. "Not now" waits until tomorrow.
@@ -199,47 +201,59 @@ const WeekCard = (function () {
     return MacroCore.addDays(MacroCore.mondayOf(today), -7);
   }
 
+  /**
+   * The two home tiles side by side (2026-11-16): "Last week" and "Monthly
+   * goal". Last week is left out entirely when nothing was logged (no
+   * shaming); the goal tile then takes the full width. The shopping list is
+   * a slim row underneath, only while something's left to buy.
+   */
   function paint() {
     if (!mount) return;
-    let html = "";
+    const tiles = [];
     const r = MacroCore.weekRecap(sets, lastMonday());
     if (r.sets) {
       const cmp = MacroCore.weightComparison(r.totalKg);
-      const sub = [cmp ? cmp.text.charAt(0).toUpperCase() + cmp.text.slice(1) : plural(r.workouts, "workout")];
+      const sub = [cmp ? "\u2248 " + cmp.text.replace(/^about /, "") : plural(r.workouts, "workout")];
       if (r.bests.length) sub.push(plural(r.bests.length, "new best"));
-      html +=
-        `<button class="week-tile" type="button" data-open="recap"><span class="week-tile__emoji" aria-hidden="true">${MaxIcon("dumbbell")}</span>` +
-        `<span class="week-tile__text"><span class="week-tile__label">Last week · ${esc(weekRange(r))}</span>` +
-        `<span class="week-tile__big">${MacroCore.thousands(r.totalKg)} kg moved</span>` +
-        `<span class="week-tile__sub">${esc(sub.join(" · "))}</span></span>${chevron}</button>`;
+      tiles.push(
+        `<button class="week-tile" type="button" data-open="recap">` +
+          `<span class="week-tile__label">Last week</span>` +
+          `<span class="week-tile__big">${MacroCore.thousands(r.totalKg)} kg</span>` +
+          `<span class="week-tile__sub">${esc(sub.join(" \u00b7 "))}</span></button>`
+      );
     }
     const g = activeGoal();
     if (g) {
       const p = MacroCore.goalProgress(g, progressData(), today);
-      html +=
-        `<button class="week-tile week-tile--goal" type="button" data-open="goal"><span class="week-tile__emoji" aria-hidden="true">${MaxIcon(p.status === "done" ? "trophy" : "target")}</span>` +
-        `<span class="week-tile__text"><span class="week-tile__label">Your goal · until ${esc(MacroCore.shortDate(g.end_date))}</span>` +
-        `<span class="week-tile__big week-tile__big--goal">${esc(MacroCore.goalTitle(g))}</span>` +
-        `<span class="week-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${p.pct}"><span style="width:${p.pct}%"></span></span>` +
-        `<span class="week-tile__sub">${esc(p.statusText)}</span></span>${chevron}</button>`;
+      const line = [p.short, p.lead.toLowerCase()].filter(Boolean).join(" \u00b7 ");
+      tiles.push(
+        `<button class="week-tile week-tile--goal" type="button" data-open="goal">` +
+          `<span class="week-tile__label">Monthly goal</span>` +
+          `<span class="week-tile__goal">${esc(MacroCore.goalTitle(g))}</span>` +
+          `<span class="week-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${p.pct}"><span style="width:${p.pct}%"></span></span>` +
+          `<span class="week-tile__sub">${esc(line)}</span></button>`
+      );
     } else if (goal && goal.locked) {
-      html +=
-        '<div class="week-tile week-tile--quiet"><span class="week-tile__emoji" aria-hidden="true">' + MaxIcon("target") + '</span><span class="week-tile__text">' +
-        '<span class="week-tile__label">Your goal</span><span class="week-tile__sub">Your goal uses Fuel. Open your card from the personal link Max sent you to see it.</span></span></div>';
+      tiles.push(
+        '<div class="week-tile week-tile--goal week-tile--quiet">' +
+          '<span class="week-tile__label">Monthly goal</span>' +
+          '<span class="week-tile__sub">Your goal uses Fuel. Open your card from the personal link Max sent you to see it.</span></div>'
+      );
     } else if (ready) {
-      const last = goal ? MacroCore.goalProgress(goal, progressData(), today) : null;
-      html +=
-        `<button class="week-tile week-tile--goal" type="button" data-open="setup"><span class="week-tile__emoji" aria-hidden="true">${MaxIcon("target")}</span>` +
-        `<span class="week-tile__text"><span class="week-tile__label">${goal ? "New month" : "Your goal"}</span>` +
-        `<span class="week-tile__big week-tile__big--goal">Set this month's goal</span>` +
-        `<span class="week-tile__sub">${esc(last ? `Last month: ${last.statusText.replace(/^[^:]+: /, "")}` : "Pick one thing to work on. It takes a minute.")}</span></span>${chevron}</button>`;
+      tiles.push(
+        `<button class="week-tile week-tile--goal" type="button" data-open="setup">` +
+          `<span class="week-tile__label">Monthly goal</span>` +
+          `<span class="week-tile__goal">Set this month\u2019s goal</span>` +
+          `<span class="week-tile__sub">Tap to choose</span></button>`
+      );
     }
+    // A tile on its own spans the whole row.
+    if (tiles.length === 1) tiles[0] = tiles[0].replace('class="week-tile', 'class="week-tile week-tile--wide');
+    let html = tiles.join("");
     if (toBuy > 0 && typeof MealPlan !== "undefined") {
       html +=
-        `<button class="week-tile" type="button" data-open="shopping"><span class="week-tile__emoji" aria-hidden="true">${MaxIcon("cart")}</span>` +
-        `<span class="week-tile__text"><span class="week-tile__label">Shopping list</span>` +
-        `<span class="week-tile__big week-tile__big--goal">${plural(toBuy, "thing")} to buy</span>` +
-        `<span class="week-tile__sub">Tap to tick things off in the shop</span></span>${chevron}</button>`;
+        `<button class="week-tile week-tile--shop" type="button" data-open="shopping">` +
+        `<span class="week-tile__text"><span class="week-tile__goal">Shopping list: ${plural(toBuy, "thing")} to buy</span></span>${chevron}</button>`;
     }
     mount.innerHTML = html;
   }
@@ -624,14 +638,12 @@ const WeekCard = (function () {
 
   /** Called by app.js once a real member's card is on screen. */
   async function init(clientSlug) {
-    const grid = document.querySelector("#panelCard .card__grid");
-    if (!grid || !clientSlug) return;
+    const host = document.getElementById("weekTiles");
+    if (!host || !clientSlug) return;
     slug = String(clientSlug).toLowerCase();
     today = MacroCore.sydneyDate();
     if (!mount) {
-      mount = document.createElement("div");
-      mount.className = "week-tiles";
-      grid.parentNode.insertBefore(mount, grid);
+      mount = host;
       mount.addEventListener("click", (e) => {
         const b = e.target.closest("[data-open]");
         if (!b) return;
