@@ -200,6 +200,11 @@ function buildExerciseControl(exercise) {
 
   const onChoose = (picked) => {
     setChosen(picked.name, picked.movement, picked.bodyPart, picked.primaryMuscles, picked.secondaryMuscles, picked.muscleWeights);
+    const pickedRow = wrap.closest(".builder__row");
+    if (pickedRow) {
+      pickedRow.dataset.hideProgress = hiddenFromProgress_.has(String(picked.name).toLowerCase()) ? "true" : "false";
+      refreshRowExtras_(pickedRow);
+    }
     // Muscles just chosen for a name: any other row of it with none gets them too.
     if (picked.primaryMuscles && picked.primaryMuscles.length) {
       els.rows.querySelectorAll(".builder__row-exercise").forEach((other) => {
@@ -296,6 +301,22 @@ function buildRowMoreMenu_(row) {
   item.className = "builder__row-menu-item";
   item.addEventListener("click", () => toggleRowLink_(row));
   menu.appendChild(item);
+  const dropItem = document.createElement("button");
+  dropItem.type = "button";
+  dropItem.className = "builder__row-menu-item builder__row-menu-drop";
+  dropItem.addEventListener("click", () => {
+    row.dataset.dropSets = Number(row.dataset.dropSets) > 0 ? "" : "1";
+    closeRowMenus_();
+    refreshRowExtras_(row);
+  });
+  const progressItem = document.createElement("button");
+  progressItem.type = "button";
+  progressItem.className = "builder__row-menu-item builder__row-menu-progress";
+  progressItem.addEventListener("click", () => {
+    setRowHideProgress_(row, row.dataset.hideProgress !== "true");
+    closeRowMenus_();
+  });
+  menu.append(dropItem, progressItem);
   btn.addEventListener("click", () => {
     const wasOpen = !menu.hidden;
     closeRowMenus_();
@@ -303,6 +324,83 @@ function buildRowMoreMenu_(row) {
   });
   wrap.append(btn, menu);
   return wrap;
+}
+
+/**
+ * Drop sets and "Leave out of Strength Progress" (2026-11-17), both from a
+ * row's ⋯ menu and shown as chips under it. Drops: 1-3 on the exercise's last
+ * set, saved with the workout (Drop Sets column). The progress switch is per
+ * exercise for EVERY client: it rides along with Save Workout and Code.gs
+ * writes it to the Exercises tab, so every row of that exercise follows it.
+ */
+const BUILDER_FLAME_SVG_ = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.6 2.2c.3 2.6-.8 4.4-2.3 6-1.6 1.7-3.3 3.5-3.3 6.6A5 5 0 0 0 12 20a5 5 0 0 0 5-5.1c0-1.9-.8-3.2-1.7-4.4-.2 1.4-.9 2.5-2 3 .6-3.5-.2-7.6-.7-11.3z"/></svg>';
+let hiddenFromProgress_ = new Set(); // lowercase exercise names, filled when the Exercises tab loads
+
+function rowExerciseName_(row) {
+  const inputs = row.querySelectorAll("input");
+  const nameInput = inputs[inputs.length - 1];
+  return nameInput ? nameInput.value.trim() : "";
+}
+
+function setRowHideProgress_(row, hide) {
+  const name = rowExerciseName_(row).toLowerCase();
+  Array.from(els.rows.children).forEach((other) => {
+    if (other === row || (name && rowExerciseName_(other).toLowerCase() === name)) {
+      other.dataset.hideProgress = hide ? "true" : "false";
+      refreshRowExtras_(other);
+    }
+  });
+}
+
+function refreshRowExtras_(row) {
+  const chips = row.querySelector(".builder__row-chips");
+  if (!chips) return;
+  const drops = Number(row.dataset.dropSets) || 0;
+  const hide = row.dataset.hideProgress === "true";
+  const dropItem = row.querySelector(".builder__row-menu-drop");
+  const progressItem = row.querySelector(".builder__row-menu-progress");
+  if (dropItem) dropItem.textContent = drops ? "Remove drop set" : "Add drop set";
+  if (progressItem) progressItem.textContent = hide ? "Show in Strength Progress" : "Leave out of Strength Progress";
+  // The ⋯ menu is hidden on the last row (nothing to superset with), but these two still apply there.
+  const more = row.querySelector(".builder__row-more");
+  if (more) more.hidden = false;
+  const linkItem = row.querySelector(".builder__row-menu-item:not(.builder__row-menu-drop):not(.builder__row-menu-progress)");
+  if (linkItem) linkItem.hidden = row.dataset.linkAllowed === "false";
+
+  chips.replaceChildren();
+  const chipButton = (text, label, onClick, cls) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = cls || "builder__chip-btn";
+    b.textContent = text;
+    b.setAttribute("aria-label", label);
+    b.addEventListener("click", onClick);
+    return b;
+  };
+  if (drops) {
+    const chip = document.createElement("span");
+    chip.className = "builder__chip builder__chip--drop";
+    chip.insertAdjacentHTML("beforeend", BUILDER_FLAME_SVG_);
+    const text = document.createElement("span");
+    text.textContent = `Drop set on last set · ${drops} drop${drops > 1 ? "s" : ""}`;
+    chip.append(
+      text,
+      chipButton("−", "One drop fewer", () => { row.dataset.dropSets = String(Math.max(1, drops - 1)); refreshRowExtras_(row); }),
+      chipButton("+", "One more drop", () => { row.dataset.dropSets = String(Math.min(3, drops + 1)); refreshRowExtras_(row); }),
+      chipButton("×", "Remove drop set", () => { row.dataset.dropSets = ""; refreshRowExtras_(row); }, "builder__chip-x"),
+    );
+    chips.appendChild(chip);
+  }
+  if (hide) {
+    const chip = document.createElement("span");
+    chip.className = "builder__chip builder__chip--grey";
+    chip.title = "Hidden from every client's Strength Progress and personal bests. Their sets are still saved.";
+    const text = document.createElement("span");
+    text.textContent = "Not in Strength Progress";
+    chip.append(text, chipButton("×", "Show in Strength Progress again", () => setRowHideProgress_(row, false), "builder__chip-x"));
+    chips.appendChild(chip);
+  }
+  chips.hidden = !chips.children.length;
 }
 
 /** The header on a group's first row: its name, its rest time, and a note if the set counts differ. */
@@ -414,11 +512,13 @@ function refreshSupersets_() {
     const linked = rowLinksToNext_(row);
     row.querySelector(".builder__ss-link").hidden = isLast || beforeBoxing;
     row.querySelector(".builder__row-more").hidden = isLast || beforeBoxing;
+    row.dataset.linkAllowed = isLast || beforeBoxing ? "false" : "true";
     const btn = row.querySelector(".builder__ss-link-btn");
     btn.setAttribute("aria-pressed", String(linked));
     btn.setAttribute("aria-label", linked ? "Split this exercise from the next one" : "Join this exercise to the next one");
     btn.title = linked ? "Split" : "Join as a superset";
     row.querySelector(".builder__row-menu-item").textContent = linked ? "Split from next" : "Superset with next";
+    refreshRowExtras_(row);
   });
 }
 
@@ -949,6 +1049,12 @@ function addRow(exercise) {
   row.appendChild(buildSupersetLink_(row));
   row.appendChild(buildRowMoreMenu_(row));
   row.appendChild(supersetHead);
+  const extrasChips = document.createElement("div");
+  extrasChips.className = "builder__row-chips";
+  extrasChips.hidden = true;
+  row.appendChild(extrasChips);
+  row.dataset.dropSets = exercise && Number(exercise.dropSets) > 0 ? String(exercise.dropSets) : "";
+  row.dataset.hideProgress = exercise && exercise.name && hiddenFromProgress_.has(String(exercise.name).toLowerCase()) ? "true" : "false";
   // Last, and hidden — keeps the elements above in the exact DOM order the
   // CSS's nth-child row layout (builder.css) already expects, and keeps
   // the picked name out of the save handler's positional input lookup below.
@@ -1487,7 +1593,12 @@ let exerciseIndexPromise_ = null;
 function loadExerciseIndex_() {
   if (!exerciseIndexPromise_) {
     exerciseIndexPromise_ = fetchExercises()
-      .then(({ rows, col }) => buildExerciseIndex_(rows, col))
+      .then(({ rows, col }) => {
+        hiddenFromProgress_ = new Set(col.hideFromProgress >= 0
+          ? rows.filter((r) => String(r[col.hideFromProgress] || "").trim().toUpperCase() === "Y").map((r) => String(r[col.name] || "").trim().toLowerCase())
+          : []);
+        return buildExerciseIndex_(rows, col);
+      })
       .catch(() => ({ byExact: {}, byNormalized: {} })); // rows just render without a symbol or muscle data
   }
   return exerciseIndexPromise_;
@@ -1528,6 +1639,7 @@ async function loadClientWorkouts(clientSlug) {
             workoutNote: col.workoutNotes >= 0 ? String(r[col.workoutNotes] || "").trim() : "",
             superset: col.superset >= 0 && String(r[col.superset] || "").trim().toUpperCase() === "Y",
             supersetRest: col.supersetRest >= 0 ? Number(r[col.supersetRest]) || "" : "",
+            dropSets: col.dropSets >= 0 ? Number(r[col.dropSets]) || "" : "",
             blockType: col.blockType >= 0 ? String(r[col.blockType] || "").trim() : "",
             workSeconds: col.workSeconds >= 0 ? Number(r[col.workSeconds]) || 120 : 120,
             restSeconds: col.restSeconds >= 0 ? Number(r[col.restSeconds]) || 60 : 60,
@@ -1586,7 +1698,7 @@ function saveWorkoutToCopy_(copy, clientSlug, workoutName, exercises, days, work
   // Saving adds these columns to the sheet if they're missing, so a tab read
   // before that has no place for them yet (Superset Rest, for one).
   let width = Math.max(0, ...rows.map((r) => r.length), ...Object.values(col).map((c) => c + 1));
-  for (const key of ["notes", "workoutNotes", "superset", "supersetRest", "blockType", "workSeconds", "restSeconds", "combos", "runBy", "easierOption"]) {
+  for (const key of ["notes", "workoutNotes", "superset", "supersetRest", "dropSets", "blockType", "workSeconds", "restSeconds", "combos", "runBy", "easierOption"]) {
     if (col[key] < 0) col[key] = width++;
   }
 
@@ -1624,6 +1736,7 @@ function saveWorkoutToCopy_(copy, clientSlug, workoutName, exercises, days, work
     put(col.workoutNotes, workoutNote);
     put(col.superset, ex.superset ? "Y" : "");
     put(col.supersetRest, ex.supersetRest >= 15 && ex.supersetRest <= 600 ? ex.supersetRest : "");
+    put(col.dropSets, ex.dropSets >= 1 && ex.dropSets <= 3 ? ex.dropSets : "");
     if (ex.blockType === "Rounds") {
       put(col.blockType, "Rounds");
       put(col.workSeconds, ex.workSeconds);
@@ -1892,6 +2005,8 @@ els.saveButton.addEventListener("click", async () => {
         note: tipInput ? tipInput.value.trim() : "",
         superset: rowLinksToNext_(row),
         supersetRest: Number(row.dataset.supersetRest) || "",
+        dropSets: Number(row.dataset.dropSets) || "",
+        hideFromProgress: row.dataset.hideProgress === "true",
       };
     })
     .filter((ex) => ex.name);
@@ -1960,6 +2075,14 @@ els.saveButton.addEventListener("click", async () => {
   els.saveButton.textContent = "Save Workout";
   els.deleteButton.hidden = false;
   await editWorkoutRowsCopy_((copy) => saveWorkoutToCopy_(copy, clientSlug, workoutName, exercises, days, workoutNote));
+  if (result.progressFlagSupported) {
+    exercises.forEach((ex) => {
+      if (typeof ex.hideFromProgress !== "boolean") return;
+      const key = ex.name.toLowerCase();
+      if (ex.hideFromProgress) hiddenFromProgress_.add(key);
+      else hiddenFromProgress_.delete(key);
+    });
+  }
   await loadClientWorkouts(clientSlug);
   renderChipsAndOptions();
 
@@ -1969,6 +2092,8 @@ els.saveButton.addEventListener("click", async () => {
     showError("Saved the exercises, but the tips and notes were NOT stored — the Apps Script on Google is out of date. Redeploy it (Deploy → Manage deployments → New version), then Save again.");
   } else if (hasCustomRest && !result.supersetRestSupported) {
     showError("Saved the workout, but the superset rest times were NOT stored, so clients will get 90s — the Apps Script on Google is out of date. Paste the new Code.gs, deploy a new version, then Save again.");
+  } else if ((exercises.some((ex) => ex.dropSets) || exercises.some((ex) => ex.hideFromProgress)) && !result.progressFlagSupported) {
+    showError("Saved the workout, but the drop sets and the Strength Progress setting were NOT stored — the Apps Script on Google is out of date. Paste the new Code.gs, deploy a new version, then Save again.");
   } else if (hasBoxing && !result.boxingSupported) {
     showError("Saved the workout, but the boxing block's rounds/work/rest/combos were NOT stored — the Apps Script on Google is out of date. Paste the new Code.gs, deploy a new version, then Save again.");
   }

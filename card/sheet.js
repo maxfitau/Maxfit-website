@@ -172,6 +172,7 @@ function fetchExercises() {
           bestView: findColumn(header, "Best View"),
           aliases: findColumn(header, "Aliases"),
           muscleWeights: findColumn(header, "Muscle Weights"),
+          hideFromProgress: findColumn(header, "Hide From Progress"), // "Y" = left out of Strength Progress and personal bests
         };
         return { rows, col };
       });
@@ -208,6 +209,7 @@ function fetchWorkoutExercises() {
           notes: findColumn(header, "Exercise Notes"), // the coach's tip for one exercise
           workoutNotes: findColumn(header, "Workout Notes"), // a note for the whole workout (repeated on each of its rows)
           superset: findColumn(header, "Superset"), // "Y" = this exercise + the next one (by Order) are done back-to-back
+          dropSets: findColumn(header, "Drop Sets"), // drops the coach planned on the last set, 1-3
           supersetRest: findColumn(header, "Superset Rest"), // seconds of rest after each round, on the superset's first exercise; blank = 90
           // Boxing rounds (2026-11-07): Block Type "Rounds" marks a block; Target Sets above doubles as its round count.
           blockType: findColumn(header, "Block Type"),

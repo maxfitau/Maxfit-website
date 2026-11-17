@@ -32,7 +32,7 @@ const GROCERY_SHEET_NAME = "Grocery Items";
 // Changes whenever this file does, and is shown when you open the deployed
 // URL in a browser (see doGet) — the quick way to tell whether a redeploy
 // actually took, instead of guessing from behaviour.
-const BACKEND_VERSION = "2026-11-14a";
+const BACKEND_VERSION = "2026-11-17a";
 
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -91,7 +91,7 @@ function backfillTokens() {
  */
 function setupWorkoutSheets() {
   getOrCreateSheetByName_(EXERCISES_SHEET_NAME, ["Name", "Movement", "Body Part", "Default Starting Weight (kg)"]);
-  getOrCreateSheetByName_(WORKOUT_EXERCISES_SHEET_NAME, ["Client", "Workout Name", "Order", "Exercise", "Target Sets", "Target Reps", "Days", "Workout Order", "Exercise Notes", "Workout Notes", "Superset", "Superset Rest", "Block Type", "Work Seconds", "Rest Seconds", "Combos", "Run By", "Easier Option"]);
+  getOrCreateSheetByName_(WORKOUT_EXERCISES_SHEET_NAME, ["Client", "Workout Name", "Order", "Exercise", "Target Sets", "Target Reps", "Days", "Workout Order", "Exercise Notes", "Workout Notes", "Superset", "Superset Rest", "Block Type", "Work Seconds", "Rest Seconds", "Combos", "Run By", "Easier Option", "Drop Sets"]);
   getOrCreateSheetByName_(LOGGED_SETS_SHEET_NAME, ["Client", "Workout Name", "Exercise", "Set Number", "Weight (kg)", "Reps", "Date", "Timestamp", "Notes", "Duration (s)", "Type", "Distance (km)"]);
   Logger.log("Workout sheets ready.");
 }
@@ -1873,6 +1873,7 @@ function handleAssignWorkout_(payload) {
     combos: findColumn_(header, "Combos"),
     runBy: findColumn_(header, "Run By"),
     easierOption: findColumn_(header, "Easier Option"),
+    dropSets: findColumn_(header, "Drop Sets"),
   };
 
   // A resave keeps this workout's existing position in the chip/picker
@@ -1927,6 +1928,11 @@ function handleAssignWorkout_(payload) {
       const rest = Math.round(Number(ex && ex.supersetRest));
       row[col.supersetRest] = rest >= 15 && rest <= 600 ? rest : "";
     }
+    // Drops planned on the last set (1-3). The drops a client does aren't saved anywhere — Max's call.
+    if (col.dropSets >= 0) {
+      const drops = Math.round(Number(ex && ex.dropSets));
+      row[col.dropSets] = drops >= 1 && drops <= 3 ? drops : "";
+    }
     // A boxing rounds block: Block Type = "Rounds", Target Sets above IS the
     // round count (ex.sets), and these extra columns carry the rest of the
     // block's setup. Blank Block Type (every normal exercise row) leaves all
@@ -1958,7 +1964,42 @@ function handleAssignWorkout_(payload) {
   // notesSupported/boxingSupported let the builder tell a deployment that
   // stored the tips/boxing fields from an older one that would have
   // quietly ignored them.
-  return jsonResponse_({ status: "success", notesSupported: true, supersetRestSupported: true, boxingSupported: col.blockType >= 0 });
+  // "Leave out of Strength Progress" is per exercise, for every client, so it
+  // lives on the Exercises tab rather than on this workout's rows.
+  setHideFromProgress_(exercises.filter((ex) => ex && typeof ex.hideFromProgress === "boolean" && String(ex.name || "").trim()));
+
+  return jsonResponse_({ status: "success", notesSupported: true, supersetRestSupported: true, boxingSupported: col.blockType >= 0, dropSetsSupported: col.dropSets >= 0, progressFlagSupported: true });
+}
+
+/**
+ * Exercises tab "Hide From Progress" = "Y" keeps that exercise off every
+ * client's Strength Progress page and out of the personal-best card (for
+ * lifts whose weights aren't comparable session to session, like a cable
+ * back extension). Only rows whose value actually changes are written.
+ */
+function setHideFromProgress_(list) {
+  if (!list.length) return;
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(EXERCISES_SHEET_NAME);
+  if (!sheet || sheet.getLastRow() < 2) return;
+  const header = ensureColumns_(sheet, ["Hide From Progress"]);
+  const nameCol = findColumn_(header, "Name");
+  const flagCol = findColumn_(header, "Hide From Progress");
+  if (nameCol < 0 || flagCol < 0) return;
+  const want = new Map(list.map((ex) => [String(ex.name).trim().toLowerCase(), ex.hideFromProgress ? "Y" : ""]));
+  const count = sheet.getLastRow() - 1;
+  const names = sheet.getRange(2, nameCol + 1, count, 1).getValues();
+  const flags = sheet.getRange(2, flagCol + 1, count, 1).getValues();
+  let changed = false;
+  for (let i = 0; i < count; i++) {
+    const key = String(names[i][0] || "").trim().toLowerCase();
+    if (!want.has(key)) continue;
+    const value = want.get(key);
+    if (String(flags[i][0] || "").trim().toUpperCase() !== value) {
+      flags[i][0] = value;
+      changed = true;
+    }
+  }
+  if (changed) sheet.getRange(2, flagCol + 1, count, 1).setValues(flags);
 }
 
 /**
@@ -2252,6 +2293,8 @@ function ensureWorkoutExercisesColumns_(sheet) {
     // Type = "Rounds" instead of the usual blank. Target Sets doubles as
     // the round count for a Rounds block, same column either way.
     "Block Type", "Work Seconds", "Rest Seconds", "Combos", "Run By", "Easier Option",
+    // Drop sets (2026-11-17): how many drops the coach planned on this exercise's last set, 1-3; blank = none.
+    "Drop Sets",
   ]);
 }
 

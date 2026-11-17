@@ -256,6 +256,15 @@ function populatePicker_(exercises) {
   }
 }
 
+/** Lowercase names of exercises marked "Hide From Progress" on the Exercises tab. Never blocks the page: no list means nothing is hidden. */
+function hiddenFromProgress_() {
+  return fetchExercises()
+    .then(({ rows, col }) => new Set(col.hideFromProgress >= 0
+      ? rows.filter((r) => String(r[col.hideFromProgress] || "").trim().toUpperCase() === "Y").map((r) => String(r[col.name] || "").trim().toLowerCase())
+      : []))
+    .catch(() => new Set());
+}
+
 async function init() {
   if (!memberId) {
     showStatus("Open this from your membership card.", true);
@@ -267,8 +276,9 @@ async function init() {
 
   let exercises;
   try {
-    const { rows, col } = await fetchLoggedSets(clientSlug);
-    exercises = buildSeries_(rows, col, clientSlug);
+    const [{ rows, col }, hidden] = await Promise.all([fetchLoggedSets(clientSlug), hiddenFromProgress_()]);
+    // Exercises Max marked "Leave out of Strength Progress" in the builder (weights not comparable session to session).
+    exercises = buildSeries_(rows, col, clientSlug).filter((ex) => !hidden.has(ex.key));
   } catch (err) {
     showStatus("Couldn't load your workout history. Check your connection and reopen.", true);
     return;

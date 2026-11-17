@@ -239,6 +239,14 @@ In Fuel's tiles: **Meal plan** (the planner, Diamond only) and **Shopping** (Gol
 
 `fetchWorkoutExercises()` reads the tab once per page and keeps it. After a save, delete or chip drag, `workout/builder.js` makes the same change to that copy (`saveWorkoutToCopy_`, `removeWorkoutFromCopy_`, `reorderWorkoutsInCopy_`) instead of re-reading, because Google's CSV can lag behind a write and the old rows would come back. **If `handleAssignWorkout_`, `handleDeleteWorkout_` or `handleReorderWorkouts_` in `Code.gs` changes what it writes, change the matching function too.** A page refresh is a real read, so one straight after a save could still be behind.
 
+## Drop sets and the Strength Progress switch (built 2026-11-17, not live until Max deploys)
+
+- **Drops are never saved (Max's call).** They live in `ctx.drops` ("exercise|set" -> list) on the workout page, survive view switches, and are rebuilt by `buildDropRows_` each paint. Drop rows have class `workout__drop`, NOT `workout__set`, and are never in `allRows_`, so Logged Sets, drafts, history, Strength Progress and the muscle map are untouched. Don't make them `workout__set`.
+- **Planned drops:** Workout Exercises `Drop Sets` = 1-3 drops on that exercise's last set (`seedPlannedDrops_`). The client's **Dropset** button adds one under their last ticked set (max 3); only a client-added last drop gets an ×.
+- **Flow:** a set with drops waiting saves with no rest and doesn't move on (`plainSetSaver_`; supersets wait in `onSave` and continue via `advance`). Ticking the last drop starts the rest timer and moves on. Simple view just lists drops under the steppers.
+- **Fire ring:** `igniteDropset_`. Red only (brand rule, Max chose it), conic sweep + blur glow + embers, no embers for reduced motion.
+- **Strength Progress switch:** per exercise for every client, Exercises tab `Hide From Progress` = "Y". The builder's ⋯ menu sets it, and it's sent with Save Workout (`hideFromProgress`). Code.gs `setHideFromProgress_` writes only rows that change. `progress.js` hides those charts and `computePersonalBests_` skips them. Their sets still save and still count on the muscle map.
+
 ## Clients vs app members (built 2026-11-05, not live until Max deploys)
 
 Max trains only Bec Campbell and Sean Campbell in person; everyone else is an **app member**. **Max decides who is a client; nothing moves anyone automatically** (no rule on payments or sessions).

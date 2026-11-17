@@ -765,6 +765,203 @@ function buildSetRow(exercise, setNumber, initial, onSave, options) {
   return row;
 }
 
+// ---- Drop sets (2026-11-17) ---------------------------------------------
+//
+// A drop hangs under one set: same exercise, lighter weight, no rest in
+// between. The coach can plan 1-3 on an exercise's last set (Drop Sets
+// column), and a client can add one on the day with the Dropset button.
+// Drops are never saved (Max's call): they live in ctx.drops, keyed by
+// exercise + set number, so they survive a view switch, but they never
+// enter allRows_/collectSets, so Logged Sets, history, Strength Progress
+// and the muscle map are exactly as before. Their rows are built fresh
+// from that data each time a layout paints them.
+
+const DROP_FLAME_SVG = '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.6 2.2c.3 2.6-.8 4.4-2.3 6-1.6 1.7-3.3 3.5-3.3 6.6A5 5 0 0 0 12 20a5 5 0 0 0 5-5.1c0-1.9-.8-3.2-1.7-4.4-.2 1.4-.9 2.5-2 3 .6-3.5-.2-7.6-.7-11.3z"/></svg>';
+const MAX_DROPS = 3;
+
+function dropKey_(exerciseName, setNumber) {
+  return `${String(exerciseName).toLowerCase()}|${setNumber}`;
+}
+
+function dropsFor_(ctx, row) {
+  return (ctx.drops && row.dataset && ctx.drops.get(dropKey_(row.dataset.exercise, row.dataset.setNumber))) || [];
+}
+
+function pendingDrops_(ctx, row) {
+  return dropsFor_(ctx, row).some((drop) => !drop.saved);
+}
+
+/** About 20% lighter, to the nearest 2.5 kg. */
+function dropWeight_(weight) {
+  return Math.max(0, Math.round((weight * 0.8) / WEIGHT_STEP) * WEIGHT_STEP);
+}
+
+/** Adds one drop under this set. False when it already has the most allowed. */
+function addDrop_(ctx, row) {
+  const key = dropKey_(row.dataset.exercise, row.dataset.setNumber);
+  const list = ctx.drops.get(key) || [];
+  if (list.length >= MAX_DROPS) return false;
+  list.push({ planned: false, saved: null });
+  ctx.drops.set(key, list);
+  return true;
+}
+
+/** The coach's planned drops go on the exercise's last set, once per workout on screen. */
+function seedPlannedDrops_(ctx, exercise) {
+  const count = Math.min(MAX_DROPS, Math.round(Number(exercise.dropSets)) || 0);
+  const lower = exercise.name.toLowerCase();
+  if (count < 1 || !(exercise.sets >= 1) || ctx.dropsSeeded.has(lower)) return;
+  ctx.dropsSeeded.add(lower);
+  const key = dropKey_(exercise.name, exercise.sets);
+  const list = ctx.drops.get(key) || [];
+  while (list.length < count) list.push({ planned: true, saved: null });
+  ctx.drops.set(key, list);
+}
+
+function centreOn_(el) {
+  if (!el) return;
+  const calm = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  el.scrollIntoView({ behavior: calm ? "auto" : "smooth", block: "center" });
+}
+
+/** Scrolls to the first drop under this set that isn't ticked yet. */
+function focusNextDrop_(row) {
+  let el = row.nextElementSibling;
+  while (el && el.classList.contains("workout__drop")) {
+    if (!el.classList.contains("workout__set--saved")) return centreOn_(el);
+    el = el.nextElementSibling;
+  }
+}
+
+/**
+ * The drop rows under one set, ready to insert right after it.
+ * opts.repaint redraws the layout they sit in; opts.onDone runs once every
+ * drop under the set is ticked (rest timer, open the next exercise).
+ */
+function buildDropRows_(ctx, parentRow, opts) {
+  const list = dropsFor_(ctx, parentRow);
+  if (!list.length) return [];
+  const repaint = (opts && opts.repaint) || (() => {});
+  let base = parentRow._saved || rowValues(parentRow);
+  const firstOpen = list.findIndex((drop) => !drop.saved);
+  return list.map((drop, i) => {
+    const suggestion = {
+      weight: Number.isFinite(base.weight) ? dropWeight_(base.weight) : null,
+      reps: Number.isFinite(base.reps) ? base.reps : null,
+    };
+    const initial = drop.saved
+      ? { weight: drop.saved.weight, reps: drop.saved.reps, saved: true, suggestion: false, last: null }
+      : { weight: suggestion.weight, reps: suggestion.reps, saved: false, suggestion: true, last: null };
+    const row = buildSetRow({ name: parentRow.dataset.exercise, reps: "" }, `${parentRow.dataset.setNumber}, drop ${i + 1}`, initial, () => tick(), { variant: "compact" });
+    // Not a "workout__set": nothing that gathers sets to save ever sees a drop.
+    row.classList.remove("workout__set");
+    row.classList.add("workout__drop");
+    delete row.dataset.exercise;
+    if (i === firstOpen && parentRow._saved) row.classList.add("workout__drop--now");
+
+    const weightInput = row.querySelector(".workout__weight-input");
+    const repsInput = row.querySelector(".workout__reps-input");
+    if (!drop.saved && drop.typedWeight !== undefined) weightInput.value = drop.typedWeight;
+    if (!drop.saved && drop.typedReps !== undefined) repsInput.value = drop.typedReps;
+    weightInput.addEventListener("input", () => { drop.typedWeight = weightInput.value; });
+    repsInput.addEventListener("input", () => { drop.typedReps = repsInput.value; });
+
+    row.querySelector(".workout__set-num").remove();
+    // Its own line across the top of the row ("Drop 1", and × for one added
+    // by mistake): there's no room for words beside the boxes on a phone.
+    const label = row.querySelector(".workout__set-last");
+    label.replaceChildren();
+    label.classList.add("workout__drop-label");
+    label.insertAdjacentHTML("beforeend", DROP_FLAME_SVG);
+    const labelText = document.createElement("span");
+    labelText.className = "workout__drop-label-text";
+    labelText.textContent = `Drop ${i + 1}`;
+    label.appendChild(labelText);
+    if (!drop.planned && !drop.saved && i === list.length - 1) {
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "workout__drop-remove";
+      remove.textContent = "×";
+      remove.setAttribute("aria-label", `Remove drop ${i + 1}`);
+      remove.addEventListener("click", () => {
+        list.pop();
+        repaint();
+      });
+      label.appendChild(remove);
+    }
+
+    function tick() {
+      const values = rowValues(row);
+      if (!values.valid) {
+        flashStatus(!Number.isFinite(values.weight) || values.weight < 0 ? "Add the weight first (0 for bodyweight)." : "Add the reps first.", true);
+        return;
+      }
+      drop.saved = { weight: values.weight, reps: values.reps };
+      repaint();
+      if (list.every((d) => d.saved)) {
+        if (opts && opts.onDone) opts.onDone();
+      } else {
+        focusNextDrop_(parentRow);
+      }
+    }
+
+    if (drop.saved) base = drop.saved;
+    else base = { weight: suggestion.weight, reps: suggestion.reps };
+    return row;
+  });
+}
+
+/** The red "Dropset" button. onAdd adds the drop and repaints; the fire ring plays once it's in. */
+function buildDropsetButton_(onAdd) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "workout__dropset-btn";
+  btn.innerHTML = `<span class="workout__dropset-icon">${DROP_FLAME_SVG}</span><span>Dropset</span>`;
+  btn.setAttribute("aria-label", "Add a drop set to your last set");
+  btn.addEventListener("click", onAdd);
+  return btn;
+}
+
+/** The fire ring: a red sweep round the button, a glow, and embers rising off it. Embers are skipped for reduced motion. */
+function igniteDropset_(btn) {
+  if (!btn) return;
+  btn.classList.remove("is-lit");
+  void btn.offsetWidth; // restart the animation if it's tapped again mid-way
+  btn.classList.add("is-lit");
+  clearTimeout(btn._litTimer);
+  btn._litTimer = setTimeout(() => btn.classList.remove("is-lit"), 1300);
+  if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const width = btn.offsetWidth;
+  for (let i = 0; i < 14; i++) {
+    const ember = document.createElement("span");
+    ember.className = "workout__ember";
+    const size = 3 + Math.random() * 4;
+    ember.style.width = `${size}px`;
+    ember.style.height = `${size}px`;
+    ember.style.left = `${6 + Math.random() * (width - 12)}px`;
+    ember.style.setProperty("--drift", `${(Math.random() - 0.5) * 28}px`);
+    ember.style.setProperty("--rise", `${-28 - Math.random() * 30}px`);
+    ember.style.animationDuration = `${0.8 + Math.random() * 0.5}s`;
+    ember.style.animationDelay = `${Math.random() * 0.3}s`;
+    btn.appendChild(ember);
+    setTimeout(() => ember.remove(), 1700);
+  }
+}
+
+/** A normal exercise's save: it waits for the set's drops (no rest, no moving on) before the rest timer and the next exercise. */
+function plainSetSaver_(ctx, item) {
+  return (row) => {
+    const waits = !row._saved && pendingDrops_(ctx, row);
+    if (!ctx.saveSet(row, waits ? { noRest: true } : undefined)) return;
+    if (waits) {
+      if (item.repaintDrops) item.repaintDrops();
+      focusNextDrop_(row);
+      return;
+    }
+    if (ctx.onItemChanged) ctx.onItemChanged(item);
+  };
+}
+
 /**
  * Captures exactly what's on screen right now for every set row — saved
  * state AND whatever's currently typed, even if not yet saved — so
@@ -970,6 +1167,7 @@ function buildItems_(ctx, exercises, savedByExercise, rowOptions) {
       const members = chain.map((exercise, idx) => {
         const saved = savedByExercise.get(exercise.name.toLowerCase());
         const sets = buildExerciseSets_(ctx, exercise, saved ? saved.sets : new Map(), (row) => ctx.saveSet(row), rowOptions);
+        seedPlannedDrops_(ctx, exercise);
         return { exercise, code: `${letter}${idx + 1}`, sets };
       });
       items.push({ type: "superset", letter, word: chain.length >= 3 ? "Circuit" : "Superset", members, restSeconds: rest });
@@ -977,10 +1175,8 @@ function buildItems_(ctx, exercises, savedByExercise, rowOptions) {
       const exercise = chain[0];
       const saved = savedByExercise.get(exercise.name.toLowerCase());
       const item = { type: "exercise", exercise, isExtra: false };
-      item.sets = buildExerciseSets_(ctx, exercise, saved ? saved.sets : new Map(), (row) => {
-        if (!ctx.saveSet(row)) return;
-        if (ctx.onItemChanged) ctx.onItemChanged(item);
-      }, rowOptions);
+      item.sets = buildExerciseSets_(ctx, exercise, saved ? saved.sets : new Map(), plainSetSaver_(ctx, item), rowOptions);
+      seedPlannedDrops_(ctx, exercise);
       items.push(item);
     }
     i = last + 1;
@@ -990,10 +1186,7 @@ function buildItems_(ctx, exercises, savedByExercise, rowOptions) {
     if (assignedKeys.has(lower)) continue;
     const exercise = { name: saved.name, sets: 1, reps: "" };
     const item = { type: "exercise", exercise, isExtra: true };
-    item.sets = buildExerciseSets_(ctx, exercise, saved.sets, (row) => {
-      if (!ctx.saveSet(row)) return;
-      if (ctx.onItemChanged) ctx.onItemChanged(item);
-    }, rowOptions);
+    item.sets = buildExerciseSets_(ctx, exercise, saved.sets, plainSetSaver_(ctx, item), rowOptions);
     items.push(item);
   }
   return items;
@@ -1380,7 +1573,7 @@ function renderExerciseBody_(ctx, item) {
   head.appendChild(name);
   const target = document.createElement("span");
   target.className = "workout__exercise-target";
-  target.textContent = item.isExtra ? "Extra" : (item.exercise.reps ? `${item.exercise.sets} × ${item.exercise.reps}` : `${item.exercise.sets} ${item.exercise.sets === 1 ? "set" : "sets"}`);
+  target.textContent = item.isExtra ? "Extra" : `${item.exercise.reps ? `${item.exercise.sets} × ${item.exercise.reps}` : `${item.exercise.sets} ${item.exercise.sets === 1 ? "set" : "sets"}`}${Number(item.exercise.dropSets) > 0 ? " + drop set" : ""}`;
   head.appendChild(target);
   head.appendChild(buildWatchButton_(item.exercise, "small"));
   wrap.appendChild(head);
@@ -1391,18 +1584,50 @@ function renderExerciseBody_(ctx, item) {
 
   const setsWrap = document.createElement("div");
   setsWrap.className = "workout__sets";
-  item.sets.rows.forEach((row) => setsWrap.appendChild(row));
+  const paint = () => {
+    setsWrap.replaceChildren();
+    item.sets.rows.forEach((row) => {
+      setsWrap.appendChild(row);
+      buildDropRows_(ctx, row, {
+        repaint: paint,
+        onDone: () => {
+          startRestTimer();
+          if (ctx.onItemChanged) ctx.onItemChanged(item);
+        },
+      }).forEach((el) => setsWrap.appendChild(el));
+    });
+  };
+  item.repaintDrops = paint;
+  paint();
   wrap.appendChild(setsWrap);
 
+  const actions = document.createElement("div");
+  actions.className = "workout__set-actions";
   const addBtn = document.createElement("button");
   addBtn.type = "button";
   addBtn.className = "workout__add-set";
   addBtn.textContent = "+ Add set";
   addBtn.addEventListener("click", () => {
-    setsWrap.appendChild(item.sets.addRow(true));
+    item.sets.addRow(true);
+    paint();
     updateProgress_(ctx);
   });
-  wrap.appendChild(addBtn);
+  const dropBtn = buildDropsetButton_(() => {
+    // On the set they've just done: the last one ticked, or the last set if none are yet.
+    const done = item.sets.rows.filter((r) => r._saved);
+    const target = done.length ? done[done.length - 1] : item.sets.rows[item.sets.rows.length - 1];
+    if (!target) return;
+    if (!addDrop_(ctx, target)) {
+      flashStatus(`That set already has ${MAX_DROPS} drops.`, false);
+      return;
+    }
+    paint();
+    igniteDropset_(dropBtn);
+    const drops = setsWrap.querySelectorAll(".workout__drop");
+    centreOn_(Array.from(drops).find((el) => !el.classList.contains("workout__set--saved")) || drops[drops.length - 1]);
+  });
+  actions.append(addBtn, dropBtn);
+  wrap.appendChild(actions);
 
   return wrap;
 }
@@ -2061,6 +2286,21 @@ function renderSupersetBody_(ctx, item) {
     add.addEventListener("click", () => addSet(member));
     adds.appendChild(add);
   });
+  const ssDrop = buildDropsetButton_(() => {
+    const { order } = supersetOrder_(item.members);
+    const done = order.filter((o) => o.row._saved);
+    const pick = done.length ? done[done.length - 1] : firstUnsaved(order);
+    if (!pick) return;
+    if (!addDrop_(ctx, pick.row)) {
+      flashStatus(`That set already has ${MAX_DROPS} drops.`, false);
+      return;
+    }
+    openRound = pick.round;
+    render();
+    igniteDropset_(ssDrop);
+    focusNextDrop_(pick.row);
+  });
+  adds.appendChild(ssDrop);
   section.appendChild(adds);
 
   const firstUnsaved = (order) => order.find((o) => !o.row._saved) || null;
@@ -2130,6 +2370,10 @@ function renderSupersetBody_(ctx, item) {
         }
         itemWrap.appendChild(h);
         itemWrap.appendChild(o.row);
+        buildDropRows_(ctx, o.row, {
+          repaint: render,
+          onDone: () => { if (o.row._saved) advance(o.row); else render(); },
+        }).forEach((el) => itemWrap.appendChild(el));
         body.appendChild(itemWrap);
       });
       roundsWrap.appendChild(body);
@@ -2149,6 +2393,16 @@ function renderSupersetBody_(ctx, item) {
       if (ctx.onItemChanged) ctx.onItemChanged(item);
       return;
     }
+    if (pendingDrops_(ctx, row)) {
+      // Its drops come first, straight away; the round carries on once they're ticked.
+      render();
+      focusNextDrop_(row);
+      return;
+    }
+    advance(row);
+  }
+
+  function advance(row) {
     const { order } = supersetOrder_(item.members);
     const saved = order.find((o) => o.row === row);
     const nextHere = firstUnsaved(order.filter((o) => o.round === saved.round));
@@ -2530,6 +2784,17 @@ function layoutSimple_(ctx) {
     card.appendChild(setLabel);
 
     card.appendChild(step.row);
+    buildDropRows_(ctx, step.row, { repaint: () => layoutSimple_(ctx) }).forEach((el) => card.appendChild(el));
+    const simpleDrop = buildDropsetButton_(() => {
+      if (!addDrop_(ctx, step.row)) {
+        flashStatus(`That set already has ${MAX_DROPS} drops.`, false);
+        return;
+      }
+      layoutSimple_(ctx);
+      igniteDropset_(els.list.querySelector(".workout__dropset-btn"));
+    });
+    simpleDrop.classList.add("workout__dropset-btn--simple");
+    card.appendChild(simpleDrop);
 
     const doneBtn = document.createElement("button");
     doneBtn.type = "button";
@@ -2611,6 +2876,7 @@ function computePersonalBests_(ctx, sets) {
   sets.forEach((s) => {
     if (s.type === "round" || s.type === "pads" || s.type === "interval" || s.type === "amrap") return; // timed work never counts toward a personal best
     const key = s.exercise.toLowerCase();
+    if (hiddenFromProgress_.has(key)) return; // Max left it out of Strength Progress: its weights aren't comparable
     const cur = byExercise.get(key);
     if (!cur || s.weight > cur.weight || (s.weight === cur.weight && s.reps > cur.reps)) {
       byExercise.set(key, { name: s.exercise, weight: s.weight, reps: s.reps });
@@ -3066,6 +3332,7 @@ function changeDate(shared, value) {
 // which muscles an exercise works — and the review screen can resolve a
 // saved set's exercise name to its muscles — without an extra fetch.
 let exerciseIndex_ = { byExact: {}, byNormalized: {} };
+let hiddenFromProgress_ = new Set(); // exercises marked "Hide From Progress" on the Exercises tab (no personal-best card for them)
 
 function renderWorkout(shared, workoutName, exercises, opts) {
   const { clientSlug, setRows, setCol, startingWeights, exerciseNameOptions } = shared;
@@ -3097,6 +3364,8 @@ function renderWorkout(shared, workoutName, exercises, opts) {
     clientSlug, workoutName, setRows, setCol, startingWeights,
     exerciseNameOptions,
     exercises,
+    drops: new Map(), // "exercise|set" -> drops under that set; never saved (see buildDropRows_)
+    dropsSeeded: new Set(),
     currentView: shared.currentView,
     draftKey: key,
     dateStr,
@@ -4064,6 +4333,7 @@ async function init() {
         workoutNote: workout.col.workoutNotes >= 0 ? String(r[workout.col.workoutNotes] || "").trim() : "",
         superset: workout.col.superset >= 0 && String(r[workout.col.superset] || "").trim().toUpperCase() === "Y",
         supersetRest: workout.col.supersetRest >= 0 ? Number(r[workout.col.supersetRest]) : NaN,
+        dropSets: workout.col.dropSets >= 0 ? Number(r[workout.col.dropSets]) || 0 : 0,
         // Boxing rounds (2026-11-07): sets above IS the round count for one of these. A block is never a superset member, whatever its own Superset cell says.
         blockType: workout.col.blockType >= 0 ? String(r[workout.col.blockType] || "").trim() : "",
         workSeconds: workout.col.workSeconds >= 0 ? Number(r[workout.col.workSeconds]) || 120 : 120,
@@ -4106,6 +4376,7 @@ async function init() {
       exerciseNameOptions.push(rawName);
       const weight = Number(row[exerciseDefaults.col.startingWeight]);
       if (Number.isFinite(weight)) startingWeights[rawName.toLowerCase()] = weight;
+      if (exerciseDefaults.col.hideFromProgress >= 0 && String(row[exerciseDefaults.col.hideFromProgress] || "").trim().toUpperCase() === "Y") hiddenFromProgress_.add(rawName.toLowerCase());
     }
     // Shared resolver (card/muscle-map.js), not a plain exact-lowercase
     // lookup (2026-10-09 fix) — see workout/heatmap.js's header comment for

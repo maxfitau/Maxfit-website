@@ -587,7 +587,7 @@
    drawn by refreshSupersets_ in builder.js. */
 .builder__row .builder__ss-link {
   grid-column: 1 / -1;
-  grid-row: 4;
+  grid-row: 5;
   position: relative;
   display: flex;
   justify-content: center;
@@ -597,7 +597,45 @@
 }
 
 .builder__row--ss-start > .builder__row-tip { grid-row: 4; }
-.builder__row--ss-start > .builder__ss-link { grid-row: 5; }
+.builder__row--ss-start > .builder__ss-link { grid-row: 6; }
+
+/* Drop set and Strength Progress chips (refreshRowExtras_), on the line under the tip. */
+.builder__row .builder__row-chips { grid-column: 1 / -1; grid-row: 4; display: flex; flex-wrap: wrap; gap: 8px; }
+.builder__row--ss-start > .builder__row-chips { grid-row: 5; }
+.builder__row-chips[hidden],
+.builder__row-menu-item[hidden] { display: none !important; }
+.builder__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 4px 0 12px;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 14px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--white);
+  border-radius: 999px;
+}
+.builder__chip--drop { background: rgba(224, 0, 0, 0.1); border: 1px solid rgba(224, 0, 0, 0.5); }
+.builder__chip--drop svg { color: var(--red); flex-shrink: 0; }
+.builder__chip--grey { color: var(--grey); background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line); }
+.builder__chip-btn,
+.builder__chip-x {
+  width: 36px;
+  height: 36px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--white);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.builder__chip-x { color: var(--dim); background: none; border: none; }
+.builder__chip-btn:hover, .builder__chip-x:hover { color: var(--white); border-color: var(--red); }
 
 .builder__ss-link[hidden],
 .builder__row-more[hidden],
