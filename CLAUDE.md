@@ -23,7 +23,7 @@ Max asked for the client workout logger (`workout/index.html`, `workout/app.js`,
 - **Tested** in the browser against the real live sheet with `?id=maxfrench` (Max's own test card) — all three views, a superset, the review screen's PB/muscle calculations, and one real Save & Close. Two real bugs were found and fixed in the process: `ctx.collectSets`/`onFinishTapped_`/`hasUnsavedEntries` only reading DOM-mounted rows (see `allRows_` above), and the review screen's muscle bars being invisible (`<span>` fills need `display: block` for a `width` to do anything).
 - **Deploy:** front-end only, no backend change. Cache tags bumped: `workout/app.js?v=20261107b`, `workout/styles.css?v=20261107a` (only loaded by `workout/index.html`, so no other page needed a bump).
 
-## Boxing (built 2026-11-07, Code.gs 2026-11-07a, not live)
+## Boxing (built 2026-11-07, Code.gs 2026-11-07a, LIVE — confirmed 2026-11-18, header was stale)
 
 Timed boxing rounds — a bag/shadow-boxing block the client runs themselves, or pad work Max runs from his own phone in coach mode. A block is one exercise row in Workout Exercises (`Block Type` "Rounds"; blank is every normal exercise, unaffected); it can never join a superset.
 
@@ -54,7 +54,7 @@ Max coaches with letters, not the old 1–6 numbers. **L Left, R Right, U Upperc
 - **Cache tags:** `workout/app.js?v=20261112a`, `workout/styles.css?v=20261112a`.
 - **Tested** (stubbed Sheet reads and POST): note shown with the right date and not the older one, box order, draft saved, kept across views, review prefilled, edit carried back, saved note in the POST.
 
-## Mix it up (built 2026-11-09, Code.gs 2026-11-09a, not live)
+## Mix it up (built 2026-11-09, Code.gs 2026-11-09a, LIVE — confirmed 2026-11-18, header was stale; `seedMixItUp()` itself wasn't re-verified, check the Train tab's MIX IT UP button actually offers a workout)
 
 A surprise HIIT session (boxing or bootcamp) from the Train tab: a red 72px **MIX IT UP** button at the top of "LOG SOMETHING ELSE" (so it shows with no assigned workouts, and in `?coach=1`). Everything behind the button is `workout/mixitup.js` (+ `mixitup.css`), loaded before `app.js` on `workout/index.html`; it reuses app.js's helpers at call time (draft storage, `saveSimpleSession_`, the else-overlay, the review tiles and `renderMuscleReview_`, wake lock, `formatCombo_`, audio unlock) and does not touch assigned workouts, supersets, boxing blocks, runs or custom workouts. It has its own player screen rather than driving the boxing round timer: the boxing timer is tied to a boxing item in a workout, and one segment player handles every block type (the boxing sound choice, bell, beeps and wake lock are shared).
 - **Flow:** first-ever open per member shows a one-time safety note (`maxfitMixNote|<id>`). Setup: Style (Boxing / Bootcamp / Surprise me), Level (Gentle / Steady / Push, remembered per member in `maxfitMixLevel|<id>`), Where (gym / home = Equipment None only) and SHUFFLE. Reveal card: name, style, "about N min", equipment, one line per block; START / Shuffle again / Back. Shuffle never picks one of the last 2 started (`maxfitMixHistory|<id>`) or the one on screen while there's another choice.
@@ -68,7 +68,7 @@ A surprise HIIT session (boxing or bootcamp) from the Train tab: a red 72px **MI
 - **Tested** (`?id=maxfrench`, stubbed Sheet reads and a stubbed POST, scratchpad copy; never a real save): all 18 style/level/where combos return a workout, home only Equipment None, no repeats across 500 shuffles, Gentle/Push numbers, EMOM/AMRAP minutes, combos, option picks, labels, segment counts (Fight Night 18 intervals, Tabata 24), a 40s and 300s "locked screen" jump, pause, a full Speed & Power run (draft after each interval, AMRAP +1/-1, review tiles TIME/ROUNDS 6/BLOCKS 2, muscle list, saved payload), easier swap, End/Keep going, the unfinished-session prompt, coach mode, and the muscle-map counting (AMRAP of 3 = 3x an interval). The seed ran against fake sheets (8 checks: columns, 14 workouts, re-run adds nothing, Max's edit and a deleted workout handled, Exercises added once). **Not tested:** a real phone's screen lock, vibration and audio; the real sheet.
 - **Deploy:** paste `Code.gs`, Save, run `seedMixItUp()` once, Deploy -> New version, push. Cache tags `20261109a`: `workout/mixitup.js/.css`, `workout/app.js`, `workout/calendar.js`, `workout/heatmap.js`, `workout/progress.js`, `card/week.js`, and `card/sheet.js` on every page that loads it. "Rower" in Max's list is the existing "Rowing Machine"; new exercises added for the seed are in the `EXERCISE_MUSCLE_DATA_` block commented "Mix it up".
 
-## Builder week overview (built 2026-11-08, read-only, not live)
+## Builder week overview (built 2026-11-08, read-only, LIVE — confirmed 2026-11-18, header was stale)
 
 A second panel under "Muscles Worked this workout" in the builder's side column (`#weekPanel`, `workout/builder.js`/`.css`) — "This week" for whichever client is picked, across **every one of their named workouts**, not just the one on screen. Never writes anything; it's a planning view only.
 
@@ -78,7 +78,7 @@ A second panel under "Muscles Worked this workout" in the builder's side column 
 - **Layout:** desktop (the coach shell's wide layout) keeps the side column always visible, scrolling on its own; under 860px (`workout/builder.css`'s existing breakpoint, no new one needed) it collapses into a "This week" card above Save, showing a one-line summary ("38 sets · top: Chest, Triceps, Quads") when closed.
 - **Deploy:** front-end only, no backend change beyond what "Log something else" below needs for the cardio line. `workout/builder.js?v=20261107a`, `workout/builder.css?v=20261107a`, `workout/heatmap.js?v=20261108a`, `card/muscle-map.js?v=20261107b` (all already current if deployed alongside "Log something else").
 
-## Log something else (built 2026-11-08, Code.gs 2026-11-08a, not live)
+## Log something else (built 2026-11-08, Code.gs 2026-11-08a, LIVE — confirmed 2026-11-18, header was stale)
 
 Under the picker's "Which one are you doing today?" list (`workout/index.html`/`app.js`, both client and coach mode), a "LOG SOMETHING ELSE" section with three buttons, shown even when nothing's assigned: **Log a run or walk**, **Log my own workout**, **Log a boxing session**. None of the three write a Workout Exercises row (no "save as template") and none of them change how an assigned workout behaves.
 
@@ -228,7 +228,7 @@ In Fuel's tiles: **Meal plan** (the planner, Diamond only) and **Shopping** (Gol
 - Ideas' foods go through `cleanPlanMeal_`. "Log it" opens the normal confirm screen (source `fridge`), with the chosen meal pre-picked (workout purposes go to Snack). "+ List" uses `shoppingAdd`.
 - The JSON schema is built inside `fridgeSchema_()`, never at load time: Apps Script loads Macro.gs before MacrosCore.gs, so top-level code can't touch `MacroCore`.
 
-## Supersets in rounds (built 2026-11-05, not live until Max deploys)
+## Supersets in rounds (built 2026-11-05, LIVE — confirmed 2026-11-18, header was stale)
 
 - **The rule:** a superset is a layout, never a different way of saving. Every set saves through `ctx.saveSet` with the same exercise name and set number, so Logged Sets, history, progress and the muscle map don't change.
 - **Storage:** Workout Exercises `Superset` = "Y" means this exercise and the next (by Order) are linked; 3+ linked reads as "Circuit". `Superset Rest` = seconds of rest after each round, on the group's first exercise only (15-600). Blank or a missing column means 90s. `ensureWorkoutExercisesColumns_` adds the column the first time a workout is saved.
@@ -247,7 +247,7 @@ In Fuel's tiles: **Meal plan** (the planner, Diamond only) and **Shopping** (Gol
 - **Fire ring:** `igniteDropset_`. Red only (brand rule, Max chose it), conic sweep + blur glow + embers, no embers for reduced motion.
 - **Strength Progress switch:** per exercise for every client, Exercises tab `Hide From Progress` = "Y". The builder's ⋯ menu sets it, and it's sent with Save Workout (`hideFromProgress`). Code.gs `setHideFromProgress_` writes only rows that change. `progress.js` hides those charts and `computePersonalBests_` skips them. Their sets still save and still count on the muscle map.
 
-## Clients vs app members (built 2026-11-05, not live until Max deploys)
+## Clients vs app members (built 2026-11-05, LIVE — confirmed 2026-11-18, header was stale)
 
 Max trains only Bec Campbell and Sean Campbell in person; everyone else is an **app member**. **Max decides who is a client; nothing moves anyone automatically** (no rule on payments or sessions).
 
@@ -268,7 +268,7 @@ Max asked to create a client from the coach laptop page instead of typing into t
 - **Tested:** the real `Code.gs` on fake sheets (31 checks; six deliberate breakages each caught: no PIN check, duplicate name allowed, free tick ignored, referrer not checked, client flag wrong, no email) and the real page in the preview against a stubbed sheet and backend (validation on each step, wrong then right PIN, backend duplicate, no-email path, Add another, 390px and desktop). Nothing was written to the live sheet.
 - **Deploy:** paste `Code.gs`, Save, Deploy -> New version (check the live version says 2026-11-18a), then push the site.
 
-## Coach desktop shell (built 2026-11-06, not yet pushed)
+## Coach desktop shell (built 2026-11-06, LIVE — confirmed 2026-11-18, header was stale)
 
 Max asked for every coach-only tool to get a proper laptop layout, not just the phone one. Phone is pixel-for-pixel unchanged; laptop (1024px+) gets a persistent left sidebar.
 
