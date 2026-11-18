@@ -486,6 +486,57 @@ body.week-sheet-open {
   color: var(--grey);
 }
 
+/* A goal type that can't be tracked yet: dimmed by colour and a dashed edge, never by fading the text, so the reason stays easy to read. */
+.week-opt.is-locked {
+  background: transparent;
+  border-style: dashed;
+  cursor: pointer;
+}
+
+.week-opt.is-locked .week-opt__main {
+  color: var(--grey);
+}
+
+.week-opt.is-locked .week-opt__sub {
+  font-size: 16px;
+  line-height: 1.35;
+  color: var(--grey);
+}
+
+.week-opt.is-locked .week-opt__emoji {
+  opacity: 0.55;
+}
+
+.week-opt__lock {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: inline-flex;
+  color: var(--grey);
+}
+
+.week-opt__lock .mi svg {
+  width: 24px;
+  height: 24px;
+}
+
+.week-lockmsg {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 14px 16px;
+  border-radius: var(--radius-glass-md);
+  border: 1px solid var(--red);
+  background: rgba(224, 0, 0, 0.1);
+}
+
+.week-lockmsg__text {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.4;
+  color: var(--white);
+}
+
 .week-opt__tag {
   margin-left: auto;
   flex-shrink: 0;

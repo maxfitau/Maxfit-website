@@ -90,6 +90,8 @@ const WeekCard = (function () {
   const WHY_IDEAS = ["keep up with my grandkids", "feel better in my clothes", "stay independent", "sleep better"];
   const SECTION_WORD = { "Legs & Hips": "legs", Chest: "chest", Back: "back", Arms: "arms", Shoulders: "shoulders", Core: "core" };
   const SNOOZE_KEY = "maxfitGoalSnoozed";
+  const LOCK_FUEL = "Needs Fuel \u2014 open your Fuel link on your phone to use this";
+  const LOCK_LIFT = "Log a workout with weights first, then come back";
   const MUSCLE_MAP_SRC = "muscle-map.js?v=20261107b";
 
   let slug = "";
@@ -455,15 +457,24 @@ const WeekCard = (function () {
 
   /** `editing`: the goal being changed (keeps its month), or null for a new month. `auto`: opened by itself. */
   function openSetup(editing, auto) {
-    const types = Object.keys(TYPES).filter((t) => {
-      if (t === "weight" || t === "green") return !!fuel;
-      if (t === "strength") return recentLifts().length > 0;
-      return true;
-    });
+    // All four types always show (so the list never looks broken); one that
+    // can't be tracked yet is a dimmed, locked card that says why (2026-11-19).
+    const types = Object.keys(TYPES);
+    const lockReason = (t) => {
+      if ((t === "weight" || t === "green") && !fuel) return LOCK_FUEL;
+      if (t === "strength" && recentLifts().length === 0) return LOCK_LIFT;
+      return "";
+    };
+    let lockedFor = ""; // the locked type Max/the client last tapped, whose reason shows under the list
     const draft = editing
       ? { type: editing.type, exercise: editing.exercise, target: editing.target, target_reps: editing.target_reps, start_value: editing.start_value, start_reps: editing.start_reps, how: editing.how.slice(), why: editing.why }
       : { type: "", how: [], why: "" };
     const endDate = editing ? editing.end_date : MacroCore.goalEndDate(today);
+    // Only one type open to them: have it ready so Next works straight away.
+    if (!draft.type) {
+      const open = types.filter((t) => !lockReason(t));
+      if (open.length === 1) draft.type = open[0];
+    }
     let step = 0;
     let saving = false;
     let saved = false;
@@ -486,7 +497,21 @@ const WeekCard = (function () {
         html +=
           `<p class="week-q">${goal && !editing ? "New month! What do you want to work on?" : "What do you want to work on this month?"}</p>` +
           '<p class="week-help">Pick one. You can change it any time.</p>' +
-          types.map((k) => `<button class="week-opt${draft.type === k ? " is-on" : ""}" type="button" data-type="${k}"><span class="week-opt__emoji" aria-hidden="true">${MaxIcon(TYPES[k].emoji)}</span><span class="week-opt__text"><span class="week-opt__main">${TYPES[k].name}</span><span class="week-opt__sub">${TYPES[k].sub}</span></span></button>`).join("");
+          types
+            .map((k) => {
+              const why = draft.type === k ? "" : lockReason(k); // a goal being changed keeps its own type open
+              if (why) {
+                return `<button class="week-opt is-locked" type="button" data-locked="${k}" aria-disabled="true"><span class="week-opt__emoji" aria-hidden="true">${MaxIcon(TYPES[k].emoji)}</span><span class="week-opt__text"><span class="week-opt__main">${TYPES[k].name}</span><span class="week-opt__sub">${esc(why)}</span></span><span class="week-opt__lock" aria-hidden="true">${MaxIcon("lock")}</span></button>`;
+              }
+              return `<button class="week-opt${draft.type === k ? " is-on" : ""}" type="button" data-type="${k}"><span class="week-opt__emoji" aria-hidden="true">${MaxIcon(TYPES[k].emoji)}</span><span class="week-opt__text"><span class="week-opt__main">${TYPES[k].name}</span><span class="week-opt__sub">${TYPES[k].sub}</span></span></button>`;
+            })
+            .join("");
+        if (lockedFor && lockReason(lockedFor)) {
+          const isFuel = lockedFor === "weight" || lockedFor === "green";
+          html +=
+            `<div class="week-lockmsg" role="status"><p class="week-lockmsg__text">${esc(lockReason(lockedFor))}</p>` +
+            `<button class="week-btn week-btn--ghost" type="button" data-go="${isFuel ? "fuel" : "workout"}">${isFuel ? "Open Fuel" : "Go to today\u2019s workout"}</button></div>`;
+        }
         canNext = !!draft.type;
       } else if (name === "lift") {
         html +=
@@ -550,7 +575,20 @@ const WeekCard = (function () {
         const b = e.target.closest("button");
         if (!b || b.disabled) return;
         error = "";
-        if (b.dataset.type) {
+        if (b.dataset.locked) {
+          lockedFor = b.dataset.locked; // never selected: just say why, with a way to fix it
+        } else if (b.dataset.go) {
+          const id = encodeURIComponent(slug);
+          if (b.dataset.go === "fuel") {
+            // Same page, so the hash alone wouldn't switch tabs (Fuel picks its tab once, on load): set it on the current address, which keeps ?id=, the Fuel key and the booking code, then reload onto Fuel.
+            window.location.hash = "#fuel";
+            window.location.reload();
+          } else {
+            window.location.href = "../workout/?id=" + id;
+          }
+          return;
+        } else if (b.dataset.type) {
+          lockedFor = "";
           if (draft.type !== b.dataset.type) Object.assign(draft, { type: b.dataset.type, exercise: "", target: 0, target_reps: 0, start_value: 0, start_reps: 0, how: [] });
         } else if (b.dataset.lift) {
           const l = JSON.parse(b.dataset.lift);
