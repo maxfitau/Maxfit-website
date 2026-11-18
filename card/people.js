@@ -245,8 +245,11 @@ const People = (function () {
     const apps = el("a", active === "members" ? "on" : "", "App members ");
     apps.href = "members.html";
     if (askedCount > 0) apps.appendChild(el("span", "badge", String(askedCount)));
+    const add = el("a", "add", "+ Add");
+    add.href = "add-client.html";
     nav.appendChild(mine);
     nav.appendChild(apps);
+    nav.appendChild(add);
     return nav;
   }
 
@@ -343,5 +346,5 @@ const People = (function () {
     }
   }
 
-  return { el, today, daysSince, niceDate, ago, agoWithTime, lastActive, fact, button, linkButton, confirmSheet, setClient, switcher, needsSetupNote, open, NUDGE_DAYS };
+  return { getPin, savePin, forgetPin, api, askPin, el, today, daysSince, niceDate, ago, agoWithTime, lastActive, fact, button, linkButton, confirmSheet, setClient, switcher, needsSetupNote, open, NUDGE_DAYS };
 })();

@@ -32,7 +32,7 @@ const GROCERY_SHEET_NAME = "Grocery Items";
 // Changes whenever this file does, and is shown when you open the deployed
 // URL in a browser (see doGet) — the quick way to tell whether a redeploy
 // actually took, instead of guessing from behaviour.
-const BACKEND_VERSION = "2026-11-17a";
+const BACKEND_VERSION = "2026-11-18a";
 
 function getSheetByGid_(gid) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -798,6 +798,10 @@ function doPost(e) {
   if (action === "memberRequest") {
     return withLock_(() => handleMemberRequest_(payload));
   }
+  // Max (PIN) adds a person from the coach "Add a client" page (2026-11-18).
+  if (action === "addClient") {
+    return withLock_(() => handleAddClient_(payload));
+  }
   if (action === "assignWorkout") {
     return withLock_(() => handleAssignWorkout_(payload));
   }
@@ -1419,6 +1423,158 @@ function handleSelfSignup_(payload) {
   }
 
   return jsonResponse_({ status: "success", cardUrl: cardUrl });
+}
+
+/**
+ * Max (PIN) adds one person from the coach "Add a client" page (2026-11-18):
+ * the same row a self sign-up makes, plus the choices Max makes at the door.
+ * Everything after the row is saved only reports back (booking code, welcome
+ * email), so a hiccup there never loses the person.
+ *
+ *   name (required), email, phone, client (true = Client Yes, false = app
+ *   member), oneOnOne / group (starting sessions, 0-200 each),
+ *   firstFree (true sets Free Session Owed = Y, so check-in offers the free
+ *   session), referredBy (an existing person's name; written to the Referred
+ *   By cell so their paid sessions earn that person punches), sendEmail.
+ * A duplicate name (by slug) or email is refused, like self sign-up.
+ */
+function handleAddClient_(payload) {
+  if (!checkPin_(payload.pin)) return jsonResponse_({ status: "unauthorized" });
+
+  const name = cleanNote_(payload.name, 80);
+  const emailRaw = String(payload.email || "").trim();
+  const email = emailRaw ? bookingCleanEmail_(emailRaw) : "";
+  const phone = cleanNote_(payload.phone, 30);
+  if (!name) return jsonResponse_({ status: "error", message: "Enter their name." });
+  if (emailRaw && !email) return jsonResponse_({ status: "error", message: "That email doesn't look right." });
+  const slug = slugify_(name);
+  if (!slug) return jsonResponse_({ status: "error", message: "Enter their name." });
+
+  const count = function (v) {
+    const n = Math.floor(Number(v) || 0);
+    return n < 0 ? 0 : n > 200 ? 200 : n;
+  };
+  const oneOnOne = count(payload.oneOnOne);
+  const group = count(payload.group);
+  const isClient = payload.client === true || payload.client === "true";
+  const firstFree = payload.firstFree === true || payload.firstFree === "true";
+  const wantEmail = payload.sendEmail !== false && payload.sendEmail !== "false";
+  const referredByRaw = cleanNote_(payload.referredBy, 80);
+
+  const sheet = getSheetByGid_(SESSIONS_SHEET_GID);
+  // The columns this adds to (they self-heal like everywhere else).
+  const extra = [CLIENT_COLUMN, JOINED_VIA_COLUMN];
+  if (firstFree) extra.push("Free Session Owed");
+  if (referredByRaw) extra.push("Referred By");
+  const header = ensureColumns_(sheet, extra);
+  const col = {
+    name: findColumn_(header, "Name"),
+    signupDate: findColumn_(header, "Sign-up Date"),
+    packageType: findColumn_(header, "Package Type"),
+    groupRemaining: findColumn_(header, "Group Sessions Remaining"),
+    oneOnOneCol: findColumn_(header, "1 on 1 Remaining"),
+    token: findColumn_(header, "Check-in Token"),
+    phone: findColumn_(header, "Phone"),
+    email: findColumn_(header, "Email"),
+    client: findColumn_(header, CLIENT_COLUMN),
+    joinedVia: findColumn_(header, JOINED_VIA_COLUMN),
+    freeOwed: findColumn_(header, "Free Session Owed"),
+    referredBy: findColumn_(header, "Referred By"),
+  };
+  if (col.name < 0 || col.token < 0) {
+    return jsonResponse_({ status: "error", message: "The Sessions Remaining tab needs Name and Check-in Token columns." });
+  }
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow >= 2) {
+    const names = sheet.getRange(2, col.name + 1, lastRow - 1, 1).getValues().flat();
+    if (names.some(function (n) { return n && slugify_(n) === slug; })) {
+      return jsonResponse_({ status: "duplicate", message: "Someone called " + name + " is already on the sheet." });
+    }
+  }
+  if (email && isEmailAlreadyPresent_(sheet, col.email, email)) {
+    return jsonResponse_({ status: "duplicate", message: "That email is already on the sheet for someone else." });
+  }
+
+  // Who referred them: must be a real person already on the sheet, so a typo
+  // never silently earns nobody anything.
+  let referrerName = "";
+  if (referredByRaw) {
+    const refRow = findClientRowBySlug_(sheet, col, referredByRaw);
+    if (refRow < 0) {
+      return jsonResponse_({ status: "error", message: "I can't find " + referredByRaw + " on the sheet. Check the spelling, or clear that box." });
+    }
+    referrerName = String(sheet.getRange(refRow, col.name + 1).getValue() || "").trim();
+    if (slugify_(referrerName) === slug) {
+      return jsonResponse_({ status: "error", message: "They can't refer themselves." });
+    }
+  }
+
+  const row = header.map(function () { return ""; });
+  row[col.name] = name;
+  if (col.signupDate >= 0) row[col.signupDate] = Utilities.formatDate(new Date(), TIMEZONE, "yyyy-MM-dd");
+  if (col.packageType >= 0) row[col.packageType] = "Casual";
+  if (col.groupRemaining >= 0) row[col.groupRemaining] = group;
+  if (col.oneOnOneCol >= 0) row[col.oneOnOneCol] = oneOnOne;
+  row[col.token] = Utilities.getUuid();
+  if (col.phone >= 0 && phone) row[col.phone] = phone;
+  if (col.email >= 0 && email) row[col.email] = email;
+  if (col.client >= 0) row[col.client] = isClient ? "Yes" : "No";
+  if (col.joinedVia >= 0) row[col.joinedVia] = "Added by Max";
+  if (col.freeOwed >= 0 && firstFree) row[col.freeOwed] = "Y";
+  if (col.referredBy >= 0 && referrerName) row[col.referredBy] = referrerName;
+
+  const target = sheet.getRange(sheet.getLastRow() + 1, 1, 1, row.length);
+  target.setNumberFormat("@");
+  target.setValues([row]);
+  SpreadsheetApp.flush();
+
+  // Saved. From here nothing may fail the add.
+  let bookingCode = "";
+  try {
+    issueBookingCodes();
+    const book = bookingBook_();
+    if (book) bookingCode = bookingStoredCode_(book, slug);
+  } catch (err) {
+    Logger.log("Add client: booking code provisioning failed: " + err);
+  }
+  const cardUrl = bookingCode ? bookingCardLink_(slug, bookingCode, "") : BOOKING_SITE_URL + "/card/?id=" + encodeURIComponent(slug);
+
+  let emailed = false;
+  if (email && wantEmail) {
+    try {
+      MailApp.sendEmail({
+        to: email,
+        subject: "Welcome to MaxFit — your card is ready",
+        body: [
+          "Hi " + name.split(" ")[0] + ",",
+          "",
+          "Max has set up your MaxFit card. Open this link and add it to your home screen so it's always one tap away:",
+          cardUrl,
+          "",
+          firstFree ? "Your first session is free." : "",
+          bookingCode ? "The link remembers your booking code (" + bookingCode + "), so please keep it to yourself." : "",
+          "",
+          "See you soon,",
+          "Max",
+        ].filter(function (line, i, all) { return line !== "" || (i > 0 && all[i - 1] !== ""); }).join("\n"),
+      });
+      emailed = true;
+    } catch (err) {
+      Logger.log("Add client: welcome email failed: " + err);
+    }
+  }
+
+  return jsonResponse_({
+    status: "success",
+    name: name,
+    slug: slug,
+    client: isClient,
+    cardUrl: cardUrl,
+    bookingCode: bookingCode,
+    emailed: emailed,
+    text: "Hi " + name.split(" ")[0] + ", here's your MaxFit card. Open it and add it to your home screen: " + cardUrl,
+  });
 }
 
 // Header of the Leads column that records where each sign-up came from.

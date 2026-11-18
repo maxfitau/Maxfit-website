@@ -1,0 +1,36 @@
+/* Add a client (card/add-client.html, 2026-11-18). Big text and 48px+ taps like the rest of the coach pages. */
+.addc__box { display: flex; flex-direction: column; gap: 16px; padding: 18px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.addc__head { display: flex; flex-direction: column; gap: 8px; }
+.addc__count { margin: 0; font-size: 15px; color: var(--grey); }
+.addc__dots { display: flex; gap: 6px; }
+.addc__dots span { flex: 1; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .14); }
+.addc__dots span.on { background: var(--red); }
+.addc__title { margin: 0; font-family: var(--font-head); font-weight: 800; font-size: 30px; line-height: 1.05; text-transform: uppercase; color: #fff; }
+.addc__field { display: flex; flex-direction: column; gap: 6px; }
+.addc__label { font-size: 16px; font-weight: 600; color: #fff; }
+.addc__hint { margin: 0; font-size: 15px; line-height: 1.4; color: var(--grey); }
+.addc__input { width: 100%; min-height: 52px; font-size: 18px; }
+.addc__choices { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.addc__choice { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; min-height: 84px; padding: 14px; text-align: left; color: #fff; background: #1c1c1c; border: 2px solid var(--line); border-radius: 12px; font: inherit; cursor: pointer; }
+.addc__choice b { font-family: var(--font-head); font-weight: 800; font-size: 24px; text-transform: uppercase; }
+.addc__choice small { font-size: 15px; color: var(--grey); }
+.addc__choice.is-on { border-color: var(--red); background: rgba(224, 0, 0, .14); }
+.addc__steppers { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.addc__stepper { display: flex; flex-direction: column; gap: 8px; }
+.addc__stepper-row { display: flex; align-items: center; gap: 8px; }
+.addc__stepper-num { flex: 1; text-align: center; font-family: var(--font-head); font-weight: 800; font-size: 34px; color: #fff; }
+.addc__step { width: 52px; height: 52px; border-radius: 12px; border: 2px solid var(--line); background: #1c1c1c; color: #fff; font-size: 28px; line-height: 1; cursor: pointer; }
+.addc__tick { display: flex; align-items: flex-start; gap: 12px; padding: 14px; min-height: 56px; background: #1c1c1c; border: 1px solid var(--line); border-radius: 12px; cursor: pointer; }
+.addc__tick input { width: 26px; height: 26px; flex: none; margin: 2px 0 0; accent-color: var(--red); }
+.addc__tick-text { display: flex; flex-direction: column; gap: 2px; }
+.addc__tick-text b { font-size: 17px; color: #fff; }
+.addc__tick-text small { font-size: 15px; color: var(--grey); }
+.addc__tick.is-off { opacity: .6; cursor: default; }
+.addc__nav { display: flex; gap: 10px; }
+.addc__nav .pbtn { flex: 1; }
+.addc__review { display: grid; grid-template-columns: max-content 1fr; gap: 10px 16px; margin: 0; }
+.addc__review dt { font-size: 15px; color: var(--grey); }
+.addc__review dd { margin: 0; font-size: 17px; font-weight: 600; color: #fff; overflow-wrap: anywhere; }
+.addc__line { margin: 0; font-size: 17px; line-height: 1.4; color: #fff; }
+.addc__text { width: 100%; padding: 12px; font: 16px/1.4 var(--font-body); color: #fff; background: #1c1c1c; border: 1px solid var(--line); border-radius: 10px; resize: vertical; }
+@media (max-width: 420px) { .addc__choices, .addc__steppers { grid-template-columns: 1fr; } }
