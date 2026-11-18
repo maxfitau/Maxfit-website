@@ -610,6 +610,25 @@ function refreshRowState(row) {
   if (tick) tick.setAttribute("aria-label", isSaved ? `Set ${row.dataset.setNumber} saved` : `Save set ${row.dataset.setNumber}`);
 }
 
+/** Clears the red outline + hint line a failed tick left on this row (compact variant only — Simple view has neither). */
+function clearSetInvalid_(row) {
+  row.querySelectorAll(".workout__field--invalid").forEach((el) => el.classList.remove("workout__field--invalid"));
+  const hint = row.querySelector(".workout__set-hint");
+  if (hint) hint.hidden = true;
+}
+
+/** Tapping the tick with no weight or reps to fall back to: red-outlines that one field and shows a short line under the row instead of failing silently. */
+function markSetInvalid_(row, field, message) {
+  clearSetInvalid_(row);
+  const target = row.querySelector(field === "weight" ? ".workout__weight" : ".workout__reps");
+  if (target) target.classList.add("workout__field--invalid");
+  const hint = row.querySelector(".workout__set-hint");
+  if (hint) {
+    hint.textContent = message;
+    hint.hidden = false;
+  }
+}
+
 /**
  * initial: { weight, reps, saved, suggestion, last } — `saved` rows come
  * back from a draft/the sheet already committed; `suggestion` marks numbers
@@ -647,7 +666,16 @@ function buildSetRow(exercise, setNumber, initial, onSave, options) {
   repsInput.className = "workout__reps-input";
   repsInput.setAttribute("aria-label", `Set ${setNumber} reps`);
 
-  const bodyweightZero = initial.weight === 0;
+  // "BW" (and a real 0kg suggestion) only for a genuine bodyweight move — a
+  // weight of exactly 0 on anything else means "no real suggestion", not
+  // "this exercise is bodyweight" (2026-11-19 fix; see isBodyweightExercise_).
+  // A bodyweight move always has an obvious suggestion (0kg) even on day
+  // one with no history; anything else needs a REAL number — from history,
+  // or a starting weight Max has actually filled in — before it gets to
+  // suggest one at all.
+  const isBodyweight = isBodyweightExercise_(exercise.name);
+  const weightSuggestion = initial.weight !== null && initial.weight !== undefined ? initial.weight : (isBodyweight ? 0 : null);
+  const hasWeightSuggestion = weightSuggestion !== null && (weightSuggestion > 0 || isBodyweight);
   if (initial.saved) {
     weightInput.value = formatWeight(initial.weight);
     repsInput.value = String(initial.reps);
@@ -655,14 +683,16 @@ function buildSetRow(exercise, setNumber, initial, onSave, options) {
     // Empty, with the suggestion shown as placeholder text only (2026-11 redesign: numbers never sit in the box pretending to be typed) —
     // but the number itself is kept on the row (_suggestedWeight/_suggestedReps, read by rowValues) so tapping the tick with nothing typed
     // still confirms it, per the brief: "using typed values, or the grey suggested values if the client didn't type anything."
-    if (initial.weight !== null && initial.weight !== undefined) row._suggestedWeight = initial.weight;
+    if (hasWeightSuggestion) row._suggestedWeight = weightSuggestion;
     if (initial.reps !== null && initial.reps !== undefined) row._suggestedReps = initial.reps;
-    weightInput.placeholder = initial.weight !== null && initial.weight !== undefined ? (bodyweightZero ? "BW" : formatWeight(initial.weight)) : "kg";
+    weightInput.placeholder = hasWeightSuggestion ? (isBodyweight && weightSuggestion === 0 ? "BW" : formatWeight(weightSuggestion)) : "kg";
     repsInput.placeholder = initial.reps !== null && initial.reps !== undefined ? String(initial.reps) : (exercise.reps || "reps");
   } else {
-    // Simple view's steppers need a real number to nudge from.
-    weightInput.value = formatWeight(initial.weight !== null && initial.weight !== undefined ? initial.weight : 0);
-    weightInput.classList.add("workout__weight-input--prefilled");
+    // Simple view's steppers need a real number to nudge from — 0 when
+    // there's no real suggestion, same as before, just no longer shown grey
+    // as if it were a known number.
+    weightInput.value = formatWeight(hasWeightSuggestion ? weightSuggestion : 0);
+    if (hasWeightSuggestion) weightInput.classList.add("workout__weight-input--prefilled");
     if (initial.reps !== null && initial.reps !== undefined) {
       repsInput.value = String(initial.reps);
       repsInput.classList.add("workout__reps-input--prefilled");
@@ -674,6 +704,7 @@ function buildSetRow(exercise, setNumber, initial, onSave, options) {
   function touched() {
     row._touched = true;
     refreshRowState(row);
+    clearSetInvalid_(row);
   }
   function nudgeWeight(direction) {
     const current = Number(weightInput.value) || 0;
@@ -731,6 +762,14 @@ function buildSetRow(exercise, setNumber, initial, onSave, options) {
       tick.addEventListener("click", () => row._onSave(row));
       row.appendChild(tick);
     }
+
+    // Shown by markSetInvalid_/clearSetInvalid_ (ctx.saveSet) when the tick
+    // is tapped with no real weight or reps to fall back to — spans the
+    // full row, under the fields, rather than a toast that's easy to miss.
+    const hint = document.createElement("p");
+    hint.className = "workout__set-hint";
+    hint.hidden = true;
+    row.appendChild(hint);
   } else {
     const field = (labelText, input, minusLabel, plusLabel, onStep) => {
       const wrap = document.createElement("div");
@@ -893,9 +932,11 @@ function buildDropRows_(ctx, parentRow, opts) {
     function tick() {
       const values = rowValues(row);
       if (!values.valid) {
-        flashStatus(!Number.isFinite(values.weight) || values.weight < 0 ? "Add the weight first (0 for bodyweight)." : "Add the reps first.", true);
+        const needsWeight = !Number.isFinite(values.weight) || values.weight < 0;
+        markSetInvalid_(row, needsWeight ? "weight" : "reps", needsWeight ? "Type the weight, then tap the tick." : "Type your reps, then tap the tick.");
         return;
       }
+      clearSetInvalid_(row);
       drop.saved = { weight: values.weight, reps: values.reps };
       repaint();
       if (list.every((d) => d.saved)) {
@@ -1057,14 +1098,32 @@ function buildExerciseSets_(ctx, exercise, savedSets, onSave, rowOptions) {
   return { rows, addRow, historyWeight, prefillWeight };
 }
 
-/** Which muscles this exercise works, or null if we don't know. Left out of Simple view's single-exercise screen — no room, and not part of that view's spec. */
-function buildExerciseMuscles_(exercise) {
-  const muscles = resolveExerciseMuscles_(exercise.name, exerciseIndex_);
-  if (!muscles.primary.length && !muscles.secondary.length) return null;
-  const musclesEl = document.createElement("div");
-  musclesEl.className = "workout__exercise-muscles";
-  renderMuscleHighlight(musclesEl, muscles.primary, muscles.secondary);
-  return musclesEl.hidden ? null : musclesEl;
+/**
+ * The muscle chips used to sit under every exercise name mid-workout — Max
+ * found that too much noise while actually training (2026-11-19). Muscles
+ * are still one tap away: the exercise name itself links to its library
+ * detail (see libraryLink_/makeExerciseNameLink_). Chips stay everywhere
+ * else — the builder, the library/Muscles tab, the review screen's muscle
+ * list and the week overview — none of those call this file's removed
+ * buildExerciseMuscles_, so they're untouched.
+ */
+function libraryLink_(exerciseName) {
+  const qs = new URLSearchParams();
+  if (memberId) qs.set("id", memberId);
+  qs.set("ex", exerciseName);
+  return `library.html?${qs.toString()}`;
+}
+
+/** An exercise name as a link to its library detail — inherits the heading it sits inside, with just a red underline added (workout__exercise-name-link) to show it's tappable. Flushes the draft first (ctx.persist()) so anything already ticked survives a real reload of the workout page on the way back, not just the common case where the browser restores it from bfcache. */
+function makeExerciseNameLink_(ctx, exerciseName) {
+  const link = document.createElement("a");
+  link.className = "workout__exercise-name-link";
+  link.href = libraryLink_(exerciseName);
+  link.textContent = exerciseName;
+  link.addEventListener("click", () => {
+    try { ctx.persist(); } catch (err) { /* navigating away either way */ }
+  });
+  return link;
 }
 
 /** The coach's tip. Inserted as text, never as markup, so whatever was typed is shown exactly as written. */
@@ -1569,7 +1628,7 @@ function renderExerciseBody_(ctx, item) {
   head.className = "workout__exercise-head";
   const name = document.createElement("h2");
   name.className = "workout__exercise-name";
-  name.textContent = item.exercise.name;
+  name.appendChild(makeExerciseNameLink_(ctx, item.exercise.name));
   head.appendChild(name);
   const target = document.createElement("span");
   target.className = "workout__exercise-target";
@@ -1578,8 +1637,6 @@ function renderExerciseBody_(ctx, item) {
   head.appendChild(buildWatchButton_(item.exercise, "small"));
   wrap.appendChild(head);
 
-  const musclesEl = buildExerciseMuscles_(item.exercise);
-  if (musclesEl) wrap.appendChild(musclesEl);
   if (item.exercise.note) wrap.appendChild(buildExerciseTip_(item.exercise.note));
 
   const setsWrap = document.createElement("div");
@@ -2247,15 +2304,12 @@ function renderSupersetBody_(ctx, item) {
     const letterBadge = document.createElement("span");
     letterBadge.className = "workout__ss-letter";
     letterBadge.textContent = member.code;
-    const name = document.createElement("span");
-    name.className = "workout__ss-overview-name";
-    name.textContent = exercise.name;
+    const name = makeExerciseNameLink_(ctx, exercise.name);
+    name.classList.add("workout__ss-overview-name");
     line.append(letterBadge, name, buildWatchButton_(exercise, "small"));
     const block = document.createElement("div");
     block.className = "workout__ss-overview-row";
     block.appendChild(line);
-    const musclesEl = buildExerciseMuscles_(exercise);
-    if (musclesEl) block.appendChild(musclesEl);
     if (exercise.note) block.appendChild(buildExerciseTip_(exercise.note));
     overview.appendChild(block);
     if (i < item.members.length - 1) {
@@ -3334,6 +3388,27 @@ function changeDate(shared, value) {
 let exerciseIndex_ = { byExact: {}, byNormalized: {} };
 let hiddenFromProgress_ = new Set(); // exercises marked "Hide From Progress" on the Exercises tab (no personal-best card for them)
 
+// "BW" only for a real bodyweight move (2026-11-19 fix) — the Exercises
+// tab's Equipment column is the source of truth; a handful of exercises
+// still have it blank (a known data gap), so a small name-keyword list
+// catches the common bodyweight ones in that case. Everything else needs a
+// typed weight, even at 0 — a blank "Default Starting Weight" cell used to
+// read as a real 0 (Number("") === 0 in JS), which is the actual bug: every
+// exercise with no starting weight filled in showed "BW" and let a real
+// lift save with 0kg with nobody noticing.
+let equipmentByName_ = {};
+const BODYWEIGHT_NAME_HINTS_ = [
+  "push-up", "pushup", "pull-up", "pullup", "chin-up", "chinup", "dip", "plank",
+  "dead bug", "hanging leg raise", "sit-up", "situp", "crunch", "burpee",
+  "mountain climber", "glute bridge", "wall sit", "superman", "bird dog",
+];
+function isBodyweightExercise_(name) {
+  const key = String(name || "").toLowerCase();
+  const equipment = equipmentByName_[key];
+  if (equipment) return /^(bodyweight|none)$/.test(equipment);
+  return BODYWEIGHT_NAME_HINTS_.some((hint) => key.includes(hint));
+}
+
 function renderWorkout(shared, workoutName, exercises, opts) {
   const { clientSlug, setRows, setCol, startingWeights, exerciseNameOptions } = shared;
   const dateStr = shared.date;
@@ -3434,9 +3509,15 @@ function renderWorkout(shared, workoutName, exercises, opts) {
     const values = rowValues(row);
     if (!values.valid) {
       const needsWeight = !Number.isFinite(values.weight) || values.weight < 0;
-      flashStatus(needsWeight ? "Add the weight first (0 for bodyweight)." : "Add the reps first.", true);
+      const message = needsWeight ? "Type the weight, then tap the tick." : "Type your reps, then tap the tick.";
+      // Compact rows (Checklist/Show all) get the inline red-outline + hint
+      // line; Simple view has neither a tick nor those field wrappers, so it
+      // keeps the toast it always had.
+      if (row.classList.contains("workout__set--compact")) markSetInvalid_(row, needsWeight ? "weight" : "reps", message);
+      else flashStatus(message, true);
       return false;
     }
+    clearSetInvalid_(row);
     row._saved = { weight: values.weight, reps: values.reps };
     // A blank box that saved via its grey suggestion now shows that
     // confirmed number as a real value, not an empty placeholder.
@@ -4370,12 +4451,18 @@ async function init() {
 
     startingWeights = {};
     exerciseNameOptions = [];
+    equipmentByName_ = {};
     for (const row of exerciseDefaults.rows) {
       const rawName = (row[exerciseDefaults.col.name] || "").trim();
       if (!rawName) continue;
       exerciseNameOptions.push(rawName);
-      const weight = Number(row[exerciseDefaults.col.startingWeight]);
+      // A blank cell must stay "no starting weight", not become a real 0 —
+      // Number("") is 0 in JS, which Number.isFinite happily accepts.
+      const rawWeight = (row[exerciseDefaults.col.startingWeight] || "").trim();
+      const weight = rawWeight === "" ? NaN : Number(rawWeight);
       if (Number.isFinite(weight)) startingWeights[rawName.toLowerCase()] = weight;
+      const equipment = exerciseDefaults.col.equipment >= 0 ? (row[exerciseDefaults.col.equipment] || "").trim().toLowerCase() : "";
+      if (equipment) equipmentByName_[rawName.toLowerCase()] = equipment;
       if (exerciseDefaults.col.hideFromProgress >= 0 && String(row[exerciseDefaults.col.hideFromProgress] || "").trim().toUpperCase() === "Y") hiddenFromProgress_.add(rawName.toLowerCase());
     }
     // Shared resolver (card/muscle-map.js), not a plain exact-lowercase

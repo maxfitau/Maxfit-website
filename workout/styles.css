@@ -548,13 +548,6 @@ body {
   margin-right: 6px;
 }
 
-/* Which muscles an exercise works (renderMuscleHighlight, card/muscle-map.js) — a small line under its name, kept out of Simple view's single-exercise screen (no room, not in that view's spec). */
-.workout__exercise-muscles {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 10px;
-}
-
 /* The play-icon "Watch how" button, 48×48, hidden whenever an exercise has no video link. */
 .workout__watch-btn {
   flex-shrink: 0;
@@ -704,6 +697,15 @@ body {
   box-shadow: 0 0 0 1px var(--red);
 }
 
+/* "Type your reps, then tap the tick." — shown by markSetInvalid_ instead of failing silently. Spans the row's full width, on its own line below the fields. */
+.workout__set-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--red);
+}
+
 .workout__set-tick {
   flex-shrink: 0;
   width: 48px;
@@ -848,6 +850,19 @@ body {
   font-size: 19px;
   color: var(--white);
   margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The exercise name, tappable (2026-11-19, replacing the muscle chips that used to sit here) — opens workout/library.html's detail view. Inherits its heading's type; just a red underline shows it's a link. */
+.workout__exercise-name-link,
+a.workout__exercise-name-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--red);
+  text-underline-offset: 3px;
+}
+
+.workout__ss-overview-name {
   overflow-wrap: anywhere;
 }
 
