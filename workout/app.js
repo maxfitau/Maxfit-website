@@ -741,7 +741,7 @@ function buildSetRow(exercise, setNumber, initial, onSave, options) {
 
     const last = document.createElement("p");
     last.className = "workout__set-last";
-    last.textContent = row._last ? `${formatWeight(row._last.weight)}kg${Number.isFinite(row._last.reps) ? ` × ${row._last.reps}` : ""}` : "—";
+    last.textContent = row._last ? `Last time: ${formatWeight(row._last.weight)} kg${Number.isFinite(row._last.reps) ? ` × ${row._last.reps}` : ""}` : "Last time: —";
     row.appendChild(last);
 
     const weightWrap = document.createElement("div");
@@ -1114,6 +1114,37 @@ function libraryLink_(exerciseName) {
   return `library.html?${qs.toString()}`;
 }
 
+// Numbers typed into a set but not yet ticked live only on the page, and a draft keeps ticked sets only — so a trip to the
+// library and back used to wipe them (2026-11-24). They go into sessionStorage just for that trip (never the draft, which is
+// what gets sent to the sheet) and are put back, once, by the next render of the same workout.
+const TYPED_TRIP_KEY = "maxfitTypedTrip";
+
+function stashTyped_(ctx) {
+  try {
+    const rows = {};
+    snapshotRows_(ctx).forEach((entry, key) => {
+      if (entry.touched && !entry.saved) rows[key] = { touched: true, saved: null, weightText: entry.weightText, repsText: entry.repsText };
+    });
+    if (Object.keys(rows).length) sessionStorage.setItem(TYPED_TRIP_KEY, JSON.stringify({ draftKey: ctx.draftKey, at: Date.now(), rows }));
+  } catch (err) {
+    // No session storage: ticked sets still come back from the draft, as before.
+  }
+}
+
+/** The numbers stashed by stashTyped_ for this workout, as a snapshot map for applySnapshot_, or null. Used once, and only within an hour. */
+function takeTypedTrip_(draftKeyValue) {
+  try {
+    const raw = sessionStorage.getItem(TYPED_TRIP_KEY);
+    if (!raw) return null;
+    sessionStorage.removeItem(TYPED_TRIP_KEY);
+    const trip = JSON.parse(raw);
+    if (!trip || trip.draftKey !== draftKeyValue || Date.now() - trip.at > 3600000) return null;
+    return new Map(Object.entries(trip.rows || {}));
+  } catch (err) {
+    return null;
+  }
+}
+
 /** An exercise name as a link to its library detail — inherits the heading it sits inside, with just a red underline added (workout__exercise-name-link) to show it's tappable. Flushes the draft first (ctx.persist()) so anything already ticked survives a real reload of the workout page on the way back, not just the common case where the browser restores it from bfcache. */
 function makeExerciseNameLink_(ctx, exerciseName) {
   const link = document.createElement("a");
@@ -1122,6 +1153,7 @@ function makeExerciseNameLink_(ctx, exerciseName) {
   link.textContent = exerciseName;
   link.addEventListener("click", () => {
     try { ctx.persist(); } catch (err) { /* navigating away either way */ }
+    stashTyped_(ctx);
   });
   return link;
 }
@@ -2568,15 +2600,19 @@ function renderSupersetCollapsed_(ctx, item, idx) {
   box.style.cursor = "pointer";
   box.classList.toggle("workout__cl-row--done", itemDone_(item));
 
+  // Pill and the rule on one line (2026-11-24 restyle); the member names follow below.
+  const line = document.createElement("div");
+  line.className = "workout__ss-line";
   const pill = document.createElement("span");
   pill.className = "workout__ss-pill";
   pill.textContent = `${item.word} ${item.letter}`;
-  box.appendChild(pill);
+  line.appendChild(pill);
 
   const rule = document.createElement("p");
   rule.className = "workout__ss-rule";
-  rule.textContent = `${item.word}: do these back to back, then rest ${supersetRestText_(item.restSeconds)}`;
-  box.appendChild(rule);
+  rule.textContent = `Back to back, then rest ${supersetRestText_(item.restSeconds)}`;
+  line.appendChild(rule);
+  box.appendChild(line);
 
   const members = document.createElement("div");
   members.className = "workout__cl-ss-members";
@@ -2812,7 +2848,7 @@ function layoutSimple_(ctx) {
 
     const exName = document.createElement("h2");
     exName.className = "workout__simple-exname";
-    exName.textContent = exercise.name;
+    exName.appendChild(makeExerciseNameLink_(ctx, exercise.name)); // opens its library detail (the muscles live there); the draft is saved first
     card.appendChild(exName);
 
     const last = document.createElement("p");
@@ -3571,7 +3607,7 @@ function renderWorkout(shared, workoutName, exercises, opts) {
     stopWorkoutTimer();
   }
 
-  renderCurrentView(ctx, null);
+  renderCurrentView(ctx, takeTypedTrip_(key));
 
   // Pre-fill the notes box (built fresh on the review screen) from the draft;
   // actual persistence of typed notes happens when the review screen opens
@@ -3676,24 +3712,27 @@ function buildLogElseSection_(shared) {
     const mix = document.createElement("button");
     mix.type = "button";
     mix.className = "workout__mix-btn";
-    mix.innerHTML = '<span class="workout__mix-title">MIX IT UP</span><span class="workout__mix-sub">A surprise HIIT session</span>';
+    mix.innerHTML = '<span class="workout__mix-title">Mix it up</span><span class="workout__mix-sub">A surprise HIIT session</span>';
     mix.addEventListener("click", () => openMixItUp_(shared));
     list.appendChild(mix);
   }
+  // The three choices are one row of equal tiles, icon over label (2026-11-24, like the home screen's Progress / Refer / Help row).
+  const tiles = document.createElement("div");
+  tiles.className = "workout__log-else-tiles";
   [
-    { title: "Log a run or walk", sub: "Distance, time and pace", icon: RUN_ICON_SVG, onPick: () => openRunWalkSetup_(shared) },
-    { title: "Log my own workout", sub: "Pick your own exercises", icon: CUSTOM_WORKOUT_ICON_SVG, onPick: () => openCustomWorkoutPrompt_(shared) },
-    { title: "Log a boxing session", sub: "Heavy bag, shadow boxing or skipping", icon: LOG_BOXING_ICON_SVG, onPick: () => openBoxingSessionSetup_(shared) },
+    { title: "Run / walk", aria: "Log a run or walk", icon: RUN_ICON_SVG, onPick: () => openRunWalkSetup_(shared) },
+    { title: "My own workout", aria: "Log my own workout", icon: CUSTOM_WORKOUT_ICON_SVG, onPick: () => openCustomWorkoutPrompt_(shared) },
+    { title: "Boxing", aria: "Log a boxing session", icon: LOG_BOXING_ICON_SVG, onPick: () => openBoxingSessionSetup_(shared) },
   ].forEach((opt) => {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "workout__log-else-btn";
-    btn.innerHTML =
-      `<span class="workout__log-else-icon">${opt.icon}</span>` +
-      `<span class="workout__log-else-text"><span class="workout__log-else-title">${opt.title}</span><span class="workout__log-else-sub">${opt.sub}</span></span>`;
+    btn.setAttribute("aria-label", opt.aria);
+    btn.innerHTML = `<span class="workout__log-else-icon">${opt.icon}</span><span class="workout__log-else-title">${opt.title}</span>`;
     btn.addEventListener("click", opt.onPick);
-    list.appendChild(btn);
+    tiles.appendChild(btn);
   });
+  list.appendChild(tiles);
   wrap.appendChild(list);
   return wrap;
 }
@@ -4335,20 +4374,32 @@ function showPicker(shared) {
   els.pickerList.innerHTML = "";
   const pickerHint = els.picker.querySelector(".workout__picker-hint");
   if (pickerHint) {
+    // A big heading when there are workouts to pick from; a plain sentence when there aren't (2026-11-24 restyle).
     pickerHint.textContent = workoutNames.length
-      ? (coachMode ? "Which workout did they do?" : "Which one are you doing today?")
+      ? (coachMode ? "Which workout did they do?" : "Pick today's workout")
       : (coachMode ? "Nothing assigned yet — log something below." : "No workout assigned yet — check with Max, or log something below.");
+    pickerHint.classList.toggle("workout__picker-hint--note", !workoutNames.length);
   }
   els.backLink.href = homeHref();
   els.backLink.onclick = null;
 
-  for (const name of workoutNames) {
+  // Scheduled-for-today first (builder order kept inside each group).
+  const today = shared.todayWorkouts || new Set();
+  const pickerOrder = workoutNames.filter((n) => today.has(n)).concat(workoutNames.filter((n) => !today.has(n)));
+  for (const name of pickerOrder) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "workout__picker-option";
 
     const label = document.createElement("span");
+    label.className = "workout__picker-option-name";
     label.textContent = name;
+    if (today.has(name) && !coachMode) {
+      const pill = document.createElement("span");
+      pill.className = "workout__picker-today";
+      pill.textContent = "Today";
+      label.appendChild(pill);
+    }
     button.appendChild(label);
 
     const count = document.createElement("span");
@@ -4356,6 +4407,11 @@ function showPicker(shared) {
     const exerciseCount = workoutGroups[name].length;
     count.textContent = `${exerciseCount} exercise${exerciseCount === 1 ? "" : "s"}`;
     button.appendChild(count);
+    const chev = document.createElement("span");
+    chev.className = "workout__picker-chev";
+    chev.setAttribute("aria-hidden", "true");
+    chev.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
+    button.appendChild(chev);
 
     button.addEventListener("click", () => {
       els.picker.hidden = true;
@@ -4412,6 +4468,7 @@ async function init() {
         workoutOrder: workout.col.workoutOrder >= 0 ? Number(r[workout.col.workoutOrder]) : NaN,
         note: workout.col.notes >= 0 ? String(r[workout.col.notes] || "").trim() : "",
         workoutNote: workout.col.workoutNotes >= 0 ? String(r[workout.col.workoutNotes] || "").trim() : "",
+        days: workout.col.days >= 0 ? String(r[workout.col.days] || "").split(",").map((d) => d.trim()) : [],
         superset: workout.col.superset >= 0 && String(r[workout.col.superset] || "").trim().toUpperCase() === "Y",
         supersetRest: workout.col.supersetRest >= 0 ? Number(r[workout.col.supersetRest]) : NaN,
         dropSets: workout.col.dropSets >= 0 ? Number(r[workout.col.dropSets]) || 0 : 0,
@@ -4485,6 +4542,9 @@ async function init() {
   const workoutNames = Object.keys(workoutGroups).sort(
     (a, b) => (workoutOrderByName[a] ?? UNORDERED) - (workoutOrderByName[b] ?? UNORDERED)
   );
+  // Workouts the builder scheduled for today's weekday ("Days" column) go first in the picker with a Today pill (2026-11-24).
+  const todayAbbr = DAY_ABBR[new Date(`${sydneyDateStr()}T00:00:00Z`).getUTCDay()];
+  const todayWorkouts = new Set(workoutNames.filter((n) => workoutGroups[n].some((ex) => ex.days.includes(todayAbbr))));
   // No early return for an empty list any more (2026-11-08) — "Log
   // something else" below still needs to show even with nothing assigned.
 
@@ -4494,7 +4554,7 @@ async function init() {
   // views or re-rendering for a new date doesn't reset it.
   const shared = {
     clientSlug, setRows, setCol, startingWeights, exerciseNameOptions, workoutNotes,
-    workoutGroups, workoutNames,
+    workoutGroups, workoutNames, todayWorkouts,
     date: sydneyDateStr(), current: null, currentCtx: null, currentView: readViewPref_(),
   };
   if (coachMode) document.querySelector(".card__top").insertAdjacentElement("afterend", buildCoachBanner(coachClientName || memberId));

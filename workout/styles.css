@@ -3339,3 +3339,434 @@ a.workout__exercise-name-link {
     font-size: 56px;
   }
 }
+
+/* ==========================================================================
+   Train tab restyle (2026-11-24) — same look as the card's home screen
+   (the .home__* block at the end of card/styles.css): no glass wrapper and no
+   ambient red wash, #1c1c1c panels with a thin border and 18px corners,
+   big plain headings, 15px+ text and 48px+ taps. Visual only: every class
+   the app code relies on is unchanged. Scoped to #workout, so progress.html
+   and calendar.html (which share this file) look as they did.
+   ========================================================================== */
+
+body:has(#workout) {
+  padding: max(16px, env(safe-area-inset-top)) 16px 0;
+}
+
+body:has(#workout)::before {
+  display: none;
+}
+
+main#workout.card {
+  max-width: 420px;
+  margin-top: 0;
+  padding: 0 0 max(130px, calc(env(safe-area-inset-bottom, 0px) + 120px));
+  gap: 14px;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+main#workout.card::before {
+  display: none;
+}
+
+@media (min-width: 560px) {
+  main#workout.card { max-width: 480px; }
+}
+
+/* ---- header ---- */
+#workout .workout__name {
+  font-weight: 800;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+#workout .workout__view-btn {
+  height: 48px;
+  font-size: 16px;
+  border-radius: 12px;
+}
+
+#workout .workout__pill {
+  font-size: 15px;
+}
+
+#workout .workout__progress-text {
+  font-size: 16px;
+  color: var(--grey);
+}
+
+#workout .workout__progress-bar {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+#workout .workout__date-changed-note,
+#workout .workout__date-reset {
+  font-size: 15px;
+}
+
+/* ---- the workout list (picker) ---- */
+#workout .workout__picker { gap: 12px; }
+
+#workout .workout__picker-hint {
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 28px;
+  line-height: 1.1;
+  color: var(--white);
+}
+
+#workout .workout__picker-hint--note {
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 17px;
+  line-height: 1.4;
+  color: var(--grey);
+}
+
+#workout .workout__picker-list { gap: 12px; }
+
+#workout .workout__picker-option {
+  min-height: 64px;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 20px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+#workout .workout__picker-option-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+#workout .workout__picker-today {
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--red);
+  color: var(--on-red);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+#workout .workout__picker-option-count {
+  font-size: 16px;
+  color: var(--grey);
+}
+
+#workout .workout__picker-chev {
+  flex-shrink: 0;
+  display: flex;
+  color: var(--grey);
+}
+
+/* ---- Log something else ---- */
+#workout .workout__log-else { margin-top: 8px; gap: 12px; }
+
+#workout .workout__log-else-label {
+  font-size: 16px;
+  letter-spacing: 0.08em;
+  color: var(--grey);
+}
+
+#workout .workout__log-else-list { gap: 12px; }
+
+#workout .workout__mix-btn {
+  min-height: 64px;
+  padding: 8px 16px;
+  border-radius: 14px;
+  gap: 0;
+}
+
+#workout .workout__mix-title { font-size: 22px; }
+#workout .workout__mix-sub { font-size: 16px; }
+
+#workout .workout__log-else-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+#workout .workout__log-else-btn {
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  min-height: 84px;
+  padding: 10px 6px;
+  text-align: center;
+  border-radius: 14px;
+  background: var(--bg-card);
+}
+
+#workout .workout__log-else-title {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: 0;
+  text-transform: none;
+  line-height: 1.2;
+}
+
+/* ---- Strength Progress | Previous Sessions ---- */
+#workout .workout__history-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+#workout .workout__history-btn {
+  flex-direction: column;
+  gap: 4px;
+  min-height: 64px;
+  padding: 8px 6px;
+  border-radius: 14px;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: 0;
+  text-transform: none;
+  line-height: 1.2;
+  text-align: center;
+  color: var(--white);
+}
+
+#workout .workout__history-btn svg { color: var(--red); }
+
+#workout .workout__history-btn:active {
+  color: var(--white);
+  opacity: 0.8;
+}
+
+/* ---- exercise panels (Checklist's open one, and every one in Show all) ---- */
+#workout .workout__list { gap: 12px; }
+
+#workout .workout__cl-open {
+  gap: 12px;
+  padding: 16px;
+  border-radius: var(--radius);
+}
+
+.view--showall .workout__exercise,
+.view--showall .workout__ss {
+  gap: 12px;
+  padding: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.view--showall .workout__ss { border-color: rgba(224, 0, 0, 0.45); }
+
+#workout .workout__exercise-name {
+  font-weight: 700;
+  font-size: 20px;
+  line-height: 1.15;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* breathing room between the name and the first set */
+#workout .workout__exercise {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+#workout .workout__exercise-head { align-items: baseline; }
+
+/* "2 sets": plain grey text, not small red text */
+#workout .workout__exercise-target {
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 15px;
+  letter-spacing: 0;
+  color: var(--grey);
+}
+
+/* ---- the set row: set number, then "Last time" on its own line, then kg, reps and the tick ---- */
+#workout .workout__set--compact {
+  grid-template-columns: 34px 1fr 1fr 48px;
+  grid-template-areas:
+    "num last last last"
+    "num kg reps tick";
+  gap: 6px 8px;
+  padding: 10px;
+  border-radius: 12px;
+}
+
+#workout .workout__set--compact .workout__set-num { grid-area: num; align-self: center; font-size: 18px; color: var(--grey); }
+#workout .workout__set--compact .workout__set-last { grid-area: last; font-size: 16px; color: var(--grey); }
+#workout .workout__set--compact .workout__weight { grid-area: kg; }
+#workout .workout__set--compact .workout__reps { grid-area: reps; }
+#workout .workout__set--compact .workout__set-tick { grid-area: tick; width: 48px; height: 48px; }
+#workout .workout__set--compact .workout__set-hint { grid-area: auto; grid-column: 1 / -1; font-size: 15px; }
+
+#workout .workout__set--compact .workout__weight-input,
+#workout .workout__set--compact .workout__reps-input {
+  height: 48px;
+}
+
+/* drop rows share those columns: "Drop 1" across the top, then boxes and tick */
+#workout .workout__drop { grid-template-areas: "label label label label" "num kg reps tick"; }
+#workout .workout__drop .workout__drop-label { grid-area: label; }
+#workout .workout__drop .workout__weight { grid-area: kg; }
+#workout .workout__drop .workout__reps { grid-area: reps; }
+#workout .workout__drop .workout__set-tick { grid-area: tick; }
+
+.view--showall .workout__showall-labels {
+  grid-template-columns: 34px 1fr 1fr 48px;
+  padding: 6px 28px;
+  font-size: 15px;
+}
+.view--showall .workout__showall-labels span:nth-child(2) { display: none; }
+.view--showall .workout__showall-labels span:nth-child(3),
+.view--showall .workout__showall-labels span:nth-child(4) { text-align: center; }
+
+/* ---- + Add set and Dropset: one row of two equal 48px buttons ---- */
+#workout .workout__set-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+#workout .workout__set-actions > * {
+  width: 100%;
+  min-height: 48px;
+  justify-content: center;
+}
+
+#workout .workout__add-set {
+  border: 1.5px solid var(--line-strong, rgba(255, 255, 255, 0.28));
+  border-radius: 999px;
+  color: var(--white);
+  justify-content: center;
+}
+
+/* ---- collapsed rows (Checklist) ---- */
+#workout .workout__cl-row {
+  min-height: 64px;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+}
+
+#workout .workout__cl-badge { width: 36px; height: 36px; font-size: 16px; color: var(--white); }
+#workout .workout__cl-row--done .workout__cl-badge { color: var(--on-red); }
+#workout .workout__cl-name { font-weight: 600; font-size: 18px; }
+#workout .workout__cl-sub { font-size: 15px; color: var(--grey); }
+
+#workout .workout__ss {
+  padding: 16px;
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  border: 1px solid rgba(224, 0, 0, 0.45);
+}
+
+#workout .workout__ss-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+#workout .workout__ss-pill { font-size: 15px; }
+#workout .workout__ss-rule { font-size: 16px; font-weight: 500; color: var(--grey); }
+#workout .workout__ss-member-name { font-size: 16px; }
+
+/* ---- notes, + Add Exercise, Finish ---- */
+#workout .workout__notes {
+  gap: 10px;
+  padding: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+#workout .workout__notes-input {
+  background: var(--bg);
+  border-radius: 12px;
+}
+
+#workout .workout__notes-hint { font-size: 15px; }
+#workout .workout__notes-label { font-size: 17px; }
+
+#workout .workout__add-exercise-toggle {
+  min-height: 56px;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 16px;
+  color: var(--white);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+#workout .workout__add-exercise-input { font-size: 16px; }
+#workout .workout__add-exercise-confirm { font-size: 16px; min-height: 48px; }
+
+#workout .workout__finish-btn {
+  min-height: 58px;
+  font-size: 22px;
+  border: 2px solid var(--red);
+  border-radius: 14px;
+}
+
+#workout .workout__exercise-tip,
+#workout .workout__coach-note-text,
+#workout .workout__last-note { font-size: 15px; }
+
+/* review screen captions were 12-14px (the muscles themselves stay, as asked) */
+#workout .workout__review-tile-label,
+#workout .workout__review-section-label,
+#workout .workout__review-fig-caption,
+#workout .workout__review-muscle-name,
+#workout .workout__review-muscle-count { font-size: 15px; }
+
+/* Simple view's weight and reps boxes were 43px tall on a 360px phone */
+#workout .workout__set--simple .workout__weight-input,
+#workout .workout__set--simple .workout__reps-input { min-height: 48px; }
+
+/* small captions that were 13-14px, and bigger tap areas for the date pill and the exercise-name links */
+#workout .workout__ss-letter { font-size: 15px; height: 24px; min-width: 30px; }
+#workout .workout__ss-fold-summary,
+#workout .workout__ss-fold-summary span,
+#workout .workout__exercise-tip-label { font-size: 15px; }
+#workout .workout__pill { min-height: 48px; }
+#workout a.workout__exercise-name-link {
+  display: inline-block;
+  padding: 14px 0;
+  margin: -14px 0;
+}
+
+#workout a.workout__ss-overview-name { display: inline-flex; align-items: center; min-height: 48px; padding: 0; margin: 0; }
+
+#workout .workout__coach-banner { border-radius: var(--radius); }
+#workout .workout__coach-banner-label { font-size: 15px; }
+
+#workout .workout__boxing-label,
+#workout .workout__boxing-combo-round,
+#workout .workout__boxing-combo-words { font-size: 15px; }
+
+/* Simple view: the small captions were 13-14px */
+#workout .workout__simple-meta,
+#workout .workout__simple-field-label,
+#workout .workout__simple-setlabel,
+#workout .workout__simple-done-next,
+#workout .workout__simple-ss-pill { font-size: 15px; }
+
+@media (max-width: 360px) {
+  #workout .workout__name { font-size: 32px; }
+  #workout .workout__set--compact { grid-template-columns: 30px 1fr 1fr 48px; gap: 6px 6px; padding: 8px; }
+  #workout .workout__set--compact .workout__set-tick { width: 48px; height: 48px; }
+  .view--showall .workout__showall-labels { grid-template-columns: 30px 1fr 1fr 48px; padding: 6px 26px; }
+}
