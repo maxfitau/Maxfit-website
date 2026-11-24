@@ -24,6 +24,8 @@
   const PIN_STORAGE = "maxfitStaffPin"; // shared with checkin.js, book-staff.js, people.js and the workout builder
   let pin = "";
   let clients = [];
+  let friendsWaiting = []; // friends packs bought by someone not on friends price
+  let friendsPacks = []; // the friends pack sizes, for the line under the switch
   // Every client's logged sets, for strength and training goals (null until loaded).
   let setsBySlug = null;
   let aiEnabled = true;
@@ -85,6 +87,8 @@
         // ignore
       }
       clients = data.clients;
+      friendsWaiting = data.friendsWaiting || [];
+      friendsPacks = data.friendsPacks || [];
       aiEnabled = data.aiEnabled !== false;
       stripeReady = !!data.stripeReady;
       lastStripeSync = data.lastStripeSync || "";
@@ -135,7 +139,9 @@
         ${c.lastScan ? `<span class="coach-client__meta">${esc(scanText(c.lastScan))}</span>` : ""}
         ${
           c.hasKey
-            ? `<label class="fuel-toggle">Full access, no client guardrails (only for people this can't come back on you — you, family) <input type="checkbox" data-exempt ${c.scopeExempt ? "checked" : ""} /></label>`
+            ? `<label class="fuel-toggle">Full access, no client guardrails (only for people this can't come back on you — you, family) <input type="checkbox" data-exempt ${c.scopeExempt ? "checked" : ""} /></label>
+               <label class="fuel-toggle">Friends price <input type="checkbox" data-friends ${c.friendsPrice ? "checked" : ""} /></label>
+               <span class="coach-friends__hint">Top-ups at about cost (${esc(friendsPackText())}). Price only: their plan, daily uses and guardrails don't change.</span>`
             : ""
         }
         ${goalHtml(c)}
@@ -295,6 +301,24 @@
   // Full access toggle (2026-11-09): only for a client Max trusts with the
   // scope-of-practice limits off — himself, family, never a real client.
   body.addEventListener("change", async (e) => {
+    // Friends price (2026-11-24): its own switch and its own column. It never touches Full access.
+    const friendsBox = e.target.closest("[data-friends]");
+    if (friendsBox) {
+      const slug = friendsBox.closest("[data-slug]").dataset.slug;
+      const c = clients.find((x) => x.slug === slug);
+      const want = friendsBox.checked;
+      friendsBox.disabled = true;
+      try {
+        await MacroApi.coach("coachSetFriendsPrice", pin, { slug: slug, on: want });
+        c.friendsPrice = want;
+        toast(want ? `${c.name} can now buy top-ups at friends price` : `${c.name} is back on standard top-up prices`);
+      } catch (err) {
+        friendsBox.checked = !want;
+        toast(err.message);
+      }
+      friendsBox.disabled = false;
+      return;
+    }
     const exemptBox = e.target.closest("[data-exempt]");
     if (exemptBox) {
       const slug = exemptBox.closest("[data-slug]").dataset.slug;
@@ -371,8 +395,42 @@
     return "Silver: free plan";
   }
 
+  /** "$5 = 160 AI uses" etc. for the explanation under Friends price. */
+  function friendsPackText() {
+    return friendsPacks.length ? friendsPacks.map((pk) => `${pk.price} = ${pk.uses} AI uses`).join(" or ") : "set up in Stripe";
+  }
+
+  /** Friends packs bought by someone not on friends price: Approve (adds the uses once) or refund in Stripe. */
+  function friendsWaitingHtml() {
+    if (!friendsWaiting.length) return "";
+    const pickable = clients.filter((c) => c.hasKey);
+    return `<div class="fuel-panel coach-friends">
+      <p class="coach-friends__title">Friends packs waiting for you</p>
+      <p class="coach-client__meta">Bought by someone who isn't on friends price, so nothing was added. Approve it, or refund it in Stripe (Payments, then the payment, then Refund).</p>
+      ${friendsWaiting
+        .map(
+          (w) => `<div class="coach-friends__row" data-friends-id="${esc(w.id)}">
+            <span class="coach-friends__what">${esc(w.payer || "Someone (no name from Stripe)")} paid $${esc(w.amount.toFixed(2))} for ${esc(w.uses)} AI uses${w.created ? ` · ${esc(w.created.slice(0, 10))}` : ""}</span>
+            <div class="coach-actions" style="align-items:center">
+              ${
+                w.slug
+                  ? `<button class="fuel-btn" type="button" data-approve-friends data-for="${esc(w.slug)}">Approve for ${esc(w.name || w.slug)}</button>`
+                  : `<select class="fuel-input coach-friends__pick" aria-label="Who is it for?" data-friends-pick>
+                       <option value="">Who is it for?</option>
+                       ${pickable.map((c) => `<option value="${esc(c.slug)}">${esc(c.name)}</option>`).join("")}
+                     </select>
+                     <button class="fuel-btn" type="button" data-approve-friends>Approve</button>`
+              }
+            </div>
+          </div>`
+        )
+        .join("")}
+    </div>`;
+  }
+
   function render() {
     body.innerHTML = `
+      ${friendsWaitingHtml()}
       ${
         aiEnabled
           ? ""
@@ -413,6 +471,27 @@
   }
 
   body.addEventListener("click", async (e) => {
+    const approve = e.target.closest("[data-approve-friends]");
+    if (approve) {
+      const row = approve.closest("[data-friends-id]");
+      const pick = row.querySelector("[data-friends-pick]");
+      const forSlug = approve.dataset.for || (pick ? pick.value : "");
+      if (!forSlug) {
+        toast("Choose who it's for first.");
+        return;
+      }
+      approve.disabled = true;
+      try {
+        const data = await MacroApi.coach("coachApproveFriendsPack", pin, { id: row.dataset.friendsId, slug: forSlug });
+        const c = clients.find((x) => x.slug === data.slug);
+        toast(`Added ${data.uses} AI uses${c ? ` for ${c.name}` : ""}`);
+        await load();
+      } catch (err) {
+        approve.disabled = false;
+        toast(err.message);
+      }
+      return;
+    }
     const sexBtn = e.target.closest("[data-sex] button");
     if (sexBtn) {
       sexBtn.parentElement.querySelectorAll("button").forEach((b) => b.classList.toggle("is-on", b === sexBtn));

@@ -333,7 +333,8 @@
       state.loaded = true;
       state.loadedOn = MacroCore.sydneyDate();
       render();
-      if (returnedSession && returnedTopUp) toast(`Thanks! You have ${credits()} pay-as-you-go AI uses`);
+      if (returnedSession && returnedPending) toast("Thanks! Max will check this top-up and add your AI uses soon.");
+      else if (returnedSession && returnedTopUp) toast(`Thanks! You have ${credits()} pay-as-you-go AI uses`);
       else if (returnedSession && state.plan && state.plan.kind === "paid") toast(`${TIER_NAMES[tier()]} is on. Welcome!`);
       maybeFirstOpen();
     } catch (err) {
@@ -389,10 +390,12 @@
 
   /** Tells the server which Stripe checkout just finished, so it can link it straight away. */
   let returnedTopUp = false; // the checkout was a pay-as-you-go top-up, not a plan
+  let returnedPending = false; // a friends pack waiting for Max to approve
   async function confirmStripeReturn() {
     try {
       const res = await MacroApi.call("stripeReturn", { session_id: returnedSession });
       returnedTopUp = !!(res && res.topUp);
+      returnedPending = !!(res && res.pendingApproval);
     } catch (err) {
       // The 15-minute sync will pick it up anyway.
     }
@@ -1468,8 +1471,16 @@
     // Pay as you go (2026-11-02): one-off top-ups, for anyone, on any plan.
     function paygHtml() {
       const packs = p.packs || [];
+      const friends = p.friendsPacks || []; // only ever sent for someone Max put on friends price
       const n = credits();
-      if (!packs.length && !n) return "";
+      if (!packs.length && !friends.length && !n) return "";
+      const packLinks = (list) =>
+        `<div class="fuel-packs">${list
+          .map(
+            (pk) =>
+              `<a class="fuel-btn fuel-pack" href="${esc(pk.url)}" target="_blank" rel="noopener" data-upgrade><b>${esc(pk.price)}</b><span>${esc(pk.uses)} AI uses</span></a>`
+          )
+          .join("")}</div>`;
       const lead = paying || p.kind === "comp" || p.kind === "trial"
         ? `<p><b>Run out of today's uses? Keep going.</b> Your plan's daily uses go first, then these.</p>`
         : `<p><b>No subscription.</b> Everything Diamond has, including Food Q&amp;A and the meal planner. Each AI use takes one.</p>`;
@@ -1480,15 +1491,15 @@
           <p>Your uses don't expire. A meal idea set takes 3 and What can I make? takes 2.</p>
           ${n ? badge(`You have ${n} AI use${n === 1 ? "" : "s"}`) : ""}
           ${
-            packs.length
-              ? `<div class="fuel-packs">${packs
-                  .map(
-                    (pk) =>
-                      `<a class="fuel-btn fuel-pack" href="${esc(pk.url)}" target="_blank" rel="noopener" data-upgrade><b>${esc(pk.price)}</b><span>${esc(pk.uses)} AI uses</span></a>`
-                  )
-                  .join("")}</div>`
+            friends.length
+              ? `<div class="fuel-friends">
+                   <p class="fuel-friends__title">Friends price</p>
+                   <p class="fuel-friends__text">Max has set you up with top-ups at cost, so you get a lot more AI uses for the same price.</p>
+                   ${packLinks(friends)}
+                 </div>`
               : ""
           }
+          ${packs.length ? `${friends.length ? '<p class="fuel-friends__or">Standard top-ups</p>' : ""}${packLinks(packs)}` : ""}
         </div>`;
     }
 
@@ -1502,7 +1513,7 @@
         </div>
         ${PAID_TIERS.map((k) => cardHtml(k, iv)).join("")}
         ${paygHtml()}
-        ${!anyLink && !paying && !(p.packs || []).length ? '<p class="fuel-error">Sign-ups open soon. Ask Max about it at your next session.</p>' : ""}
+        ${!anyLink && !paying && !(p.packs || []).length && !(p.friendsPacks || []).length ? '<p class="fuel-error">Sign-ups open soon. Ask Max about it at your next session.</p>' : ""}
         ${
           paying && p.portalUrl
             ? '<p class="fuel-plan-card__note">Switching opens Stripe\'s billing page: choose Update plan. Stripe adjusts your bill for the rest of the period.</p>'

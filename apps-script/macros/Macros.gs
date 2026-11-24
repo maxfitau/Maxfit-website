@@ -27,6 +27,11 @@
  *                        plan or monthly ↔ yearly, cancel)
  *   STRIPE_CREDITS_45_LINK / STRIPE_CREDITS_100_LINK
  *                      — pay-as-you-go top-ups, $5 = 45 / $10 = 100 AI uses
+ *   STRIPE_FRIENDS_160_LINK / STRIPE_FRIENDS_330_LINK
+ *                      — friends packs (top-ups at cost), only for Friends price
+ *   FRIENDS_PACK_USES  — optional, e.g. "160,330": the friends pack sizes the card shows
+ *   NOTIFY_EMAIL       — optional, where the unapproved friends pack email goes
+ *   USD_TO_AUD         — optional, for friendsPackBreakEven() (default 1.55)
  *
  * Plans: Silver is free (barcodes, search, saved meals, typed-in numbers,
  * targets, totals, suggestions, progress). Gold and Diamond add Fuel AI:
@@ -79,7 +84,7 @@
  * or change rows carrying their own id.
  */
 
-const MACROS_VERSION = "2026-11-09a";
+const MACROS_VERSION = "2026-11-24a";
 const TIMEZONE = "Australia/Sydney";
 const MAIN_SESSIONS_GID = 1169726169; // "Sessions Remaining" in the CRM sheet
 const CARD_URL = "https://maxfit.now/card/";
@@ -110,6 +115,10 @@ const TABS = {
       // (2026-11-09) — only for people he trusts with full control of their own
       // numbers (himself, family), never a real client. Set from My clients.
       "scope_exempt",
+      // Friends price (2026-11-24): Max lets this person buy friends packs,
+      // top-ups at about cost. Price only: plans, limits and guardrails are
+      // unchanged (scope_exempt above is a separate switch).
+      "friends_price",
     ],
     text: ["slug", "key", "trial_started", "plan_until", "comp_until", "disclaimer_accepted"],
   },
@@ -176,7 +185,13 @@ const TABS = {
   // Pay-as-you-go uses added: Stripe top-ups (once per checkout session) and Max's own from the coach page.
   credits: {
     name: "Credits",
-    headers: ["id", "slug", "uses", "amount_aud", "source", "stripe_session", "note", "created_at"],
+    headers: [
+      "id", "slug", "uses", "amount_aud", "source", "stripe_session", "note", "created_at",
+      // A friends pack bought by someone not on friends price (2026-11-24):
+      // source "unmatched", uses 0, and what it would add sits here until
+      // Max approves it on the coach page. payer = Stripe's name / email.
+      "pending_uses", "payer",
+    ],
     text: ["id", "slug", "stripe_session"],
   },
   weights: {
@@ -292,6 +307,8 @@ const COACH_ACTIONS = {
   issueKey: actionIssueKey_,
   coachGiveMonth: actionCoachGiveMonth_,
   coachSetScopeExempt: actionCoachSetScopeExempt_,
+  coachSetFriendsPrice: actionCoachSetFriendsPrice_,
+  coachApproveFriendsPack: actionCoachApproveFriendsPack_,
   coachAddCredits: actionCoachAddCredits_,
   coachSyncStripe: actionCoachSyncStripe_,
   coachLogWeight: actionCoachLogWeight_,
@@ -762,6 +779,10 @@ function planPayload_(member) {
     aiPerDay: aiPerDay,
     credits: creditsLeft_(slug),
     packs: CREDIT_PACKS.map((pack) => ({ uses: pack.uses, price: pack.price, url: upgradeUrl_(slug, pack.prop) })).filter((pack) => pack.url),
+    // Only someone Max switched on ever receives these links.
+    friendsPacks: member.friends_price === "Y"
+      ? friendsPacks_().map((pack) => ({ uses: pack.uses, price: pack.price, url: upgradeUrl_(slug, pack.prop) })).filter((pack) => pack.url)
+      : [],
   });
 }
 
@@ -772,6 +793,22 @@ const CREDIT_PACKS = [
   { uses: 45, price: "$5", prop: "STRIPE_CREDITS_45_LINK" },
   { uses: 100, price: "$10", prop: "STRIPE_CREDITS_100_LINK" },
 ];
+
+// Friends packs (2026-11-24, Max): top-ups at about cost, only for people Max
+// switches on (Members friends_price = Y). What's ADDED is the number in the
+// Stripe price's lookup key (fuel_friends_160), so new prices with new keys
+// need no code change. The numbers the card SHOWS can follow them with the
+// Script Property FRIENDS_PACK_USES, e.g. "160,330" (small pack, big pack).
+// friendsPackBreakEven() (run from the editor) suggests sizes from real costs.
+const FRIENDS_PACKS = [
+  { uses: 160, price: "$5", prop: "STRIPE_FRIENDS_160_LINK" },
+  { uses: 330, price: "$10", prop: "STRIPE_FRIENDS_330_LINK" },
+];
+
+function friendsPacks_() {
+  const custom = String(prop_("FRIENDS_PACK_USES") || "").split(",").map((n) => Math.round(Number(n)));
+  return FRIENDS_PACKS.map((pack, i) => Object.assign({}, pack, custom[i] > 0 ? { uses: custom[i] } : {}));
+}
 
 function actionMe_(payload, member) {
   const slug = String(member.slug);
@@ -1594,6 +1631,7 @@ function actionCoachList_() {
       link: m.key ? CARD_URL + "?id=" + encodeURIComponent(s) + "&k=" + encodeURIComponent(m.key) : "",
       plan: planFor_(m),
       scopeExempt: m.scope_exempt === "Y",
+      friendsPrice: m.friends_price === "Y",
     });
   });
   targets.forEach((t) => {
@@ -1649,8 +1687,25 @@ function actionCoachList_() {
   const clients = Object.keys(bySlug)
     .map((s) => Object.assign({ lastLog: lastLog[s] || "" }, bySlug[s]))
     .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  // Friends packs bought by someone not on friends price, waiting for Max.
+  const names = {};
+  members.forEach((m) => (names[String(m.slug)] = String(m.name || m.slug)));
+  const friendsWaiting = creditRows
+    .filter((r) => String(r.source) === "unmatched")
+    .map((r) => ({
+      id: String(r.id),
+      slug: String(r.slug || ""),
+      name: names[String(r.slug)] || "",
+      payer: String(r.payer || ""),
+      amount: Number(r.amount_aud) || 0,
+      uses: Number(r.pending_uses) || 0,
+      session: String(r.stripe_session || ""),
+      created: String(r.created_at || ""),
+    }));
   return {
     clients: clients,
+    friendsWaiting: friendsWaiting,
+    friendsPacks: friendsPacks_().map((pack) => ({ uses: pack.uses, price: pack.price })),
     aiEnabled: aiOn_(),
     stripeReady: !!(prop_("STRIPE_SECRET_KEY") && prop_("STRIPE_FUEL_LINK")),
     lastStripeSync: prop_("STRIPE_LAST_SYNC_AT") || "",
@@ -2504,6 +2559,42 @@ function actionCoachSetScopeExempt_(payload) {
   });
 }
 
+/**
+ * Friends price (2026-11-24): this person can buy friends packs (top-ups at
+ * about cost). Its own column, so it never touches Full access (scope_exempt),
+ * and it changes the top-up price only.
+ */
+function actionCoachSetFriendsPrice_(payload) {
+  const slug = slugify_(payload.slug);
+  return withLock_(() => {
+    const member = readRows_("members").find((m) => String(m.slug) === slug);
+    if (!member) throw userError_("no_member", "Create this client's Fuel link first.");
+    const on = payload.on ? "Y" : "N";
+    updateRow_("members", member._row, { friends_price: on });
+    return { slug: slug, friendsPrice: on === "Y" };
+  });
+}
+
+/**
+ * Max approves a friends pack that was bought by someone not on friends
+ * price. The waiting row itself becomes the credit (its uses and who it's
+ * for), so it can only ever be added once.
+ */
+function actionCoachApproveFriendsPack_(payload) {
+  const id = String(payload.id || "");
+  return withLock_(() => {
+    const row = readRows_("credits").find((r) => String(r.id) === id);
+    if (!row || String(row.source) !== "unmatched") throw userError_("not_waiting", "That one's already been sorted.");
+    const slug = slugify_(payload.slug || row.slug || "");
+    const member = slug ? readRows_("members").find((m) => String(m.slug) === slug) : null;
+    if (!member) throw userError_("no_member", "Choose who it's for first.");
+    const uses = Number(row.pending_uses) || 0;
+    if (uses < 1) throw userError_("bad_uses", "That payment didn't include any AI uses.");
+    updateRow_("credits", row._row, { slug: slug, uses: uses, source: "stripe", note: "friends pack, approved by Max " + todaySydney_() });
+    return { slug: slug, uses: uses, credits: creditsLeft_(slug) };
+  });
+}
+
 /** Max adds (or, negative, takes back) pay-as-you-go uses, e.g. paid in cash or a refund. */
 function actionCoachAddCredits_(payload) {
   const slug = slugify_(payload.slug);
@@ -2588,13 +2679,78 @@ function memberForSession_(session, members) {
   return members.find((x) => String(x.slug) === slug) || null;
 }
 
-/** AI uses bought in a one-off checkout: the number in each price's lookup key (fuel_credits_45) × quantity. */
-function creditsInSession_(session) {
+/**
+ * AI uses bought in a one-off checkout: the number in each price's lookup key
+ * × quantity, as { normal: fuel_credits_<n>, friends: fuel_friends_<n> }.
+ */
+function packsInSession_(session) {
   const items = stripeGet_("checkout/sessions/" + session.id + "/line_items", { limit: 10 });
-  return (items.data || []).reduce((sum, li) => {
-    const m = /^fuel_credits_(\d+)$/.exec(String((li.price && li.price.lookup_key) || ""));
-    return sum + (m ? Number(m[1]) * (Number(li.quantity) || 1) : 0);
-  }, 0);
+  const out = { normal: 0, friends: 0 };
+  (items.data || []).forEach((li) => {
+    const key = String((li.price && li.price.lookup_key) || "");
+    const qty = Number(li.quantity) || 1;
+    let m = /^fuel_credits_(\d+)$/.exec(key);
+    if (m) out.normal += Number(m[1]) * qty;
+    m = /^fuel_friends_(\d+)$/.exec(key);
+    if (m) out.friends += Number(m[1]) * qty;
+  });
+  return out;
+}
+
+/** Sends Max a plain email (Script Property NOTIFY_EMAIL, else the script owner). Never throws. */
+function notifyMax_(subject, body) {
+  try {
+    const to = prop_("NOTIFY_EMAIL") || Session.getEffectiveUser().getEmail();
+    if (!to) return false;
+    MailApp.sendEmail({ to: to, subject: subject, body: body });
+    return true;
+  } catch (err) {
+    console.error("Couldn't email Max: " + (err && err.message ? err.message : err));
+    return false;
+  }
+}
+
+/**
+ * A friends pack bought by someone who isn't on friends price (a shared link,
+ * or no card reference): add nothing, keep it as an "unmatched" Credits row
+ * for Max to approve or refund, and email him once (the row has the session
+ * id, so later syncs skip it).
+ */
+function recordUnapprovedFriendsPack_(session, member, uses, creditRows) {
+  const details = session.customer_details || {};
+  const payer = [details.name, details.email].filter(Boolean).join(" · ");
+  const amount = Math.round(Number(session.amount_total) || 0) / 100;
+  const slug = member ? String(member.slug) : "";
+  appendRow_("credits", {
+    id: Utilities.getUuid(),
+    slug: slug,
+    uses: 0,
+    amount_aud: amount,
+    source: "unmatched",
+    stripe_session: session.id,
+    note: "friends pack — not approved",
+    created_at: nowStamp_(),
+    pending_uses: uses,
+    payer: payer,
+  });
+  creditRows.push({ slug: slug, uses: 0, stripe_session: session.id, source: "unmatched" });
+  session._friendsPending = true;
+  const who = payer || "Someone (Stripe didn't give a name or email)";
+  const card = member ? String(member.name || slug) + "'s card" : session.client_reference_id ? "card link " + session.client_reference_id : "no card link";
+  notifyMax_(
+    "Friends pack bought by someone not on friends price",
+    [
+      "A Fuel friends pack was bought, but the buyer isn't switched on for friends price, so no AI uses were added yet.",
+      "",
+      "Who: " + who + " (" + card + ")",
+      "Paid: $" + amount.toFixed(2) + " for " + uses + " AI uses",
+      "Stripe payment: " + session.id,
+      "",
+      "You can do either:",
+      "1. Approve it: open the Fuel coach page and tap Approve under \"Friends packs waiting\". That adds the " + uses + " uses once.",
+      "2. Refund it: in Stripe, open Payments, find this payment and tap Refund.",
+    ].join("\n")
+  );
 }
 
 /**
@@ -2605,13 +2761,19 @@ function creditsInSession_(session) {
 function applyCreditSession_(session, members, creditRows) {
   if (session.mode !== "payment" || session.status !== "complete" || session.payment_status !== "paid") return 0;
   const slug = sessionSlug_(session);
-  if (!slug) return 0;
+  // Another checkout with its own reference (a pt- session payment) is never a top-up.
+  if (!slug && session.client_reference_id) return 0;
   if (creditRows.some((r) => String(r.stripe_session) === session.id)) return 0;
-  if (!members.some((m) => String(m.slug) === slug)) {
-    console.error("Pay-as-you-go payment for an unknown client: " + slug + " " + session.id);
+  const packs = packsInSession_(session);
+  const member = slug ? members.find((m) => String(m.slug) === slug) || null : null;
+  // Friends packs count only for someone Max has on friends price right now.
+  const friendsOk = !!member && member.friends_price === "Y";
+  if (packs.friends && !friendsOk) recordUnapprovedFriendsPack_(session, member, packs.friends, creditRows);
+  if (!member) {
+    if (slug && packs.normal) console.error("Pay-as-you-go payment for an unknown client: " + slug + " " + session.id);
     return 0;
   }
-  const uses = creditsInSession_(session);
+  const uses = packs.normal + (friendsOk ? packs.friends : 0);
   if (!uses) return 0;
   appendRow_("credits", {
     id: Utilities.getUuid(),
@@ -2620,7 +2782,7 @@ function applyCreditSession_(session, members, creditRows) {
     amount_aud: Math.round(Number(session.amount_total) || 0) / 100,
     source: "stripe",
     stripe_session: session.id,
-    note: "",
+    note: friendsOk && packs.friends ? "friends pack" : "",
     created_at: nowStamp_(),
   });
   creditRows.push({ slug: slug, uses: uses, stripe_session: session.id });
@@ -2708,6 +2870,75 @@ function syncStripe() {
   return JSON.stringify(syncStripe_());
 }
 
+/**
+ * The maths behind friendsPackBreakEven(), on AI Usage rows (pure, so it can be
+ * tested). Counts the uses that cost a use (not body scans, not failed calls),
+ * and the est cost logged against them. Photo scans are kind meal or label.
+ */
+function breakEvenFromRows_(rows, usdToAud) {
+  const counted = rows.filter((u) => usageCounts_(u) && String(u.kind) !== BODY_SCAN_KIND && String(u.kind) !== "safety test");
+  const cost = (list) => list.reduce((sum, u) => sum + (Number(u.est_cost_usd) || 0), 0);
+  const scans = counted.filter((u) => String(u.kind) === "meal" || String(u.kind) === "label");
+  const perUseUsd = counted.length ? cost(counted) / counted.length : 0;
+  const perScanUsd = scans.length ? cost(scans) / scans.length : 0;
+  const worstAud = Math.max(perUseUsd, perScanUsd) * usdToAud;
+  // What Max keeps from a price after Stripe's 1.7% + 30c (Australian cards).
+  const net = (price) => price - (price * 0.017 + 0.3);
+  const uses = (price, perUseAud) => (perUseAud > 0 ? Math.floor(net(price) / perUseAud) : 0);
+  const pack = (price) => ({
+    price: price,
+    net: Math.round(net(price) * 1000) / 1000,
+    usesAtAverage: uses(price, perUseUsd * usdToAud),
+    usesAtPhotoScans: uses(price, perScanUsd * usdToAud),
+    // Never below cost: sized for the dearer of the two, rounded down to the nearest 10.
+    suggested: Math.floor(uses(price, worstAud) / 10) * 10,
+  });
+  return {
+    uses: counted.length,
+    photoScans: scans.length,
+    perUseUsd: perUseUsd,
+    perUseAud: perUseUsd * usdToAud,
+    perScanUsd: perScanUsd,
+    perScanAud: perScanUsd * usdToAud,
+    usdToAud: usdToAud,
+    five: pack(5),
+    ten: pack(10),
+  };
+}
+
+/**
+ * Run from the editor (2026-11-24): how many AI uses a friends pack can hold
+ * at about cost, from the last 30 days of the AI Usage tab. Emails Max a short
+ * summary and changes nothing. USD_TO_AUD Script Property, default 1.55.
+ */
+function friendsPackBreakEven() {
+  const rate = Number(prop_("USD_TO_AUD")) || 1.55;
+  const since = MacroCore.addDays(todaySydney_(), -30);
+  const rows = readRows_("usage").filter((u) => String(u.log_date) >= since);
+  const r = breakEvenFromRows_(rows, rate);
+  const cents = (n) => (n * 100).toFixed(2) + "c";
+  const lines = r.uses
+    ? [
+        "Fuel AI costs over the last 30 days (" + r.uses + " AI uses, " + r.photoScans + " of them photo scans):",
+        "",
+        "Average per use: " + cents(r.perUseUsd) + " US, about " + cents(r.perUseAud) + " AUD",
+        "Per photo scan: " + cents(r.perScanUsd) + " US, about " + cents(r.perScanAud) + " AUD",
+        "(at " + rate + " AUD to the US dollar; change USD_TO_AUD in Script Properties)",
+        "",
+        "After Stripe's 1.7% + 30c you keep $" + r.five.net.toFixed(2) + " of $5 and $" + r.ten.net.toFixed(2) + " of $10.",
+        "Break-even: $5 covers " + r.five.usesAtAverage + " average uses or " + r.five.usesAtPhotoScans + " photo scans; $10 covers " + r.ten.usesAtAverage + " or " + r.ten.usesAtPhotoScans + ".",
+        "",
+        "Suggested friends packs (never below cost, even if every use is the dearer kind, rounded down to the nearest 10):",
+        "$5 = " + r.five.suggested + " AI uses",
+        "$10 = " + r.ten.suggested + " AI uses",
+        "",
+        "Nothing was changed. To use new sizes, make new Stripe prices with lookup keys fuel_friends_<uses>, swap the links in Script Properties, and set FRIENDS_PACK_USES to the two numbers (for example 160,330).",
+      ]
+    : ["There were no AI uses in the last 30 days, so there's nothing to work the cost out from yet."];
+  notifyMax_("Fuel friends pack: break-even check", lines.join("\n"));
+  return lines.join("\n");
+}
+
 /** Run ONCE from the editor: checks Stripe every 15 minutes from now on. */
 function installStripeSync() {
   ScriptApp.getProjectTriggers()
@@ -2736,7 +2967,8 @@ function actionStripeReturn_(payload) {
   if (session.mode === "payment") {
     const paid = session.status === "complete" && session.payment_status === "paid" && !!sessionSlug_(session);
     const credited = paid ? withLock_(() => applyCreditSession_(session, readRows_("members"), readRows_("credits"))) : 0;
-    return { linked: false, topUp: paid, credited: credited };
+    // pendingApproval: a friends pack waiting for Max (they're not on friends price).
+    return { linked: false, topUp: paid, credited: credited, pendingApproval: !!session._friendsPending };
   }
   let linked = false;
   withLock_(() => {

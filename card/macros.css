@@ -2157,6 +2157,86 @@ a.fuel-btn {
   font-size: 14px;
 }
 
+/* Friends price (2026-11-24): top-ups at cost, only for people Max switches on. */
+.fuel-friends {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(224, 0, 0, 0.55);
+  border-radius: var(--radius-sm);
+  background: rgba(224, 0, 0, 0.07);
+}
+
+.fuel-friends__title {
+  margin: 0;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: 0.02em;
+  color: var(--white);
+}
+
+.fuel-friends__text {
+  margin: 0;
+  font-size: 15px;
+  color: var(--grey);
+}
+
+.fuel-friends__or {
+  margin: 4px 0 0;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--grey);
+}
+
+/* Coach page: the friends packs waiting for approval. */
+.coach-friends {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+  border-color: rgba(224, 0, 0, 0.55);
+}
+
+.coach-friends__title {
+  margin: 0;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--white);
+}
+
+.coach-friends__row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.coach-friends__what {
+  font-size: 15px;
+  color: var(--white);
+}
+
+.coach-friends__pick {
+  min-height: 48px;
+  flex: 1 1 180px;
+}
+
+.coach-client .fuel-toggle {
+  min-height: 48px;
+}
+
+.coach-friends__hint {
+  margin-top: -6px;
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--grey);
+}
+
 /* "Save $17.89 · 3 months free", on Yearly. */
 .fuel-plan-card p.fuel-plan-card__save {
   font-family: var(--font-head);

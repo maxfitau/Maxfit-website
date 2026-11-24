@@ -108,6 +108,11 @@ Stripe moves its menus around. If you can't find something, type its name ("Paym
 | `STRIPE_PORTAL_LINK` | the portal login link from step 5 |
 | `STRIPE_CREDITS_45_LINK` | pay as you go: the $5 (45 AI uses) link, price lookup key `fuel_credits_45` |
 | `STRIPE_CREDITS_100_LINK` | pay as you go: the $10 (100 AI uses) link, price lookup key `fuel_credits_100` |
+| `STRIPE_FRIENDS_160_LINK` | friends price: the $5 (160 AI uses) link, price lookup key `fuel_friends_160`. Only people with **Friends price** switched on (coach page) ever see it |
+| `STRIPE_FRIENDS_330_LINK` | friends price: the $10 (330 AI uses) link, price lookup key `fuel_friends_330` |
+| `FRIENDS_PACK_USES` | optional: the two friends pack sizes the card shows, e.g. `160,330`. Change it when you make new friends prices (what's added always comes from the lookup key) |
+| `USD_TO_AUD` | optional: for `friendsPackBreakEven()`, default `1.55` |
+| `NOTIFY_EMAIL` | optional: where the "friends pack bought by someone not on friends price" email goes (default: the account that owns this script) |
 
 A plan whose link isn't set simply has no buy button, and the Monthly / Yearly switch only appears once at least one yearly link is set.
 
